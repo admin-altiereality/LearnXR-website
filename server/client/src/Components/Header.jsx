@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useModal } from '../contexts/AuthContext';
 import SubscriptionModal from './SubscriptionModal';
 import { subscriptionService } from '../services/subscriptionService';
+import { razorpayService } from '../services/razorpayService';
+import { SUBSCRIPTION_PLANS } from '../services/subscriptionService';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import Logo from "./Logo";
@@ -23,21 +25,32 @@ const Header = () => {
   useEffect(() => {
     const fetchProfileAndSubscription = async () => {
       if (user?.uid) {
-        // Fetch profile data
-        const profileRef = doc(db, 'users', user.uid);
-        const profileSnap = await getDoc(profileRef);
-        if (profileSnap.exists()) {
-          setProfile(profileSnap.data());
-        }
+        try {
+          // Fetch profile data
+          const profileRef = doc(db, 'users', user.uid);
+          const profileSnap = await getDoc(profileRef);
+          if (profileSnap.exists()) {
+            setProfile(profileSnap.data());
+          }
 
-        // Fetch subscription data
-        const userSubscription = await subscriptionService.getUserSubscription(user.uid);
-        setSubscription(userSubscription);
+          // Fetch subscription data
+          const userSubscription = await subscriptionService.getUserSubscription(user.uid);
+          console.log('Fetched subscription:', userSubscription);
+          setSubscription(userSubscription);
+        } catch (error) {
+          console.error('Error fetching profile/subscription:', error);
+          toast.error('Failed to load subscription data');
+        }
       }
     };
 
     fetchProfileAndSubscription();
   }, [user?.uid]);
+
+  // Debug log for subscription changes
+  useEffect(() => {
+    console.log('Current subscription state:', subscription);
+  }, [subscription]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -55,19 +68,49 @@ const Header = () => {
       await logout();
       navigate('/login');
     } catch (error) {
-      // Error toast is already handled in AuthContext
       console.error('Logout failed:', error);
     }
   };
 
   const handleUpgradeClick = async () => {
-    openModal('subscription');
-    setShowDropdown(false);
+    try {
+      if (!user || !user.email) {
+        toast.error('Please sign in to upgrade your plan');
+        return;
+      }
+
+      // Get the next tier plan based on current subscription
+      const currentPlanIndex = SUBSCRIPTION_PLANS.findIndex(p => p.id === subscription?.planId);
+      const nextPlan = SUBSCRIPTION_PLANS[currentPlanIndex + 1] || SUBSCRIPTION_PLANS[1]; // Default to 'pro' if no next plan
+
+      console.log('Initializing payment for plan:', nextPlan.id);
+      await razorpayService.initializePayment(nextPlan.id, user.email, user.uid);
+      toast.success('Payment successful! Your plan will be updated shortly.');
+      setShowDropdown(false);
+      
+      // Refresh subscription data after successful payment
+      const updatedSubscription = await subscriptionService.getUserSubscription(user.uid);
+      setSubscription(updatedSubscription);
+    } catch (error) {
+      console.error('Error handling upgrade:', error);
+      if (error instanceof Error && error.message === 'Payment cancelled') {
+        toast.error('Payment was cancelled');
+      } else {
+        toast.error('Failed to process upgrade. Please try again.');
+      }
+    }
   };
 
   const isActivePath = (path) => {
     return location.pathname === path;
   };
+
+  // Debug log for render conditions
+  console.log('Render conditions:', {
+    userExists: !!user,
+    subscriptionExists: !!subscription,
+    isPlanFree: subscription?.planId === 'free'
+  });
 
   return (
     <>
@@ -79,7 +122,7 @@ const Header = () => {
             </Link>
             
             {user && (
-              <div className="hidden md:flex items-center space-x-2">
+              <div className="flex items-center space-x-4">
                 <Link
                   to="/main"
                   className={`px-4 py-2 rounded-lg transition-all duration-200 ${
@@ -90,6 +133,7 @@ const Header = () => {
                 >
                   Generate
                 </Link>
+                
                 <Link
                   to="/explore"
                   className={`px-4 py-2 rounded-lg transition-all duration-200 ${
@@ -105,6 +149,19 @@ const Header = () => {
                     <span>Explore</span>
                   </span>
                 </Link>
+
+                {/* Upgrade Button - Show for free plan users */}
+                {subscription?.planId === 'free' && (
+                  <button
+                    onClick={handleUpgradeClick}
+                    className="px-4 py-2 bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 text-white rounded-lg transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 border border-purple-500/30 flex items-center space-x-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    <span>Upgrade</span>
+                  </button>
+                )}
               </div>
             )}
           </div>

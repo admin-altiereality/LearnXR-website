@@ -42,7 +42,7 @@ var env = (0, import_envsafe.envsafe)({
 
 // src/server.ts
 var import_cors = __toESM(require("cors"));
-var import_express = __toESM(require("express"));
+var import_express2 = __toESM(require("express"));
 
 // src/routes.ts
 var express = __toESM(require("express"));
@@ -201,11 +201,155 @@ router.post("/imagine/cancelAllPedingImagines", cancelAllPedingImagines);
 router.delete("/imagine/deleteImagine", deleteImagine);
 
 // src/server.ts
+var import_path2 = __toESM(require("path"));
+
+// src/config/firebase-admin.ts
+var admin = __toESM(require("firebase-admin"));
+var import_firestore = require("firebase-admin/firestore");
+var import_dotenv = __toESM(require("dotenv"));
 var import_path = __toESM(require("path"));
-var server = (0, import_express.default)();
-server.use((0, import_express.json)());
-var buildPath = import_path.default.resolve(process.cwd(), "client/dist");
-server.use(import_express.default.static(buildPath, {
+var envPath = import_path.default.resolve(process.cwd(), ".env");
+console.log("Loading .env file from:", envPath);
+import_dotenv.default.config({ path: envPath });
+console.log("Environment variables check:");
+console.log("FIREBASE_PROJECT_ID exists:", !!process.env.FIREBASE_PROJECT_ID);
+console.log("FIREBASE_CLIENT_EMAIL exists:", !!process.env.FIREBASE_CLIENT_EMAIL);
+console.log("FIREBASE_PRIVATE_KEY exists:", !!process.env.FIREBASE_PRIVATE_KEY);
+var requiredEnvVars = ["FIREBASE_PROJECT_ID", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PRIVATE_KEY"];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`Contents of ${envPath}:`, require("fs").readFileSync(envPath, "utf8"));
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
+var _a;
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: (_a = process.env.FIREBASE_PRIVATE_KEY) == null ? void 0 : _a.replace(/\\n/g, "\n")
+      })
+    });
+    console.log("Firebase Admin initialized successfully");
+  } catch (error) {
+    console.error("Error initializing Firebase Admin:", error);
+    throw error;
+  }
+}
+var db = (0, import_firestore.getFirestore)();
+
+// src/routes/payment.ts
+var import_express = require("express");
+var import_crypto = __toESM(require("crypto"));
+var admin2 = __toESM(require("firebase-admin"));
+var import_razorpay = __toESM(require("razorpay"));
+var router2 = (0, import_express.Router)();
+var initializeRazorpay = () => {
+  const key_id = process.env.RAZORPAY_KEY_ID;
+  const key_secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!key_id || !key_secret) {
+    throw new Error("RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET must be provided in environment variables");
+  }
+  return new import_razorpay.default({
+    key_id,
+    key_secret
+  });
+};
+var razorpay;
+try {
+  razorpay = initializeRazorpay();
+  console.log("Razorpay initialized successfully");
+} catch (error) {
+  console.error("Failed to initialize Razorpay:", error);
+  throw error;
+}
+router2.post("/create-order", async (req, res) => {
+  try {
+    const { amount, currency = "INR", planId } = req.body;
+    if (!amount || !planId) {
+      return res.status(400).json({
+        status: "error",
+        message: "Amount and plan ID are required"
+      });
+    }
+    const options = {
+      amount,
+      currency,
+      receipt: `order_${Date.now()}`,
+      notes: {
+        planId
+      }
+    };
+    const order = await razorpay.orders.create(options);
+    res.json(order);
+  } catch (error) {
+    console.error("Error creating order:", error);
+    res.status(500).json({
+      status: "error",
+      message: error instanceof Error ? error.message : "Failed to create order"
+    });
+  }
+});
+router2.post("/verify", async (req, res) => {
+  try {
+    const {
+      razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_signature,
+      userId,
+      planId
+    } = req.body;
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!key_secret) {
+      throw new Error("Razorpay key secret not configured");
+    }
+    const generated_signature = import_crypto.default.createHmac("sha256", key_secret).update(`${razorpay_order_id}|${razorpay_payment_id}`).digest("hex");
+    if (generated_signature === razorpay_signature) {
+      const subscriptionRef = db.collection("subscriptions").doc(userId);
+      const subscriptionDoc = await subscriptionRef.get();
+      const subscriptionData = {
+        planId,
+        status: "active",
+        updatedAt: admin2.firestore.FieldValue.serverTimestamp(),
+        paymentId: razorpay_payment_id,
+        orderId: razorpay_order_id
+      };
+      if (subscriptionDoc.exists) {
+        await subscriptionRef.update(subscriptionData);
+      } else {
+        await subscriptionRef.set({
+          ...subscriptionData,
+          createdAt: admin2.firestore.FieldValue.serverTimestamp(),
+          userId
+        });
+      }
+      res.json({
+        status: "success",
+        message: "Payment verified successfully"
+      });
+    } else {
+      res.status(400).json({
+        status: "error",
+        message: "Invalid payment signature"
+      });
+    }
+  } catch (error) {
+    console.error("Payment verification error:", error);
+    res.status(500).json({
+      status: "error",
+      message: error instanceof Error ? error.message : "Payment verification failed"
+    });
+  }
+});
+var payment_default = router2;
+
+// src/server.ts
+var server = (0, import_express2.default)();
+server.use((0, import_express2.json)());
+var buildPath = import_path2.default.resolve(process.cwd(), "client/dist");
+server.use(import_express2.default.static(buildPath, {
   setHeaders: (res) => {
     res.set("Access-Control-Allow-Origin", "*");
     res.set("Access-Control-Allow-Methods", "GET");
@@ -225,8 +369,9 @@ var corsOptions = {
 };
 server.use((0, import_cors.default)(corsOptions));
 server.use("/api", router);
+server.use("/api", payment_default);
 server.get("*", function(req, res) {
-  const indexPath = import_path.default.join(buildPath, "index.html");
+  const indexPath = import_path2.default.join(buildPath, "index.html");
   console.log("Attempting to serve:", indexPath);
   res.sendFile(indexPath, function(err) {
     if (err) {

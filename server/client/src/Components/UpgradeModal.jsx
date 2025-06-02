@@ -1,135 +1,148 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
+import { razorpayService } from '../services/razorpayService';
+import { toast } from 'react-hot-toast';
+import { SUBSCRIPTION_PLANS } from '../services/subscriptionService';
 
 const UpgradeModal = ({ isOpen, onClose, currentPlan }) => {
-  const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleUpgradeClick = () => {
-    navigate('/pricing');
-    onClose();
+  const handlePlanSelect = async (planId) => {
+    try {
+      if (!user || !user.email) {
+        toast.error('Please sign in to upgrade your plan');
+        return;
+      }
+
+      await razorpayService.initializePayment(planId, user.email, user.uid);
+      toast.success('Payment successful! Your plan will be updated shortly.');
+      onClose();
+    } catch (error) {
+      console.error('Error handling upgrade:', error);
+      if (error instanceof Error && error.message === 'Payment cancelled') {
+        toast.error('Payment was cancelled');
+      } else {
+        toast.error('Failed to process upgrade. Please try again.');
+      }
+    }
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 flex items-center justify-center z-[9999]">
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm"
-          />
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+              <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm" />
+            </div>
 
-          {/* Modal Container - ensures proper centering */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: "spring", duration: 0.5 }}
-            className="relative max-h-[90vh] w-[90vw] max-w-lg m-auto overflow-y-auto"
-          >
-            <div className="relative rounded-2xl">
-              {/* Glassmorphic background with gradient */}
-              <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl" />
-              
-              {/* Border glow effect */}
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 blur-xl" />
-              
-              {/* Content container */}
-              <div className="relative bg-gray-900/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-                {/* Animated gradient background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-pink-500/10 animate-gradient-shift" />
-
-                {/* Close button */}
-                <button
-                  onClick={onClose}
-                  className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 
-                           border border-white/10 transition-all duration-200 group"
-                >
-                  <svg className="w-5 h-5 text-white/70 group-hover:text-white/90" 
-                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-
-                {/* Content */}
-                <div className="text-center space-y-4">
-                  <div className="relative inline-flex p-3 rounded-full bg-purple-500/20 backdrop-blur-sm">
-                    <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                            d="M5 10l7-7m0 0l7 7m-7-7v18" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="inline-block w-full max-w-4xl my-8 overflow-hidden text-left align-middle transition-all transform"
+            >
+              <div className="relative bg-gray-800/50 backdrop-blur-sm rounded-lg border border-gray-700/50 shadow-xl">
+                <div className="px-6 py-8">
+                  {/* Close button */}
+                  <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 
+                             border border-white/10 transition-all duration-200 group"
+                  >
+                    <svg className="w-5 h-5 text-white/70 group-hover:text-white/90" 
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
+                  </button>
+
+                  {/* Header */}
+                  <div className="text-center mb-8">
+                    <h2 className="text-3xl font-bold text-white mb-4">Choose Your Plan</h2>
+                    <p className="text-gray-300">Select the plan that best fits your needs</p>
                   </div>
 
-                  <h3 className="text-2xl font-bold text-white">
-                    Upgrade Your Experience
-                  </h3>
+                  {/* Plans Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {SUBSCRIPTION_PLANS.map((plan) => (
+                      <div
+                        key={plan.id}
+                        className={`relative bg-gray-900/30 rounded-lg p-6 border transition-all duration-200 hover:transform hover:-translate-y-1 
+                          ${currentPlan === plan.id 
+                            ? 'border-blue-500/50 bg-blue-900/10' 
+                            : 'border-gray-700/50 hover:border-gray-600/50'}`}
+                      >
+                        {currentPlan === plan.id && (
+                          <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                            <span className="bg-blue-500/80 text-white text-xs px-3 py-1 rounded-full">
+                              Current Plan
+                            </span>
+                          </div>
+                        )}
 
-                  <p className="text-gray-300/90">
-                    {currentPlan === 'Free' 
-                      ? "You've reached your free tier limit. Upgrade to Premium for unlimited generations and exclusive features!"
-                      : "Ready for more? Upgrade to a higher tier for increased generation limits and advanced features!"}
-                  </p>
+                        <div className="text-center">
+                          <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
+                          <div className="text-3xl font-bold text-white mb-4">
+                            ₹{plan.price}
+                            <span className="text-sm text-gray-400">/{plan.billingCycle}</span>
+                          </div>
 
-                  <div className="space-y-3 pt-2">
-                    <button
-                      onClick={handleUpgradeClick}
-                      className="w-full py-3 px-4 bg-gradient-to-r from-purple-500/80 to-pink-600/80 
-                               hover:from-purple-500/90 hover:to-pink-600/90 
-                               text-white rounded-lg font-medium
-                               shadow-[0_0_15px_rgba(168,85,247,0.5)]
-                               transition-all duration-200 hover:shadow-[0_0_25px_rgba(168,85,247,0.5)]
-                               backdrop-blur-sm border border-white/10"
-                    >
-                      View Pricing Plans
-                    </button>
+                          <div className="mb-6 text-sm text-gray-300">
+                            {plan.limits.skyboxGenerations === Infinity 
+                              ? 'Unlimited generations'
+                              : `${plan.limits.skyboxGenerations} generations per day`
+                            }
+                          </div>
 
-                    <button
-                      onClick={onClose}
-                      className="w-full py-3 px-4 bg-white/5 hover:bg-white/10 
-                               text-white/80 hover:text-white/90 rounded-lg 
-                               transition-colors duration-200 backdrop-blur-sm
-                               border border-white/5 hover:border-white/10"
-                    >
-                      Maybe Later
-                    </button>
+                          <ul className="text-sm text-gray-300 space-y-3 mb-6 text-left">
+                            {plan.features.map((feature, index) => (
+                              <li key={index} className="flex items-center">
+                                <svg
+                                  className="w-4 h-4 text-green-400 mr-2 flex-shrink-0"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M5 13l4 4L19 7"
+                                  />
+                                </svg>
+                                <span>{feature}</span>
+                              </li>
+                            ))}
+                          </ul>
+
+                          <button
+                            onClick={() => handlePlanSelect(plan.id)}
+                            disabled={currentPlan === plan.id}
+                            className={`
+                              w-full px-4 py-3 rounded-lg font-medium transition-all duration-200
+                              ${currentPlan === plan.id
+                                ? 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 text-white transform hover:-translate-y-0.5 active:translate-y-0 border border-purple-500/30'
+                              }
+                            `}
+                          >
+                            {currentPlan === plan.id ? 'Current Plan' : 'Select Plan'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
 
-                  {/* Feature list */}
-                  <div className="mt-8 text-left space-y-3">
-                    <h4 className="text-sm font-medium text-white/90">Upgrade to unlock:</h4>
-                    <ul className="space-y-2">
-                      {[
-                        'Increased daily generations',
-                        'Higher quality outputs',
-                        'Priority processing',
-                        'Advanced customization options',
-                        'Premium support'
-                      ].map((feature, index) => (
-                        <motion.li
-                          key={index}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: index * 0.1 }}
-                          className="flex items-center text-sm text-gray-300/90"
-                        >
-                          <svg className="w-4 h-4 mr-2 text-green-400" 
-                               fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-                                  d="M5 13l4 4L19 7" />
-                          </svg>
-                          {feature}
-                        </motion.li>
-                      ))}
-                    </ul>
+                  {/* Footer */}
+                  <div className="mt-8 text-center text-sm text-gray-400">
+                    <p>All plans include access to our community and basic support</p>
+                    <p className="mt-2">Need help choosing? Contact our support team</p>
                   </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </div>
         </div>
       )}
     </AnimatePresence>
