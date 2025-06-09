@@ -61,16 +61,14 @@ export class RazorpayService {
   }
 
   public async initializePayment(planId: string, userEmail: string, userId: string): Promise<void> {
-    console.log('Initializing payment...', { planId, userEmail, userId });
-    
-    if (!window.Razorpay) {
-      console.error('Razorpay SDK not loaded. Checking script status...');
-      const script = document.querySelector('script[src*="razorpay"]');
-      console.log('Razorpay script element:', script ? 'Found' : 'Not found');
-      throw new Error('Razorpay SDK not loaded');
-    }
-
     try {
+      console.log('Initializing payment...', { planId, userEmail, userId });
+      
+      if (!window.Razorpay) {
+        console.error('Razorpay SDK not loaded');
+        throw new Error('Razorpay SDK not loaded');
+      }
+
       // Create order first
       const order = await this.createOrder(planId);
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
@@ -79,8 +77,7 @@ export class RazorpayService {
         throw new Error('Invalid plan selected');
       }
 
-      console.log('Setting up Razorpay options...');
-      return new Promise((resolve, reject) => {
+      return new Promise<void>((resolve, reject) => {
         const options = {
           key: this.razorpayKeyId,
           amount: order.amount,

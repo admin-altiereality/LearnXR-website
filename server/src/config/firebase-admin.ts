@@ -1,45 +1,42 @@
-import * as admin from 'firebase-admin';
+import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { ServiceAccount } from 'firebase-admin';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 
 // Load environment variables from server directory
-const envPath = path.resolve(process.cwd(), '.env');
-console.log('Loading .env file from:', envPath);
+const envPath = path.resolve(__dirname, '../../.env');
+console.log('Attempting to load .env from:', envPath);
+console.log('Does .env file exist?', fs.existsSync(envPath));
+
 dotenv.config({ path: envPath });
 
-// Debug: Log environment variables (without exposing sensitive data)
-console.log('Environment variables check:');
-console.log('FIREBASE_PROJECT_ID exists:', !!process.env.FIREBASE_PROJECT_ID);
-console.log('FIREBASE_CLIENT_EMAIL exists:', !!process.env.FIREBASE_CLIENT_EMAIL);
+// Debug environment variables
+console.log('Environment variables after loading:');
+console.log('FIREBASE_PROJECT_ID:', process.env.FIREBASE_PROJECT_ID);
+console.log('FIREBASE_CLIENT_EMAIL:', process.env.FIREBASE_CLIENT_EMAIL);
 console.log('FIREBASE_PRIVATE_KEY exists:', !!process.env.FIREBASE_PRIVATE_KEY);
 
-// Validate required environment variables
-const requiredEnvVars = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`Contents of ${envPath}:`, require('fs').readFileSync(envPath, 'utf8'));
-    throw new Error(`Missing required environment variable: ${envVar}`);
+try {
+  // Initialize Firebase Admin with individual credentials
+  const serviceAccount: ServiceAccount = {
+    projectId: process.env.FIREBASE_PROJECT_ID as string,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL as string,
+    privateKey: (process.env.FIREBASE_PRIVATE_KEY as string)?.replace(/\\n/g, '\n')
+  };
+  
+  if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey) {
+    throw new Error('Missing required Firebase credentials in environment variables');
   }
+  
+  initializeApp({
+    credential: cert(serviceAccount)
+  });
+  console.log('Firebase Admin initialized successfully');
+} catch (error) {
+  console.error('Failed to initialize Firebase Admin:', error);
+  throw error;
 }
 
-// Check if we already have a Firebase app initialized
-if (!admin.apps.length) {
-  // Initialize Firebase Admin
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-      })
-    });
-    console.log('Firebase Admin initialized successfully');
-  } catch (error) {
-    console.error('Error initializing Firebase Admin:', error);
-    throw error;
-  }
-}
-
-export const db = getFirestore();
-export default admin; 
+export const db = getFirestore(); 

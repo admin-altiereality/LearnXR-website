@@ -1,0 +1,9 @@
+warning: in the working copy of 'package-lock.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/dist/assets/vendor-DJ6mreNW.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/esbuild', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/esbuild.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/eslint', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/eslint.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/rollup', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/rollup.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'server/client/node_modules/.bin/vite', LF will be replaced by CRLF the next time Git touches it

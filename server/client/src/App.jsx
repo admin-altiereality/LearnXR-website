@@ -168,6 +168,51 @@ function App() {
                       />
                     </ProtectedRoute>
                   } />
+                  <Route path="/explore/gallery" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="gallery"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/styles" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="styles"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/tutorials" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="tutorials"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/community" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="community"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/trending" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="trending"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
                   <Route path="/skybox/:id" element={
                     <ProtectedRoute>
                       <SkyboxFullScreen 
