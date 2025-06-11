@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { db } from './config/firebase-admin';
-import paymentRoutes from './routes/payment';
+import { router as mainRouter } from './routes';
 
 // Load environment variables
 dotenv.config();
@@ -17,7 +17,7 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
-app.use('/api/payment', paymentRoutes);
+app.use('/api', mainRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -25,7 +25,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5002;
 
 const startServer = async () => {
   try {

@@ -1,4 +1,3 @@
-import axios from "axios";
 import React, { useEffect, useState } from "react";
 import { useAuth } from '../contexts/AuthContext';
 import { skyboxService } from '../services/skyboxService';
@@ -7,6 +6,7 @@ import { serverTimestamp } from "firebase/firestore";
 import { subscriptionService } from '../services/subscriptionService';
 import { useNavigate } from 'react-router-dom';
 import UpgradeModal from './UpgradeModal';
+import api from '../config/axios';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
@@ -20,6 +20,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [progress, setProgress] = useState(0);
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [generatedImageId, setGeneratedImageId] = useState(null);
+  const [generatedVariations, setGeneratedVariations] = useState([]);
+  const [currentVariationIndex, setCurrentVariationIndex] = useState(0);
+  const [numVariations, setNumVariations] = useState(5);
   const { user } = useAuth();
   const [subscription, setSubscription] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -29,8 +32,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
   useEffect(() => {
     const fetchSkyboxStyles = async () => {
       try {
-        const response = await axios.get(`/api/skybox/getSkyboxStyles`);
-        setSkyboxStyles(response.data);
+        const response = await api.get(`/api/skybox/getSkyboxStyles`);
+        setSkyboxStyles(response.data.styles || []);
       } catch (error) {
         console.error("Error fetching skybox styles:", error);
         setError("Failed to load skybox styles");
@@ -114,6 +117,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setError(null);
     setShowStylePreview(false);
     setProgress(0);
+    setGeneratedVariations([]);
+    setCurrentVariationIndex(0);
 
     let pollInterval;
     let skyboxId;
@@ -133,8 +138,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
         createdAt: serverTimestamp()
       });
 
-      // Generate the skybox
-      const generateResponse = await axios.post("/api/skybox/generateSkybox", {
+      // Generate the initial skybox
+      const generateResponse = await api.post("/api/skybox/generateSkybox", {
         prompt: prompt,
         skybox_style_id: selectedSkybox.id,
         webhook_url: `/api/skybox/${prompt}`,
@@ -156,7 +161,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
       // Start polling with proper cleanup
       pollInterval = setInterval(async () => {
         try {
-          const statusResponse = await axios.get(`/api/imagine/getImagineById?id=${imageId}`);
+          const statusResponse = await api.get(`/api/imagine/getImagineById?id=${imageId}`);
           const status = statusResponse.data;
 
           // Update progress based on status
@@ -172,31 +177,73 @@ const MainSection = ({ setBackgroundSkybox }) => {
             // Update subscription count after successful generation
             await updateSubscriptionCount();
             
-            // Only update Firebase when generation is actually complete
-            await skyboxService.updateSkybox(skyboxId, {
-              status: 'complete',
-              imageUrl: status.file_url,
-              updatedAt: serverTimestamp()
-            });
-
-            const skyboxData = {
+            // Create the initial skybox data
+            const initialSkyboxData = {
               image: status.file_url,
               image_jpg: status.file_url,
               title: status.title || prompt,
               prompt: status.prompt || prompt
             };
-            setBackgroundSkybox(skyboxData);
+
+            // Generate variations
+            const variations = [];
+            for (let i = 0; i < numVariations; i++) {
+              const variationResponse = await api.post("/api/skybox/generateSkybox", {
+                prompt: prompt,
+                skybox_style_id: selectedSkybox.id,
+                remix_imagine_id: imageId,
+                webhook_url: `/api/skybox/${prompt}`,
+              });
+
+              if (variationResponse.data && variationResponse.data.id) {
+                variations.push(variationResponse.data.id);
+              }
+            }
+
+            // Poll for variation statuses
+            const variationResults = await Promise.all(
+              variations.map(async (variationId) => {
+                let variationStatus;
+                do {
+                  const statusResponse = await api.get(`/api/imagine/getImagineById?id=${variationId}`);
+                  variationStatus = statusResponse.data;
+                  if (variationStatus.status !== "completed" && variationStatus.status !== "complete") {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                  }
+                } while (variationStatus.status !== "completed" && variationStatus.status !== "complete");
+
+                return {
+                  image: variationStatus.file_url,
+                  image_jpg: variationStatus.file_url,
+                  title: variationStatus.title || prompt,
+                  prompt: variationStatus.prompt || prompt
+                };
+              })
+            );
+
+            // Combine initial skybox with variations
+            const allVariations = [initialSkyboxData, ...variationResults];
+            setGeneratedVariations(allVariations);
+            setBackgroundSkybox(allVariations[0]);
+            
+            // Update Firebase with all variations
+            await skyboxService.updateSkybox(skyboxId, {
+              status: 'complete',
+              imageUrl: initialSkyboxData.image,
+              variations: allVariations,
+              updatedAt: serverTimestamp()
+            });
+
             setProgress(100);
             setIsGenerating(false);
             
             // Add minimized state after successful generation
             setTimeout(() => {
               setIsMinimized(true);
-            }, 1000); // Delay to allow the success state to be visible
+            }, 1000);
           } else if (status.status === "failed" || status.error_message) {
             clearInterval(pollInterval);
             
-            // Update Firebase with failed status
             await skyboxService.updateSkybox(skyboxId, {
               status: 'failed',
               error: status.error_message || "Generation failed",
@@ -215,7 +262,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       if (pollInterval) clearInterval(pollInterval);
       console.error("Error generating skybox:", error);
       
-      // Update Firebase with failed status
       if (skyboxId) {
         await skyboxService.updateSkybox(skyboxId, {
           status: 'failed',
@@ -229,10 +275,23 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setProgress(0);
     }
 
-    // Cleanup interval when component unmounts
     return () => {
       if (pollInterval) clearInterval(pollInterval);
     };
+  };
+
+  const handleVariationChange = (direction) => {
+    if (generatedVariations.length === 0) return;
+
+    let newIndex;
+    if (direction === 'next') {
+      newIndex = (currentVariationIndex + 1) % generatedVariations.length;
+    } else {
+      newIndex = (currentVariationIndex - 1 + generatedVariations.length) % generatedVariations.length;
+    }
+
+    setCurrentVariationIndex(newIndex);
+    setBackgroundSkybox(generatedVariations[newIndex]);
   };
 
   // Modify the skybox style selection handler
@@ -264,7 +323,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
   };
 
   return (
-    <>
+    <div className="relative w-full min-h-screen">
       {/* Sidebar for Style Preview */}
       {showStylePreview && selectedSkybox && (
         <div className="fixed right-0 top-[64px] bottom-[64px] w-72 bg-gray-800/40 shadow-2xl backdrop-blur-sm border-l border-gray-700/50 transform transition-transform duration-300 ease-in-out z-20">
@@ -450,6 +509,28 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
+                          disabled={isGenerating}
+                        />
+                      </div>
+
+                      {/* Variations Input */}
+                      <div className="mt-4">
+                        <label htmlFor="variations" className="block text-xs font-medium mb-1 text-gray-200">
+                          Number of Variations
+                        </label>
+                        <input
+                          type="number"
+                          id="variations"
+                          min="1"
+                          max="10"
+                          placeholder="Enter number of variations (1-10)"
+                          className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
+                          value={numVariations}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 1;
+                            setNumVariations(Math.min(10, Math.max(1, value)));
+                          }}
+                          disabled={isGenerating}
                         />
                       </div>
 
@@ -616,7 +697,28 @@ const MainSection = ({ setBackgroundSkybox }) => {
         onClose={() => setShowUpgradeModal(false)}
         currentPlan={subscriptionInfo.plan}
       />
-    </>
+
+      {/* Add variation controls when variations are available */}
+      {generatedVariations.length > 0 && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 flex items-center space-x-4 bg-black/50 p-2 rounded-lg backdrop-blur-sm">
+          <button
+            onClick={() => handleVariationChange('prev')}
+            className="p-2 text-white hover:text-blue-400 transition-colors"
+          >
+            ← Previous
+          </button>
+          <span className="text-white">
+            {currentVariationIndex + 1} / {generatedVariations.length}
+          </span>
+          <button
+            onClick={() => handleVariationChange('next')}
+            className="p-2 text-white hover:text-blue-400 transition-colors"
+          >
+            Next →
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

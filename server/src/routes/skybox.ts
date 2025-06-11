@@ -30,4 +30,23 @@ router.get('/getSkyboxStyles', async (req, res) => {
   }
 });
 
+// Generate skybox
+router.post('/generateSkybox', async (req, res) => {
+  try {
+    const { prompt, skybox_style_id, remix_imagine_id, webhook_url } = req.body;
+
+    const generation = await sdk.generateSkybox({
+      prompt,
+      skybox_style_id,
+      remix_id: remix_imagine_id,
+      webhook_url,
+    });
+
+    return res.status(200).json(generation);
+  } catch (error) {
+    console.error('Error generating skybox:', error);
+    return res.status(500).json({ error: 'Failed to generate skybox' });
+  }
+});
+
 export default router; 

@@ -31,17 +31,38 @@ const History = ({ setBackgroundSkybox }) => {
       skyboxQuery,
       (snapshot) => {
         try {
-          const skyboxes = snapshot.docs.map(doc => {
+          const skyboxes = snapshot.docs.flatMap(doc => {
             const data = doc.data();
-            return {
+            const baseSkybox = {
               id: doc.id,
               file_url: data.imageUrl,
               title: data.title || data.promptUsed || 'Untitled Generation',
               prompt: data.promptUsed,
               created_at: data.createdAt,
               status: data.status,
-              metadata: data.metadata
+              metadata: data.metadata,
+              isVariation: false
             };
+
+            // If there are variations, create entries for each one
+            if (data.variations && Array.isArray(data.variations)) {
+              return [
+                baseSkybox,
+                ...data.variations.map((variation, index) => ({
+                  id: `${doc.id}_variation_${index}`,
+                  file_url: variation.image,
+                  title: `${baseSkybox.title} (Variation ${index + 1})`,
+                  prompt: variation.prompt || baseSkybox.prompt,
+                  created_at: data.createdAt,
+                  status: data.status,
+                  metadata: data.metadata,
+                  isVariation: true,
+                  parentId: doc.id
+                }))
+              ];
+            }
+
+            return [baseSkybox];
           });
 
           setHistory(skyboxes);
@@ -158,6 +179,7 @@ const History = ({ setBackgroundSkybox }) => {
                   transform transition-all duration-300 hover:scale-[1.02] cursor-pointer
                   border border-gray-700/20 hover:border-blue-500/30 active:scale-95
                   ${selectedSkybox?.id === item.id ? 'ring-2 ring-blue-500/50' : ''}
+                  ${item.isVariation ? 'border-l-4 border-l-purple-500/50' : ''}
                 `}
                 role="button"
                 tabIndex={0}
@@ -206,16 +228,23 @@ const History = ({ setBackgroundSkybox }) => {
                     <span className="text-gray-400/90 text-xs">
                       {formatDate(item.created_at)}
                     </span>
-                    <span className={`
-                      px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm
-                      ${item.status === 'complete' 
-                        ? 'bg-green-500/10 text-green-300 border border-green-500/20' 
-                        : item.status === 'pending' 
-                        ? 'bg-yellow-500/10 text-yellow-300 border border-yellow-500/20' 
-                        : 'bg-red-500/10 text-red-300 border border-red-500/20'}
-                    `}>
-                      {item.status}
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      {item.isVariation && (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                          Variation
+                        </span>
+                      )}
+                      <span className={`
+                        px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm
+                        ${item.status === 'complete' 
+                          ? 'bg-green-500/10 text-green-300 border border-green-500/20' 
+                          : item.status === 'pending' 
+                          ? 'bg-yellow-500/10 text-yellow-300 border border-yellow-500/20' 
+                          : 'bg-red-500/10 text-red-300 border border-red-500/20'}
+                      `}>
+                        {item.status}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
