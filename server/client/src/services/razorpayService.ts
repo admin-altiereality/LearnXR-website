@@ -9,10 +9,13 @@ declare global {
 export class RazorpayService {
   private static instance: RazorpayService;
   private razorpayKeyId: string;
+  private baseUrl: string;
 
   private constructor() {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
+    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
     console.log('RazorpayService initialized with key ID:', this.razorpayKeyId ? 'Present' : 'Missing');
+    console.log('Using API base URL:', this.baseUrl);
     if (!this.razorpayKeyId) {
       console.error('Razorpay key ID not found in environment variables');
     }
@@ -33,7 +36,7 @@ export class RazorpayService {
 
       console.log('Plan details:', { name: plan.name, price: plan.price });
 
-      const response = await fetch('/api/payment/create-order', {
+      const response = await fetch(`${this.baseUrl}/api/payment/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -123,7 +126,7 @@ export class RazorpayService {
   private async verifyPayment(response: any, userId: string, planId: string): Promise<void> {
     try {
       console.log('Verifying payment...', { userId, planId, ...response });
-      const verificationResponse = await fetch('/api/payment/verify', {
+      const verificationResponse = await fetch(`${this.baseUrl}/api/payment/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
