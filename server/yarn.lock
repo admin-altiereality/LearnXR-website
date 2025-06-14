@@ -686,6 +686,11 @@ end-of-stream@^1.4.1:
   dependencies:
     once "^1.4.0"
 
+envsafe@^2.0.3:
+  version "2.0.3"
+  resolved "https://registry.npmjs.org/envsafe/-/envsafe-2.0.3.tgz"
+  integrity sha512-51lek8h5btjXhXUDW//Pno7HPydM1WQzltOb1/ONRKdwB2QkfAURnN4Qn0cJ5LzGvX2Km1ReR2O3K3Bqq9sBMg==
+
 es-define-property@^1.0.1:
   version "1.0.1"
   resolved "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz"
@@ -1461,7 +1466,7 @@ raw-body@2.5.1:
     iconv-lite "0.4.24"
     unpipe "1.0.0"
 
-razorpay@^2.8.6:
+razorpay@^2.9.6:
   version "2.9.6"
   resolved "https://registry.npmjs.org/razorpay/-/razorpay-2.9.6.tgz"
   integrity sha512-zsHAQzd6e1Cc6BNoCNZQaf65ElL6O6yw0wulxmoG5VQDr363fZC90Mp1V5EktVzG45yPyNomNXWlf4cQ3622gQ==

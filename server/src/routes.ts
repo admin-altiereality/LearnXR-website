@@ -3,20 +3,30 @@ import multer from "multer";
 import skyboxRouter from "./routes/skybox";
 
 import {
-  getGenerators,
-  generateImagine,
-  getImagineById,
-  getImagineByObfuscatedId,
-  getImagineHistory,
-  cancelImagine,
-  cancelAllPedingImagines,
-  deleteImagine,
+    cancelAllPedingImagines,
+    cancelImagine,
+    deleteImagine,
+    generateImagine,
+    getGenerators,
+    getImagineById,
+    getImagineByObfuscatedId,
+    getImagineHistory,
 } from "@/controllers/imagine.controller";
+
+
+import {
+    createOrder,
+    verifyPayment
+} from "./controllers/payment.controller";
 
 const router = express.Router();
 
 // Mount skybox routes
 router.use("/skybox", skyboxRouter);
+
+// Payment routes
+router.post("/payment/create-order", createOrder);
+router.post("/payment/verify", verifyPayment);
 
 // Imagine routes
 router.get("/imagine/getGenerators", getGenerators);
