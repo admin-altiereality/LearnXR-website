@@ -1,13 +1,26 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { razorpayService } from '../services/razorpayService';
 import { subscriptionService } from '../services/subscriptionService';
 import { toast } from 'react-hot-toast';
 import { SUBSCRIPTION_PLANS } from '../services/subscriptionService';
+import { createPortal } from 'react-dom';
 
 const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) => {
   const { user } = useAuth();
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   const handlePlanSelect = async (planId) => {
     try {
@@ -16,14 +29,12 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
         return;
       }
 
-      // Show loading toast
       const loadingToast = toast.loading('Initializing payment...');
       
       try {
         await razorpayService.initializePayment(planId, user.email, user.uid);
         toast.dismiss(loadingToast);
         
-        // Fetch updated subscription after successful payment
         const updatedSubscription = await subscriptionService.getUserSubscription(user.uid);
         if (onSubscriptionUpdate) {
           onSubscriptionUpdate(updatedSubscription);
@@ -45,34 +56,55 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
     }
   };
 
-  return (
+  // Create portal to render modal at root level
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[9999] overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-              <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm" />
-            </div>
+        <div 
+          className="fixed inset-0 z-[99999]"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80"
+            onClick={onClose}
+          />
 
+          {/* Modal Container */}
+          <div className="fixed inset-0 flex items-center justify-center p-4">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative inline-block w-full max-w-4xl my-8 overflow-hidden text-left align-middle transition-all transform bg-gray-800/50 backdrop-blur-sm rounded-lg border border-gray-700/50 shadow-xl"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", duration: 0.5 }}
+              className="relative w-full max-w-4xl bg-gray-900/95 backdrop-blur-md rounded-2xl border border-gray-700/50 shadow-2xl"
+              style={{ zIndex: 100000 }}
             >
-              <div className="px-6 py-8">
-                {/* Close button */}
-                <button
-                  onClick={onClose}
-                  className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 
-                           border border-white/10 transition-all duration-200 group"
-                >
-                  <svg className="w-5 h-5 text-white/70 group-hover:text-white/90" 
-                       fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              {/* Close button */}
+              <button
+                onClick={onClose}
+                className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 
+                         border border-white/10 transition-all duration-200 group z-10"
+                style={{ zIndex: 100001 }}
+              >
+                <svg className="w-5 h-5 text-white/70 group-hover:text-white/90" 
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
 
+              <div className="px-6 py-8">
                 {/* Header */}
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-bold text-white mb-4">Choose Your Plan</h2>
@@ -84,7 +116,7 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
                   {SUBSCRIPTION_PLANS.map((plan) => (
                     <div
                       key={plan.id}
-                      className={`relative bg-gray-900/30 rounded-lg p-6 border transition-all duration-200 hover:transform hover:-translate-y-1 
+                      className={`relative bg-gray-800/50 rounded-lg p-6 border transition-all duration-200 hover:transform hover:-translate-y-1 
                         ${currentPlan === plan.id 
                           ? 'border-blue-500/50 bg-blue-900/10' 
                           : 'border-gray-700/50 hover:border-gray-600/50'}`}
@@ -160,7 +192,8 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
           </div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };
 

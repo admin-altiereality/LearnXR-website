@@ -10,6 +10,7 @@ export class RazorpayService {
   private static instance: RazorpayService;
   private razorpayKeyId: string;
   private baseUrl: string;
+  private scriptLoaded: boolean = false;
 
   private constructor() {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
@@ -19,6 +20,23 @@ export class RazorpayService {
     if (!this.razorpayKeyId) {
       console.error('Razorpay key ID not found in environment variables');
     }
+    this.loadRazorpayScript();
+  }
+
+  private loadRazorpayScript(): void {
+    if (this.scriptLoaded) return;
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => {
+      console.log('Razorpay script loaded successfully');
+      this.scriptLoaded = true;
+    };
+    script.onerror = (error) => {
+      console.error('Failed to load Razorpay script:', error);
+    };
+    document.body.appendChild(script);
   }
 
   public static getInstance(): RazorpayService {
@@ -26,6 +44,27 @@ export class RazorpayService {
       RazorpayService.instance = new RazorpayService();
     }
     return RazorpayService.instance;
+  }
+
+  private async waitForRazorpayScript(): Promise<void> {
+    if (this.scriptLoaded) return;
+
+    return new Promise((resolve, reject) => {
+      const maxAttempts = 50; // 5 seconds total
+      let attempts = 0;
+
+      const checkInterval = setInterval(() => {
+        attempts++;
+        if (window.Razorpay) {
+          clearInterval(checkInterval);
+          this.scriptLoaded = true;
+          resolve();
+        } else if (attempts >= maxAttempts) {
+          clearInterval(checkInterval);
+          reject(new Error('Razorpay script failed to load after 5 seconds'));
+        }
+      }, 100);
+    });
   }
 
   private async createOrder(planId: string): Promise<{ id: string; amount: number }> {
@@ -36,13 +75,17 @@ export class RazorpayService {
 
       console.log('Plan details:', { name: plan.name, price: plan.price });
 
+      // Convert price to paise (multiply by 100)
+      const amountInPaise = Math.round(plan.price * 100);
+      console.log('Amount in paise:', amountInPaise);
+
       const response = await fetch(`${this.baseUrl}/api/payment/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: plan.price * 100, // Convert to paise
+          amount: amountInPaise,
           currency: 'INR',
           planId
         })
@@ -56,7 +99,7 @@ export class RazorpayService {
 
       const order = await response.json();
       console.log('Order created successfully:', order);
-      return order;
+      return order.data;
     } catch (error) {
       console.error('Error creating order:', error);
       throw error;
@@ -67,8 +110,10 @@ export class RazorpayService {
     try {
       console.log('Initializing payment...', { planId, userEmail, userId });
       
+      // Wait for Razorpay script to load
+      await this.waitForRazorpayScript();
+      
       if (!window.Razorpay) {
-        console.error('Razorpay SDK not loaded');
         throw new Error('Razorpay SDK not loaded');
       }
 

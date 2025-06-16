@@ -33,31 +33,37 @@ router.use((req, res, next) => {
 
 // Create order endpoint
 router.post('/create-order', async (req, res) => {
-  console.log('Creating order with data:', req.body);
   try {
     const { amount, currency, planId } = req.body;
     
+    // Validate required fields
     if (!amount || !currency || !planId) {
-      console.log('Missing required fields:', { amount, currency, planId });
       return res.status(400).json({
         status: 'error',
         message: 'Amount, currency, and planId are required'
       });
     }
 
-    const options = {
-      amount: amount,
+    // Convert amount to paise and validate
+    const amountInPaise = parseInt(amount);
+    if (isNaN(amountInPaise) || amountInPaise <= 0) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid amount'
+      });
+    }
+
+    // Create Razorpay order
+    const order = await razorpay.orders.create({
+      amount: amountInPaise,
       currency: currency,
       receipt: `receipt_${Date.now()}`,
       notes: {
         planId: planId
       }
-    };
+    });
 
-    console.log('Creating Razorpay order with options:', options);
-    const order = await razorpay.orders.create(options);
-    console.log('Order created successfully:', order);
-    
+    // Return the order details
     res.json({
       status: 'success',
       data: order

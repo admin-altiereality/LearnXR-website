@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { db } from './config/firebase-admin';
-import { router } from './routes';
+import paymentRoutes from './routes/payment';
 
 // Load environment variables
 dotenv.config();
@@ -38,9 +38,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Mount routes
-console.log('Mounting main router at /api');
-app.use('/api', router);
+// Mount payment routes directly
+console.log('Mounting payment routes at /api/payment');
+app.use('/api/payment', paymentRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
