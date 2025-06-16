@@ -14,7 +14,7 @@ export class RazorpayService {
 
   private constructor() {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
-    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/in3devoneuralwebsite/us-central1/api';
     console.log('RazorpayService initialized with key ID:', this.razorpayKeyId ? 'Present' : 'Missing');
     console.log('Using API base URL:', this.baseUrl);
     if (!this.razorpayKeyId) {
