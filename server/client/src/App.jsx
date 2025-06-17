@@ -17,6 +17,7 @@ import Explore from './screens/Explore';
 import History from './screens/History';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
 import Profile from './screens/Profile';
+import Landing from './screens/Landing';
 
 const BackgroundSphere = ({ textureUrl }) => {
   const texture = useTexture(textureUrl);
@@ -151,8 +152,11 @@ function App() {
                   <Route path="/signup" element={<Signup />} />
                   <Route path="/forgot-password" element={<ForgotPassword />} />
                   
+                  {/* Landing page as default route */}
+                  <Route path="/" element={<Landing />} />
+
                   {/* Protected routes */}
-                  <Route path="/" element={
+                  <Route path="/main" element={
                     <ProtectedRoute>
                       <MainSection 
                         setBackgroundSkybox={setBackgroundSkybox}
@@ -164,6 +168,51 @@ function App() {
                     <ProtectedRoute>
                       <Explore 
                         setBackgroundSkybox={setBackgroundSkybox}
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/gallery" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="gallery"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/styles" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="styles"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/tutorials" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="tutorials"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/community" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="community"
+                        className="w-full"
+                      />
+                    </ProtectedRoute>
+                  } />
+                  <Route path="/explore/trending" element={
+                    <ProtectedRoute>
+                      <Explore 
+                        setBackgroundSkybox={setBackgroundSkybox}
+                        category="trending"
                         className="w-full"
                       />
                     </ProtectedRoute>

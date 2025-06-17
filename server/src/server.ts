@@ -1,57 +1,73 @@
-import { env } from "@/config/env";
-import cors from "cors";
-import express, { json } from "express";
-import { router } from "@/routes";
-import path from 'path';
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { db } from './config/firebase-admin';
+import paymentRoutes from './routes/payment';
 
-const server = express();
+// Load environment variables
+dotenv.config();
+console.log('Starting server...');
 
-server.use(json());
+// Log environment variables (without sensitive data)
+console.log('Environment variables loaded:', {
+  NODE_ENV: process.env.NODE_ENV,
+  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ? 'Present' : 'Missing',
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ? 'Present' : 'Missing'
+});
 
-// Get the absolute path to the build directory
-const buildPath = path.resolve(process.cwd(), 'client/dist');
+export { db };
 
-// Serve static files from the React app build directory
-server.use(express.static(buildPath, {
-  setHeaders: (res) => {
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-  }
+const app = express();
+
+// Middleware
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true
 }));
+app.use(express.json());
 
-const corsOptions = {
-  origin: [
-    'https://in3d.evoneural.ai',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    '${apiUrl}'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-};
+// Debug middleware
+app.use((req, res, next) => {
+  console.log('Incoming request:', {
+    method: req.method,
+    path: req.path,
+    originalUrl: req.originalUrl,
+    body: req.body,
+    headers: req.headers
+  });
+  next();
+});
 
-server.use(cors(corsOptions));
+// Mount payment routes directly
+console.log('Mounting payment routes at /api/payment');
+app.use('/api/payment', paymentRoutes);
 
-server.use("/api", router);
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
-// Handle React routing, return all requests to React app
-server.get('*', function(req, res) {
-  const indexPath = path.join(buildPath, 'index.html');
-  
-  // Log the path being accessed (helpful for debugging)
-  console.log('Attempting to serve:', indexPath);
-  
-  res.sendFile(indexPath, function(err) {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      res.status(500).send(err);
-    }
+// 404 handler
+app.use((req, res, next) => {
+  console.log('404 Not Found:', req.method, req.originalUrl);
+  res.status(404).json({
+    status: 'error',
+    message: `Cannot ${req.method} ${req.originalUrl}`
   });
 });
 
-server.listen(env.SERVER_PORT, async () => {
-  console.log(`Server is running at port ${env.SERVER_PORT}`);
-  console.log('Build path:', buildPath);
+// Error handling middleware
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Server error:', err);
+  res.status(500).json({
+    status: 'error',
+    message: err.message || 'Internal server error'
+  });
+});
+
+const PORT = process.env.PORT || 5002;
+
+app.listen(PORT, () => {
+  console.log(`Server is running at http://localhost:${PORT}`);
+  console.log(`Health check endpoint: http://localhost:${PORT}/health`);
 });

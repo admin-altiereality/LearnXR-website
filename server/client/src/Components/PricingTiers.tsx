@@ -1,38 +1,57 @@
+import React from 'react';
 import { SUBSCRIPTION_PLANS } from '../services/subscriptionService';
-import type { UserSubscription } from '../types/subscription';
+import { useAuth } from '../contexts/AuthContext';
+import { razorpayService } from '../services/razorpayService';
+import { toast } from 'react-hot-toast';
 
 interface PricingTiersProps {
-  currentSubscription: UserSubscription | null;
-  onSelectPlan: (planId: string) => void;
-  variant?: 'modal' | 'page';
+  currentSubscription?: {
+    planId: string;
+  };
 }
 
-export const PricingTiers = ({
-  currentSubscription,
-  onSelectPlan,
-  variant = 'modal'
-}: PricingTiersProps) => {
+export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription }) => {
+  const { user } = useAuth();
+
+  const handleSelectPlan = async (planId: string) => {
+    console.log('handleSelectPlan called with planId:', planId);
+    console.log('Current user:', user);
+
+    if (!user || !user.email) {
+      console.log('No user or email found');
+      toast.error('Please sign in to upgrade your plan');
+      return;
+    }
+
+    try {
+      console.log('Attempting to initialize payment...');
+      await razorpayService.initializePayment(planId, user.email, user.uid);
+      console.log('Payment initialization successful');
+      toast.success('Payment successful! Your plan will be updated shortly.');
+    } catch (error) {
+      console.error('Payment error details:', error);
+      if (error instanceof Error && error.message === 'Payment cancelled') {
+        toast.error('Payment was cancelled');
+      } else {
+        console.error('Payment error:', error);
+        toast.error('Failed to process payment. Please try again.');
+      }
+    }
+  };
+
   return (
-    <div className={`grid ${variant === 'modal' ? 'grid-cols-1 md:grid-cols-3 gap-6' : 'grid-cols-1 lg:grid-cols-3 gap-8'}`}>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
       {SUBSCRIPTION_PLANS.map((plan) => (
         <div
           key={plan.id}
           className={`
-            relative p-6 rounded-lg border transition-all duration-200
-            ${currentSubscription?.planId === plan.id
-              ? 'bg-blue-500/20 border-blue-500/50'
-              : 'bg-gray-800/50 border-gray-700/50 hover:border-gray-600/50'}
+            bg-gray-800/30 backdrop-blur-sm rounded-lg p-6 border 
+            ${currentSubscription?.planId === plan.id 
+              ? 'border-blue-500/50' 
+              : 'border-gray-700/50'
+            }
           `}
         >
-          {/* Current Plan Badge */}
-          {currentSubscription?.planId === plan.id && (
-            <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-              <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
-                Current Plan
-              </span>
-            </div>
-          )}
-
           <div className="text-center">
             <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
             <div className="text-3xl font-bold text-white mb-4">
@@ -40,12 +59,11 @@ export const PricingTiers = ({
               <span className="text-sm text-gray-400">/{plan.billingCycle}</span>
             </div>
 
-            {/* Generation Limit Display */}
             <div className="mb-6 text-sm text-gray-300">
               {plan.limits.skyboxGenerations === Infinity 
                 ? 'Unlimited generations'
                 : `${plan.limits.skyboxGenerations} generations per day`
-            }
+              }
             </div>
 
             <ul className="text-sm text-gray-300 space-y-2 mb-6">
@@ -70,13 +88,13 @@ export const PricingTiers = ({
             </ul>
 
             <button
-              onClick={() => onSelectPlan(plan.id)}
+              onClick={() => handleSelectPlan(plan.id)}
               disabled={currentSubscription?.planId === plan.id}
               className={`
                 w-full px-4 py-2 rounded-lg font-medium transition-all duration-200
                 ${currentSubscription?.planId === plan.id
                   ? 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
-                  : 'bg-blue-500/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30'}
+                  : 'bg-blue-500/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transform hover:-translate-y-0.5 active:translate-y-0'}
               `}
             >
               {currentSubscription?.planId === plan.id ? 'Current Plan' : 'Upgrade'}
