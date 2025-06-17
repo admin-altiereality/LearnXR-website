@@ -11,13 +11,15 @@
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.1",
+    "@react-three/fiber": "^9.1.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "envsafe": "^2.0.3",
     "express": "^4.18.2",
     "firebase": "^11.9.0",
     "firebase-admin": "^13.4.0",
-    "razorpay": "^2.9.6"
+    "razorpay": "^2.9.6",
+    "three": "^0.177.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
