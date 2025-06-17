@@ -1,0 +1,70 @@
+.variations-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 0 20px;
+}
+
+.variations-input label {
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.variations-input input {
+  width: 80px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+}
+
+.variations-input input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.variations-input input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prompt-input,
+.variations-input {
+  width: 100%;
+  margin-bottom: 15px;
+}
+
+.prompt-input textarea,
+.variations-input textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  resize: none;
+  transition: all 0.3s ease;
+}
+
+.prompt-input textarea:focus,
+.variations-input textarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+.prompt-input textarea:disabled,
+.variations-input textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prompt-input textarea::placeholder,
+.variations-input textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+} 

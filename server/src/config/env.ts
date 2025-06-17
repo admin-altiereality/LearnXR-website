@@ -1,5 +1,5 @@
 import * as dotenv from "dotenv";
-import { str, envsafe, port } from "envsafe";
+import { envsafe, port, str } from "envsafe";
 
 dotenv.config();
 
@@ -14,5 +14,11 @@ export const env = envsafe({
   }),
   API_KEY: str({
     desc: "BlockadeLabs API KEY",
+  }),
+  RAZORPAY_KEY_ID: str({
+    desc: "Razorpay Key ID",
+  }),
+  RAZORPAY_KEY_SECRET: str({
+    desc: "Razorpay Key Secret",
   }),
 });

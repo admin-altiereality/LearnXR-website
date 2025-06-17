@@ -6,6 +6,9 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { subscriptionService, SUBSCRIPTION_PLANS } from '../services/subscriptionService';
 import SubscriptionModal from '../Components/SubscriptionModal';
+import { razorpayService } from '../services/razorpayService';
+import { toast as hotToast } from 'react-hot-toast';
+import UpgradeModal from '../Components/UpgradeModal';
 
 const Profile = () => {
   const { user } = useAuth();
@@ -43,38 +46,10 @@ const Profile = () => {
   });
 
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  const handleUpgradeClick = async (planId) => {
-    try {
-      // Razorpay integration will go here
-      const options = {
-        key: process.env.RAZORPAY_KEY_ID,
-        amount: SUBSCRIPTION_PLANS.find(plan => plan.id === planId)?.price * 100,
-        currency: "INR",
-        name: "Skybox AI",
-        description: `Upgrade to ${planId.charAt(0).toUpperCase() + planId.slice(1)} Plan`,
-        handler: async (response) => {
-          console.log('Payment successful:', response);
-          toast.success('Subscription upgraded successfully');
-          // Refresh subscription data
-          const userSubscription = await subscriptionService.getUserSubscription(user.uid);
-          setSubscription(userSubscription);
-        },
-        prefill: {
-          email: user.email,
-          contact: profile?.phoneNumber
-        },
-        theme: {
-          color: "#3B82F6"
-        }
-      };
-      
-      console.log('Upgrading to plan:', planId);
-      // Razorpay initialization will go here
-    } catch (error) {
-      console.error('Error processing payment:', error);
-      toast.error('Failed to process payment. Please try again.');
-    }
+  const handleUpgradeClick = () => {
+    setShowUpgradeModal(true);
   };
 
   useEffect(() => {
@@ -220,7 +195,7 @@ const Profile = () => {
                     You've reached the free tier limit. Upgrade your plan to generate more skyboxes.
                   </p>
                   <button
-                    onClick={() => setShowSubscriptionModal(true)}
+                    onClick={handleUpgradeClick}
                     className="w-full px-4 py-2 bg-blue-500/20 hover:bg-blue-600/30 text-blue-300 rounded-lg transition-all duration-200 border border-blue-500/30"
                   >
                     Upgrade Plan
@@ -228,14 +203,14 @@ const Profile = () => {
                 </div>
               ) : subscription.planId === 'free' ? (
                 <button
-                  onClick={() => setShowSubscriptionModal(true)}
+                  onClick={handleUpgradeClick}
                   className="w-full px-4 py-2 bg-blue-500/20 hover:bg-blue-600/30 text-blue-300 rounded-lg transition-all duration-200 border border-blue-500/30"
                 >
                   Upgrade for Unlimited Generations
                 </button>
               ) : (
                 <button
-                  onClick={() => setShowSubscriptionModal(true)}
+                  onClick={handleUpgradeClick}
                   className="w-full px-4 py-2 bg-blue-500/20 hover:bg-blue-600/30 text-blue-300 rounded-lg transition-all duration-200 border border-blue-500/30"
                 >
                   Manage Subscription
@@ -438,6 +413,11 @@ const Profile = () => {
         onClose={() => setShowSubscriptionModal(false)}
         currentSubscription={subscription}
         onUpgrade={handleUpgradeClick}
+      />
+      <UpgradeModal 
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={subscription?.planId || 'free'}
       />
     </div>
   );

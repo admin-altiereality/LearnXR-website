@@ -9,6 +9,7 @@ const History = ({ setBackgroundSkybox }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedSkybox, setSelectedSkybox] = useState(null);
+  const [hoveredGroup, setHoveredGroup] = useState(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -33,15 +34,35 @@ const History = ({ setBackgroundSkybox }) => {
         try {
           const skyboxes = snapshot.docs.map(doc => {
             const data = doc.data();
-            return {
+            const baseSkybox = {
               id: doc.id,
               file_url: data.imageUrl,
               title: data.title || data.promptUsed || 'Untitled Generation',
               prompt: data.promptUsed,
               created_at: data.createdAt,
               status: data.status,
-              metadata: data.metadata
+              metadata: data.metadata,
+              isVariation: false
             };
+
+            // If there are variations, include them in the same object
+            if (data.variations && Array.isArray(data.variations)) {
+              baseSkybox.variations = data.variations.map((variation, index) => ({
+                id: `${doc.id}_variation_${index}`,
+                file_url: variation.image,
+                title: `${baseSkybox.title} (Variation ${index + 1})`,
+                prompt: variation.prompt || baseSkybox.prompt,
+                created_at: data.createdAt,
+                status: data.status,
+                metadata: data.metadata,
+                isVariation: true,
+                parentId: doc.id
+              }));
+            } else {
+              baseSkybox.variations = [];
+            }
+
+            return baseSkybox;
           });
 
           setHistory(skyboxes);
@@ -150,80 +171,175 @@ const History = ({ setBackgroundSkybox }) => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {history.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => handleSkyboxClick(item)}
-                className={`
-                  relative group bg-gray-900/20 backdrop-blur-sm rounded-lg overflow-hidden
-                  transform transition-all duration-300 hover:scale-[1.02] cursor-pointer
-                  border border-gray-700/20 hover:border-blue-500/30 active:scale-95
-                  ${selectedSkybox?.id === item.id ? 'ring-2 ring-blue-500/50' : ''}
-                `}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleSkyboxClick(item);
-                  }
-                }}
+              <div 
+                key={item.id} 
+                className="space-y-3"
+                onMouseEnter={() => setHoveredGroup(item.id)}
+                onMouseLeave={() => setHoveredGroup(null)}
               >
-                <div className="aspect-w-16 aspect-h-9 relative">
-                  {item.file_url ? (
-                    <img
-                      src={item.file_url}
-                      alt={formatTitle(item.title)}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gray-800/30 flex items-center justify-center">
-                      <span className="text-gray-400">No image available</span>
+                {/* Main Skybox */}
+                <div
+                  onClick={() => handleSkyboxClick(item)}
+                  className={`
+                    relative group bg-gray-900/20 backdrop-blur-sm rounded-lg overflow-hidden
+                    transform transition-all duration-300 hover:scale-[1.02] cursor-pointer
+                    border border-gray-700/20 hover:border-blue-500/30 active:scale-95
+                    ${selectedSkybox?.id === item.id ? 'ring-2 ring-blue-500/50' : ''}
+                  `}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSkyboxClick(item);
+                    }
+                  }}
+                >
+                  <div className="aspect-w-16 aspect-h-9 relative">
+                    {item.file_url ? (
+                      <img
+                        src={item.file_url}
+                        alt={formatTitle(item.title)}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gray-800/30 flex items-center justify-center">
+                        <span className="text-gray-400">No image available</span>
+                      </div>
+                    )}
+                    
+                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 via-gray-900/20 to-transparent 
+                                  opacity-0 group-hover:opacity-100 transition-opacity duration-300 
+                                  flex items-center justify-center">
+                      <button className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-white 
+                                       rounded-lg transform translate-y-2 group-hover:translate-y-0 
+                                       transition-transform duration-300 backdrop-blur-md 
+                                       border border-blue-500/30">
+                        Apply Skybox
+                      </button>
                     </div>
-                  )}
-                  
-                  <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 via-gray-900/20 to-transparent 
-                                opacity-0 group-hover:opacity-100 transition-opacity duration-300 
-                                flex items-center justify-center">
-                    <button className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-white 
-                                     rounded-lg transform translate-y-2 group-hover:translate-y-0 
-                                     transition-transform duration-300 backdrop-blur-md 
-                                     border border-blue-500/30">
-                      Apply Skybox
-                    </button>
+                  </div>
+
+                  <div className="p-4 bg-gray-900/10 backdrop-blur-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <h2 className="text-white/90 text-lg font-medium line-clamp-1">
+                        {formatTitle(item.title)}
+                      </h2>
+                      {item.variations.length > 0 && (
+                        <span className="text-xs text-purple-300 bg-purple-500/10 px-2 py-1 rounded-full border border-purple-500/20">
+                          {item.variations.length} {item.variations.length === 1 ? 'Variation' : 'Variations'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-300/90 text-sm line-clamp-2 mb-3">
+                      {item.prompt || 'No prompt available'}
+                    </p>
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400/90 text-xs">
+                        {formatDate(item.created_at)}
+                      </span>
+                      <span className={`
+                        px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm
+                        ${item.status === 'complete' 
+                          ? 'bg-green-500/10 text-green-300 border border-green-500/20' 
+                          : item.status === 'pending' 
+                          ? 'bg-yellow-500/10 text-yellow-300 border border-yellow-500/20' 
+                          : 'bg-red-500/10 text-red-300 border border-red-500/20'}
+                      `}>
+                        {item.status}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="p-4 bg-gray-900/10 backdrop-blur-sm">
-                  <h2 className="text-white/90 text-lg font-medium mb-2 line-clamp-1">
-                    {formatTitle(item.title)}
-                  </h2>
-                  <p className="text-gray-300/90 text-sm line-clamp-2 mb-3">
-                    {item.prompt || 'No prompt available'}
-                  </p>
-                  
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400/90 text-xs">
-                      {formatDate(item.created_at)}
-                    </span>
-                    <span className={`
-                      px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm
-                      ${item.status === 'complete' 
-                        ? 'bg-green-500/10 text-green-300 border border-green-500/20' 
-                        : item.status === 'pending' 
-                        ? 'bg-yellow-500/10 text-yellow-300 border border-yellow-500/20' 
-                        : 'bg-red-500/10 text-red-300 border border-red-500/20'}
-                    `}>
-                      {item.status}
-                    </span>
-                  </div>
-                </div>
+                {/* Variations */}
+                {item.variations.length > 0 && (
+                  <div className="relative group">
+                    <div className="flex items-center mb-2">
+                      <div className="h-px flex-1 bg-gradient-to-r from-purple-500/20 to-transparent"></div>
+                      <span className="px-3 text-xs text-purple-300">Variations</span>
+                      <div className="h-px flex-1 bg-gradient-to-l from-purple-500/20 to-transparent"></div>
+                    </div>
+                    
+                    <div className="relative">
+                      <div className="flex space-x-3 overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-purple-500/20 scrollbar-track-transparent">
+                        {item.variations.map((variation) => (
+                          <div
+                            key={variation.id}
+                            onClick={() => handleSkyboxClick(variation)}
+                            className={`
+                              flex-none w-48 relative group/variation bg-gray-900/20 backdrop-blur-sm rounded-lg overflow-hidden
+                              transform transition-all duration-300 hover:scale-[1.02] cursor-pointer
+                              border border-gray-700/20 hover:border-purple-500/30 active:scale-95
+                              ${selectedSkybox?.id === variation.id ? 'ring-2 ring-purple-500/50' : ''}
+                            `}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleSkyboxClick(variation);
+                              }
+                            }}
+                          >
+                            <div className="aspect-w-16 aspect-h-9 relative">
+                              {variation.file_url ? (
+                                <img
+                                  src={variation.file_url}
+                                  alt={formatTitle(variation.title)}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gray-800/30 flex items-center justify-center">
+                                  <span className="text-gray-400">No image available</span>
+                                </div>
+                              )}
+                              
+                              <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 via-gray-900/20 to-transparent 
+                                            opacity-0 group-hover/variation:opacity-100 transition-opacity duration-300 
+                                            flex items-center justify-center">
+                                <button className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-white 
+                                                 rounded-lg transform translate-y-2 group-hover/variation:translate-y-0 
+                                                 transition-transform duration-300 backdrop-blur-md 
+                                                 border border-purple-500/30 text-sm">
+                                  Apply
+                                </button>
+                              </div>
+                            </div>
 
-                <div className={`
-                  absolute inset-0 bg-blue-500/10 pointer-events-none
-                  transition-opacity duration-200
-                  ${selectedSkybox?.id === item.id ? 'opacity-100' : 'opacity-0'}
-                `} />
+                            <div className="p-2 bg-gray-900/10 backdrop-blur-sm">
+                              <h3 className="text-white/90 text-sm font-medium line-clamp-1 mb-1">
+                                {formatTitle(variation.title)}
+                              </h3>
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-400/90 text-xs">
+                                  {formatDate(variation.created_at)}
+                                </span>
+                                <span className={`
+                                  px-1.5 py-0.5 rounded-full text-xs font-medium backdrop-blur-sm
+                                  ${variation.status === 'complete' 
+                                    ? 'bg-green-500/10 text-green-300 border border-green-500/20' 
+                                    : variation.status === 'pending' 
+                                    ? 'bg-yellow-500/10 text-yellow-300 border border-yellow-500/20' 
+                                    : 'bg-red-500/10 text-red-300 border border-red-500/20'}
+                                `}>
+                                  {variation.status}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Gradient fade indicators */}
+                      <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-gray-900 to-transparent pointer-events-none"></div>
+                      <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-gray-900 to-transparent pointer-events-none"></div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

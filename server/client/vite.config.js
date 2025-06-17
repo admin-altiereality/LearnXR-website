@@ -18,7 +18,11 @@ export default defineConfig(({ mode }) => {
       host: true,
       cors: true,
       proxy: {
-        '/api': '${apiUrl}',
+        '/api': {
+          target: 'http://localhost:5002',
+          changeOrigin: true,
+          secure: false,
+        }
       },
       hmr: {
         overlay: true,

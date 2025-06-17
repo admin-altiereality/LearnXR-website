@@ -1,31 +1,36 @@
 import * as express from "express";
 import multer from "multer";
+import skyboxRouter from "./routes/skybox";
 
 import {
-  getSkyboxStyles,
-  generateSkybox,
-} from "@/controllers/skybox.controller";
-import {
-  getGenerators,
-  generateImagine,
-  getImagineById,
-  getImagineByObfuscatedId,
-  getImagineHistory,
-  cancelImagine,
-  cancelAllPedingImagines,
-  deleteImagine,
+    cancelAllPedingImagines,
+    cancelImagine,
+    deleteImagine,
+    generateImagine,
+    getGenerators,
+    getImagineById,
+    getImagineByObfuscatedId,
+    getImagineHistory,
 } from "@/controllers/imagine.controller";
+
+
+import {
+    createOrder,
+    verifyPayment
+} from "./controllers/payment.controller";
 
 const router = express.Router();
 
-router.get("/skybox/getSkyboxStyles", getSkyboxStyles);
-router.post("/skybox/generateSkybox", generateSkybox);
+// Mount skybox routes
+router.use("/skybox", skyboxRouter);
 
+// Payment routes
+router.post("/payment/create-order", createOrder);
+router.post("/payment/verify", verifyPayment);
+
+// Imagine routes
 router.get("/imagine/getGenerators", getGenerators);
-
-// Using multer here to proccess multipart files
 router.post("/imagine/generateImagine", multer().any(), generateImagine);
-
 router.get("/imagine/getImagineById", getImagineById);
 router.get("/imagine/getImagineByObfuscatedId", getImagineByObfuscatedId);
 router.get("/imagine/getImagineHistory", getImagineHistory);

@@ -120,7 +120,7 @@ export const deleteImagine = async (req: Request, res: Response) => {
 
 export const getGenerators = async (_req: Request, res: Response) => {
   try {
-    const generators = await sdk.getGenerators();
+    const generators = await sdk.getSkyboxStyles();
     return res.status(200).json(generators);
   } catch (err) {
     if (err && typeof err === "object" && "message" in err)
@@ -136,13 +136,11 @@ export const generateImagine = async (req: Request, res: Response) => {
   try {
     const { prompt, style_id, options, webhook_url } = req.body;
 
-    const generation = await sdk.generateImagine({
-      generator: style_id,
-      generator_data: {
-        prompt,
-        options,
-        webhook_url,
-      },
+    const generation = await sdk.generateSkybox({
+      prompt,
+      skybox_style_id: style_id,
+      webhook_url,
+      ...options
     });
 
     return res.status(200).json(generation);
