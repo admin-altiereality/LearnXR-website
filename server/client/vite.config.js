@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
-      sourcemap: true,
+      sourcemap: false, // Disable sourcemaps for production
       // Optimize chunks
       rollupOptions: {
         output: {
@@ -41,10 +41,6 @@ export default defineConfig(({ mode }) => {
             vendor: ['react', 'react-dom', 'react-router-dom'],
             three: ['three', '@react-three/fiber', '@react-three/drei'],
           },
-          external: ['react-toastify'],
-          globals: {
-            'react-toastify': 'ReactToastify'
-          }
         },
       },
       // Optimize chunk size warnings
@@ -71,7 +67,7 @@ export default defineConfig(({ mode }) => {
       modules: {
         localsConvention: 'camelCase',
       },
-      postcss: './postcss.config.js', // Reference the PostCSS config file instead of inline configuration
+      postcss: './postcss.config.js',
     },
 
     // Preview configuration
