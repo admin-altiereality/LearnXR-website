@@ -8,7 +8,6 @@ import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
-import { PublicRoute } from './Components/auth/PublicRoute';
 import { Signup } from './Components/auth/Signup';
 import Footer from './Components/Footer';
 import Header from './Components/Header';
@@ -157,22 +156,10 @@ function App() {
               <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
                 <div className="">
                   <Routes>
-                    {/* Public routes - redirect authenticated users to /main */}
-                    <Route path="/login" element={
-                      <PublicRoute>
-                        <Login />
-                      </PublicRoute>
-                    } />
-                    <Route path="/signup" element={
-                      <PublicRoute>
-                        <Signup />
-                      </PublicRoute>
-                    } />
-                    <Route path="/forgot-password" element={
-                      <PublicRoute>
-                        <ForgotPassword />
-                      </PublicRoute>
-                    } />
+                    {/* Public routes - accessible to all users */}
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/signup" element={<Signup />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
                     
                     {/* Landing page - accessible to all users */}
                     <Route path="/" element={<Landing />} />
@@ -332,22 +319,10 @@ function App() {
             <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
               <div className="">
                 <Routes>
-                  {/* Public routes - redirect authenticated users to /main */}
-                  <Route path="/login" element={
-                    <PublicRoute>
-                      <Login />
-                    </PublicRoute>
-                  } />
-                  <Route path="/signup" element={
-                    <PublicRoute>
-                      <Signup />
-                    </PublicRoute>
-                  } />
-                  <Route path="/forgot-password" element={
-                    <PublicRoute>
-                      <ForgotPassword />
-                    </PublicRoute>
-                  } />
+                  {/* Public routes - accessible to all users */}
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/signup" element={<Signup />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
                   
                   {/* Landing page - accessible to all users */}
                   <Route path="/" element={<Landing />} />
