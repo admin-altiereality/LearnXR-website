@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
     
     // Development server configuration
     server: {
-      port: 5173,
+      port: 3000,
       host: true,
       cors: true,
       proxy: {
@@ -33,12 +33,13 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
-      sourcemap: false,
+      sourcemap: true,
       // Optimize chunks
       rollupOptions: {
         output: {
           manualChunks: {
             vendor: ['react', 'react-dom', 'react-router-dom'],
+            three: ['three', '@react-three/fiber', '@react-three/drei'],
           },
           external: ['react-toastify'],
           globals: {
