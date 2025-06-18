@@ -39,4 +39,10 @@ exports.env = (0, envsafe_1.envsafe)({
     API_KEY: (0, envsafe_1.str)({
         desc: "BlockadeLabs API KEY",
     }),
+    RAZORPAY_KEY_ID: (0, envsafe_1.str)({
+        desc: "Razorpay Key ID",
+    }),
+    RAZORPAY_KEY_SECRET: (0, envsafe_1.str)({
+        desc: "Razorpay Key Secret",
+    }),
 });
