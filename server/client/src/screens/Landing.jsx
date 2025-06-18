@@ -1,9 +1,9 @@
-import React, { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import CompanyScene3D from '../components/CompanyScene3D';
-import Navbar from '../components/Navbar';
 import { motion } from 'framer-motion';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import CompanyScene3D from '../Components/CompanyScene3D';
+import Navbar from '../Components/Navbar';
+import { useAuth } from '../contexts/AuthContext';
 
 const Landing = () => {
   const navigate = useNavigate();
