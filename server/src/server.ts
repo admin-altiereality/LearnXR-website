@@ -1,12 +1,13 @@
-import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { db } from './config/firebase-admin';
+import express from 'express';
+import path from 'path';
+import { router as apiRouter } from './routes';
 import paymentRoutes from './routes/payment';
 
 // Load environment variables
 dotenv.config();
-console.log('Starting server...');
+console.log('Starting app...');
 
 // Log environment variables (without sensitive data)
 console.log('Environment variables loaded:', {
@@ -15,10 +16,12 @@ console.log('Environment variables loaded:', {
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ? 'Present' : 'Missing'
 });
 
-export { db };
-
 const app = express();
-
+const buildPath = path.resolve(process.cwd(), 'client/dist');
+app.use(express.static(buildPath));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(buildPath, 'index.html'));
+});
 // Middleware
 app.use(cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
@@ -42,6 +45,10 @@ app.use((req, res, next) => {
 console.log('Mounting payment routes at /api/payment');
 app.use('/api/payment', paymentRoutes);
 
+// Mount API routes
+console.log('Mounting API routes at /api');
+app.use('/api', apiRouter);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -58,16 +65,54 @@ app.use((req, res, next) => {
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Server error:', err);
+  console.error('app error:', err);
   res.status(500).json({
     status: 'error',
-    message: err.message || 'Internal server error'
+    message: err.message || 'Internal app error'
   });
 });
 
 const PORT = process.env.PORT || 5002;
 
 app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+  console.log(`app is running at http://localhost:${PORT}`);
   console.log(`Health check endpoint: http://localhost:${PORT}/health`);
 });
+
+app.use(express.static(buildPath, {
+  setHeaders: (res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+  }
+}));
+
+const corsOptions = {
+  origin: [
+    'https://in3d.evoneural.ai',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    '${apiUrl}'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
+app.use(cors(corsOptions));
+
+// Handle React routing, return all requests to React app
+app.get('*', function(req, res) {
+  const indexPath = path.join(buildPath, 'index.html');
+  
+  // Log the path being accessed (helpful for debugging)
+  console.log('Attempting to serve:', indexPath);
+  
+  res.sendFile(indexPath, function(err) {
+    if (err) {
+      console.error('Error serving index.html:', err);
+      res.status(500).send(err);
+    }
+  });
+});
+
