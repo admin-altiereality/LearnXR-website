@@ -1,10 +1,11 @@
 [build]
-  command = "npm run build"
+  command = "npm install && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
+  NPM_FLAGS = "--legacy-peer-deps"
 
 [[redirects]]
   from = "/*"
@@ -12,4 +13,5 @@
   status = 200
 
 [functions]
-  node_bundler = "esbuild" 
+  node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin"] 
