@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
+import { PublicRoute } from './Components/auth/PublicRoute';
 import { Signup } from './Components/auth/Signup';
 import Footer from './Components/Footer';
 import Header from './Components/Header';
@@ -18,7 +19,6 @@ import History from './screens/History';
 import Landing from './screens/Landing';
 import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
-
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
   const [error, setError] = useState(false);
@@ -157,15 +157,27 @@ function App() {
               <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
                 <div className="">
                   <Routes>
-                    {/* Public routes */}
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/signup" element={<Signup />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    {/* Public routes - redirect authenticated users to /main */}
+                    <Route path="/login" element={
+                      <PublicRoute>
+                        <Login />
+                      </PublicRoute>
+                    } />
+                    <Route path="/signup" element={
+                      <PublicRoute>
+                        <Signup />
+                      </PublicRoute>
+                    } />
+                    <Route path="/forgot-password" element={
+                      <PublicRoute>
+                        <ForgotPassword />
+                      </PublicRoute>
+                    } />
                     
-                    {/* Landing page as default route */}
+                    {/* Landing page - accessible to all users */}
                     <Route path="/" element={<Landing />} />
 
-                    {/* Protected routes */}
+                    {/* Protected routes - require authentication */}
                     <Route path="/main" element={
                       <ProtectedRoute>
                         <MainSection 
@@ -320,15 +332,27 @@ function App() {
             <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
               <div className="">
                 <Routes>
-                  {/* Public routes */}
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/signup" element={<Signup />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  {/* Public routes - redirect authenticated users to /main */}
+                  <Route path="/login" element={
+                    <PublicRoute>
+                      <Login />
+                    </PublicRoute>
+                  } />
+                  <Route path="/signup" element={
+                    <PublicRoute>
+                      <Signup />
+                    </PublicRoute>
+                  } />
+                  <Route path="/forgot-password" element={
+                    <PublicRoute>
+                      <ForgotPassword />
+                    </PublicRoute>
+                  } />
                   
-                  {/* Landing page as default route */}
+                  {/* Landing page - accessible to all users */}
                   <Route path="/" element={<Landing />} />
 
-                  {/* Protected routes */}
+                  {/* Protected routes - require authentication */}
                   <Route path="/main" element={
                     <ProtectedRoute>
                       <MainSection 

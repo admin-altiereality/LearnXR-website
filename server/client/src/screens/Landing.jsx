@@ -132,7 +132,7 @@ const Landing = () => {
               onClick={handleAction}
               className="group relative px-12 py-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-full text-xl font-semibold overflow-hidden"
             >
-              <span className="relative z-10">Try Now</span>
+              <span className="relative z-10">Get Started</span>
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-blue-600"
                 initial={{ x: "-100%" }}
