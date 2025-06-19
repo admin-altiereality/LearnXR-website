@@ -1,4 +1,4 @@
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, isSupported } from "firebase/analytics";
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -15,7 +15,36 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const analytics = getAnalytics(app);
+
+// Initialize analytics only if supported and in browser environment
+let analytics = null;
+
+// Function to safely initialize analytics
+export const initializeAnalytics = async () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  
+  try {
+    const isAnalyticsSupported = await isSupported();
+    if (isAnalyticsSupported) {
+      analytics = getAnalytics(app);
+      return analytics;
+    }
+  } catch (error) {
+    console.warn('Analytics initialization failed:', error);
+  }
+  return null;
+};
+
+// Initialize analytics on module load
+if (typeof window !== 'undefined') {
+  initializeAnalytics().catch(err => {
+    console.warn('Analytics initialization failed:', err);
+  });
+}
+
+export { analytics };
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app); 
