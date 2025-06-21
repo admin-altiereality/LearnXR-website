@@ -1,4 +1,4 @@
-import { Box, Environment, Float, OrbitControls, Sphere, Text3D } from '@react-three/drei';
+import { Box, Environment, Float, OrbitControls, Sphere } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { gsap } from 'gsap';
@@ -13,12 +13,53 @@ import { useAuth } from '../contexts/AuthContext';
 // Register GSAP plugins
 gsap.registerPlugin(ScrollTrigger);
 
+// Simple error boundary component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('R3F Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full text-white">
+          <div className="text-center">
+            <div className="text-2xl mb-2">⚠️</div>
+            <div className="text-sm">3D Scene Unavailable</div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Loading component for Suspense
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center h-full text-white">
+    <div className="text-center">
+      <div className="text-2xl mb-2">⏳</div>
+      <div className="text-sm">Loading 3D Scene...</div>
+    </div>
+  </div>
+);
+
 // Animated Background Component
 const AnimatedBackground = () => {
   const meshRef = useRef();
   const { viewport } = useThree();
 
   useFrame((state) => {
+    if (!meshRef.current) return;
     const time = state.clock.getElapsedTime();
     meshRef.current.rotation.x = Math.sin(time * 0.5) * 0.1;
     meshRef.current.rotation.y = Math.sin(time * 0.3) * 0.1;
@@ -84,6 +125,7 @@ const MorphingAvatar = () => {
   const styles = ['animation', 'gaming', 'comics', 'vfx'];
 
   useFrame((state) => {
+    if (!avatarRef.current) return;
     const time = state.clock.getElapsedTime();
     avatarRef.current.rotation.y = Math.sin(time * 0.5) * 0.3;
     
@@ -117,6 +159,7 @@ const TechStackFlow = () => {
   const groupRef = useRef();
   
   useFrame((state) => {
+    if (!groupRef.current) return;
     const time = state.clock.getElapsedTime();
     groupRef.current.rotation.y = Math.sin(time * 0.2) * 0.1;
   });
@@ -157,14 +200,29 @@ const TechStackFlow = () => {
 };
 
 // Industry Panel Component
-const IndustryPanel = ({ icon: Icon, title, description, color }) => {
-  const meshRef = useRef();
-  
+function RotatingBox({ color }) {
+  const meshRef = React.useRef();
   useFrame((state) => {
+    if (!meshRef.current) return;
     const time = state.clock.getElapsedTime();
     meshRef.current.rotation.y = Math.sin(time * 0.3) * 0.2;
   });
+  return (
+    <group ref={meshRef}>
+      <Box args={[2, 2, 2]}>
+        <meshStandardMaterial
+          color={color}
+          transparent
+          opacity={0.7}
+          metalness={0.8}
+          roughness={0.2}
+        />
+      </Box>
+    </group>
+  );
+}
 
+const IndustryPanel = ({ icon: Icon, title, description, color }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 50 }}
@@ -184,23 +242,12 @@ const IndustryPanel = ({ icon: Icon, title, description, color }) => {
           <h3 className="text-2xl font-bold text-white">{title}</h3>
         </div>
         <p className="text-gray-300 leading-relaxed">{description}</p>
-        
         {/* 3D Scene Preview */}
         <div className="mt-6 h-48 rounded-xl overflow-hidden">
           <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} />
-            <group ref={meshRef}>
-              <Box args={[2, 2, 2]}>
-                <meshStandardMaterial
-                  color={color}
-                  transparent
-                  opacity={0.7}
-                  metalness={0.8}
-                  roughness={0.2}
-                />
-              </Box>
-            </group>
+            <RotatingBox color={color} />
             <OrbitControls enableZoom={false} enablePan={false} />
           </Canvas>
         </div>
@@ -331,7 +378,11 @@ const Landing = () => {
           <ambientLight intensity={0.3} />
           <pointLight position={[10, 10, 10]} intensity={1} />
           <pointLight position={[-10, -10, -10]} intensity={0.5} />
-          <AnimatedBackground />
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingFallback />}>
+              <AnimatedBackground />
+            </Suspense>
+          </ErrorBoundary>
           <Environment preset="night" />
         </Canvas>
       </div>
@@ -358,9 +409,11 @@ const Landing = () => {
             <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
               <ambientLight intensity={0.5} />
               <pointLight position={[10, 10, 10]} />
-              <Suspense fallback={null}>
-                <MorphingAvatar />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<LoadingFallback />}>
+                  <MorphingAvatar />
+                </Suspense>
+              </ErrorBoundary>
               <OrbitControls enableZoom={false} enablePan={false} />
             </Canvas>
           </div>
@@ -524,9 +577,11 @@ const Landing = () => {
               <Canvas camera={{ position: [0, 0, 15], fov: 50 }}>
                 <ambientLight intensity={0.5} />
                 <pointLight position={[10, 10, 10]} />
-                <Suspense fallback={null}>
-                  <TechStackFlow />
-                </Suspense>
+                <ErrorBoundary>
+                  <Suspense fallback={<LoadingFallback />}>
+                    <TechStackFlow />
+                  </Suspense>
+                </ErrorBoundary>
                 <OrbitControls enableZoom={false} enablePan={false} />
               </Canvas>
             </div>

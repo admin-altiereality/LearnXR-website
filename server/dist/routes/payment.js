@@ -26,21 +26,29 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const razorpay_1 = __importDefault(require("razorpay"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const crypto_1 = __importDefault(require("crypto"));
-const firebase_admin_1 = require("../config/firebase-admin");
+const dotenv_1 = __importDefault(require("dotenv"));
+const express_1 = __importDefault(require("express"));
 const admin = __importStar(require("firebase-admin"));
+const razorpay_1 = __importDefault(require("razorpay"));
+const firebase_admin_1 = require("../config/firebase-admin");
 dotenv_1.default.config();
 const router = express_1.default.Router();
 console.log('Payment routes being initialized...');
-// Initialize Razorpay
-const razorpay = new razorpay_1.default({
-    key_id: process.env.RAZORPAY_KEY_ID || '',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || ''
-});
-console.log('Razorpay initialized with key_id:', process.env.RAZORPAY_KEY_ID ? 'Present' : 'Missing');
+// Check if Razorpay credentials are available
+const hasRazorpayCredentials = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
+// Initialize Razorpay only if credentials are available
+let razorpay = null;
+if (hasRazorpayCredentials) {
+    razorpay = new razorpay_1.default({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+    console.log('Razorpay initialized with key_id: Present');
+}
+else {
+    console.log('Razorpay not initialized - missing credentials');
+}
 // Debug middleware for payment routes
 router.use((req, res, next) => {
     console.log('Payment route received request:', {
@@ -55,6 +63,13 @@ router.use((req, res, next) => {
 // Create order endpoint
 router.post('/create-order', async (req, res) => {
     try {
+        // Check if Razorpay is configured
+        if (!hasRazorpayCredentials || !razorpay) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Payment service is not configured. Please contact support.'
+            });
+        }
         const { amount, currency, planId } = req.body;
         // Validate required fields
         if (!amount || !currency || !planId) {
@@ -97,6 +112,13 @@ router.post('/create-order', async (req, res) => {
 // Verify payment endpoint
 router.post('/verify-payment', async (req, res) => {
     try {
+        // Check if Razorpay is configured
+        if (!hasRazorpayCredentials) {
+            return res.status(503).json({
+                status: 'error',
+                message: 'Payment service is not configured. Please contact support.'
+            });
+        }
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId, planId } = req.body;
         if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
             return res.status(400).json({
@@ -106,7 +128,7 @@ router.post('/verify-payment', async (req, res) => {
         }
         // Verify signature
         const generated_signature = crypto_1.default
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
+            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
             .update(razorpay_order_id + '|' + razorpay_payment_id)
             .digest('hex');
         if (generated_signature === razorpay_signature) {

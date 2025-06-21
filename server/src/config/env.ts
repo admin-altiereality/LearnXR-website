@@ -17,8 +17,12 @@ export const env = envsafe({
   }),
   RAZORPAY_KEY_ID: str({
     desc: "Razorpay Key ID",
+    allowEmpty: true,
+    default: "",
   }),
   RAZORPAY_KEY_SECRET: str({
     desc: "Razorpay Key Secret",
+    allowEmpty: true,
+    default: "",
   }),
 });

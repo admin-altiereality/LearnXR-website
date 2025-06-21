@@ -1,7 +1,7 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import React, { useEffect, useRef, useState } from "react";
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as THREE from "three";
@@ -18,6 +18,7 @@ import History from './screens/History';
 import Landing from './screens/Landing';
 import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
+
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
   const [error, setError] = useState(false);
@@ -146,21 +147,236 @@ const BackgroundSphere = ({ textureUrl }) => {
   );
 };
 
+// Component to conditionally render Canvas based on route
+const ConditionalCanvas = ({ children }) => {
+  const location = useLocation();
+  const isLandingPage = location.pathname === '/';
+  
+  // Don't render global Canvas on Landing page since it has its own Canvas components
+  if (isLandingPage) {
+    return children;
+  }
+  
+  return (
+    <div className="relative w-full min-h-screen bg-black">
+      {/* Three.js Background */}
+      <div className="fixed inset-0 w-full h-full">
+        <Canvas 
+          camera={{ position: [0, 0, 0.1], fov: 75 }}
+          onError={(error) => {
+            console.error('Three.js Canvas error:', error);
+          }}
+          onCreated={({ gl }) => {
+            gl.setClearColor('#000000');
+          }}
+        >
+          <BackgroundSphere 
+            textureUrl="https://images.blockadelabs.com/images/imagine/Digital_Painting_equirectangular-jpg_A_futuristic_cityscape_at_932592572_12806524.jpg?ver=1" 
+          />
+          <OrbitControls 
+            enableZoom={false} 
+            enablePan={false} 
+            autoRotate 
+            autoRotateSpeed={0.5} 
+          />
+        </Canvas>
+      </div>
+      {children}
+    </div>
+  );
+};
+
+function checkRequiredEnvVars() {
+  const required = [
+    'VITE_RAZORPAY_KEY_ID',
+    'VITE_API_URL',
+    'VITE_FIREBASE_API_KEY',
+    'VITE_FIREBASE_AUTH_DOMAIN',
+    'VITE_FIREBASE_PROJECT_ID',
+    'VITE_FIREBASE_STORAGE_BUCKET',
+    'VITE_FIREBASE_MESSAGING_SENDER_ID',
+    'VITE_FIREBASE_APP_ID',
+    'VITE_FIREBASE_MEASUREMENT_ID'
+  ];
+  const missing = required.filter((key) => !import.meta.env[key]);
+  return missing;
+}
+
 function App() {
-  const [backgroundSkybox, setBackgroundSkybox] = useState("");
-  const [key, setKey] = useState(0);
-  const [threeJsError, setThreeJsError] = useState(false);
+  try {
+    const missingEnv = checkRequiredEnvVars();
+    if (missingEnv.length > 0) {
+      return (
+        <div style={{ color: 'red', padding: 40, fontFamily: 'monospace' }}>
+          <h2>Missing Environment Variables</h2>
+          <p>The following environment variables are missing:</p>
+          <ul>
+            {missingEnv.map((key) => <li key={key}>{key}</li>)}
+          </ul>
+          <p>Please check your <code>.env</code> file and rebuild the client.</p>
+        </div>
+      );
+    }
+    const [backgroundSkybox, setBackgroundSkybox] = useState("");
+    const [key, setKey] = useState(0);
+    const [threeJsError, setThreeJsError] = useState(false);
 
-  useEffect(() => {
-    setKey(prev => prev + 1);
-  }, [backgroundSkybox]);
+    useEffect(() => {
+      setKey(prev => prev + 1);
+    }, [backgroundSkybox]);
 
-  // Fallback background if Three.js fails
-  if (threeJsError) {
+    // Fallback background if Three.js fails
+    if (threeJsError) {
+      return (
+        <AuthProvider>
+          <Router>
+            <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
+              {/* Main Content Layer */}
+              <div className="relative flex flex-col min-h-screen">
+                {/* Header - fixed height */}
+                <div className="sticky top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
+                  <Header />
+                </div>
+
+                {/* Main content - scrollable */}
+                <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
+                  <div className="">
+                    <Routes>
+                      {/* Public routes - accessible to all users */}
+                      <Route path="/login" element={<Login />} />
+                      <Route path="/signup" element={<Signup />} />
+                      <Route path="/forgot-password" element={<ForgotPassword />} />
+                      
+                      {/* Landing page - accessible to all users */}
+                      <Route path="/" element={<Landing />} />
+
+                      {/* Protected routes - require authentication */}
+                      <Route path="/main" element={
+                        <ProtectedRoute>
+                          <MainSection 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            className="w-full px-6"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/explore" element={
+                        <ProtectedRoute>
+                          <Explore 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/explore/gallery" element={
+                        <ProtectedRoute>
+                          <Explore 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            category="gallery"
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/explore/styles" element={
+                        <ProtectedRoute>
+                          <Explore 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            category="styles"
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/explore/tutorials" element={
+                        <ProtectedRoute>
+                          <Explore 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            category="tutorials"
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/explore/community" element={
+                        <ProtectedRoute>
+                          <Explore 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            category="community"
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/explore/trending" element={
+                        <ProtectedRoute>
+                          <Explore 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            category="trending"
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/skybox/:id" element={
+                        <ProtectedRoute>
+                          <SkyboxFullScreen 
+                            className="w-full h-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/history" element={
+                        <ProtectedRoute>
+                          <History 
+                            setBackgroundSkybox={setBackgroundSkybox}
+                            className="w-full"
+                          />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/profile" element={
+                        <ProtectedRoute>
+                          <Profile />
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Redirect unknown routes to home */}
+                      <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                  </div>
+                </main>
+
+                {/* Footer - fixed height */}
+                <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
+                  <Footer />
+                </footer>
+              </div>
+            </div>
+          </Router>
+          <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+          />
+        </AuthProvider>
+      );
+    }
+
     return (
       <AuthProvider>
         <Router>
-          <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
+          <ConditionalCanvas>
+            {/* Skybox Background Layer */}
+            {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
+            {backgroundSkybox && (
+              <div className="fixed inset-0 w-full h-full">
+                <SkyboxFullScreen 
+                  key={key}
+                  isBackground={true} 
+                  skyboxData={backgroundSkybox} 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
             {/* Main Content Layer */}
             <div className="relative flex flex-col min-h-screen">
               {/* Header - fixed height */}
@@ -274,190 +490,31 @@ function App() {
                 <Footer />
               </footer>
             </div>
-          </div>
+          </ConditionalCanvas>
+          <ToastContainer
+            position="top-right"
+            autoClose={3000}
+            hideProgressBar={false}
+            newestOnTop
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+          />
         </Router>
-        <ToastContainer
-          position="top-right"
-          autoClose={3000}
-          hideProgressBar={false}
-          newestOnTop
-          closeOnClick
-          rtl={false}
-          pauseOnFocusLoss
-          draggable
-          pauseOnHover
-        />
       </AuthProvider>
     );
+  } catch (err) {
+    console.error('Error during App render:', err);
+    return (
+      <div style={{ color: 'red', padding: 40, fontFamily: 'monospace' }}>
+        <h2>App Render Error</h2>
+        <pre>{err && err.toString()}</pre>
+        <p>Check the browser console for more details.</p>
+      </div>
+    );
   }
-
-  return (
-    <AuthProvider>
-      <Router>
-        <div className="relative w-full h-screen bg-black">
-          {/* Three.js Background */}
-          <div className="fixed inset-0 w-full h-full">
-            <Canvas 
-              camera={{ position: [0, 0, 0.1], fov: 75 }}
-              onError={(error) => {
-                console.error('Three.js Canvas error:', error);
-                setThreeJsError(true);
-              }}
-              onCreated={({ gl }) => {
-                gl.setClearColor('#000000');
-              }}
-            >
-              <BackgroundSphere 
-                textureUrl="https://images.blockadelabs.com/images/imagine/Digital_Painting_equirectangular-jpg_A_futuristic_cityscape_at_932592572_12806524.jpg?ver=1" 
-              />
-              <OrbitControls 
-                enableZoom={false} 
-                enablePan={false} 
-                autoRotate 
-                autoRotateSpeed={0.5} 
-              />
-            </Canvas>
-          </div>
-
-          {/* Skybox Background Layer */}
-          {backgroundSkybox && (
-            <div className="fixed inset-0 w-full h-full">
-              <SkyboxFullScreen 
-                key={key}
-                isBackground={true} 
-                skyboxData={backgroundSkybox} 
-                className="w-full h-full object-cover"
-              />
-            </div>
-          )}
-          {/* Main Content Layer */}
-          <div className="relative flex flex-col min-h-screen">
-            {/* Header - fixed height */}
-            <div className="sticky top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
-              <Header />
-            </div>
-
-            {/* Main content - scrollable */}
-            <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
-              <div className="">
-                <Routes>
-                  {/* Public routes - accessible to all users */}
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/signup" element={<Signup />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  
-                  {/* Landing page - accessible to all users */}
-                  <Route path="/" element={<Landing />} />
-
-                  {/* Protected routes - require authentication */}
-                  <Route path="/main" element={
-                    <ProtectedRoute>
-                      <MainSection 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        className="w-full px-6"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/explore" element={
-                    <ProtectedRoute>
-                      <Explore 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/explore/gallery" element={
-                    <ProtectedRoute>
-                      <Explore 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        category="gallery"
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/explore/styles" element={
-                    <ProtectedRoute>
-                      <Explore 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        category="styles"
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/explore/tutorials" element={
-                    <ProtectedRoute>
-                      <Explore 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        category="tutorials"
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/explore/community" element={
-                    <ProtectedRoute>
-                      <Explore 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        category="community"
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/explore/trending" element={
-                    <ProtectedRoute>
-                      <Explore 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        category="trending"
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/skybox/:id" element={
-                    <ProtectedRoute>
-                      <SkyboxFullScreen 
-                        className="w-full h-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/history" element={
-                    <ProtectedRoute>
-                      <History 
-                        setBackgroundSkybox={setBackgroundSkybox}
-                        className="w-full"
-                      />
-                    </ProtectedRoute>
-                  } />
-                  <Route path="/profile" element={
-                    <ProtectedRoute>
-                      <Profile />
-                    </ProtectedRoute>
-                  } />
-                  
-                  {/* Redirect unknown routes to home */}
-                  <Route path="*" element={<Navigate to="/" />} />
-                </Routes>
-              </div>
-            </main>
-
-            {/* Footer - fixed height */}
-            <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
-              <Footer />
-            </footer>
-          </div>
-        </div>
-      </Router>
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-      />
-    </AuthProvider>
-  );
 }
 
 export default App;
