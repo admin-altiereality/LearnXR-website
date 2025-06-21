@@ -1,15 +1,15 @@
 import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  User as FirebaseUser
+    createUserWithEmailAndPassword,
+    User as FirebaseUser,
+    GoogleAuthProvider,
+    onAuthStateChanged,
+    sendPasswordResetEmail,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+    signOut
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { auth, db } from '../config/firebase';
 
@@ -56,45 +56,62 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          const userDoc = await getDoc(userDocRef);
-          
-          if (userDoc.exists()) {
-            setUser({
-              ...user,
-              ...userDoc.data()
-            });
-          } else {
-            const userData = {
-              name: user.displayName || '',
-              email: user.email,
-              role: 'user',
-              subscriptionStatus: 'free',
-              createdAt: new Date().toISOString()
-            };
-            await setDoc(userDocRef, userData);
-            setUser({
-              ...user,
-              ...userData
-            });
-          }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-          setUser(user);
-        }
-      } else {
-        setUser(null);
-      }
+    if (typeof window === 'undefined' || !auth) {
+      console.warn('Auth: Not in browser environment or auth not available');
       setLoading(false);
-    });
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      async (user) => {
+        if (user) {
+          try {
+            const userDocRef = doc(db, 'users', user.uid);
+            const userDoc = await getDoc(userDocRef);
+            
+            if (userDoc.exists()) {
+              setUser({
+                ...user,
+                ...userDoc.data()
+              });
+            } else {
+              const userData = {
+                name: user.displayName || '',
+                email: user.email,
+                role: 'user',
+                subscriptionStatus: 'free',
+                createdAt: new Date().toISOString()
+              };
+              await setDoc(userDocRef, userData);
+              setUser({
+                ...user,
+                ...userData
+              });
+            }
+          } catch (error) {
+            console.error("Error fetching user data:", error);
+            setUser(user);
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Auth state change error:', error);
+        setUser(null);
+        setLoading(false);
+      }
+    );
 
     return unsubscribe;
   }, []);
 
   const signup = async (email: string, password: string, name: string) => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
       await setDoc(doc(db, 'users', user.uid), {
@@ -113,6 +130,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const loginWithGoogle = async () => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
     try {
       const provider = new GoogleAuthProvider();
       const { user } = await signInWithPopup(auth, provider);
@@ -138,6 +158,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const login = async (email: string, password: string) => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       toast.success('Logged in successfully!');
@@ -150,6 +173,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const logout = async () => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
     try {
       await signOut(auth);
       toast.success('Logged out successfully!');
@@ -162,6 +188,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   const resetPassword = async (email: string) => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
     try {
       await sendPasswordResetEmail(auth, email);
       toast.success('Password reset email sent!');

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateSkybox = exports.getSkyboxStyles = void 0;
-const sdk_1 = require("@/lib/sdk");
+const sdk_1 = require("../lib/sdk");
 const getSkyboxStyles = async (_req, res) => {
     try {
         const skyboxStyles = await sdk_1.sdk.getSkyboxStyles();

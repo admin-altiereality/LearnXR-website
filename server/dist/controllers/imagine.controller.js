@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateImagine = exports.getGenerators = exports.deleteImagine = exports.cancelAllPedingImagines = exports.cancelImagine = exports.getImagineHistory = exports.getImagineByObfuscatedId = exports.getImagineById = void 0;
-const sdk_1 = require("@/lib/sdk");
+const sdk_1 = require("../lib/sdk");
 const getImagineById = async (req, res) => {
     try {
         const { id } = req.query;

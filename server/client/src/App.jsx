@@ -30,13 +30,29 @@ const BackgroundSphere = ({ textureUrl }) => {
   useEffect(() => {
     const loadTexture = async () => {
       try {
+        if (typeof window === 'undefined') {
+          console.warn('BackgroundSphere: Not in browser environment');
+          setError(true);
+          return;
+        }
+
         const textureLoader = new THREE.TextureLoader();
         const loadedTexture = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Texture loading timeout'));
+          }, 10000); // 10 second timeout
+
           textureLoader.load(
             textureUrl,
-            resolve,
+            (texture) => {
+              clearTimeout(timeout);
+              resolve(texture);
+            },
             undefined,
-            reject
+            (error) => {
+              clearTimeout(timeout);
+              reject(error);
+            }
           );
         });
         setTexture(loadedTexture);
@@ -283,7 +299,13 @@ function App() {
           <div className="fixed inset-0 w-full h-full">
             <Canvas 
               camera={{ position: [0, 0, 0.1], fov: 75 }}
-              onError={() => setThreeJsError(true)}
+              onError={(error) => {
+                console.error('Three.js Canvas error:', error);
+                setThreeJsError(true);
+              }}
+              onCreated={({ gl }) => {
+                gl.setClearColor('#000000');
+              }}
             >
               <BackgroundSphere 
                 textureUrl="https://images.blockadelabs.com/images/imagine/Digital_Painting_equirectangular-jpg_A_futuristic_cityscape_at_932592572_12806524.jpg?ver=1" 

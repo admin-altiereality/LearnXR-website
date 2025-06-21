@@ -11,7 +11,7 @@ import {
     getImagineById,
     getImagineByObfuscatedId,
     getImagineHistory,
-} from "@/controllers/imagine.controller";
+} from "./controllers/imagine.controller";
 
 
 import {

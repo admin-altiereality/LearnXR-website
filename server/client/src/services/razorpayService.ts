@@ -11,20 +11,32 @@ export class RazorpayService {
   private razorpayKeyId: string;
   private baseUrl: string;
   private scriptLoaded: boolean = false;
+  private isInitialized: boolean = false;
 
   private constructor() {
-    this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
+    this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
     this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/in3devoneuralwebsite/us-central1/api';
+    
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') {
+      console.warn('RazorpayService: Not in browser environment, skipping initialization');
+      return;
+    }
+
     console.log('RazorpayService initialized with key ID:', this.razorpayKeyId ? 'Present' : 'Missing');
     console.log('Using API base URL:', this.baseUrl);
+    
     if (!this.razorpayKeyId) {
-      console.error('Razorpay key ID not found in environment variables');
+      console.warn('Razorpay key ID not found in environment variables - payment features will be disabled');
+      return;
     }
+
+    this.isInitialized = true;
     this.loadRazorpayScript();
   }
 
   private loadRazorpayScript(): void {
-    if (this.scriptLoaded) return;
+    if (this.scriptLoaded || typeof window === 'undefined') return;
 
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -47,28 +59,39 @@ export class RazorpayService {
   }
 
   private async waitForRazorpayScript(): Promise<void> {
-    if (this.scriptLoaded) return;
+    if (typeof window === 'undefined') {
+      throw new Error('Razorpay is not available in this environment');
+    }
 
-    return new Promise((resolve, reject) => {
-      const maxAttempts = 50; // 5 seconds total
-      let attempts = 0;
+    if (!this.isInitialized) {
+      throw new Error('Razorpay is not properly initialized. Please check your environment variables.');
+    }
 
-      const checkInterval = setInterval(() => {
-        attempts++;
-        if (window.Razorpay) {
-          clearInterval(checkInterval);
-          this.scriptLoaded = true;
-          resolve();
-        } else if (attempts >= maxAttempts) {
-          clearInterval(checkInterval);
-          reject(new Error('Razorpay script failed to load after 5 seconds'));
-        }
-      }, 100);
-    });
+    if (!this.scriptLoaded) {
+      return new Promise((resolve, reject) => {
+        const checkScript = () => {
+          if (this.scriptLoaded) {
+            resolve();
+          } else {
+            setTimeout(checkScript, 100);
+          }
+        };
+        checkScript();
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          reject(new Error('Razorpay script failed to load within 10 seconds'));
+        }, 10000);
+      });
+    }
   }
 
   private async createOrder(planId: string): Promise<{ id: string; amount: number }> {
     try {
+      if (!this.isInitialized) {
+        throw new Error('Razorpay is not properly initialized');
+      }
+
       console.log('Creating order for plan:', planId);
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) throw new Error('Invalid plan selected');
@@ -108,12 +131,16 @@ export class RazorpayService {
 
   public async initializePayment(planId: string, userEmail: string, userId: string): Promise<void> {
     try {
+      if (!this.isInitialized) {
+        throw new Error('Payment is not available. Please check your configuration.');
+      }
+
       console.log('Initializing payment...', { planId, userEmail, userId });
       
       // Wait for Razorpay script to load
       await this.waitForRazorpayScript();
       
-      if (!window.Razorpay) {
+      if (typeof window === 'undefined' || !window.Razorpay) {
         throw new Error('Razorpay SDK not loaded');
       }
 
@@ -200,6 +227,10 @@ export class RazorpayService {
       console.error('Payment verification error:', error);
       throw error;
     }
+  }
+
+  public isAvailable(): boolean {
+    return this.isInitialized && typeof window !== 'undefined';
   }
 }
 
