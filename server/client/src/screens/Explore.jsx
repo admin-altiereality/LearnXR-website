@@ -1,10 +1,10 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import CommunitySection from './explore/CommunitySection';
 import GallerySection from './explore/GallerySection';
 import StylesSection from './explore/StylesSection';
-import TutorialsSection from './explore/TutorialsSection';
-import CommunitySection from './explore/CommunitySection';
 import TrendingSection from './explore/TrendingSection';
+import TutorialsSection from './explore/TutorialsSection';
 
 const TABS = [
   {
@@ -95,7 +95,7 @@ const Explore = ({ setBackgroundSkybox }) => {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.3 }}
           >
-            {activeTab === 'gallery' && <GallerySection onSelect={handleSkyboxSelect} />}
+            {activeTab === 'gallery' && <GallerySection onSelect={handleSkyboxSelect} setBackgroundSkybox={setBackgroundSkybox} />}
             {activeTab === 'styles' && <StylesSection onSelect={handleSkyboxSelect} />}
             {activeTab === 'tutorials' && <TutorialsSection />}
             {activeTab === 'community' && <CommunitySection />}

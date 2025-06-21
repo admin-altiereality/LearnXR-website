@@ -148,7 +148,7 @@ const BackgroundSphere = ({ textureUrl }) => {
 };
 
 // Component to conditionally render Canvas based on route
-const ConditionalCanvas = ({ children }) => {
+const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
   const isLandingPage = location.pathname === '/';
   
@@ -156,6 +156,10 @@ const ConditionalCanvas = ({ children }) => {
   if (isLandingPage) {
     return children;
   }
+  
+  // Use background skybox image if available, otherwise use default
+  const textureUrl = backgroundSkybox?.preview_url || backgroundSkybox?.image || 
+    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80";
   
   return (
     <div className="relative w-full min-h-screen bg-black">
@@ -170,9 +174,7 @@ const ConditionalCanvas = ({ children }) => {
             gl.setClearColor('#000000');
           }}
         >
-          <BackgroundSphere 
-            textureUrl="https://images.blockadelabs.com/images/imagine/Digital_Painting_equirectangular-jpg_A_futuristic_cityscape_at_932592572_12806524.jpg?ver=1" 
-          />
+          <BackgroundSphere textureUrl={textureUrl} />
           <OrbitControls 
             enableZoom={false} 
             enablePan={false} 
@@ -364,7 +366,7 @@ function App() {
     return (
       <AuthProvider>
         <Router>
-          <ConditionalCanvas>
+          <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
             {/* Skybox Background Layer */}
             {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
             {backgroundSkybox && (
