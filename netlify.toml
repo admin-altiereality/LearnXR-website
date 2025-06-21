@@ -2,6 +2,7 @@
   base = "server/client"
   command = "rm -f yarn.lock && npm install && npm run build"
   publish = "dist"
+  functions = "../netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
@@ -14,4 +15,6 @@
   to = "/index.html"
   status = 200
 
-# Remove functions section since we don't have netlify/functions directory 
+# Functions configuration
+[functions]
+  directory = "../netlify/functions"
