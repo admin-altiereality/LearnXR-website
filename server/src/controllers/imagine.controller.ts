@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { sdk } from "@/lib/sdk";
+import { sdk } from "../lib/sdk";
 
 export const getImagineById = async (req: Request, res: Response) => {
   try {

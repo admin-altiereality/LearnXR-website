@@ -1,11 +1,10 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import React, { useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { razorpayService } from '../services/razorpayService';
-import { subscriptionService } from '../services/subscriptionService';
-import { toast } from 'react-hot-toast';
-import { SUBSCRIPTION_PLANS } from '../services/subscriptionService';
-import { createPortal } from 'react-dom';
+import { SUBSCRIPTION_PLANS, subscriptionService } from '../services/subscriptionService';
 
 const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) => {
   const { user } = useAuth();
@@ -26,6 +25,12 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
     try {
       if (!user || !user.email) {
         toast.error('Please sign in to upgrade your plan');
+        return;
+      }
+
+      // Check if Razorpay is available
+      if (!razorpayService.isAvailable()) {
+        toast.error('Payment is not available at the moment. Please try again later or contact support.');
         return;
       }
 
@@ -50,6 +55,8 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
       console.error('Error handling upgrade:', error);
       if (error instanceof Error && error.message === 'Payment cancelled') {
         toast.error('Payment was cancelled');
+      } else if (error.message.includes('not properly initialized')) {
+        toast.error('Payment service is not available. Please try again later.');
       } else {
         toast.error('Failed to process upgrade. Please try again.');
       }

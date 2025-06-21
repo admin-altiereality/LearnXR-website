@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, setDoc, updateDoc, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { SubscriptionPlan, UserSubscription } from '../types/subscription';
 
@@ -63,66 +63,109 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
 ];
 
 class SubscriptionService {
-  async getUserSubscription(userId: string): Promise<UserSubscription | null> {
+  async getUserSubscription(userId: string): Promise<UserSubscription> {
     try {
+      if (!db) {
+        throw new Error('Firestore is not available');
+      }
+      
       const subscriptionRef = doc(db, 'subscriptions', userId);
       const subscriptionDoc = await getDoc(subscriptionRef);
       
-      // Get user's generation count
-      const skyboxesRef = collection(db, 'skyboxes');
-      const userSkyboxesQuery = query(skyboxesRef, where('userId', '==', userId));
-      const skyboxesSnapshot = await getDocs(userSkyboxesQuery);
-      const generationCount = skyboxesSnapshot.size;
-      
       if (subscriptionDoc.exists()) {
-        const data = subscriptionDoc.data() as UserSubscription;
-        return {
-          ...data,
+        return subscriptionDoc.data() as UserSubscription;
+      } else {
+        // Create default free subscription
+        const defaultSubscription: UserSubscription = {
+          userId,
+          planId: 'free',
+          status: 'active',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           usage: {
-            count: generationCount,
-            limit: data.usage?.limit || 10
+            skyboxGenerations: 0
           }
         };
+        
+        await setDoc(subscriptionRef, defaultSubscription);
+        return defaultSubscription;
       }
-      
-      // Create free tier subscription if none exists
-      const freeTier: UserSubscription = {
-        userId,
-        planId: 'free',
-        status: generationCount >= 10 ? 'limited' : 'active',
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-        cancelAtPeriodEnd: false,
-        usage: {
-          count: generationCount,
-          limit: 10
-        }
-      };
-      
-      await setDoc(subscriptionRef, freeTier);
-      return freeTier;
     } catch (error) {
-      console.error('Error fetching subscription:', error);
-      return null;
+      console.error('Error getting user subscription:', error);
+      throw error;
     }
   }
 
-  async updateSubscription(userId: string, planId: string): Promise<void> {
-    const subscriptionRef = doc(db, 'subscriptions', userId);
-    await updateDoc(subscriptionRef, {
-      planId,
-      status: 'active',
-      currentPeriodStart: new Date(),
-      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-      cancelAtPeriodEnd: false
-    });
+  async updateUserSubscription(userId: string, subscriptionData: Partial<UserSubscription>): Promise<void> {
+    try {
+      if (!db) {
+        throw new Error('Firestore is not available');
+      }
+      
+      const subscriptionRef = doc(db, 'subscriptions', userId);
+      await updateDoc(subscriptionRef, {
+        ...subscriptionData,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error updating user subscription:', error);
+      throw error;
+    }
   }
 
-  async checkGenerationLimit(userId: string): Promise<boolean> {
-    const subscription = await this.getUserSubscription(userId);
-    if (!subscription) return false;
+  async incrementUsage(userId: string, usageType: keyof UserSubscription['usage']): Promise<void> {
+    try {
+      if (!db) {
+        throw new Error('Firestore is not available');
+      }
+      
+      const subscriptionRef = doc(db, 'subscriptions', userId);
+      const subscriptionDoc = await getDoc(subscriptionRef);
+      
+      if (subscriptionDoc.exists()) {
+        const currentData = subscriptionDoc.data() as UserSubscription;
+        const currentUsage = currentData.usage?.[usageType] || 0;
+        
+        await updateDoc(subscriptionRef, {
+          [`usage.${usageType}`]: currentUsage + 1,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('Error incrementing usage:', error);
+      throw error;
+    }
+  }
 
-    return subscription.usage.count < subscription.usage.limit;
+  async checkUsageLimit(userId: string, usageType: keyof UserSubscription['usage']): Promise<boolean> {
+    try {
+      if (!db) {
+        throw new Error('Firestore is not available');
+      }
+      
+      const subscription = await this.getUserSubscription(userId);
+      const currentPlan = SUBSCRIPTION_PLANS.find(plan => plan.id === subscription.planId);
+      
+      if (!currentPlan) {
+        return false;
+      }
+      
+      const currentUsage = subscription.usage?.[usageType] || 0;
+      const limit = currentPlan.limits[usageType];
+      
+      return currentUsage < limit;
+    } catch (error) {
+      console.error('Error checking usage limit:', error);
+      throw error;
+    }
+  }
+
+  getPlanById(planId: string): SubscriptionPlan | undefined {
+    return SUBSCRIPTION_PLANS.find(plan => plan.id === planId);
+  }
+
+  getAllPlans(): SubscriptionPlan[] {
+    return SUBSCRIPTION_PLANS;
   }
 }
 

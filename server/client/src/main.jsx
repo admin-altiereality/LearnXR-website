@@ -7,7 +7,7 @@ import './index.css';
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -16,6 +16,16 @@ class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('React Error Boundary caught an error:', error, errorInfo);
+    this.setState({ error, errorInfo });
+    
+    // Log additional context for debugging
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      userAgent: navigator.userAgent,
+      url: window.location.href
+    });
   }
 
   render() {
@@ -30,9 +40,25 @@ class ErrorBoundary extends React.Component {
           color: '#fff',
           fontFamily: 'Arial, sans-serif'
         }}>
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', maxWidth: '600px', padding: '20px' }}>
             <h1>Something went wrong</h1>
             <p>Please refresh the page or try again later.</p>
+            {process.env.NODE_ENV === 'development' && this.state.error && (
+              <details style={{ marginTop: '20px', textAlign: 'left' }}>
+                <summary style={{ cursor: 'pointer', color: '#3B82F6' }}>Error Details (Development)</summary>
+                <pre style={{ 
+                  backgroundColor: '#1f2937', 
+                  padding: '10px', 
+                  borderRadius: '5px', 
+                  fontSize: '12px',
+                  overflow: 'auto',
+                  maxHeight: '200px'
+                }}>
+                  {this.state.error.toString()}
+                  {this.state.errorInfo && this.state.errorInfo.componentStack}
+                </pre>
+              </details>
+            )}
             <button 
               onClick={() => window.location.reload()} 
               style={{
@@ -41,7 +67,8 @@ class ErrorBoundary extends React.Component {
                 color: 'white',
                 border: 'none',
                 borderRadius: '5px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                marginTop: '20px'
               }}
             >
               Refresh Page
