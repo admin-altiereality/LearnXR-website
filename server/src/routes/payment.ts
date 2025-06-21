@@ -1,9 +1,9 @@
-import express from 'express';
-import Razorpay from 'razorpay';
-import dotenv from 'dotenv';
 import crypto from 'crypto';
-import { db } from '../config/firebase-admin';
+import dotenv from 'dotenv';
+import express from 'express';
 import * as admin from 'firebase-admin';
+import Razorpay from 'razorpay';
+import { db } from '../config/firebase-admin';
 
 dotenv.config();
 
@@ -11,13 +11,20 @@ const router = express.Router();
 
 console.log('Payment routes being initialized...');
 
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || '',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || ''
-});
+// Check if Razorpay credentials are available
+const hasRazorpayCredentials = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
 
-console.log('Razorpay initialized with key_id:', process.env.RAZORPAY_KEY_ID ? 'Present' : 'Missing');
+// Initialize Razorpay only if credentials are available
+let razorpay: Razorpay | null = null;
+if (hasRazorpayCredentials) {
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID!,
+    key_secret: process.env.RAZORPAY_KEY_SECRET!
+  });
+  console.log('Razorpay initialized with key_id: Present');
+} else {
+  console.log('Razorpay not initialized - missing credentials');
+}
 
 // Debug middleware for payment routes
 router.use((req, res, next) => {
@@ -34,6 +41,14 @@ router.use((req, res, next) => {
 // Create order endpoint
 router.post('/create-order', async (req, res) => {
   try {
+    // Check if Razorpay is configured
+    if (!hasRazorpayCredentials || !razorpay) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Payment service is not configured. Please contact support.'
+      });
+    }
+
     const { amount, currency, planId } = req.body;
     
     // Validate required fields
@@ -80,6 +95,14 @@ router.post('/create-order', async (req, res) => {
 // Verify payment endpoint
 router.post('/verify-payment', async (req, res) => {
   try {
+    // Check if Razorpay is configured
+    if (!hasRazorpayCredentials) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Payment service is not configured. Please contact support.'
+      });
+    }
+
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId, planId } = req.body;
     
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -91,7 +114,7 @@ router.post('/verify-payment', async (req, res) => {
 
     // Verify signature
     const generated_signature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
       .update(razorpay_order_id + '|' + razorpay_payment_id)
       .digest('hex');
 

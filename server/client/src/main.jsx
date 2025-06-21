@@ -43,9 +43,9 @@ class ErrorBoundary extends React.Component {
           <div style={{ textAlign: 'center', maxWidth: '600px', padding: '20px' }}>
             <h1>Something went wrong</h1>
             <p>Please refresh the page or try again later.</p>
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {this.state.error && (
               <details style={{ marginTop: '20px', textAlign: 'left' }}>
-                <summary style={{ cursor: 'pointer', color: '#3B82F6' }}>Error Details (Development)</summary>
+                <summary style={{ cursor: 'pointer', color: '#3B82F6' }}>Error Details</summary>
                 <pre style={{ 
                   backgroundColor: '#1f2937', 
                   padding: '10px', 

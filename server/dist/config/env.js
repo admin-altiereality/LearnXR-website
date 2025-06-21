@@ -41,8 +41,12 @@ exports.env = (0, envsafe_1.envsafe)({
     }),
     RAZORPAY_KEY_ID: (0, envsafe_1.str)({
         desc: "Razorpay Key ID",
+        allowEmpty: true,
+        default: "",
     }),
     RAZORPAY_KEY_SECRET: (0, envsafe_1.str)({
         desc: "Razorpay Key Secret",
+        allowEmpty: true,
+        default: "",
     }),
 });
