@@ -2,7 +2,7 @@ import { getAnalytics, isSupported } from "firebase/analytics";
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getFunctions } from 'firebase/functions';
+import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBo9VsJMft4Qqap5oUmQowwbjiMQErloqU",
@@ -20,31 +20,40 @@ const app = initializeApp(firebaseConfig);
 let analytics = null;
 
 // Function to safely initialize analytics
-export const initializeAnalytics = async () => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  
+const initializeAnalytics = async () => {
   try {
-    const isAnalyticsSupported = await isSupported();
-    if (isAnalyticsSupported) {
+    if (typeof window !== 'undefined' && await isSupported()) {
       analytics = getAnalytics(app);
-      return analytics;
     }
   } catch (error) {
     console.warn('Analytics initialization failed:', error);
   }
-  return null;
 };
 
-// Initialize analytics on module load
+// Initialize analytics on client side
 if (typeof window !== 'undefined') {
-  initializeAnalytics().catch(err => {
-    console.warn('Analytics initialization failed:', err);
-  });
+  initializeAnalytics();
 }
 
-export { analytics };
+// Initialize Functions with error handling
+let functions = undefined;
+if (typeof window !== 'undefined') {
+  try {
+    functions = getFunctions(app);
+    // Connect to emulator in development
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        connectFunctionsEmulator(functions, 'localhost', 5001);
+      } catch (error) {
+        console.warn('Functions emulator connection failed:', error);
+      }
+    }
+  } catch (error) {
+    console.warn('Functions initialization failed:', error);
+  }
+}
+
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const functions = getFunctions(app); 
+export { analytics, functions };
+export default app; 
