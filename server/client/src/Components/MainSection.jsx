@@ -1,12 +1,12 @@
+import { serverTimestamp } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
+import { useNavigate } from 'react-router-dom';
+import api from '../config/axios';
 import { useAuth } from '../contexts/AuthContext';
 import { skyboxService } from '../services/skyboxService';
-import DownloadPopup from './DownloadPopup';
-import { serverTimestamp } from "firebase/firestore";
 import { subscriptionService } from '../services/subscriptionService';
-import { useNavigate } from 'react-router-dom';
+import DownloadPopup from './DownloadPopup';
 import UpgradeModal from './UpgradeModal';
-import api from '../config/axios';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
@@ -87,8 +87,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const subscriptionInfo = {
     plan: subscription?.planId || 'Free',
     generationsLeft: subscription?.usage?.limit - subscription?.usage?.count || 0,
-    totalGenerations: subscription?.usage?.count || 0
+    totalGenerations: subscription?.usage?.count || 0,
+    planName: subscription?.planId === 'free' ? 'Free Plan' : subscription?.planId === 'pro' ? 'Pro Plan' : 'Enterprise Plan',
+    maxGenerations: subscription?.planId === 'free' ? 10 : subscription?.planId === 'pro' ? Infinity : Infinity
   };
+
+  // Get current plan details
+  const currentPlan = subscriptionService.getPlanById(subscription?.planId || 'free');
+  const remainingGenerations = currentPlan?.limits.skyboxGenerations === Infinity 
+    ? '∞' 
+    : Math.max(0, (currentPlan?.limits.skyboxGenerations || 10) - (subscription?.usage?.skyboxGenerations || 0));
+  const usagePercentage = currentPlan?.limits.skyboxGenerations === Infinity 
+    ? 0 
+    : Math.min(((subscription?.usage?.skyboxGenerations || 0) / (currentPlan?.limits.skyboxGenerations || 10)) * 100, 100);
 
   // Update subscription after generation
   const updateSubscriptionCount = async () => {
@@ -105,9 +116,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
 
     // Check subscription limits before generating
-    if (subscriptionInfo.generationsLeft <= 0) {
+    if (currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0) {
       setError(
-        subscriptionInfo.plan === 'Free' 
+        subscription?.planId === 'free' 
           ? "You've reached your free tier limit. Please upgrade to continue generating skyboxes."
           : "You've reached your daily generation limit. Please try again tomorrow."
       );
@@ -414,21 +425,49 @@ const MainSection = ({ setBackgroundSkybox }) => {
                   ) : (
                     // Normal Control Panel Content
                     <>
-                      {/* Simple Free Plan Status */}
-                      <div className="mb-4 flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <span className="text-sm text-gray-400">
-                            {subscriptionInfo.generationsLeft}/{subscriptionInfo.usage?.limit || 10} generations available
-                          </span>
+                      {/* Generation Status */}
+                      <div className="mb-6 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50 backdrop-blur-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center space-x-2">
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            <span className="text-sm font-medium text-gray-300">
+                              {currentPlan?.name || 'Free'} Plan
+                            </span>
+                          </div>
+                          {subscription?.planId === 'free' && (
+                            <button
+                              onClick={handleUpgrade}
+                              className="text-xs text-purple-400 hover:text-purple-300 transition-colors duration-200 font-medium"
+                            >
+                              Upgrade
+                            </button>
+                          )}
                         </div>
-                        {subscriptionInfo.generationsLeft <= 3 && (
-                          <button
-                            onClick={handleUpgrade}
-                            className="text-sm text-purple-400 hover:text-purple-300 transition-colors duration-200"
-                          >
-                            Upgrade Plan
-                          </button>
-                        )}
+                        
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-400">Generations Remaining</span>
+                            <span className="text-gray-200 font-medium">
+                              {remainingGenerations} {currentPlan?.limits.skyboxGenerations === Infinity ? '' : 'left'}
+                            </span>
+                          </div>
+                          
+                          {currentPlan?.limits.skyboxGenerations !== Infinity && (
+                            <div className="w-full bg-gray-700/50 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300"
+                                style={{ width: `${usagePercentage}%` }}
+                              />
+                            </div>
+                          )}
+                          
+                          <div className="flex justify-between items-center text-xs text-gray-500">
+                            <span>Used: {subscription?.usage?.skyboxGenerations || 0}</span>
+                            <span>Limit: {currentPlan?.limits.skyboxGenerations === Infinity ? '∞' : currentPlan?.limits.skyboxGenerations || 10}</span>
+                          </div>
+                        </div>
                       </div>
 
                       {error && (
@@ -528,11 +567,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50 ${
                               isGenerating 
                                 ? 'bg-blue-500/50 cursor-not-allowed backdrop-blur-sm'
-                                : subscriptionInfo.generationsLeft <= 0
+                                : currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0
                                 ? 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
                                 : 'bg-gradient-to-r from-blue-500/50 to-indigo-600/50 hover:from-blue-600/60 hover:to-indigo-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
                             }`}
-                            onClick={subscriptionInfo.generationsLeft <= 0 ? handleUpgrade : generateSkybox}
+                            onClick={currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0 ? handleUpgrade : generateSkybox}
                             disabled={isGenerating}
                           >
                             <div className="relative flex items-center justify-center">
@@ -560,7 +599,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   </svg>
                                   <span className="text-sm">{progress < 100 ? 'Generating...' : 'Applying Skybox...'}</span>
                                 </>
-                              ) : subscriptionInfo.generationsLeft <= 0 ? (
+                              ) : currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0 ? (
                                 <div className="flex items-center space-x-2">
                                   <svg 
                                     className="w-4 h-4" 
@@ -576,9 +615,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                     />
                                   </svg>
                                   <span className="text-sm">
-                                    {subscriptionInfo.plan === 'Free' 
-                                      ? 'Upgrade to Premium'
-                                      : 'Upgrade to Higher Tier'}
+                                    {subscription?.planId === 'free' 
+                                      ? 'Upgrade to Pro'
+                                      : 'Upgrade Plan'}
                                   </span>
                                 </div>
                               ) : (
