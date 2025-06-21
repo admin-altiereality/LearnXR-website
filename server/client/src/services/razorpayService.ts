@@ -15,7 +15,14 @@ export class RazorpayService {
 
   private constructor() {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
-    this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001/in3devoneuralwebsite/us-central1/api';
+    
+    // Use Netlify functions for production, local server for development
+    const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
+    if (isProduction) {
+      this.baseUrl = '/.netlify/functions';
+    } else {
+      this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+    }
     
     // Check if we're in a browser environment
     if (typeof window === 'undefined') {
@@ -25,6 +32,7 @@ export class RazorpayService {
 
     console.log('RazorpayService initialized with key ID:', this.razorpayKeyId ? 'Present' : 'Missing');
     console.log('Using API base URL:', this.baseUrl);
+    console.log('Environment:', isProduction ? 'Production' : 'Development');
     
     if (!this.razorpayKeyId) {
       console.warn('Razorpay key ID not found in environment variables - payment features will be disabled');
@@ -102,7 +110,7 @@ export class RazorpayService {
       const amountInPaise = Math.round(plan.price * 100);
       console.log('Amount in paise:', amountInPaise);
 
-      const response = await fetch(`${this.baseUrl}/api/payment/create-order`, {
+      const response = await fetch(`${this.baseUrl}/payment/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -198,39 +206,37 @@ export class RazorpayService {
   private async verifyPayment(response: any, userId: string, planId: string): Promise<void> {
     try {
       console.log('Verifying payment...', { userId, planId, ...response });
-      const verificationResponse = await fetch(`${this.baseUrl}/api/payment/verify-payment`, {
+
+      const verifyResponse = await fetch(`${this.baseUrl}/payment/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          razorpay_payment_id: response.razorpay_payment_id,
           razorpay_order_id: response.razorpay_order_id,
+          razorpay_payment_id: response.razorpay_payment_id,
           razorpay_signature: response.razorpay_signature,
           userId,
           planId
         })
       });
 
-      if (!verificationResponse.ok) {
-        const error = await verificationResponse.json();
+      if (!verifyResponse.ok) {
+        const error = await verifyResponse.json();
         console.error('Payment verification failed:', error);
         throw new Error(error.message || 'Payment verification failed');
       }
 
-      const result = await verificationResponse.json();
-      console.log('Payment verification result:', result);
-      if (result.status !== 'success') {
-        throw new Error(result.message || 'Payment verification failed');
-      }
+      const result = await verifyResponse.json();
+      console.log('Payment verified successfully:', result);
     } catch (error) {
-      console.error('Payment verification error:', error);
+      console.error('Error verifying payment:', error);
       throw error;
     }
   }
 
   public isAvailable(): boolean {
-    return this.isInitialized && typeof window !== 'undefined';
+    return this.isInitialized && this.razorpayKeyId !== '';
   }
 }
 
