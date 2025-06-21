@@ -110,7 +110,7 @@ export class RazorpayService {
       const amountInPaise = Math.round(plan.price * 100);
       console.log('Amount in paise:', amountInPaise);
 
-      const response = await fetch(`${this.baseUrl}/payment/create-order`, {
+      const response = await fetch(`${this.baseUrl}/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -207,7 +207,7 @@ export class RazorpayService {
     try {
       console.log('Verifying payment...', { userId, planId, ...response });
 
-      const verifyResponse = await fetch(`${this.baseUrl}/payment/verify-payment`, {
+      const verifyResponse = await fetch(`${this.baseUrl}/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

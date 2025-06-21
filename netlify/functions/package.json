@@ -2,11 +2,13 @@
   "name": "netlify-functions",
   "version": "1.0.0",
   "description": "Netlify functions for payment processing",
-  "main": "payment.js",
   "dependencies": {
     "razorpay": "^2.8.6"
   },
   "scripts": {
     "build": "echo 'No build step required'"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 } 
