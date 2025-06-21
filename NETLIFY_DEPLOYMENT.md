@@ -97,11 +97,21 @@ Click "Deploy site" and wait for the build to complete.
 ## Payment Flow
 
 1. User clicks "SELECT PLAN"
-2. Frontend calls Netlify Function: `/.netlify/functions/payment/create-order`
+2. Frontend calls Netlify Function: `/.netlify/functions/create-order`
 3. Netlify Function creates Razorpay order
 4. Razorpay modal opens for payment
-5. After payment, frontend calls: `/.netlify/functions/payment/verify-payment`
+5. After payment, frontend calls: `/.netlify/functions/verify-payment`
 6. Netlify Function verifies payment and updates user subscription
+
+## Function Structure
+
+The Netlify functions are structured as follows:
+```
+netlify/functions/
+├── create-order.js    # Handles order creation
+├── verify-payment.js  # Handles payment verification
+└── package.json       # Dependencies
+```
 
 ## Troubleshooting
 
@@ -109,7 +119,9 @@ Click "Deploy site" and wait for the build to complete.
 1. Check if Razorpay credentials are set in Netlify environment variables
 2. Verify the Netlify Functions are deployed correctly
 3. Check browser console for any errors
-4. Ensure the payment function is accessible at `/.netlify/functions/payment`
+4. Ensure the payment functions are accessible at:
+   - `/.netlify/functions/create-order`
+   - `/.netlify/functions/verify-payment`
 
 ### Environment Variables Not Loading
 1. Make sure environment variables are set in Netlify dashboard
@@ -120,6 +132,13 @@ Click "Deploy site" and wait for the build to complete.
 1. Ensure the `netlify/functions` directory exists
 2. Check that `package.json` exists in the functions directory
 3. Verify the `netlify.toml` configuration is correct
+4. Make sure each function file exports a `handler` function
+
+### 404 Errors
+1. Check that function files are named correctly (e.g., `create-order.js`)
+2. Verify the function files are in the `netlify/functions` directory
+3. Ensure the build process includes the functions directory
+4. Check Netlify function logs for any deployment errors
 
 ## Local Development
 
