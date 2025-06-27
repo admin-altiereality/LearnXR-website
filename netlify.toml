@@ -1,13 +1,38 @@
 [build]
   base = "server/client"
   command = "rm -f yarn.lock && npm install && npm run build"
-  publish = "dist"
+  publish = "server/client/dist"
+  functions = "server/client/netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
   NPM_FLAGS = "--legacy-peer-deps"
   NODE_ENV = "production"
   NPM_CONFIG_PRODUCTION = "false"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # Remove COOP header to fix Razorpay modal issues
+    # Cross-Origin-Opener-Policy = "same-origin"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization, X-Requested-With"
+    Access-Control-Allow-Credentials = "true"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
 
 [[redirects]]
   from = "/*"
@@ -17,3 +42,4 @@
 # Functions configuration
 [functions]
   directory = "netlify/functions"
+  node_bundler = "esbuild"
