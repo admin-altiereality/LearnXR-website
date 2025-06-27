@@ -1,652 +1,337 @@
-import { Box, Environment, Float, OrbitControls, Sphere } from '@react-three/drei';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { motion, useScroll, useTransform } from 'framer-motion';
-import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import React, { Suspense, useEffect, useRef, useState } from 'react';
-import { FaCompass, FaFilm, FaGamepad, FaGraduationCap, FaVrCardboard } from 'react-icons/fa';
-import { SiBlender, SiUnity, SiUnrealengine } from 'react-icons/si';
+import React, { useState, useEffect, Suspense, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../Components/Navbar';
+import { 
+  FaRocket, 
+  FaBrain, 
+  FaCube, 
+  FaPlay, 
+  FaArrowRight, 
+  FaStar,
+  FaUsers,
+  FaShieldAlt,
+  FaPalette,
+  FaCode,
+  FaGlobe
+} from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
-
-// Register GSAP plugins
-gsap.registerPlugin(ScrollTrigger);
-
-// Simple error boundary component
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error('R3F Error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex items-center justify-center h-full text-white">
-          <div className="text-center">
-            <div className="text-2xl mb-2">⚠️</div>
-            <div className="text-sm">3D Scene Unavailable</div>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// Loading component for Suspense
-const LoadingFallback = () => (
-  <div className="flex items-center justify-center h-full text-white">
-    <div className="text-center">
-      <div className="text-2xl mb-2">⏳</div>
-      <div className="text-sm">Loading 3D Scene...</div>
-    </div>
-  </div>
-);
-
-// Animated Background Component
-const AnimatedBackground = () => {
-  const meshRef = useRef();
-  const { viewport } = useThree();
-
-  useFrame((state) => {
-    if (!meshRef.current) return;
-    const time = state.clock.getElapsedTime();
-    meshRef.current.rotation.x = Math.sin(time * 0.5) * 0.1;
-    meshRef.current.rotation.y = Math.sin(time * 0.3) * 0.1;
-    meshRef.current.position.y = Math.sin(time * 0.2) * 0.1;
-  });
-
-  return (
-    <group ref={meshRef}>
-      {/* Procedural City */}
-      {[...Array(50)].map((_, i) => (
-        <Box
-          key={i}
-          position={[
-            (Math.random() - 0.5) * 20,
-            Math.random() * 5,
-            (Math.random() - 0.5) * 20
-          ]}
-          args={[
-            Math.random() * 2 + 0.5,
-            Math.random() * 8 + 2,
-            Math.random() * 2 + 0.5
-          ]}
-        >
-          <meshStandardMaterial
-            color={['#3B82F6', '#6366F1', '#06B6D4'][Math.floor(Math.random() * 3)]}
-            transparent
-            opacity={0.3}
-            metalness={0.8}
-            roughness={0.2}
-          />
-        </Box>
-      ))}
-      
-      {/* Floating Spheres */}
-      {[...Array(20)].map((_, i) => (
-        <Float key={`sphere-${i}`} speed={1} rotationIntensity={0.5} floatIntensity={0.5}>
-          <Sphere
-            position={[
-              (Math.random() - 0.5) * 15,
-              Math.random() * 10,
-              (Math.random() - 0.5) * 15
-            ]}
-            args={[Math.random() * 0.5 + 0.1]}
-          >
-            <meshStandardMaterial
-              color={['#FF6B6B', '#4ECDC4', '#45B7D1'][Math.floor(Math.random() * 3)]}
-              transparent
-              opacity={0.6}
-              emissive={['#FF6B6B', '#4ECDC4', '#45B7D1'][Math.floor(Math.random() * 3)]}
-              emissiveIntensity={0.2}
-            />
-          </Sphere>
-        </Float>
-      ))}
-    </group>
-  );
-};
-
-// Morphing Avatar Component
-const MorphingAvatar = () => {
-  const avatarRef = useRef();
-  const [currentStyle, setCurrentStyle] = useState(0);
-  const styles = ['animation', 'gaming', 'comics', 'vfx'];
-
-  useFrame((state) => {
-    if (!avatarRef.current) return;
-    const time = state.clock.getElapsedTime();
-    avatarRef.current.rotation.y = Math.sin(time * 0.5) * 0.3;
-    
-    // Morph between styles
-    if (Math.floor(time) % 3 === 0 && Math.floor(time) !== Math.floor(time - 0.016)) {
-      setCurrentStyle((prev) => (prev + 1) % styles.length);
-    }
-  });
-
-  return (
-    <group ref={avatarRef} position={[0, 0, 0]}>
-      <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-        <Sphere args={[1.5, 32, 32]}>
-          <meshStandardMaterial
-            color={['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][currentStyle]}
-            transparent
-            opacity={0.8}
-            metalness={0.9}
-            roughness={0.1}
-            emissive={['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][currentStyle]}
-            emissiveIntensity={0.3}
-          />
-        </Sphere>
-      </Float>
-    </group>
-  );
-};
-
-// Tech Stack Flow Component
-const TechStackFlow = () => {
-  const groupRef = useRef();
-  
-  useFrame((state) => {
-    if (!groupRef.current) return;
-    const time = state.clock.getElapsedTime();
-    groupRef.current.rotation.y = Math.sin(time * 0.2) * 0.1;
-  });
-
-  const stages = [
-    { name: 'Prompt', color: '#FF6B6B', position: [-6, 0, 0] },
-    { name: 'AI Engine', color: '#4ECDC4', position: [-2, 0, 0] },
-    { name: 'Asset Generator', color: '#45B7D1', position: [2, 0, 0] },
-    { name: 'Integration', color: '#96CEB4', position: [6, 0, 0] }
-  ];
-
-  return (
-    <group ref={groupRef}>
-      {stages.map((stage, index) => (
-        <group key={stage.name} position={stage.position}>
-          <Box args={[1.5, 1.5, 1.5]}>
-            <meshStandardMaterial
-              color={stage.color}
-              transparent
-              opacity={0.8}
-              metalness={0.8}
-              roughness={0.2}
-            />
-          </Box>
-          
-          {/* Connection arrows */}
-          {index < stages.length - 1 && (
-            <group position={[1.25, 0, 0]}>
-              <Box args={[0.5, 0.1, 0.1]}>
-                <meshStandardMaterial color="#FFFFFF" />
-              </Box>
-            </group>
-          )}
-        </group>
-      ))}
-    </group>
-  );
-};
-
-// Industry Panel Component
-function RotatingBox({ color }) {
-  const meshRef = React.useRef();
-  useFrame((state) => {
-    if (!meshRef.current) return;
-    const time = state.clock.getElapsedTime();
-    meshRef.current.rotation.y = Math.sin(time * 0.3) * 0.2;
-  });
-  return (
-    <group ref={meshRef}>
-      <Box args={[2, 2, 2]}>
-        <meshStandardMaterial
-          color={color}
-          transparent
-          opacity={0.7}
-          metalness={0.8}
-          roughness={0.2}
-        />
-      </Box>
-    </group>
-  );
-}
-
-const IndustryPanel = ({ icon: Icon, title, description, color }) => {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 50 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.8 }}
-      viewport={{ once: true }}
-      className="relative group"
-    >
-      <div className="backdrop-blur-xl bg-white/5 rounded-2xl p-8 border border-white/10 shadow-2xl hover:shadow-blue-500/20 transition-all duration-500 group-hover:scale-105">
-        <div className="flex items-center mb-6">
-          <div 
-            className="w-16 h-16 rounded-xl flex items-center justify-center mr-4"
-            style={{ backgroundColor: `${color}20` }}
-          >
-            <Icon className="text-3xl" style={{ color }} />
-          </div>
-          <h3 className="text-2xl font-bold text-white">{title}</h3>
-        </div>
-        <p className="text-gray-300 leading-relaxed">{description}</p>
-        {/* 3D Scene Preview */}
-        <div className="mt-6 h-48 rounded-xl overflow-hidden">
-          <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
-            <ambientLight intensity={0.5} />
-            <pointLight position={[10, 10, 10]} />
-            <RotatingBox color={color} />
-            <OrbitControls enableZoom={false} enablePan={false} />
-          </Canvas>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Float, Sphere } from '@react-three/drei';
 
 const Landing = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const containerRef = useRef();
-  const heroRef = useRef();
-  const { scrollYProgress } = useScroll();
-  
-  const y = useTransform(scrollYProgress, [0, 1], ['0%', '50%']);
-  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0]);
+  const [isVisible, setIsVisible] = useState(false);
+  const [activeFeature, setActiveFeature] = useState(0);
 
   useEffect(() => {
-    // GSAP Animations
-    const tl = gsap.timeline();
-    
-    tl.from('.hero-title', {
-      duration: 1.5,
-      y: 100,
-      opacity: 0,
-      ease: 'power3.out'
-    })
-    .from('.hero-subtitle', {
-      duration: 1,
-      y: 50,
-      opacity: 0,
-      ease: 'power2.out'
-    }, '-=0.5')
-    .from('.hero-description', {
-      duration: 1,
-      y: 30,
-      opacity: 0,
-      ease: 'power2.out'
-    }, '-=0.3')
-    .from('.hero-cta', {
-      duration: 0.8,
-      scale: 0,
-      opacity: 0,
-      ease: 'back.out(1.7)'
-    }, '-=0.2');
-
-    // Scroll-triggered animations
-    gsap.from('.feature-card', {
-      scrollTrigger: {
-        trigger: '.features-section',
-        start: 'top 80%',
-        end: 'bottom 20%',
-        scrub: 1
-      },
-      y: 100,
-      opacity: 0,
-      stagger: 0.2
-    });
-
-    gsap.from('.industry-panel', {
-      scrollTrigger: {
-        trigger: '.industries-section',
-        start: 'top 80%',
-        end: 'bottom 20%',
-        scrub: 1
-      },
-      y: 100,
-      opacity: 0,
-      stagger: 0.3
-    });
-
-    return () => {
-      tl.kill();
-      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
-    };
+    setIsVisible(true);
+    const interval = setInterval(() => {
+      setActiveFeature((prev) => (prev + 1) % 4);
+    }, 3000);
+    return () => clearInterval(interval);
   }, []);
 
-  const handleAction = () => {
+  const features = [
+    {
+      icon: FaBrain,
+      title: "AI-Powered Generation",
+      description: "Transform text prompts into stunning 3D assets with advanced AI technology"
+    },
+    {
+      icon: FaCube,
+      title: "Multiple Formats",
+      description: "Export to FBX, OBJ, GLTF and more for seamless integration"
+    },
+    {
+      icon: FaPalette,
+      title: "Style Variety",
+      description: "Choose from animation, gaming, comics, and VFX styles"
+    },
+    {
+      icon: FaCode,
+      title: "Developer Ready",
+      description: "Perfect for game development, AR/VR, and 3D applications"
+    }
+  ];
+
+  const stats = [
+    { number: "10K+", label: "Assets Generated" },
+    { number: "500+", label: "Happy Developers" },
+    { number: "50+", label: "Export Formats" },
+    { number: "24/7", label: "AI Processing" }
+  ];
+
+  const handleGetStarted = () => {
     if (user) {
-      navigate('/main');
+      navigate('/explore');
     } else {
       navigate('/login');
     }
   };
 
-  const industries = [
-    {
-      icon: FaGamepad,
-      title: 'Gaming',
-      description: 'Create immersive game worlds, characters, and assets with AI-powered generation.',
-      color: '#FF6B6B'
-    },
-    {
-      icon: FaFilm,
-      title: 'VFX',
-      description: 'Generate stunning visual effects, environments, and 3D assets for film and animation.',
-      color: '#4ECDC4'
-    },
-    {
-      icon: FaCompass,
-      title: 'Comics',
-      description: 'Transform text descriptions into dynamic comic panels and character designs.',
-      color: '#45B7D1'
-    },
-    {
-      icon: FaGraduationCap,
-      title: 'Education',
-      description: 'Interactive 3D learning environments and educational content generation.',
-      color: '#96CEB4'
-    },
-    {
-      icon: FaVrCardboard,
-      title: 'XR',
-      description: 'Build virtual and augmented reality experiences with AI-generated content.',
-      color: '#FFE66D'
-    }
-  ];
-
   return (
-    <div ref={containerRef} className="relative min-h-screen overflow-hidden bg-black">
-      {/* Navbar */}
-      <Navbar />
-
-      {/* Animated Background */}
-      <div className="fixed inset-0 z-0">
-        <Canvas camera={{ position: [0, 0, 10], fov: 60 }}>
-          <ambientLight intensity={0.3} />
-          <pointLight position={[10, 10, 10]} intensity={1} />
-          <pointLight position={[-10, -10, -10]} intensity={0.5} />
-          <ErrorBoundary>
-            <Suspense fallback={<LoadingFallback />}>
-              <AnimatedBackground />
-            </Suspense>
-          </ErrorBoundary>
-          <Environment preset="night" />
-        </Canvas>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white overflow-x-hidden">
+      {/* Animated 3D Background for Hero */}
+      <div className="absolute top-0 left-0 w-full h-[60vh] md:h-[70vh] z-0 pointer-events-none select-none">
+        <Suspense fallback={null}>
+          <HeroBackground3D />
+        </Suspense>
       </div>
-
-      {/* Hero Section */}
-      <motion.section 
-        ref={heroRef}
-        style={{ y, opacity }}
-        className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8"
-      >
-        <div className="text-center max-w-6xl mx-auto">
-          <h1 className="hero-title text-8xl md:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 mb-6 leading-tight">
-            In3D.ai
-          </h1>
-          <p className="hero-subtitle text-3xl md:text-4xl text-blue-200 mb-8 font-light">
-            Generative AI for Animation, VFX, Gaming, Comics & Extended Reality
-          </p>
-          <p className="hero-description text-xl md:text-2xl text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed">
-            Transform your creative vision into stunning 3D worlds with the power of artificial intelligence
-          </p>
-          
-          {/* 3D Avatar */}
-          <div className="max-w-2xl mx-auto mb-12 h-96">
-            <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
-              <ambientLight intensity={0.5} />
-              <pointLight position={[10, 10, 10]} />
-              <ErrorBoundary>
-                <Suspense fallback={<LoadingFallback />}>
-                  <MorphingAvatar />
-                </Suspense>
-              </ErrorBoundary>
-              <OrbitControls enableZoom={false} enablePan={false} />
-            </Canvas>
-          </div>
-
-          <motion.button
-            className="hero-cta group relative px-16 py-6 bg-gradient-to-r from-blue-600 via-purple-600 to-cyan-600 text-white rounded-full text-2xl font-bold overflow-hidden shadow-2xl hover:shadow-blue-500/50 transition-all duration-300"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleAction}
-          >
-            <span className="relative z-10">Start Building with AI</span>
-            <motion.div
-              className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-purple-600 to-blue-600"
-              initial={{ x: "-100%" }}
-              whileHover={{ x: 0 }}
-              transition={{ duration: 0.3 }}
+      {/* Animated Background Particles */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-purple-900/20 to-pink-900/20"></div>
+        <div className="absolute top-0 left-0 w-full h-full">
+          {[...Array(50)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-1 bg-cyan-400 rounded-full animate-pulse"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+                animationDuration: `${2 + Math.random() * 3}s`
+              }}
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-          </motion.button>
+          ))}
         </div>
-      </motion.section>
+      </div>
+      {/* Hero Section */}
+      <section className="relative z-10 min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : 30 }}
+            transition={{ duration: 0.8 }}
+            className="mb-8"
+          >
+            <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 mb-6">
+              <FaRocket className="text-cyan-400 mr-2" />
+              <span className="text-cyan-400 text-sm font-medium">Powered by Evoneural AI</span>
+            </div>
+            
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold mb-6 bg-gradient-to-r from-white via-cyan-400 to-blue-400 bg-clip-text text-transparent">
+              In3D.ai
+            </h1>
+            
+            <p className="text-xl sm:text-2xl lg:text-3xl text-gray-300 mb-8 max-w-4xl mx-auto leading-relaxed">
+              Transform your ideas into stunning 3D assets with AI-powered generation
+            </p>
+            
+            <p className="text-lg text-gray-400 mb-12 max-w-3xl mx-auto">
+              Create professional 3D models, characters, and environments from simple text prompts. 
+              Perfect for game developers, designers, and creators.
+            </p>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : 30 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+          >
+            <button
+              onClick={handleGetStarted}
+              className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full font-semibold text-lg hover:from-cyan-400 hover:to-blue-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-cyan-500/25"
+            >
+              <span className="flex items-center">
+                Get Started Free
+                <FaArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
+              </span>
+            </button>
+            
+            <button className="group px-8 py-4 border border-gray-600 rounded-full font-semibold text-lg hover:border-cyan-400 hover:text-cyan-400 transition-all duration-300 flex items-center">
+              <FaPlay className="mr-2" />
+              Watch Demo
+            </button>
+          </motion.div>
+        </div>
+      </section>
 
       {/* Features Section */}
-      <section className="features-section relative z-10 py-24 px-4 sm:px-6 lg:px-8">
+      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <motion.div
-            initial={{ opacity: 0, y: 50 }}
+            initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 mb-8">
-              Powerful Features
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 bg-gradient-to-r from-white to-cyan-400 bg-clip-text text-transparent">
+              Why Choose In3D.ai?
             </h2>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Everything you need to create stunning 3D content with AI
+            <p className="text-xl text-gray-400 max-w-3xl mx-auto">
+              Experience the future of 3D asset creation with cutting-edge AI technology
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-            {[
-              {
-                title: 'Text to 3D Environment',
-                description: 'Generate complete 3D environments from simple text descriptions',
-                icon: '🌍'
-              },
-              {
-                title: 'Mesh Generation',
-                description: 'Create high-quality 3D models with multiple export formats (FBX, GLTF, USDZ)',
-                icon: '🎯'
-              },
-              {
-                title: 'Unity Integration',
-                description: 'Seamless drag & drop functionality for Unity game development',
-                icon: '🎮'
-              }
-            ].map((feature, index) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {features.map((feature, index) => (
               <motion.div
-                key={feature.title}
-                className="feature-card backdrop-blur-xl bg-white/5 rounded-2xl p-8 border border-white/10 shadow-xl hover:shadow-blue-500/20 transition-all duration-500"
-                initial={{ opacity: 0, y: 50 }}
+                key={index}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 viewport={{ once: true }}
+                className={`group relative p-6 rounded-2xl border transition-all duration-300 hover:scale-105 ${
+                  activeFeature === index
+                    ? 'border-cyan-500 bg-gradient-to-br from-cyan-500/10 to-blue-500/10'
+                    : 'border-gray-700 hover:border-cyan-500/50 bg-gray-800/50'
+                }`}
+                onMouseEnter={() => setActiveFeature(index)}
               >
-                <div className="text-4xl mb-4">{feature.icon}</div>
-                <h3 className="text-2xl font-bold text-white mb-4">{feature.title}</h3>
-                <p className="text-gray-300 leading-relaxed">{feature.description}</p>
+                <div className={`w-16 h-16 rounded-xl flex items-center justify-center mb-4 transition-all duration-300 ${
+                  activeFeature === index
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500'
+                    : 'bg-gray-700 group-hover:bg-gray-600'
+                }`}>
+                  <feature.icon className={`text-2xl ${
+                    activeFeature === index ? 'text-white' : 'text-cyan-400'
+                  }`} />
+                </div>
+                
+                <h3 className="text-xl font-semibold mb-3 text-white">
+                  {feature.title}
+                </h3>
+                
+                <p className="text-gray-400 leading-relaxed">
+                  {feature.description}
+                </p>
               </motion.div>
             ))}
           </div>
+        </div>
+      </section>
 
-          {/* Speed, Affordability, No Coding */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                title: 'Lightning Fast',
-                description: 'Generate complex 3D scenes in seconds, not hours',
-                color: 'from-green-400 to-emerald-400'
-              },
-              {
-                title: 'Cost Effective',
-                description: 'Professional-grade tools at a fraction of traditional costs',
-                color: 'from-blue-400 to-cyan-400'
-              },
-              {
-                title: 'No Coding Required',
-                description: 'Intuitive interface designed for creators, not developers',
-                color: 'from-purple-400 to-pink-400'
-              }
-            ].map((benefit, index) => (
+      {/* Stats Section */}
+      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-gray-800/50 to-gray-900/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+            {stats.map((stat, index) => (
               <motion.div
-                key={benefit.title}
-                className="backdrop-blur-xl bg-white/5 rounded-2xl p-8 border border-white/10 shadow-xl"
+                key={index}
                 initial={{ opacity: 0, scale: 0.8 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 viewport={{ once: true }}
+                className="text-center"
               >
-                <h3 className={`text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r ${benefit.color} mb-4`}>
-                  {benefit.title}
-                </h3>
-                <p className="text-gray-300 leading-relaxed">{benefit.description}</p>
+                <div className="text-3xl sm:text-4xl lg:text-5xl font-bold text-cyan-400 mb-2">
+                  {stat.number}
+                </div>
+                <div className="text-gray-400 font-medium">
+                  {stat.label}
+                </div>
               </motion.div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Industries Section */}
-      <section className="industries-section relative z-10 py-24 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-8">
-              Industries We Serve
-            </h2>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Empowering creators across multiple industries with AI-powered 3D generation
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {industries.map((industry, index) => (
-              <IndustryPanel
-                key={industry.title}
-                {...industry}
-                className="industry-panel"
-              />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Tech Stack Section */}
-      <section className="relative z-10 py-24 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 mb-8">
-              Our Technology Stack
-            </h2>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-              Advanced AI pipeline from prompt to production-ready assets
-            </p>
-          </motion.div>
-
-          <div className="backdrop-blur-xl bg-white/5 rounded-3xl p-12 border border-white/10 shadow-2xl">
-            <div className="h-64 mb-8">
-              <Canvas camera={{ position: [0, 0, 15], fov: 50 }}>
-                <ambientLight intensity={0.5} />
-                <pointLight position={[10, 10, 10]} />
-                <ErrorBoundary>
-                  <Suspense fallback={<LoadingFallback />}>
-                    <TechStackFlow />
-                  </Suspense>
-                </ErrorBoundary>
-                <OrbitControls enableZoom={false} enablePan={false} />
-              </Canvas>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {[
-                { icon: SiUnity, name: 'Unity', color: '#000000' },
-                { icon: SiUnrealengine, name: 'Unreal Engine', color: '#313131' },
-                { icon: SiBlender, name: 'Blender', color: '#F5792A' }
-              ].map((engine) => (
-                <div key={engine.name} className="flex items-center justify-center p-6 backdrop-blur-xl bg-white/5 rounded-xl border border-white/10">
-                  <engine.icon className="text-4xl mr-4" style={{ color: engine.color }} />
-                  <span className="text-white font-semibold">{engine.name}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </section>
 
       {/* CTA Section */}
-      <section className="relative z-10 py-24 px-4 sm:px-6 lg:px-8">
+      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto text-center">
           <motion.div
-            initial={{ opacity: 0, y: 50 }}
+            initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
             viewport={{ once: true }}
           >
-            <h2 className="text-5xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 mb-8">
-              Ready to Transform Your Creativity?
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 bg-gradient-to-r from-white to-cyan-400 bg-clip-text text-transparent">
+              Ready to Create Amazing 3D Assets?
             </h2>
-            <p className="text-xl text-gray-300 mb-12 max-w-2xl mx-auto">
-              Join thousands of creators who are already building the future with In3D.ai
+            
+            <p className="text-xl text-gray-400 mb-8 max-w-2xl mx-auto">
+              Join thousands of developers and creators who are already using In3D.ai to bring their ideas to life
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-6 justify-center">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={handleAction}
-                className="group relative px-12 py-6 bg-gradient-to-r from-blue-600 via-purple-600 to-cyan-600 text-white rounded-full text-xl font-bold overflow-hidden shadow-2xl hover:shadow-blue-500/50 transition-all duration-300"
+            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+              <button
+                onClick={handleGetStarted}
+                className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full font-semibold text-lg hover:from-cyan-400 hover:to-blue-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-cyan-500/25"
               >
-                <span className="relative z-10">Start Building with AI</span>
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-purple-600 to-blue-600"
-                  initial={{ x: "-100%" }}
-                  whileHover={{ x: 0 }}
-                  transition={{ duration: 0.3 }}
-                />
-              </motion.button>
+                <span className="flex items-center">
+                  Start Creating Now
+                  <FaArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
+                </span>
+              </button>
               
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/login')}
-                className="px-12 py-6 border-2 border-blue-400 text-blue-400 rounded-full text-xl font-bold hover:bg-blue-400 hover:text-black transition-all duration-300"
-              >
-                View Live Demo
-              </motion.button>
+              <div className="flex items-center text-gray-400">
+                <div className="flex -space-x-2 mr-4">
+                  {[...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-8 h-8 rounded-full bg-gradient-to-r from-cyan-400 to-blue-400 border-2 border-gray-900"
+                    />
+                  ))}
+                </div>
+                <span className="text-sm">Join 500+ creators</span>
+              </div>
             </div>
           </motion.div>
         </div>
       </section>
+
+      {/* Footer */}
+      <footer className="relative z-10 py-12 px-4 sm:px-6 lg:px-8 border-t border-gray-800">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div className="flex items-center mb-4 md:mb-0">
+              <FaCube className="text-cyan-400 text-2xl mr-2" />
+              <span className="text-xl font-bold text-white">In3D.ai</span>
+            </div>
+            
+            <div className="flex items-center space-x-6 text-gray-400">
+              <span className="text-sm">© 2024 Evoneural AI. All rights reserved.</span>
+              <div className="flex items-center space-x-2">
+                <FaStar className="text-yellow-400" />
+                <span className="text-sm">Powered by Advanced AI</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
+  );
+};
+
+// Subtle 3D background for hero section
+const HeroBackground3D = () => {
+  // Animate a few floating, glowing spheres
+  return (
+    <Canvas
+      camera={{ position: [0, 0, 8], fov: 50 }}
+      style={{ width: '100%', height: '100%' }}
+      gl={{ alpha: true }}
+    >
+      <ambientLight intensity={0.5} />
+      <pointLight position={[0, 5, 10]} intensity={0.7} color="#06b6d4" />
+      {[...Array(5)].map((_, i) => (
+        <Float
+          key={i}
+          speed={1 + i * 0.2}
+          rotationIntensity={0.2}
+          floatIntensity={0.8}
+        >
+          <Sphere args={[0.6 + i * 0.15, 32, 32]} position={[
+            Math.sin(i) * 2.5,
+            Math.cos(i) * 1.5 + (i % 2 === 0 ? 0.5 : -0.5),
+            -1.5 + i * 0.5
+          ]}>
+            <meshStandardMaterial
+              color={["#06b6d4", "#818cf8", "#f472b6", "#facc15", "#38bdf8"][i]}
+              emissive={["#06b6d4", "#818cf8", "#f472b6", "#facc15", "#38bdf8"][i]}
+              emissiveIntensity={0.5}
+              transparent
+              opacity={0.7}
+              metalness={0.7}
+              roughness={0.2}
+            />
+          </Sphere>
+        </Float>
+      ))}
+    </Canvas>
   );
 };
 
