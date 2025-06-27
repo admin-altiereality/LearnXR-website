@@ -1,14 +1,16 @@
 {
   "name": "netlify-functions",
   "version": "1.0.0",
-  "description": "Netlify functions for payment processing",
+  "description": "Netlify functions for In3D.ai",
+  "main": "api.js",
   "dependencies": {
-    "razorpay": "^2.8.6"
+    "node-fetch": "^2.6.7"
   },
+  "devDependencies": {},
   "scripts": {
-    "build": "echo 'No build step required'"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 } 
