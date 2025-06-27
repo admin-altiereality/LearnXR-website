@@ -97,7 +97,7 @@ app.use((err, req, res, next) => {
         message: err.message || 'Internal app error'
     });
 });
-const PORT = process.env.PORT || 5002;
+const PORT = process.env.SERVER_PORT || process.env.PORT || 5002;
 app.listen(PORT, () => {
     console.log(`🚀 Server is running at http://localhost:${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
