@@ -20,23 +20,36 @@ exports.handler = async (event, context) => {
 
   try {
     // Get the API URL from environment variables
-    const apiUrl = process.env.API_URL || 'https://your-backend-server.com';
+    const apiUrl = process.env.API_URL || process.env.VITE_API_URL || 'https://your-backend-server.com';
     const path = event.path.replace('/.netlify/functions/api', '');
     const url = `${apiUrl}${path}`;
 
     console.log(`Proxying request to: ${url}`);
+    console.log('Request method:', event.httpMethod);
+    console.log('Request headers:', event.headers);
+    console.log('Request body:', event.body);
+
+    // Prepare request headers
+    const requestHeaders = {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Netlify-Function/1.0'
+    };
+
+    // Add authorization header if present
+    if (event.headers.authorization) {
+      requestHeaders.Authorization = event.headers.authorization;
+    }
 
     // Forward the request to your backend server
     const response = await fetch(url, {
       method: event.httpMethod,
-      headers: {
-        'Content-Type': 'application/json',
-        ...event.headers
-      },
-      body: event.httpMethod !== 'GET' ? event.body : undefined
+      headers: requestHeaders,
+      body: event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD' ? event.body : undefined
     });
 
     const data = await response.text();
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
     return {
       statusCode: response.status,
@@ -54,7 +67,8 @@ exports.handler = async (event, context) => {
       headers,
       body: JSON.stringify({
         error: 'Internal server error',
-        message: error.message
+        message: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       })
     };
   }

@@ -17,7 +17,7 @@
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=()"
     # Remove COOP header to fix Razorpay modal issues
     # Cross-Origin-Opener-Policy = "same-origin"
 
@@ -28,6 +28,16 @@
     Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
     Access-Control-Allow-Headers = "Content-Type, Authorization, X-Requested-With"
     Access-Control-Allow-Credentials = "true"
+
+[[redirects]]
+  from = "/api/env-check"
+  to = "/.netlify/functions/env-check"
+  status = 200
+
+[[redirects]]
+  from = "/api/skybox/*"
+  to = "/.netlify/functions/skybox/:splat"
+  status = 200
 
 [[redirects]]
   from = "/api/*"

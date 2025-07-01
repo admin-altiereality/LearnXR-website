@@ -185,17 +185,69 @@ export class RazorpayService {
             ondismiss: () => {
               console.log('Payment modal dismissed by user');
               reject(new Error('Payment cancelled'));
-            }
+            },
+            // Handle COOP restrictions
+            confirm_close: true,
+            escape: true
           },
           theme: {
             color: '#3B82F6'
+          },
+          // Add additional options to handle COOP restrictions
+          config: {
+            display: {
+              blocks: {
+                utib: {
+                  name: "Pay using UPI",
+                  instruments: [
+                    {
+                      method: "upi"
+                    }
+                  ]
+                },
+                other: {
+                  name: "Other Payment methods",
+                  instruments: [
+                    {
+                      method: "card"
+                    },
+                    {
+                      method: "netbanking"
+                    }
+                  ]
+                }
+              },
+              sequence: ["block.utib", "block.other"],
+              preferences: {
+                show_default_blocks: false
+              }
+            }
           }
         };
 
         console.log('Creating Razorpay instance with options:', { ...options, key: 'HIDDEN' });
-        const razorpay = new window.Razorpay(options);
-        console.log('Opening Razorpay modal...');
-        razorpay.open();
+        
+        try {
+          const razorpay = new window.Razorpay(options);
+          console.log('Opening Razorpay modal...');
+          
+          // Handle potential COOP errors
+          razorpay.open();
+          
+          // Add a timeout to handle cases where the modal doesn't open properly
+          setTimeout(() => {
+            // Check if the modal opened successfully
+            if (document.querySelector('.razorpay-container')) {
+              console.log('Razorpay modal opened successfully');
+            } else {
+              console.warn('Razorpay modal may not have opened properly');
+            }
+          }, 1000);
+          
+        } catch (modalError) {
+          console.error('Error opening Razorpay modal:', modalError);
+          reject(new Error('Failed to open payment modal. Please try again.'));
+        }
       });
     } catch (error) {
       console.error('Payment initialization error:', error);
