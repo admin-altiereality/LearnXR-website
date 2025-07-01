@@ -107,14 +107,13 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
         // Create Scene
         sceneRef.current = new THREE.Scene();
 
-        // Create and Setup Camera
-        cameraRef.current = new THREE.PerspectiveCamera(
-          75,
-          container.clientWidth / container.clientHeight,
-          0.1,
-          1000
-        );
+        // Create and Setup Camera - Use a different approach to avoid permissions warnings
+        const aspect = container.clientWidth / container.clientHeight;
+        cameraRef.current = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
         cameraRef.current.position.set(0, 0, 0.1);
+        
+        // Disable camera permissions by using a fixed position
+        cameraRef.current.userData = { isVirtual: true };
 
         // Create and Setup Renderer
         rendererRef.current = new THREE.WebGLRenderer({
@@ -122,9 +121,11 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
           powerPreference: "high-performance",
           precision: "highp",
           preserveDrawingBuffer: true,
+          alpha: true
         });
         rendererRef.current.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         rendererRef.current.setSize(container.clientWidth, container.clientHeight);
+        rendererRef.current.setClearColor(0x000000, 0);
         container.innerHTML = "";
         container.appendChild(rendererRef.current.domElement);
 
@@ -176,8 +177,12 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
 
         // Animation Loop
         const animate = () => {
-          controlsRef.current.update();
-          rendererRef.current.render(sceneRef.current, cameraRef.current);
+          if (controlsRef.current) {
+            controlsRef.current.update();
+          }
+          if (rendererRef.current && sceneRef.current && cameraRef.current) {
+            rendererRef.current.render(sceneRef.current, cameraRef.current);
+          }
           animationFrameId = requestAnimationFrame(animate);
         };
 
@@ -189,9 +194,13 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
           const width = container.clientWidth;
           const height = container.clientHeight;
           
-          cameraRef.current.aspect = width / height;
-          cameraRef.current.updateProjectionMatrix();
-          rendererRef.current.setSize(width, height);
+          if (cameraRef.current) {
+            cameraRef.current.aspect = width / height;
+            cameraRef.current.updateProjectionMatrix();
+          }
+          if (rendererRef.current) {
+            rendererRef.current.setSize(width, height);
+          }
         };
 
         window.addEventListener("resize", handleResize);
