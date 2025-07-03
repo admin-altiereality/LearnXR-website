@@ -228,11 +228,11 @@ const CommunitySection = () => {
         <div className="text-center">
           <h3 className="text-2xl font-bold text-white mb-4">Share Your Creation</h3>
           <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-            Join our vibrant community and showcase your skybox creations to the world
+            Join our vibrant community and showcase your In3D.Ai creations to the world
           </p>
           <button className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg 
                          transition-all duration-200 backdrop-blur-md border border-white/20">
-            Upload Your Skybox
+                          Upload Your In3D.Ai
           </button>
         </div>
       </div>

@@ -60,7 +60,7 @@ const TrendingSection = ({ onSelect }) => {
       <div className="text-center">
         <h2 className="text-3xl font-bold text-white mb-4">Trending Now</h2>
         <p className="text-gray-400 max-w-2xl mx-auto">
-          Discover the most popular and trending skyboxes in our community
+          Discover the most popular and trending In3D.Ai environments in our community
         </p>
       </div>
 
@@ -189,7 +189,7 @@ const TrendingSection = ({ onSelect }) => {
         <div className="text-center">
           <h3 className="text-2xl font-bold text-white mb-4">Become a Rising Star</h3>
           <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-            Create and share your skyboxes to get featured in our trending section
+            Create and share your In3D.Ai environments to get featured in our trending section
           </p>
           <button className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-lg 
                          transition-all duration-200 backdrop-blur-md border border-white/20">

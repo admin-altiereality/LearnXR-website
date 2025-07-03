@@ -5,7 +5,7 @@ const TUTORIALS = [
   {
     id: 'getting-started',
     title: 'Getting Started Guide',
-    description: 'Learn the basics of creating stunning skyboxes',
+          description: 'Learn the basics of creating stunning In3D.Ai environments',
     type: 'guide',
     difficulty: 'Beginner',
     duration: '15 mins',
@@ -33,7 +33,7 @@ const TUTORIALS = [
   {
     id: 'best-practices',
     title: 'Best Practices',
-    description: 'Tips and tricks for creating high-quality skyboxes',
+          description: 'Tips and tricks for creating high-quality In3D.Ai environments',
     type: 'guide',
     difficulty: 'Intermediate',
     duration: '20 mins',
@@ -73,7 +73,7 @@ const TutorialsSection = () => {
       <div className="text-center">
         <h2 className="text-3xl font-bold text-white mb-4">Tutorials & Resources</h2>
         <p className="text-gray-400 max-w-2xl mx-auto">
-          Learn how to create amazing skyboxes with our comprehensive guides and tutorials
+          Learn how to create amazing In3D.Ai environments with our comprehensive guides and tutorials
         </p>
       </div>
 

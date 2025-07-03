@@ -7,6 +7,7 @@ import { skyboxService } from '../services/skyboxService';
 import { subscriptionService } from '../services/subscriptionService';
 import DownloadPopup from './DownloadPopup';
 import UpgradeModal from './UpgradeModal';
+import LoadingPlaceholder from './LoadingPlaceholder';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
@@ -29,12 +30,15 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
   const [currentSkyboxIndex, setCurrentSkyboxIndex] = useState(0);
+  const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
 
   useEffect(() => {
     const fetchSkyboxStyles = async () => {
       try {
-        const response = await api.get(`/api/skybox/getSkyboxStyles`);
-        setSkyboxStyles(response.data.styles || []);
+        // Fetch all skybox styles by requesting a large limit
+        const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
+        setSkyboxStyles(response.data.data?.styles || []);
+        console.log(`Loaded ${response.data.data?.styles?.length || 0} skybox styles`);
       } catch (error) {
         console.error("Error fetching skybox styles:", error);
         setError("Failed to load skybox styles");
@@ -92,14 +96,31 @@ const MainSection = ({ setBackgroundSkybox }) => {
     maxGenerations: subscription?.planId === 'free' ? 10 : subscription?.planId === 'pro' ? Infinity : Infinity
   };
 
-  // Get current plan details
+  // Get current plan details with proper type safety
   const currentPlan = subscriptionService.getPlanById(subscription?.planId || 'free');
-  const remainingGenerations = currentPlan?.limits.skyboxGenerations === Infinity 
+  const currentUsage = parseInt(subscription?.usage?.skyboxGenerations || 0);
+  const currentLimit = currentPlan?.limits.skyboxGenerations || 10;
+  const isUnlimited = currentLimit === Infinity;
+  
+  // Calculate remaining generations (current)
+  const remainingGenerations = isUnlimited 
     ? '∞' 
-    : Math.max(0, (currentPlan?.limits.skyboxGenerations || 10) - (subscription?.usage?.skyboxGenerations || 0));
-  const usagePercentage = currentPlan?.limits.skyboxGenerations === Infinity 
+    : Math.max(0, currentLimit - currentUsage);
+  
+  // Calculate remaining generations after current generation
+  const remainingAfterGeneration = isUnlimited 
+    ? '∞' 
+    : Math.max(0, currentLimit - currentUsage - numVariations);
+  
+  // Calculate usage percentage (current usage only)
+  const usagePercentage = isUnlimited 
     ? 0 
-    : Math.min(((subscription?.usage?.skyboxGenerations || 0) / (currentPlan?.limits.skyboxGenerations || 10)) * 100, 100);
+    : Math.min((currentUsage / currentLimit) * 100, 100);
+  
+  // Calculate projected usage percentage (for warning display)
+  const projectedUsagePercentage = isUnlimited 
+    ? 0 
+    : Math.min(((currentUsage + numVariations) / currentLimit) * 100, 100);
 
   // Update subscription after generation
   const updateSubscriptionCount = async () => {
@@ -111,16 +132,17 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
   const generateSkybox = async () => {
     if (!prompt || !selectedSkybox) {
-      setError("Please provide a prompt and select a skybox style");
+              setError("Please provide a prompt and select an In3D.Ai style");
       return;
     }
 
     // Check subscription limits before generating
-    if (currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0) {
+    if (!isUnlimited && remainingGenerations < numVariations) {
+      const canGenerate = Math.max(0, remainingGenerations);
       setError(
         subscription?.planId === 'free' 
-          ? "You've reached your free tier limit. Please upgrade to continue generating skyboxes."
-          : "You've reached your daily generation limit. Please try again tomorrow."
+                  ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please upgrade to continue generating environments.`
+        : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please try again tomorrow.`
       );
       return;
     }
@@ -155,14 +177,14 @@ const MainSection = ({ setBackgroundSkybox }) => {
       const variations = [];
       for (let i = 0; i < numVariations; i++) {
         setCurrentSkyboxIndex(i);
-        const variationResponse = await api.post("/api/skybox/generateSkybox", {
+        const variationResponse = await api.post("/api/skybox/generate", {
           prompt: prompt,
           skybox_style_id: selectedSkybox.id,
           webhook_url: `/api/skybox/${prompt}`,
         });
 
-        if (variationResponse.data && variationResponse.data.id) {
-          variations.push(variationResponse.data.id);
+        if (variationResponse.data && variationResponse.data.data && variationResponse.data.data.id) {
+          variations.push(variationResponse.data.data.id);
           // Update progress after each variation is queued
           const baseProgress = 30;
           const progressPerSkybox = 60 / numVariations;
@@ -176,16 +198,24 @@ const MainSection = ({ setBackgroundSkybox }) => {
         variations.map(async (variationId) => {
           let variationStatus;
           do {
-            const statusResponse = await api.get(`/api/imagine/getImagineById?id=${variationId}`);
-            variationStatus = statusResponse.data;
+            const statusResponse = await api.get(`/api/skybox/status/${variationId}`);
+            variationStatus = statusResponse.data.data; // New API structure
+            console.log(`Status for ${variationId}:`, variationStatus);
+            
             if (variationStatus.status !== "completed" && variationStatus.status !== "complete") {
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
           } while (variationStatus.status !== "completed" && variationStatus.status !== "complete");
 
+          // Ensure we have a valid image URL
+          const imageUrl = variationStatus.file_url || variationStatus.image || variationStatus.thumb_url;
+          if (!imageUrl) {
+            throw new Error(`No image URL found for variation ${variationId}`);
+          }
+
           return {
-            image: variationStatus.file_url,
-            image_jpg: variationStatus.file_url,
+            image: imageUrl,
+            image_jpg: imageUrl,
             title: variationStatus.title || prompt,
             prompt: variationStatus.prompt || prompt
           };
@@ -196,6 +226,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setGeneratedVariations(variationResults);
       setBackgroundSkybox(variationResults[0]);
       
+      // Set the current image for download (first variation)
+      setCurrentImageForDownload(variationResults[0]);
+      
       // Update Firebase with all variations
       await skyboxService.updateSkybox(skyboxId, {
         status: 'complete',
@@ -203,6 +236,24 @@ const MainSection = ({ setBackgroundSkybox }) => {
         variations: variationResults,
         updatedAt: serverTimestamp()
       });
+
+      // Update subscription usage count
+      if (user?.uid) {
+        try {
+          // Increment usage for each variation generated
+          for (let i = 0; i < numVariations; i++) {
+            await subscriptionService.incrementUsage(user.uid, 'skyboxGenerations');
+          }
+          
+          // Refresh subscription data
+          await updateSubscriptionCount();
+          
+          console.log(`Updated subscription usage: ${numVariations} In3D.Ai generations added`);
+        } catch (error) {
+          console.error('Error updating subscription usage:', error);
+          // Don't fail the generation if usage tracking fails
+        }
+      }
 
       setProgress(100);
       setIsGenerating(false);
@@ -222,7 +273,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
         });
       }
 
-      setError("Failed to generate skybox: " + error.message);
+              setError("Failed to generate In3D.Ai environment: " + error.message);
       setIsGenerating(false);
       setProgress(0);
     }
@@ -244,6 +295,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
     setCurrentVariationIndex(newIndex);
     setBackgroundSkybox(generatedVariations[newIndex]);
+    setCurrentImageForDownload(generatedVariations[newIndex]);
   };
 
   // Modify the skybox style selection handler
@@ -266,13 +318,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
   };
 
   // Helper for progress status text
-  const getProgressStatus = (progress) => {
-    if (progress < 10) return 'Initializing...';
-    if (progress < 20) return 'Processing prompt...';
-    if (progress < 90) return `Generating skybox ${currentSkyboxIndex + 1} of ${numVariations}...`;
-    if (progress < 100) return 'Finalizing...';
-    return 'Applying skybox...';
-  };
+
 
   return (
     <div className="relative w-full min-h-screen">
@@ -381,10 +427,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
             }`}>
               {isMinimized ? (
                 // Minimized View
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-300">
-                    {subscriptionInfo.generationsLeft} generations left
-                  </span>
+                <div className="flex items-center justify-center">
                   <button
                     onClick={() => setIsMinimized(false)}
                     className="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
@@ -396,80 +439,17 @@ const MainSection = ({ setBackgroundSkybox }) => {
                 // Full View - Show only progress during generation
                 <>
                   {isGenerating ? (
-                    // Progress Indicator
+                    // Loading Placeholder
                     <div className="py-6 px-4">
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-300">{getProgressStatus(progress)}</span>
-                          <span className="text-gray-400">{progress}%</span>
-                        </div>
-                        <div className="relative">
-                          <div className="h-1 w-full bg-gray-700/50 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-500/50 transition-all duration-300 ease-out"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          {/* Animated Glow Effect */}
-                          <div 
-                            className="absolute top-0 h-1 w-[100px] bg-gradient-to-r from-transparent via-blue-400/20 to-transparent animate-shimmer"
-                            style={{ 
-                              left: `${progress - 10}%`,
-                              transition: 'left 0.3s ease-out',
-                              display: progress < 100 ? 'block' : 'none'
-                            }}
-                          />
-                        </div>
-                      </div>
+                      <LoadingPlaceholder 
+                        progress={progress}
+                        currentSkyboxIndex={currentSkyboxIndex}
+                        numVariations={numVariations}
+                      />
                     </div>
                   ) : (
                     // Normal Control Panel Content
                     <>
-                      {/* Generation Status */}
-                      <div className="mb-6 p-4 bg-gray-800/30 rounded-lg border border-gray-700/50 backdrop-blur-sm">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center space-x-2">
-                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                            <span className="text-sm font-medium text-gray-300">
-                              {currentPlan?.name || 'Free'} Plan
-                            </span>
-                          </div>
-                          {subscription?.planId === 'free' && (
-                            <button
-                              onClick={handleUpgrade}
-                              className="text-xs text-purple-400 hover:text-purple-300 transition-colors duration-200 font-medium"
-                            >
-                              Upgrade
-                            </button>
-                          )}
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-gray-400">Generations Remaining</span>
-                            <span className="text-gray-200 font-medium">
-                              {remainingGenerations} {currentPlan?.limits.skyboxGenerations === Infinity ? '' : 'left'}
-                            </span>
-                          </div>
-                          
-                          {currentPlan?.limits.skyboxGenerations !== Infinity && (
-                            <div className="w-full bg-gray-700/50 rounded-full h-2 overflow-hidden">
-                              <div
-                                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300"
-                                style={{ width: `${usagePercentage}%` }}
-                              />
-                            </div>
-                          )}
-                          
-                          <div className="flex justify-between items-center text-xs text-gray-500">
-                            <span>Used: {subscription?.usage?.skyboxGenerations || 0}</span>
-                            <span>Limit: {currentPlan?.limits.skyboxGenerations === Infinity ? '∞' : currentPlan?.limits.skyboxGenerations || 10}</span>
-                          </div>
-                        </div>
-                      </div>
-
                       {error && (
                         <div className="mb-4 text-sm text-red-400">
                           {error}
@@ -545,14 +525,14 @@ const MainSection = ({ setBackgroundSkybox }) => {
                       {/* Skybox Style and Generate Button - Three Columns */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
-                          <label className="block text-xs font-medium mb-1 text-gray-200">Skybox Style</label>
+                          <label className="block text-xs font-medium mb-1 text-gray-200">In3D.Ai Style</label>
                           <select
                             className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
                             onChange={handleSkyboxStyleChange}
                             value={selectedSkybox?.id || ""}
                           >
                             <option value="" disabled>
-                              -- Choose a Skybox Style --
+                              -- Choose an In3D.Ai Style --
                             </option>
                             {skyboxStyles.map((style) => (
                               <option key={style.id} value={style.id}>
@@ -567,11 +547,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50 ${
                               isGenerating 
                                 ? 'bg-blue-500/50 cursor-not-allowed backdrop-blur-sm'
-                                : currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0
+                                : !isUnlimited && remainingAfterGeneration < 0
                                 ? 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
                                 : 'bg-gradient-to-r from-blue-500/50 to-indigo-600/50 hover:from-blue-600/60 hover:to-indigo-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
                             }`}
-                            onClick={currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0 ? handleUpgrade : generateSkybox}
+                            onClick={!isUnlimited && remainingAfterGeneration < 0 ? handleUpgrade : generateSkybox}
                             disabled={isGenerating}
                           >
                             <div className="relative flex items-center justify-center">
@@ -597,9 +577,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                     />
                                   </svg>
-                                  <span className="text-sm">{progress < 100 ? 'Generating...' : 'Applying Skybox...'}</span>
+                                  <span className="text-sm">{progress < 100 ? 'Generating...' : 'Applying In3D.Ai...'}</span>
                                 </>
-                              ) : currentPlan?.limits.skyboxGenerations !== Infinity && remainingGenerations <= 0 ? (
+                              ) : !isUnlimited && remainingAfterGeneration < 0 ? (
                                 <div className="flex items-center space-x-2">
                                   <svg 
                                     className="w-4 h-4" 
@@ -621,7 +601,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-sm">Generate Skybox</span>
+                                <span className="text-sm">Generate In3D.Ai</span>
                               )}
                             </div>
                           </button>
@@ -630,12 +610,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         <div className="flex items-end">
                           <button
                             className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500/50 
-                              ${!generatedImageId 
+                              ${!currentImageForDownload 
                                 ? 'bg-gray-600/30 cursor-not-allowed' 
                                 : 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0'} 
                               backdrop-blur-sm`}
                             onClick={() => setShowDownloadPopup(true)}
-                            disabled={!generatedImageId}
+                            disabled={!currentImageForDownload}
                           >
                             <div className="relative flex items-center justify-center">
                               <svg 
@@ -668,8 +648,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
       <DownloadPopup
         isOpen={showDownloadPopup}
         onClose={() => setShowDownloadPopup(false)}
-        imageId={generatedImageId}
-        title={prompt || 'skybox'}
+        imageUrl={currentImageForDownload?.image}
+        title={prompt || 'In3D.Ai environment'}
       />
 
       <UpgradeModal 

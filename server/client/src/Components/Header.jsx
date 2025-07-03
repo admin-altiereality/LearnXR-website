@@ -114,6 +114,17 @@ const Header = () => {
     return limit === Infinity ? '∞' : Math.max(0, limit - used);
   };
 
+  // Get current usage for display
+  const getCurrentUsage = () => {
+    return subscription?.usage?.skyboxGenerations || 0;
+  };
+
+  // Get current limit for display
+  const getCurrentLimit = () => {
+    const plan = getCurrentPlan();
+    return plan?.limits.skyboxGenerations || 10;
+  };
+
   return (
     <>
       <header className="bg-gray-900/80 backdrop-blur-xl border-b border-gray-800/50 sticky top-0 z-50">
@@ -187,7 +198,7 @@ const Header = () => {
                               </div>
                               <div>
                                 <div className="font-medium">Featured Gallery</div>
-                                <div className="text-xs text-gray-500">Browse curated skyboxes</div>
+                                <div className="text-xs text-gray-500">Browse curated In3D.Ai environments</div>
                               </div>
                             </div>
                           </Link>
@@ -367,15 +378,21 @@ const Header = () => {
                       </div>
 
                       {/* Usage Stats */}
-                      {subscription?.planId === 'free' && (
-                        <div className="px-4 py-3 border-b border-gray-700/50">
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-400">Generations Used</span>
-                              <span className="text-sm text-gray-300">
-                                {subscription.usage?.skyboxGenerations || 0}/{getCurrentPlan()?.limits.skyboxGenerations || 10}
-                              </span>
-                            </div>
+                      <div className="px-4 py-3 border-b border-gray-700/50">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-400">Generations Used</span>
+                            <span className="text-sm text-gray-300">
+                              {getCurrentUsage()}/{getCurrentLimit() === Infinity ? '∞' : getCurrentLimit()}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-400">Remaining</span>
+                            <span className="text-sm text-gray-300">
+                              {getRemainingGenerations()} {getCurrentLimit() === Infinity ? '' : 'left'}
+                            </span>
+                          </div>
+                          {getCurrentLimit() !== Infinity && (
                             <div className="w-full bg-gray-800 rounded-full h-2">
                               <div
                                 className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
@@ -384,15 +401,17 @@ const Header = () => {
                                 }}
                               />
                             </div>
+                          )}
+                          {subscription?.planId === 'free' && (
                             <button
                               onClick={handleUpgradeClick}
                               className="w-full px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-lg transition-all duration-200 text-sm font-medium"
                             >
                               Upgrade for Unlimited
                             </button>
-                          </div>
+                          )}
                         </div>
-                      )}
+                      </div>
 
                       {/* Quick Actions */}
                       <div className="py-1">

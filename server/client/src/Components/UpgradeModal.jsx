@@ -145,8 +145,8 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
 
                         <div className="mb-6 text-sm text-gray-300">
                           {plan.limits.skyboxGenerations === Infinity 
-                            ? 'Unlimited generations'
-                            : `${plan.limits.skyboxGenerations} generations per day`
+                            ? 'Unlimited In3D.Ai generations'
+                            : `${plan.limits.skyboxGenerations} In3D.Ai generations per day`
                           }
                         </div>
 
