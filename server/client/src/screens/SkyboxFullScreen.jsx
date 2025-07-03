@@ -3,6 +3,16 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
+// API URL for backend calls
+const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+
+// Default skybox data for when no image is available
+const DEFAULT_SKYBOX = {
+  image: null,
+  image_jpg: null,
+  isDefault: true
+};
+
 const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
   const { state } = useLocation();
   const { id } = useParams();
@@ -12,7 +22,7 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
   const rendererRef = useRef(null);
   const cameraRef = useRef(null);
   const controlsRef = useRef(null);
-  const [style, setStyle] = useState(skyboxData || state?.style || null);
+  const [style, setStyle] = useState(skyboxData || state?.style || DEFAULT_SKYBOX);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const isDraggingRef = useRef(false);
@@ -95,8 +105,6 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
   }, []);
 
   useEffect(() => {
-    if (!style?.image && !style?.image_jpg) return;
-
     const container = containerRef.current;
     if (!container) return;
 
@@ -142,24 +150,66 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
           controlsRef.current.autoRotateSpeed = 0.5;
         }
 
-        // Load Texture
-        const textureLoader = new THREE.TextureLoader();
-        textureLoader.setCrossOrigin("anonymous");
+        let texture;
 
-        const texture = await new Promise((resolve, reject) => {
-          textureLoader.load(
-            style.image || style.image_jpg,
-            (tex) => {
-              tex.minFilter = THREE.LinearMipMapLinearFilter;
-              tex.magFilter = THREE.LinearFilter;
-              tex.format = THREE.RGBAFormat;
-              tex.encoding = THREE.sRGBEncoding;
-              resolve(tex);
-            },
-            undefined,
-            reject
-          );
-        });
+        // Check if we have a valid image or if we need to use default gradient
+        if (style?.image || style?.image_jpg) {
+          // Load Texture from URL
+          const textureLoader = new THREE.TextureLoader();
+          textureLoader.setCrossOrigin("anonymous");
+
+          texture = await new Promise((resolve, reject) => {
+            textureLoader.load(
+              style.image || style.image_jpg,
+              (tex) => {
+                tex.minFilter = THREE.LinearMipMapLinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                tex.format = THREE.RGBAFormat;
+                tex.encoding = THREE.sRGBEncoding;
+                resolve(tex);
+              },
+              undefined,
+              reject
+            );
+          });
+        } else {
+          // Create default gradient texture
+          const canvas = document.createElement('canvas');
+          canvas.width = 1024;
+          canvas.height = 512;
+          const ctx = canvas.getContext('2d');
+
+          // Create a beautiful gradient skybox
+          const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+          gradient.addColorStop(0, '#1e3a8a');   // Deep blue at top
+          gradient.addColorStop(0.3, '#3b82f6'); // Blue
+          gradient.addColorStop(0.6, '#60a5fa'); // Light blue
+          gradient.addColorStop(0.8, '#93c5fd'); // Very light blue
+          gradient.addColorStop(1, '#dbeafe');   // Pale blue at bottom
+
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // Add some stars for a night sky effect
+          for (let i = 0; i < 100; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height * 0.7; // Only in upper 70%
+            const radius = Math.random() * 2 + 0.5;
+            const opacity = Math.random() * 0.8 + 0.2;
+
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+            ctx.fill();
+          }
+
+          // Create texture from canvas
+          texture = new THREE.CanvasTexture(canvas);
+          texture.minFilter = THREE.LinearMipMapLinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          texture.format = THREE.RGBAFormat;
+          texture.encoding = THREE.sRGBEncoding;
+        }
 
         // Create Geometry
         const geometry = new THREE.SphereGeometry(500, 128, 128);
@@ -228,7 +278,9 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
           
           geometry.dispose();
           material.dispose();
-          texture.dispose();
+          if (texture) {
+            texture.dispose();
+          }
           
           // Clear all references
           sceneRef.current = null;
@@ -272,7 +324,7 @@ const SkyboxFullscreen = ({ isBackground = false, skyboxData = null }) => {
     >
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center text-white text-xl">
-          Loading environment...
+          {style?.isDefault ? 'Loading default environment...' : 'Loading environment...'}
         </div>
       )}
       <div ref={containerRef} className="w-full h-full" />
