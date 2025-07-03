@@ -28,7 +28,7 @@ const Profile = () => {
         limit: 10
       },
       features: freePlan?.features || [
-        'Generate up to 10 skyboxes',
+        'Generate up to 10 In3D.Ai environments',
         'Basic styles available',
         'Standard quality output',
         'Community support'
@@ -163,7 +163,7 @@ const Profile = () => {
           
           <div className="space-y-4">
             <div>
-              <p className="text-sm text-gray-400">Skybox Generations</p>
+              <p className="text-sm text-gray-400">In3D.Ai Generations</p>
               <div className="mt-2 relative pt-1">
                 <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-700/50">
                   <div
@@ -179,7 +179,7 @@ const Profile = () => {
                 </div>
                 <div className="flex justify-between mt-1">
                   <p className="text-xs text-gray-400">
-                    {subscription.usage.count} / {subscription.usage.limit} skyboxes generated
+                    {subscription.usage.count} / {subscription.usage.limit} In3D.Ai environments generated
                   </p>
                   {subscription.usage.count >= subscription.usage.limit && (
                     <p className="text-xs text-red-400">Limit reached</p>
@@ -192,7 +192,7 @@ const Profile = () => {
               {subscription.usage.count >= subscription.usage.limit && subscription.planId === 'free' ? (
                 <div className="space-y-3">
                   <p className="text-sm text-red-400">
-                    You've reached the free tier limit. Upgrade your plan to generate more skyboxes.
+                    You've reached the free tier limit. Upgrade your plan to generate more In3D.Ai environments.
                   </p>
                   <button
                     onClick={handleUpgradeClick}

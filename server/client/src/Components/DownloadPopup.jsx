@@ -1,25 +1,23 @@
 import axios from 'axios';
 import React from 'react';
 
-const DownloadPopup = ({ isOpen, onClose, imageId, title }) => {
+const DownloadPopup = ({ isOpen, onClose, imageUrl, title }) => {
   const handleDownload = async (format) => {
     try {
-      const response = await axios.get(`${apiUrl}/api/imagine/getImagineById`, {
-        params: { id: imageId },
-      });
-
-      if (!response.data || !response.data.file_url) {
-        throw new Error('No image URL found');
+      if (!imageUrl) {
+        throw new Error('No image URL provided');
       }
 
-      const imageResponse = await axios.get(response.data.file_url, {
+      // For different formats, we'll use the same image URL but change the extension
+      // In a real implementation, you might want to call different API endpoints for different formats
+      const imageResponse = await axios.get(imageUrl, {
         responseType: 'blob'
       });
 
       const url = window.URL.createObjectURL(new Blob([imageResponse.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${title || 'skybox'}.${format}`);
+              link.setAttribute('download', `${title || 'In3D.Ai environment'}.${format}`);
       document.body.appendChild(link);
       link.click();
       link.parentNode.removeChild(link);

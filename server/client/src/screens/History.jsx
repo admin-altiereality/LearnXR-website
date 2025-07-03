@@ -188,7 +188,7 @@ const History = ({ setBackgroundSkybox }) => {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-white/90 mb-2">Generation History</h1>
-            <p className="text-gray-400">Manage and explore your created skyboxes</p>
+            <p className="text-gray-400">Manage and explore your created In3D.Ai environments</p>
           </div>
           <button
             onClick={() => navigate('/main')}
@@ -271,12 +271,12 @@ const History = ({ setBackgroundSkybox }) => {
               </svg>
             </div>
             <h3 className="text-xl font-semibold text-white mb-2">No generations found</h3>
-            <p className="text-gray-400 mb-6">Start creating your first skybox to see it here</p>
+            <p className="text-gray-400 mb-6">Start creating your first In3D.Ai environment to see it here</p>
             <button
               onClick={() => navigate('/main')}
               className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg transition-all duration-200 font-medium"
             >
-              Create Your First Skybox
+                              Create Your First In3D.Ai Environment
             </button>
           </div>
         ) : (
@@ -299,7 +299,7 @@ const History = ({ setBackgroundSkybox }) => {
                   onMouseEnter={() => setHoveredGroup(item.id)}
                   onMouseLeave={() => setHoveredGroup(null)}
                 >
-                  {/* Main Skybox */}
+                  {/* Main In3D.Ai Environment */}
                   <div
                     className={`
                       relative group bg-gray-900/20 backdrop-blur-sm rounded-xl overflow-hidden

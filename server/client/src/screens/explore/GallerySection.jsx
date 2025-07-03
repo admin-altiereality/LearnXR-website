@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
 import api from '../../config/axios';
+import DownloadPopup from '../../Components/DownloadPopup';
 
 const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
   const [skyboxStyles, setSkyboxStyles] = useState([]);
@@ -8,53 +9,22 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
   const [error, setError] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedStyle, setSelectedStyle] = useState(null);
+  const [showDownloadPopup, setShowDownloadPopup] = useState(false);
+  const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
 
   // Fetch skybox styles from API
   useEffect(() => {
     const fetchSkyboxStyles = async () => {
       try {
         setLoading(true);
-        const response = await api.get('/api/skybox/getSkyboxStyles');
-        const styles = response.data.styles || [];
+        // Fetch all skybox styles by requesting a large limit
+        const response = await api.get('/api/skybox/styles?page=1&limit=100');
+        const styles = response.data.data?.styles || [];
+        console.log(`Loaded ${styles.length} skybox styles in explore section`);
         
-        // If no styles returned, use fallback data
         if (styles.length === 0) {
+          // fallback data
           const fallbackStyles = [
-            {
-              id: 'nature-1',
-              name: 'Serene Nature',
-              description: 'Peaceful forest landscape with gentle streams and wildlife',
-              preview_url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'sci-fi-1',
-              name: 'Futuristic City',
-              description: 'Cyberpunk metropolis with neon lights and flying vehicles',
-              preview_url: 'https://images.unsplash.com/photo-1480714378408-67cf0d13bc12?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'space-1',
-              name: 'Deep Space',
-              description: 'Infinite cosmos with distant galaxies and nebulas',
-              preview_url: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'fantasy-1',
-              name: 'Magical Realm',
-              description: 'Enchanted forest with mystical creatures and floating islands',
-              preview_url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'urban-1',
-              name: 'Modern Metropolis',
-              description: 'Contemporary cityscape with skyscrapers and urban life',
-              preview_url: 'https://images.unsplash.com/photo-1480714378408-67cf0d13bc12?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-              created_at: new Date().toISOString()
-            },
             {
               id: 'abstract-1',
               name: 'Abstract Dreams',
@@ -114,7 +84,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
     // Show success message using a toast or notification
     const successMessage = document.createElement('div');
     successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-    successMessage.textContent = `✅ Skybox style "${skyboxStyle.name}" applied!`;
+              successMessage.textContent = `✅ In3D.Ai style "${skyboxStyle.name}" applied!`;
     document.body.appendChild(successMessage);
     
     // Remove the message after 3 seconds
@@ -123,6 +93,18 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
         successMessage.parentNode.removeChild(successMessage);
       }
     }, 3000);
+  };
+
+  // Handle download for skybox style
+  const handleDownload = (skyboxStyle) => {
+    // For skybox styles, we'll use the preview image or a placeholder
+    const imageUrl = skyboxStyle.preview_url || skyboxStyle.image_jpg || skyboxStyle.image;
+    if (imageUrl) {
+      setCurrentImageForDownload({ image: imageUrl, title: skyboxStyle.name });
+      setShowDownloadPopup(true);
+    } else {
+      alert('No preview image available for download');
+    }
   };
 
   // Filter styles by category
@@ -150,7 +132,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-white text-lg">Loading skybox styles...</div>
+                  <div className="text-white text-lg">Loading In3D.Ai styles...</div>
       </div>
     );
   }
@@ -175,7 +157,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
       <div className="text-center">
         <h2 className="text-3xl font-bold text-white mb-4">Skybox Gallery</h2>
         <p className="text-gray-400 max-w-2xl mx-auto">
-          Browse and apply stunning skybox styles to your 3D scenes
+          Browse and apply stunning In3D.Ai styles to your 3D scenes
         </p>
       </div>
 
@@ -198,10 +180,10 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
         ))}
       </div>
 
-      {/* Skybox Styles Grid */}
+                {/* In3D.Ai Styles Grid */}
       {filteredStyles.length === 0 ? (
         <div className="text-center text-gray-400 py-12">
-          <p>No skybox styles found for "{selectedCategory}" category.</p>
+                      <p>No In3D.Ai styles found for "{selectedCategory}" category.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -267,17 +249,29 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
                   )}
                 </div>
 
-                {/* Use This Button */}
-                <button
-                  onClick={() => handleUseSkybox(style)}
-                  className={`w-full px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
-                    selectedStyle?.id === style.id
-                      ? 'bg-green-600 hover:bg-green-700 text-white'
-                      : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white'
-                  }`}
-                >
-                  {selectedStyle?.id === style.id ? '✓ Currently Applied' : 'Use This Style'}
-                </button>
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleUseSkybox(style)}
+                    className={`flex-1 px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                      selectedStyle?.id === style.id
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white'
+                    }`}
+                  >
+                    {selectedStyle?.id === style.id ? '✓ Applied' : 'Use Style'}
+                  </button>
+                  
+                  <button
+                    onClick={() => handleDownload(style)}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all duration-200"
+                    title="Download preview"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </motion.div>
           ))}
@@ -288,6 +282,14 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
       <div className="text-center text-gray-400 text-sm">
         <p>Showing {filteredStyles.length} of {skyboxStyles.length} total styles</p>
       </div>
+
+      {/* Download Popup */}
+      <DownloadPopup
+        isOpen={showDownloadPopup}
+        onClose={() => setShowDownloadPopup(false)}
+        imageUrl={currentImageForDownload?.image}
+        title={currentImageForDownload?.title || 'skybox-style'}
+      />
     </div>
   );
 };
