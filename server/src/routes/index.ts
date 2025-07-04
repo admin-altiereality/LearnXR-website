@@ -1,5 +1,6 @@
 import express from 'express';
 import paymentRoutes from './payment';
+import skyboxRoutes from './skybox';
 
 const router = express.Router();
 
@@ -19,6 +20,11 @@ router.use((req, res, next) => {
 console.log('Mounting payment routes...');
 router.use('/payment', paymentRoutes);
 console.log('Payment routes mounted at /payment');
+
+// Mount skybox routes
+console.log('Mounting skybox routes...');
+router.use('/skybox', skyboxRoutes);
+console.log('Skybox routes mounted at /skybox');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

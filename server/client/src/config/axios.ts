@@ -1,10 +1,16 @@
 import axios from 'axios';
 
 // Determine the base URL based on environment
-const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
+const isProduction = import.meta.env.PROD && window.location.hostname !== 'localhost';
 const baseURL = isProduction 
   ? '/.netlify/functions/api'  // Use Netlify functions in production
   : (import.meta.env.VITE_API_URL || 'http://localhost:5002'); // Use local server in development
+
+console.log('API Base URL:', baseURL);
+console.log('Environment:', import.meta.env.MODE);
+console.log('VITE_API_URL:', import.meta.env.VITE_API_URL);
+console.log('isProduction:', isProduction);
+console.log('hostname:', window.location.hostname);
 
 const api = axios.create({
   baseURL,
@@ -16,7 +22,8 @@ const api = axios.create({
 // Add request interceptor for debugging
 api.interceptors.request.use(
   (config) => {
-    console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(`API Request: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+    console.log('Full URL:', `${config.baseURL}${config.url}`);
     return config;
   },
   (error) => {

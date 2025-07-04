@@ -4,7 +4,7 @@ import api from '../../config/axios';
 import DownloadPopup from '../../Components/DownloadPopup';
 
 const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
-  const [skyboxStyles, setSkyboxStyles] = useState([]);
+  const [styles, setStyles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -14,38 +14,24 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
 
   // Fetch skybox styles from API
   useEffect(() => {
-    const fetchSkyboxStyles = async () => {
+    setLoading(true);
+    setError(null);
+    const fetchStyles = async () => {
       try {
-        setLoading(true);
-        // Fetch all skybox styles by requesting a large limit
-        const response = await api.get('/api/skybox/styles?page=1&limit=100');
-        const styles = response.data.data?.styles || [];
-        console.log(`Loaded ${styles.length} skybox styles in explore section`);
-        
-        if (styles.length === 0) {
-          // fallback data
-          const fallbackStyles = [
-            {
-              id: 'abstract-1',
-              name: 'Abstract Dreams',
-              description: 'Surreal abstract patterns with vibrant colors and shapes',
-              preview_url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-              created_at: new Date().toISOString()
-            }
-          ];
-          setSkyboxStyles(fallbackStyles);
-        } else {
-          setSkyboxStyles(styles);
-        }
-      } catch (err) {
-        console.error('Error fetching skybox styles:', err);
-        setError('Failed to load skybox styles');
-      } finally {
+        const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
+        const stylesArr = response.data?.data?.styles || [];
+        setStyles(stylesArr);
         setLoading(false);
+        setError(null);
+        console.log('Fetched In3D.Ai styles (explore):', stylesArr);
+      } catch (err) {
+        setLoading(false);
+        setError("Failed to load In3D.Ai styles");
+        setStyles([]);
+        console.error("Error fetching In3D.Ai styles (explore):", err);
       }
     };
-
-    fetchSkyboxStyles();
+    fetchStyles();
   }, []);
 
   // Restore selected skybox style from sessionStorage
@@ -109,15 +95,15 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
 
   // Filter styles by category
   const filteredStyles = selectedCategory === 'all' 
-    ? skyboxStyles 
-    : skyboxStyles.filter(style => 
+    ? styles 
+    : styles.filter(style => 
         style.name?.toLowerCase().includes(selectedCategory.toLowerCase()) ||
         style.description?.toLowerCase().includes(selectedCategory.toLowerCase())
       );
 
   // Get unique categories from styles
   const categories = ['all', ...new Set(
-    skyboxStyles.flatMap(style => {
+    styles.flatMap(style => {
       const cats = [];
       if (style.name?.toLowerCase().includes('nature')) cats.push('nature');
       if (style.name?.toLowerCase().includes('sci-fi') || style.name?.toLowerCase().includes('space')) cats.push('sci-fi');
@@ -280,7 +266,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
 
       {/* Stats */}
       <div className="text-center text-gray-400 text-sm">
-        <p>Showing {filteredStyles.length} of {skyboxStyles.length} total styles</p>
+        <p>Showing {filteredStyles.length} of {styles.length} total styles</p>
       </div>
 
       {/* Download Popup */}

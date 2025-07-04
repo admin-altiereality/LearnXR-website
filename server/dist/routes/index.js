@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.router = void 0;
 const express_1 = __importDefault(require("express"));
 const payment_1 = __importDefault(require("./payment"));
+const skybox_1 = __importDefault(require("./skybox"));
 const router = express_1.default.Router();
 exports.router = router;
 console.log('Main router being initialized...');
@@ -22,6 +23,10 @@ router.use((req, res, next) => {
 console.log('Mounting payment routes...');
 router.use('/payment', payment_1.default);
 console.log('Payment routes mounted at /payment');
+// Mount skybox routes
+console.log('Mounting skybox routes...');
+router.use('/skybox', skybox_1.default);
+console.log('Skybox routes mounted at /skybox');
 // Debug: List all registered routes
 const listRoutes = (router, basePath = '') => {
     const routes = [];
