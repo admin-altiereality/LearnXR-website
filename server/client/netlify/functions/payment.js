@@ -20,7 +20,20 @@ exports.handler = async (event, context) => {
 
   try {
     // Get the API URL from environment variables
-    const apiUrl = process.env.API_URL || process.env.VITE_API_URL || 'https://your-backend-server.com';
+    const apiUrl = process.env.API_URL || process.env.VITE_API_URL;
+    
+    if (!apiUrl) {
+      console.error('No API URL configured');
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({
+          error: 'Backend service not configured',
+          message: 'API_URL or VITE_API_URL environment variable is not set'
+        })
+      };
+    }
+
     const path = event.path.replace('/.netlify/functions/payment', '');
     const url = `${apiUrl}/api/payment${path}`;
 
@@ -28,6 +41,8 @@ exports.handler = async (event, context) => {
     console.log('Request method:', event.httpMethod);
     console.log('Request headers:', event.headers);
     console.log('Request body:', event.body);
+    console.log('Environment API_URL:', process.env.API_URL);
+    console.log('Environment VITE_API_URL:', process.env.VITE_API_URL);
 
     // Prepare request headers
     const requestHeaders = {
@@ -51,6 +66,14 @@ exports.handler = async (event, context) => {
     console.log('Response status:', response.status);
     console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
+    if (!response.ok) {
+      console.error('Backend response error:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: data
+      });
+    }
+
     return {
       statusCode: response.status,
       headers: {
@@ -61,6 +84,7 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     console.error('Payment function error:', error);
+    console.error('Error stack:', error.stack);
     
     return {
       statusCode: 500,
