@@ -1,6 +1,15 @@
 const fetch = require('node-fetch');
 
 exports.handler = async (event, context) => {
+  // Add comprehensive logging
+  console.log('=== SKYBOX FUNCTION CALLED ===');
+  console.log('Event path:', event.path);
+  console.log('Event httpMethod:', event.httpMethod);
+  console.log('Event headers:', event.headers);
+  console.log('Event queryStringParameters:', event.queryStringParameters);
+  console.log('Event body:', event.body);
+  console.log('Context:', context);
+  
   // Enable CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -36,18 +45,36 @@ exports.handler = async (event, context) => {
 
     // Handle different endpoints
     if (event.path.includes('/styles') || event.path.includes('/getSkyboxStyles')) {
+      console.log('Handling styles request');
       return await handleGetStyles(headers, apiKey);
     } else if (event.path.includes('/generate')) {
+      console.log('Handling generation request');
       return await handleGenerate(headers, apiKey, event);
     } else if (event.path.includes('/status/')) {
+      console.log('Handling status request');
       return await handleGetStatus(headers, apiKey, event);
+    } else if (event.path.includes('/test')) {
+      console.log('Handling test request');
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          success: true,
+          message: 'Skybox function is working!',
+          path: event.path,
+          method: event.httpMethod,
+          timestamp: new Date().toISOString()
+        })
+      };
     } else {
+      console.log('Unknown endpoint:', event.path);
       return {
         statusCode: 404,
         headers,
         body: JSON.stringify({
           error: 'Endpoint not found',
-          message: `Unknown endpoint: ${event.path}`
+          message: `Unknown endpoint: ${event.path}`,
+          availableEndpoints: ['/styles', '/generate', '/status/:id', '/test']
         })
       };
     }
