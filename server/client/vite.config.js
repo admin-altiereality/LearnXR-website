@@ -34,12 +34,25 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: false, // Disable sourcemaps for production
-      // Optimize chunks
+      // Add timestamp to force cache busting
       rollupOptions: {
         output: {
           manualChunks: {
             vendor: ['react', 'react-dom', 'react-router-dom'],
             three: ['three', '@react-three/fiber', '@react-three/drei'],
+          },
+          // Add timestamp to chunk names for cache busting
+          chunkFileNames: (chunkInfo) => {
+            const timestamp = Date.now();
+            return `assets/[name]-${timestamp}.[hash].js`;
+          },
+          entryFileNames: (chunkInfo) => {
+            const timestamp = Date.now();
+            return `assets/[name]-${timestamp}.[hash].js`;
+          },
+          assetFileNames: (assetInfo) => {
+            const timestamp = Date.now();
+            return `assets/[name]-${timestamp}.[hash].[ext]`;
           },
         },
       },
