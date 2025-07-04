@@ -4,42 +4,144 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        .test-section {
+            background-color: #2a2a2a;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #333;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .error {
+            color: #ff6b6b;
+        }
+        .success {
+            color: #51cf66;
+        }
+    </style>
 </head>
 <body>
-    <h1>API Test</h1>
-    <button onclick="testAPI()">Test API Call</button>
-    <div id="result"></div>
+    <h1>In3D.Ai API Test</h1>
+    
+    <div class="test-section">
+        <h2>Test API Connection</h2>
+        <button onclick="testAPI()">Test API Call</button>
+        <button onclick="testAuth()">Test Authentication</button>
+        <div id="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Environment Check</h2>
+        <div id="env-info"></div>
+    </div>
 
     <script>
+        // Test API call
         async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Testing API call...</p>';
+            
             try {
-                console.log('Testing API call...');
-                const response = await fetch('http://localhost:5002/api/skybox/getSkyboxStyles', {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                console.log('Response status:', response.status);
+                const response = await fetch('http://localhost:5002/api/skybox/styles?page=1&limit=5');
                 const data = await response.json();
-                console.log('Response data:', data);
                 
-                document.getElementById('result').innerHTML = `
-                    <h3>API Test Results:</h3>
-                    <p>Status: ${response.status}</p>
-                    <p>Success: ${data.success}</p>
-                    <p>Styles Count: ${data.data?.styles?.length || 0}</p>
-                    <p>Message: ${data.message}</p>
-                `;
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <p class="success">✅ API call successful!</p>
+                        <p>Status: ${response.status}</p>
+                        <p>Styles loaded: ${data.data?.styles?.length || 0}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <p class="error">❌ API call failed</p>
+                        <p>Status: ${response.status}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
             } catch (error) {
-                console.error('API Test Error:', error);
-                document.getElementById('result').innerHTML = `
-                    <h3>API Test Error:</h3>
-                    <p>${error.message}</p>
+                resultDiv.innerHTML = `
+                    <p class="error">❌ Network error</p>
+                    <p>Error: ${error.message}</p>
                 `;
             }
         }
+
+        // Test authentication
+        async function testAuth() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Testing authentication...</p>';
+            
+            try {
+                // Check if Firebase is available
+                if (typeof firebase !== 'undefined') {
+                    const user = firebase.auth().currentUser;
+                    if (user) {
+                        resultDiv.innerHTML = `
+                            <p class="success">✅ User is authenticated</p>
+                            <p>Email: ${user.email}</p>
+                            <p>UID: ${user.uid}</p>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <p class="error">❌ User is not authenticated</p>
+                            <p>You need to log in to access the main page</p>
+                        `;
+                    }
+                } else {
+                    resultDiv.innerHTML = `
+                        <p class="error">❌ Firebase not available</p>
+                        <p>This test requires Firebase to be loaded</p>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">❌ Authentication test failed</p>
+                    <p>Error: ${error.message}</p>
+                `;
+            }
+        }
+
+        // Show environment info
+        function showEnvInfo() {
+            const envDiv = document.getElementById('env-info');
+            envDiv.innerHTML = `
+                <p><strong>Current URL:</strong> ${window.location.href}</p>
+                <p><strong>Hostname:</strong> ${window.location.hostname}</p>
+                <p><strong>Port:</strong> ${window.location.port}</p>
+                <p><strong>Protocol:</strong> ${window.location.protocol}</p>
+                <p><strong>User Agent:</strong> ${navigator.userAgent}</p>
+            `;
+        }
+
+        // Initialize
+        showEnvInfo();
     </script>
 </body>
 </html> 

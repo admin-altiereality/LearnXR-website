@@ -10,6 +10,7 @@ import UpgradeModal from './UpgradeModal';
 import LoadingPlaceholder from './LoadingPlaceholder';
 
 const MainSection = ({ setBackgroundSkybox }) => {
+  console.log('MainSection component rendered');
   const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
   const [skyboxStyles, setSkyboxStyles] = useState([]);
   const [selectedSkybox, setSelectedSkybox] = useState(null);
@@ -31,20 +32,27 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [currentSkyboxIndex, setCurrentSkyboxIndex] = useState(0);
   const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
+  const [stylesLoading, setStylesLoading] = useState(true);
+  const [stylesError, setStylesError] = useState(null);
 
   useEffect(() => {
+    setStylesLoading(true);
+    setStylesError(null);
     const fetchSkyboxStyles = async () => {
       try {
-        // Fetch all skybox styles by requesting a large limit
         const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
-        setSkyboxStyles(response.data.data?.styles || []);
-        console.log(`Loaded ${response.data.data?.styles?.length || 0} skybox styles`);
+        const styles = response.data?.data?.styles || [];
+        setSkyboxStyles(styles);
+        setStylesLoading(false);
+        setStylesError(null);
+        console.log('Fetched In3D.Ai styles:', styles);
       } catch (error) {
-        console.error("Error fetching skybox styles:", error);
-        setError("Failed to load skybox styles");
+        setStylesLoading(false);
+        setStylesError("Failed to load In3D.Ai styles");
+        setSkyboxStyles([]);
+        console.error("Error fetching In3D.Ai styles:", error);
       }
     };
-
     fetchSkyboxStyles();
   }, []);
 
@@ -526,20 +534,26 @@ const MainSection = ({ setBackgroundSkybox }) => {
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
                           <label className="block text-xs font-medium mb-1 text-gray-200">In3D.Ai Style</label>
-                          <select
-                            className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                            onChange={handleSkyboxStyleChange}
-                            value={selectedSkybox?.id || ""}
-                          >
-                            <option value="" disabled>
-                              -- Choose an In3D.Ai Style --
-                            </option>
-                            {skyboxStyles.map((style) => (
-                              <option key={style.id} value={style.id}>
-                                {style.name} (Model: {style.model})
+                          {stylesLoading ? (
+                            <div className="text-gray-400 text-xs py-2">Loading styles...</div>
+                          ) : stylesError ? (
+                            <div className="text-red-400 text-xs py-2">{stylesError}</div>
+                          ) : (
+                            <select
+                              className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
+                              onChange={handleSkyboxStyleChange}
+                              value={selectedSkybox?.id || ""}
+                            >
+                              <option value="" disabled>
+                                -- Choose an In3D.Ai Style --
                               </option>
-                            ))}
-                          </select>
+                              {skyboxStyles.map((style) => (
+                                <option key={style.id} value={style.id}>
+                                  {style.name} {style.model ? `(Model: ${style.model})` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </div>
 
                         <div className="flex items-end">

@@ -17,7 +17,7 @@ export class RazorpayService {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
     
     // Use Netlify functions for production, local server for development
-    const isProduction = import.meta.env.PROD || window.location.hostname !== 'localhost';
+    const isProduction = import.meta.env.PROD && window.location.hostname !== 'localhost';
     if (isProduction) {
       this.baseUrl = '/.netlify/functions';
     } else {
@@ -110,7 +110,7 @@ export class RazorpayService {
       const amountInPaise = Math.round(plan.price * 100);
       console.log('Amount in paise:', amountInPaise);
 
-      const response = await fetch(`${this.baseUrl}/create-order`, {
+      const response = await fetch(`${this.baseUrl}/api/payment/create-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -259,7 +259,7 @@ export class RazorpayService {
     try {
       console.log('Verifying payment...', { userId, planId, ...response });
 
-      const verifyResponse = await fetch(`${this.baseUrl}/verify-payment`, {
+      const verifyResponse = await fetch(`${this.baseUrl}/api/payment/verify-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
