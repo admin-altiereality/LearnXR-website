@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skybox API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; }
+        .error { background-color: #f8d7da; }
+        .loading { background-color: #fff3cd; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Skybox API Test</h1>
+    
+    <div class="test-section">
+        <h3>Test 1: Function Test Endpoint</h3>
+        <button onclick="testFunction()">Test Function</button>
+        <div id="function-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 2: Skybox Styles</h3>
+        <button onclick="testStyles()">Get Styles</button>
+        <div id="styles-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 3: Direct API Call</h3>
+        <button onclick="testDirectAPI()">Test Direct API</button>
+        <div id="direct-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 4: Environment Check</h3>
+        <button onclick="testEnvCheck()">Check Environment</button>
+        <div id="env-result"></div>
+    </div>
+
+    <script>
+        function showResult(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            element.className = isError ? 'error' : 'success';
+            element.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        }
+
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            element.className = 'loading';
+            element.innerHTML = '<p>Loading...</p>';
+        }
+
+        async function testFunction() {
+            showLoading('function-result');
+            try {
+                const response = await fetch('/.netlify/functions/skybox/test');
+                const data = await response.json();
+                showResult('function-result', data);
+            } catch (error) {
+                showResult('function-result', { error: error.message }, true);
+            }
+        }
+
+        async function testStyles() {
+            showLoading('styles-result');
+            try {
+                const response = await fetch('/api/skybox/styles?page=1&limit=5');
+                const data = await response.json();
+                showResult('styles-result', data);
+            } catch (error) {
+                showResult('styles-result', { error: error.message }, true);
+            }
+        }
+
+        async function testDirectAPI() {
+            showLoading('direct-result');
+            try {
+                const response = await fetch('/.netlify/functions/skybox/styles?page=1&limit=5');
+                const data = await response.json();
+                showResult('direct-result', data);
+            } catch (error) {
+                showResult('direct-result', { error: error.message }, true);
+            }
+        }
+
+        async function testEnvCheck() {
+            showLoading('env-result');
+            try {
+                const response = await fetch('/api/env-check');
+                const data = await response.json();
+                showResult('env-result', data);
+            } catch (error) {
+                showResult('env-result', { error: error.message }, true);
+            }
+        }
+    </script>
+</body>
+</html> 
