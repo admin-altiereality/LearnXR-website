@@ -3,7 +3,7 @@ import axios from 'axios';
 // Determine the base URL based on environment
 const isProduction = import.meta.env.PROD && window.location.hostname !== 'localhost';
 const baseURL = isProduction 
-  ? '/.netlify/functions/api'  // Use Netlify functions in production
+  ? ''  // Use relative URLs in production to work with Netlify redirects
   : (import.meta.env.VITE_API_URL || 'http://localhost:5002'); // Use local server in development
 
 console.log('API Base URL:', baseURL);
