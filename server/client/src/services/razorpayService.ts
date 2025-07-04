@@ -16,10 +16,10 @@ export class RazorpayService {
   private constructor() {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
     
-    // Use Netlify functions for production, local server for development
+    // Use relative URLs for production, local server for development
     const isProduction = import.meta.env.PROD && window.location.hostname !== 'localhost';
     if (isProduction) {
-      this.baseUrl = '/.netlify/functions';
+      this.baseUrl = ''; // Use relative URLs in production to work with Netlify redirects
     } else {
       this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
     }

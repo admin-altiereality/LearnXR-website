@@ -17,8 +17,8 @@
     X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    # Allow camera for payment verification
-    Permissions-Policy = "camera=(self), microphone=(self), geolocation=()"
+    # More permissive permissions policy
+    Permissions-Policy = "camera=*, microphone=*, geolocation=()"
     # Remove COOP header to fix Razorpay modal issues
     # Cross-Origin-Opener-Policy = "same-origin"
 
