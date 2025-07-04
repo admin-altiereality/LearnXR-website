@@ -1,108 +1,10 @@
 const fetch = require('node-fetch');
 
-// Fallback skybox styles data
-const fallbackSkyboxStyles = {
-  success: true,
-  data: {
-    styles: [
-      {
-        id: 44,
-        name: "1960s Ethereal Fantasy",
-        description: "Alien landscapes in the high-contrast painterly look of 1960s progressive fantasy art",
-        "max-char": 380,
-        "negative-text-max-char": 240,
-        image: "https://images.blockadelabs.com/images/skybox/dZIHHi5rc6xc8WSY299UaJW73CmknYjqiybN5kCF.webp",
-        image_jpg: "https://images.blockadelabs.com/images/skybox/dZIHHi5rc6xc8WSY299UaJW73CmknYjqiybN5kCF.jpg",
-        model: "Model 2",
-        model_version: "2",
-        sort_order: 1,
-        premium: 0,
-        new: 0,
-        experimental: 0,
-        skybox_style_families_id: 3
-      },
-      {
-        id: 13,
-        name: "Advanced (no style)",
-        description: null,
-        "max-char": 540,
-        "negative-text-max-char": 220,
-        image: null,
-        image_jpg: null,
-        model: "Model 2",
-        model_version: "2",
-        sort_order: 2,
-        premium: 0,
-        new: 0,
-        experimental: 0,
-        skybox_style_families_id: null
-      },
-      {
-        id: 3,
-        name: "Anime",
-        description: "Classic Japanese animation style shapes and restrained coloring",
-        "max-char": 443,
-        "negative-text-max-char": 220,
-        image: "https://images.blockadelabs.com/images/skybox/qbiTeIVO7sTpy5mKHkX4WYUFvgUuFs8VWGzlW2b3.webp",
-        image_jpg: "https://images.blockadelabs.com/images/skybox/qbiTeIVO7sTpy5mKHkX4WYUFvgUuFs8VWGzlW2b3.jpg",
-        model: "Model 2",
-        model_version: "2",
-        sort_order: 3,
-        premium: 0,
-        new: 0,
-        experimental: 0,
-        skybox_style_families_id: 11
-      },
-      {
-        id: 43,
-        name: "Art Mix",
-        description: "Multimedia painterly art that pulls from watercolor, marker, paint, pastels, and more",
-        "max-char": 412,
-        "negative-text-max-char": 210,
-        image: "https://images.blockadelabs.com/images/skybox/MYklQhpxG7wbn7HkftNTNxLZMc5mBjYvUuRajHpp.webp",
-        image_jpg: "https://images.blockadelabs.com/images/skybox/MYklQhpxG7wbn7HkftNTNxLZMc5mBjYvUuRajHpp.jpg",
-        model: "Model 2",
-        model_version: "2",
-        sort_order: 4,
-        premium: 0,
-        new: 0,
-        experimental: 0,
-        skybox_style_families_id: 7
-      },
-      {
-        id: 29,
-        name: "Cartoon",
-        description: "Cel-shaded and cute kid's cartoon forms and bright colors",
-        "max-char": 466,
-        "negative-text-max-char": 170,
-        image: "https://images.blockadelabs.com/images/skybox/K8rMhBSxeR7gZdSxoQLUu3RrJyhBrIDiANqMrVrh.webp",
-        image_jpg: "https://images.blockadelabs.com/images/skybox/K8rMhBSxeR7gZdSxoQLUu3RrJyhBrIDiANqMrVrh.jpg",
-        model: "Model 2",
-        model_version: "2",
-        sort_order: 5,
-        premium: 0,
-        new: 0,
-        experimental: 0,
-        skybox_style_families_id: 11
-      }
-    ]
-  },
-  message: "Retrieved 5 skybox styles",
-  pagination: {
-    page: 1,
-    limit: 5,
-    total: 84,
-    totalPages: 17,
-    hasNext: true,
-    hasPrev: false
-  }
-};
-
 exports.handler = async (event, context) => {
   // Enable CORS
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-API-Key',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Credentials': 'true'
   };
@@ -117,98 +19,41 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // For styles endpoint, return fallback data if no backend is configured
-    if (event.path.includes('/styles') || event.path.includes('/getSkyboxStyles')) {
-      console.log('Returning fallback skybox styles');
-      return {
-        statusCode: 200,
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(fallbackSkyboxStyles)
-      };
-    }
-
-    // Get the API URL from environment variables
-    const apiUrl = process.env.API_URL || process.env.VITE_API_URL;
+    // Get BlockadeLabs API key from environment
+    const apiKey = process.env.BLOCKADELABS_API_KEY || process.env.API_KEY || 'hcmELHEKZuGMVCjrHgojXQDoKoXJJzcKpVaGEonoaNktA8WmIqTGlzsTZ9gh';
     
-    if (!apiUrl) {
-      console.error('No API URL configured');
+    if (!apiKey) {
+      console.error('No BlockadeLabs API key configured');
       return {
         statusCode: 500,
         headers,
         body: JSON.stringify({
-          error: 'Backend service not configured',
-          message: 'API_URL or VITE_API_URL environment variable is not set'
+          error: 'API key not configured',
+          message: 'BLOCKADELABS_API_KEY or API_KEY environment variable is not set'
         })
       };
     }
 
-    const path = event.path.replace('/.netlify/functions/skybox', '');
-    const url = `${apiUrl}/api/skybox${path}`;
-
-    console.log(`Skybox function: Proxying request to: ${url}`);
-    console.log('Request method:', event.httpMethod);
-    console.log('Request headers:', event.headers);
-    console.log('Request body:', event.body);
-    console.log('Environment API_URL:', process.env.API_URL);
-    console.log('Environment VITE_API_URL:', process.env.VITE_API_URL);
-
-    // Prepare request headers
-    const requestHeaders = {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Netlify-Function/1.0'
-    };
-
-    // Add authorization header if present
-    if (event.headers.authorization) {
-      requestHeaders.Authorization = event.headers.authorization;
+    // Handle different endpoints
+    if (event.path.includes('/styles') || event.path.includes('/getSkyboxStyles')) {
+      return await handleGetStyles(headers, apiKey);
+    } else if (event.path.includes('/generate')) {
+      return await handleGenerate(headers, apiKey, event);
+    } else if (event.path.includes('/status/')) {
+      return await handleGetStatus(headers, apiKey, event);
+    } else {
+      return {
+        statusCode: 404,
+        headers,
+        body: JSON.stringify({
+          error: 'Endpoint not found',
+          message: `Unknown endpoint: ${event.path}`
+        })
+      };
     }
-
-    // Forward the request to your backend server
-    const response = await fetch(url, {
-      method: event.httpMethod,
-      headers: requestHeaders,
-      body: event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD' ? event.body : undefined
-    });
-
-    const data = await response.text();
-    console.log('Response status:', response.status);
-    console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-
-    if (!response.ok) {
-      console.error('Backend response error:', {
-        status: response.status,
-        statusText: response.statusText,
-        data: data
-      });
-    }
-
-    return {
-      statusCode: response.status,
-      headers: {
-        ...headers,
-        'Content-Type': response.headers.get('content-type') || 'application/json'
-      },
-      body: data
-    };
   } catch (error) {
     console.error('Skybox function error:', error);
     console.error('Error stack:', error.stack);
-    
-    // For styles endpoint, return fallback data if there's an error
-    if (event.path.includes('/styles') || event.path.includes('/getSkyboxStyles')) {
-      console.log('Error occurred, returning fallback skybox styles');
-      return {
-        statusCode: 200,
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(fallbackSkyboxStyles)
-      };
-    }
     
     return {
       statusCode: 500,
@@ -220,4 +65,191 @@ exports.handler = async (event, context) => {
       })
     };
   }
-}; 
+};
+
+// Handle getting skybox styles
+async function handleGetStyles(headers, apiKey) {
+  try {
+    console.log('Fetching skybox styles from BlockadeLabs API');
+    
+    const response = await fetch('https://api.blockadelabs.com/v1/skybox/styles', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('BlockadeLabs API error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      
+      return {
+        statusCode: response.status,
+        headers,
+        body: JSON.stringify({
+          error: 'Failed to fetch styles',
+          message: `BlockadeLabs API error: ${response.status} ${response.statusText}`,
+          details: errorText
+        })
+      };
+    }
+
+    const data = await response.json();
+    console.log('Successfully fetched skybox styles:', data);
+
+    // Format response to match backend API structure
+    const formattedResponse = {
+      success: true,
+      data: {
+        styles: data
+      },
+      message: `Retrieved ${data.length} skybox styles`,
+      pagination: {
+        page: 1,
+        limit: data.length,
+        total: data.length,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false
+      }
+    };
+
+    return {
+      statusCode: 200,
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(formattedResponse)
+    };
+  } catch (error) {
+    console.error('Error fetching styles:', error);
+    throw error;
+  }
+}
+
+// Handle skybox generation
+async function handleGenerate(headers, apiKey, event) {
+  try {
+    console.log('Generating skybox with BlockadeLabs API');
+    
+    const requestBody = JSON.parse(event.body || '{}');
+    console.log('Generation request body:', requestBody);
+
+    const response = await fetch('https://api.blockadelabs.com/v1/skybox', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        prompt: requestBody.prompt,
+        skybox_style_id: requestBody.skybox_style_id,
+        webhook_url: requestBody.webhook_url
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('BlockadeLabs generation error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      
+      return {
+        statusCode: response.status,
+        headers,
+        body: JSON.stringify({
+          error: 'Generation failed',
+          message: `BlockadeLabs API error: ${response.status} ${response.statusText}`,
+          details: errorText
+        })
+      };
+    }
+
+    const data = await response.json();
+    console.log('Successfully initiated skybox generation:', data);
+
+    // Format response to match backend API structure
+    const formattedResponse = {
+      success: true,
+      data: {
+        id: data.id.toString(),
+        status: data.status
+      },
+      message: 'Skybox generation initiated successfully'
+    };
+
+    return {
+      statusCode: 200,
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(formattedResponse)
+    };
+  } catch (error) {
+    console.error('Error generating skybox:', error);
+    throw error;
+  }
+}
+
+// Handle getting generation status
+async function handleGetStatus(headers, apiKey, event) {
+  try {
+    const generationId = event.path.split('/status/')[1];
+    console.log('Getting status for generation:', generationId);
+    
+    const response = await fetch(`https://api.blockadelabs.com/v1/skybox/${generationId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('BlockadeLabs status error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      
+      return {
+        statusCode: response.status,
+        headers,
+        body: JSON.stringify({
+          error: 'Failed to get status',
+          message: `BlockadeLabs API error: ${response.status} ${response.statusText}`,
+          details: errorText
+        })
+      };
+    }
+
+    const data = await response.json();
+    console.log('Successfully got generation status:', data);
+
+    return {
+      statusCode: 200,
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        success: true,
+        data: data,
+        message: 'Generation status retrieved successfully'
+      })
+    };
+  } catch (error) {
+    console.error('Error getting generation status:', error);
+    throw error;
+  }
+} 
