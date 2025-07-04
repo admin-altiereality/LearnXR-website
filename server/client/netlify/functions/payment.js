@@ -1,36 +1,5 @@
 const fetch = require('node-fetch');
 
-// Fallback skybox styles data in case the backend is not available
-const fallbackSkyboxStyles = {
-  "styles": [
-    {
-      "id": 1,
-      "name": "Cinematic",
-      "description": "Professional cinematic style"
-    },
-    {
-      "id": 2,
-      "name": "Photographic",
-      "description": "Realistic photographic style"
-    },
-    {
-      "id": 3,
-      "name": "Digital Art",
-      "description": "Digital art style"
-    },
-    {
-      "id": 4,
-      "name": "Anime",
-      "description": "Anime style"
-    },
-    {
-      "id": 5,
-      "name": "Fantasy Art",
-      "description": "Fantasy art style"
-    }
-  ]
-};
-
 exports.handler = async (event, context) => {
   // Enable CORS
   const headers = {
@@ -52,10 +21,10 @@ exports.handler = async (event, context) => {
   try {
     // Get the API URL from environment variables
     const apiUrl = process.env.API_URL || process.env.VITE_API_URL || 'https://your-backend-server.com';
-    const path = event.path.replace('/.netlify/functions/skybox', '');
-    const url = `${apiUrl}/api/skybox${path}`;
+    const path = event.path.replace('/.netlify/functions/payment', '');
+    const url = `${apiUrl}/api/payment${path}`;
 
-    console.log(`Skybox function: Proxying request to: ${url}`);
+    console.log(`Payment function: Proxying request to: ${url}`);
     console.log('Request method:', event.httpMethod);
     console.log('Request headers:', event.headers);
     console.log('Request body:', event.body);
@@ -91,7 +60,7 @@ exports.handler = async (event, context) => {
       body: data
     };
   } catch (error) {
-    console.error('Skybox function error:', error);
+    console.error('Payment function error:', error);
     
     return {
       statusCode: 500,
