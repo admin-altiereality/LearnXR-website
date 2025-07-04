@@ -165,7 +165,7 @@ export class RazorpayService {
           key: this.razorpayKeyId,
           amount: order.amount,
           currency: 'INR',
-          name: 'Skybox AI',
+          name: 'In3D.Ai',
           description: `Upgrade to ${plan.name} Plan`,
           order_id: order.id,
           prefill: {
@@ -188,7 +188,9 @@ export class RazorpayService {
             },
             // Handle COOP restrictions
             confirm_close: true,
-            escape: true
+            escape: true,
+            // Add COOP handling
+            handleback: true
           },
           theme: {
             color: '#3B82F6'
