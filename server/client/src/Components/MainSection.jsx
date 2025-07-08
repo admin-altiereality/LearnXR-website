@@ -41,7 +41,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
     const fetchSkyboxStyles = async () => {
       try {
         const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
-        const styles = response.data?.data?.styles || [];
+        const styles = response.data?.data || [];
         setSkyboxStyles(styles);
         setStylesLoading(false);
         setStylesError(null);

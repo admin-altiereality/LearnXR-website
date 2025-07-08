@@ -3,7 +3,7 @@ import axios from 'axios';
 // Determine the base URL based on environment
 const isProduction = import.meta.env.PROD && window.location.hostname !== 'localhost';
 const baseURL = isProduction 
-  ? ''  // Use relative URLs in production to work with Netlify redirects
+  ? 'https://us-central1-in3devoneuralai.cloudfunctions.net/api'  // Firebase Functions URL
   : (import.meta.env.VITE_API_URL || 'http://localhost:5002'); // Use local server in development
 
 console.log('API Base URL:', baseURL);
