@@ -19,7 +19,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
     const fetchStyles = async () => {
       try {
         const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
-        const stylesArr = response.data?.data?.styles || [];
+        const stylesArr = response.data?.data || [];
         setStyles(stylesArr);
         setLoading(false);
         setError(null);

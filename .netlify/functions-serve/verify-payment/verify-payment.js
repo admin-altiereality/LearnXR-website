@@ -1,0 +1,1 @@
+module.exports = require('./server/client/netlify/functions/verify-payment.js')

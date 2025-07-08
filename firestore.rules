@@ -1,11 +1,13 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Users collection - users can read/write their own data
     match /users/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
+    // Skyboxes collection - users can read/write their own skyboxes
     match /skyboxes/{skyboxId} {
       allow read: if request.auth != null && 
         (resource.data.userId == request.auth.uid || 
@@ -13,6 +15,43 @@ service cloud.firestore {
       
       allow create: if request.auth != null && 
         request.resource.data.userId == request.auth.uid;
+      
+      allow update: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // Skybox styles collection - public read access
+    match /skyboxStyles/{styleId} {
+      allow read: if true; // Public read access for styles
+      allow write: if false; // No write access
+    }
+    
+    // Subscriptions collection - users can read their own subscriptions
+    match /subscriptions/{subscriptionId} {
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      
+      allow write: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Orders collection - users can read their own orders
+    match /orders/{orderId} {
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      
+      allow write: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+    
+    // Public collections - read access for all authenticated users
+    match /public/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
     }
   }
 } 

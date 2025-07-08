@@ -135,7 +135,30 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     try {
       const provider = new GoogleAuthProvider();
-      const { user } = await signInWithPopup(auth, provider);
+      
+      // Configure provider settings to reduce popup issues
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      
+      // Try popup first, fallback to redirect if popup fails
+      let result;
+      try {
+        result = await signInWithPopup(auth, provider);
+      } catch (popupError: any) {
+        console.warn('Popup failed, trying redirect:', popupError);
+        
+        // If popup fails due to popup blocked or other issues, use redirect
+        if (popupError.code === 'auth/popup-closed-by-user' || 
+            popupError.code === 'auth/popup-blocked' ||
+            popupError.code === 'auth/cancelled-popup-request') {
+          // For now, just throw the error and let the user try again
+          throw new Error('Please allow popups for this site and try again');
+        }
+        throw popupError;
+      }
+      
+      const { user } = result;
       
       const userDocRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userDocRef);
@@ -152,7 +175,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       return user;
     } catch (error: any) {
       console.error("Google login error:", error);
-      toast.error(error.message);
+      
+      // Provide more user-friendly error messages
+      let errorMessage = 'Login failed. Please try again.';
+      if (error.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Login was cancelled. Please try again.';
+      } else if (error.code === 'auth/popup-blocked') {
+        errorMessage = 'Please allow popups for this site and try again.';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        errorMessage = 'Login was cancelled. Please try again.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
       throw error;
     }
   };
