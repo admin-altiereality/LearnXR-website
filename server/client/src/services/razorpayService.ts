@@ -1,3 +1,4 @@
+import api from '../config/axios';
 import { SUBSCRIPTION_PLANS } from './subscriptionService';
 
 declare global {
@@ -9,48 +10,29 @@ declare global {
 export class RazorpayService {
   private static instance: RazorpayService;
   private razorpayKeyId: string;
-  private baseUrl: string;
   private scriptLoaded: boolean = false;
   private isInitialized: boolean = false;
 
   private constructor() {
     this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
-    
-    // Use relative URLs for production, local server for development
-    const isProduction = import.meta.env.PROD && window.location.hostname !== 'localhost';
-    if (isProduction) {
-      this.baseUrl = ''; // Use relative URLs in production to work with Netlify redirects
-    } else {
-      this.baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
-    }
-    
-    // Check if we're in a browser environment
     if (typeof window === 'undefined') {
       console.warn('RazorpayService: Not in browser environment, skipping initialization');
       return;
     }
-
-    console.log('RazorpayService initialized with key ID:', this.razorpayKeyId ? 'Present' : 'Missing');
-    console.log('Using API base URL:', this.baseUrl);
-    console.log('Environment:', isProduction ? 'Production' : 'Development');
-    
     if (!this.razorpayKeyId) {
       console.warn('Razorpay key ID not found in environment variables - payment features will be disabled');
       return;
     }
-
     this.isInitialized = true;
     this.loadRazorpayScript();
   }
 
   private loadRazorpayScript(): void {
     if (this.scriptLoaded || typeof window === 'undefined') return;
-
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.async = true;
     script.onload = () => {
-      console.log('Razorpay script loaded successfully');
       this.scriptLoaded = true;
     };
     script.onerror = (error) => {
@@ -70,11 +52,9 @@ export class RazorpayService {
     if (typeof window === 'undefined') {
       throw new Error('Razorpay is not available in this environment');
     }
-
     if (!this.isInitialized) {
       throw new Error('Razorpay is not properly initialized. Please check your environment variables.');
     }
-
     if (!this.scriptLoaded) {
       return new Promise((resolve, reject) => {
         const checkScript = () => {
@@ -85,8 +65,6 @@ export class RazorpayService {
           }
         };
         checkScript();
-        
-        // Timeout after 10 seconds
         setTimeout(() => {
           reject(new Error('Razorpay script failed to load within 10 seconds'));
         }, 10000);
@@ -94,43 +72,21 @@ export class RazorpayService {
     }
   }
 
-  private async createOrder(planId: string): Promise<{ id: string; amount: number }> {
+  private async createOrder(planId: string, userId: string): Promise<{ id: string; amount: number }> {
     try {
       if (!this.isInitialized) {
         throw new Error('Razorpay is not properly initialized');
       }
-
-      console.log('Creating order for plan:', planId);
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) throw new Error('Invalid plan selected');
-
-      console.log('Plan details:', { name: plan.name, price: plan.price });
-
-      // Convert price to paise (multiply by 100)
       const amountInPaise = Math.round(plan.price * 100);
-      console.log('Amount in paise:', amountInPaise);
-
-      const response = await fetch(`${this.baseUrl}/api/payment/create-order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: amountInPaise,
-          currency: 'INR',
-          planId
-        })
+      const response = await api.post('/api/payment/create-order', {
+        amount: amountInPaise,
+        currency: 'INR',
+        planId,
+        userId
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        console.error('Create order failed:', error);
-        throw new Error(error.message || 'Failed to create order');
-      }
-
-      const order = await response.json();
-      console.log('Order created successfully:', order);
-      return order.data;
+      return response.data.data;
     } catch (error) {
       console.error('Error creating order:', error);
       throw error;
@@ -142,24 +98,15 @@ export class RazorpayService {
       if (!this.isInitialized) {
         throw new Error('Payment is not available. Please check your configuration.');
       }
-
-      console.log('Initializing payment...', { planId, userEmail, userId });
-      
-      // Wait for Razorpay script to load
       await this.waitForRazorpayScript();
-      
       if (typeof window === 'undefined' || !window.Razorpay) {
         throw new Error('Razorpay SDK not loaded');
       }
-
-      // Create order first
-      const order = await this.createOrder(planId);
+      const order = await this.createOrder(planId, userId);
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
-
       if (!plan) {
         throw new Error('Invalid plan selected');
       }
-
       return new Promise<void>((resolve, reject) => {
         const options = {
           key: this.razorpayKeyId,
@@ -168,129 +115,55 @@ export class RazorpayService {
           name: 'In3D.Ai',
           description: `Upgrade to ${plan.name} Plan`,
           order_id: order.id,
-          prefill: {
-            email: userEmail
-          },
+          prefill: { email: userEmail },
           handler: async (response: any) => {
             try {
-              console.log('Payment successful, verifying...', response);
               await this.verifyPayment(response, userId, planId);
               resolve();
             } catch (error) {
-              console.error('Payment verification failed:', error);
               reject(error);
             }
           },
           modal: {
-            ondismiss: () => {
-              console.log('Payment modal dismissed by user');
-              reject(new Error('Payment cancelled'));
-            },
-            // Handle COOP restrictions
+            ondismiss: () => reject(new Error('Payment cancelled')),
             confirm_close: true,
             escape: true,
-            // Add COOP handling
             handleback: true
           },
-          theme: {
-            color: '#3B82F6'
-          },
-          // Add additional options to handle COOP restrictions
-          config: {
-            display: {
-              blocks: {
-                utib: {
-                  name: "Pay using UPI",
-                  instruments: [
-                    {
-                      method: "upi"
-                    }
-                  ]
-                },
-                other: {
-                  name: "Other Payment methods",
-                  instruments: [
-                    {
-                      method: "card"
-                    },
-                    {
-                      method: "netbanking"
-                    }
-                  ]
-                }
-              },
-              sequence: ["block.utib", "block.other"],
-              preferences: {
-                show_default_blocks: false
-              }
-            }
-          }
+          theme: { color: '#3B82F6' },
         };
-
-        console.log('Creating Razorpay instance with options:', { ...options, key: 'HIDDEN' });
-        
-        try {
-          const razorpay = new window.Razorpay(options);
-          console.log('Opening Razorpay modal...');
-          
-          // Handle potential COOP errors
-          razorpay.open();
-          
-          // Add a timeout to handle cases where the modal doesn't open properly
-          setTimeout(() => {
-            // Check if the modal opened successfully
-            if (document.querySelector('.razorpay-container')) {
-              console.log('Razorpay modal opened successfully');
-            } else {
-              console.warn('Razorpay modal may not have opened properly');
-            }
-          }, 1000);
-          
-        } catch (modalError) {
-          console.error('Error opening Razorpay modal:', modalError);
-          reject(new Error('Failed to open payment modal. Please try again.'));
-        }
+        const rzp = new window.Razorpay(options);
+        rzp.open();
       });
     } catch (error) {
-      console.error('Payment initialization error:', error);
       throw error;
     }
   }
 
   private async verifyPayment(response: any, userId: string, planId: string): Promise<void> {
     try {
-      console.log('Verifying payment...', { userId, planId, ...response });
-
-      const verifyResponse = await fetch(`${this.baseUrl}/api/payment/verify-payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          razorpay_order_id: response.razorpay_order_id,
-          razorpay_payment_id: response.razorpay_payment_id,
-          razorpay_signature: response.razorpay_signature,
-          userId,
-          planId
-        })
+      const verifyRes = await api.post('/api/payment/verify', {
+        razorpay_order_id: response.razorpay_order_id,
+        razorpay_payment_id: response.razorpay_payment_id,
+        razorpay_signature: response.razorpay_signature
       });
-
-      if (!verifyResponse.ok) {
-        const error = await verifyResponse.json();
-        console.error('Payment verification failed:', error);
-        throw new Error(error.message || 'Payment verification failed');
+      if (!verifyRes.data.success) {
+        throw new Error('Payment verification failed');
       }
-
-      const result = await verifyResponse.json();
-      console.log('Payment verified successfully:', result);
+      // Create subscription after payment verification
+      await api.post('/api/subscription/create', {
+        userId,
+        planId,
+        planName: SUBSCRIPTION_PLANS.find(p => p.id === planId)?.name || planId
+      });
     } catch (error) {
-      console.error('Error verifying payment:', error);
+      console.error('Error verifying payment or creating subscription:', error);
       throw error;
     }
   }
 
   public isAvailable(): boolean {
-    return this.isInitialized && this.razorpayKeyId !== '';
+    return this.isInitialized && !!this.razorpayKeyId;
   }
 }
 

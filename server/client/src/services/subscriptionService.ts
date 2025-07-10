@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { SubscriptionPlan, UserSubscription } from '../types/subscription';
+import api from '../config/axios';
 
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
@@ -158,6 +159,16 @@ class SubscriptionService {
       console.error('Error checking usage limit:', error);
       throw error;
     }
+  }
+
+  async createSubscription(userId: string, planId: string, planName: string) {
+    const response = await api.post('/api/subscription/create', { userId, planId, planName });
+    return response.data;
+  }
+
+  async getUserSubscriptionStatus(userId: string) {
+    const response = await api.post('/api/user/subscription-status', { userId });
+    return response.data;
   }
 
   getPlanById(planId: string): SubscriptionPlan | undefined {

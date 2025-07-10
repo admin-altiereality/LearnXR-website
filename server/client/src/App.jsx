@@ -19,6 +19,10 @@ import History from './screens/History';
 import Landing from './screens/Landing';
 import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
+import Careers from './screens/Careers';
+import Blog from './screens/Blog';
+import PrivacyPolicy from './screens/PrivacyPolicy';
+import TermsConditions from './screens/TermsConditions';
 
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
@@ -252,6 +256,10 @@ function App() {
                       
                       {/* Landing page - accessible to all users */}
                       <Route path="/" element={<Landing />} />
+                      <Route path="/careers" element={<Careers />} />
+                      <Route path="/blog" element={<Blog />} />
+                      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                      <Route path="/terms-conditions" element={<TermsConditions />} />
 
                       {/* Protected routes - require authentication */}
                       <Route path="/main" element={
@@ -399,6 +407,10 @@ function App() {
                       
                       {/* Landing page - accessible to all users */}
                       <Route path="/" element={<Landing />} />
+                      <Route path="/careers" element={<Careers />} />
+                      <Route path="/blog" element={<Blog />} />
+                      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                      <Route path="/terms-conditions" element={<TermsConditions />} />
 
                       {/* Protected routes - require authentication */}
                       <Route path="/main" element={
