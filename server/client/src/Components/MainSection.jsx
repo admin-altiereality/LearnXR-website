@@ -1,13 +1,12 @@
-import { serverTimestamp } from "firebase/firestore";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from 'react-router-dom';
 import api from '../config/axios';
 import { useAuth } from '../contexts/AuthContext';
-import { skyboxService } from '../services/skyboxService';
 import { subscriptionService } from '../services/subscriptionService';
 import DownloadPopup from './DownloadPopup';
 import UpgradeModal from './UpgradeModal';
 import LoadingPlaceholder from './LoadingPlaceholder';
+import { skyboxApiService } from '../services/skyboxApiService';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -40,8 +39,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setStylesError(null);
     const fetchSkyboxStyles = async () => {
       try {
-        const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
-        const styles = response.data?.data || [];
+        const response = await skyboxApiService.getStyles(1, 100);
+        const styles = response.data || [];
         setSkyboxStyles(styles);
         setStylesLoading(false);
         setStylesError(null);
@@ -60,25 +59,41 @@ const MainSection = ({ setBackgroundSkybox }) => {
   useEffect(() => {
     const fromExplore = sessionStorage.getItem('fromExplore');
     const savedStyle = sessionStorage.getItem('selectedSkyboxStyle');
-    const preserveBackground = sessionStorage.getItem('preserveBackground');
+    const navigateToMain = sessionStorage.getItem('navigateToMain');
     
-    if (fromExplore && savedStyle) {
+    if (fromExplore && savedStyle && navigateToMain) {
       try {
         const parsedStyle = JSON.parse(savedStyle);
         setSelectedSkybox(parsedStyle);
         setShowStylePreview(true);
         
-        // Only update the background if we're not preserving it
-        if (!preserveBackground) {
-          setBackgroundSkybox(null);
-        }
+        // Show success message that style is now selected
+        const successMessage = document.createElement('div');
+        successMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+        successMessage.innerHTML = `
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+          </svg>
+          <span>Style "${parsedStyle.name}" is now selected! Ready to create.</span>
+        `;
+        document.body.appendChild(successMessage);
+        
+        // Remove the message after 3 seconds
+        setTimeout(() => {
+          if (successMessage.parentNode) {
+            successMessage.parentNode.removeChild(successMessage);
+          }
+        }, 3000);
         
         // Clear the stored data after using it
         sessionStorage.removeItem('fromExplore');
         sessionStorage.removeItem('selectedSkyboxStyle');
-        sessionStorage.removeItem('preserveBackground');
+        sessionStorage.removeItem('navigateToMain');
       } catch (error) {
         console.error('Error parsing saved skybox style:', error);
+        sessionStorage.removeItem('fromExplore');
+        sessionStorage.removeItem('selectedSkyboxStyle');
+        sessionStorage.removeItem('navigateToMain');
       }
     }
   }, [setBackgroundSkybox]);
@@ -164,35 +179,21 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setCurrentSkyboxIndex(0);
 
     let pollInterval;
-    let skyboxId;
 
     try {
-      // Create initial Firestore document with pending status
-      skyboxId = await skyboxService.createSkybox(user.uid, {
-        promptUsed: prompt,
-        styleId: selectedSkybox.id,
-        metadata: {
-          theme: selectedSkybox.name,
-          style: selectedSkybox.model,
-          subscriptionPlan: subscriptionInfo.plan
-        },
-        title: prompt,
-        status: 'pending',
-        createdAt: serverTimestamp()
-      });
-
       // Generate all skyboxes as variations
       const variations = [];
       for (let i = 0; i < numVariations; i++) {
         setCurrentSkyboxIndex(i);
-        const variationResponse = await api.post("/api/skybox/generate", {
-          prompt: prompt,
-          skybox_style_id: selectedSkybox.id,
-          webhook_url: `/api/skybox/${prompt}`,
+        const variationResponse = await skyboxApiService.generateSkybox({
+          prompt,
+          style_id: selectedSkybox.id,
+          negative_prompt: negativeText,
+          userId: user?.uid,
         });
 
-        if (variationResponse.data && variationResponse.data.data && variationResponse.data.data.id) {
-          variations.push(variationResponse.data.data.id);
+        if (variationResponse && variationResponse.data && variationResponse.data.id) {
+          variations.push(variationResponse.data.id);
           // Update progress after each variation is queued
           const baseProgress = 30;
           const progressPerSkybox = 60 / numVariations;
@@ -206,8 +207,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
         variations.map(async (variationId) => {
           let variationStatus;
           do {
-            const statusResponse = await api.get(`/api/skybox/status/${variationId}`);
-            variationStatus = statusResponse.data.data; // New API structure
+            const statusResponse = await skyboxApiService.getSkyboxStatus(variationId);
+            variationStatus = statusResponse.data; // New API structure
             console.log(`Status for ${variationId}:`, variationStatus);
             
             if (variationStatus.status !== "completed" && variationStatus.status !== "complete") {
@@ -237,14 +238,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       // Set the current image for download (first variation)
       setCurrentImageForDownload(variationResults[0]);
       
-      // Update Firebase with all variations
-      await skyboxService.updateSkybox(skyboxId, {
-        status: 'complete',
-        imageUrl: variationResults[0].image,
-        variations: variationResults,
-        updatedAt: serverTimestamp()
-      });
-
       // Update subscription usage count
       if (user?.uid) {
         try {
@@ -273,15 +266,26 @@ const MainSection = ({ setBackgroundSkybox }) => {
     } catch (error) {
       console.error("Error generating skybox:", error);
       
-      if (skyboxId) {
-        await skyboxService.updateSkybox(skyboxId, {
-          status: 'failed',
-          error: error.message,
-          updatedAt: serverTimestamp()
-        });
+      let errorMessage = "Failed to generate In3D.Ai environment";
+      
+      // Handle specific error types from Firebase Functions
+      if (error.response && error.response.data) {
+        const { error: apiError, code } = error.response.data;
+        
+        if (code === 'QUOTA_EXCEEDED') {
+          errorMessage = apiError || "API quota has been exhausted. Please contact support or try again later.";
+        } else if (code === 'INVALID_REQUEST') {
+          errorMessage = apiError || "Invalid request parameters. Please check your input.";
+        } else if (code === 'AUTH_ERROR') {
+          errorMessage = "Authentication error. Please refresh the page and try again.";
+        } else if (apiError) {
+          errorMessage = apiError;
+        }
+      } else if (error.message) {
+        errorMessage += ": " + error.message;
       }
-
-              setError("Failed to generate In3D.Ai environment: " + error.message);
+      
+      setError(errorMessage);
       setIsGenerating(false);
       setProgress(0);
     }

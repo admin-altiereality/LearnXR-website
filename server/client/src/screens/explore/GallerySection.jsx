@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
 import React, { useEffect, useState } from 'react';
-import api from '../../config/axios';
+import { useNavigate } from 'react-router-dom';
+import { skyboxApiService } from '../../services/skyboxApiService';
 import DownloadPopup from '../../Components/DownloadPopup';
 
 const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
+  const navigate = useNavigate();
   const [styles, setStyles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,8 +20,8 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
     setError(null);
     const fetchStyles = async () => {
       try {
-        const response = await api.get(`/api/skybox/styles?page=1&limit=100`);
-        const stylesArr = response.data?.data || [];
+        const response = await skyboxApiService.getStyles(1, 100);
+        const stylesArr = response.data || [];
         setStyles(stylesArr);
         setLoading(false);
         setError(null);
@@ -59,32 +61,44 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
     // Update selected style
     setSelectedStyle(skyboxStyle);
     
-    // Store in sessionStorage for persistence
+    // Store in sessionStorage for persistence and navigation
     sessionStorage.setItem('selectedSkyboxStyle', JSON.stringify(skyboxStyle));
+    sessionStorage.setItem('fromExplore', 'true');
+    sessionStorage.setItem('navigateToMain', 'true');
     
     // Call the onSelect callback if provided
     if (onSelect) {
       onSelect(skyboxStyle);
     }
 
-    // Show success message using a toast or notification
+    // Show success message
     const successMessage = document.createElement('div');
-    successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-              successMessage.textContent = `✅ In3D.Ai style "${skyboxStyle.name}" applied!`;
+    successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+    successMessage.innerHTML = `
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+      </svg>
+      <span>Style "${skyboxStyle.name}" selected! Navigating to Create...</span>
+    `;
     document.body.appendChild(successMessage);
     
-    // Remove the message after 3 seconds
+    // Navigate to main section after a short delay
     setTimeout(() => {
-      if (successMessage.parentNode) {
-        successMessage.parentNode.removeChild(successMessage);
-      }
-    }, 3000);
+      navigate('/main');
+      
+      // Remove the message after navigation
+      setTimeout(() => {
+        if (successMessage.parentNode) {
+          successMessage.parentNode.removeChild(successMessage);
+        }
+      }, 2000);
+    }, 1500);
   };
 
   // Handle download for skybox style
   const handleDownload = (skyboxStyle) => {
     // For skybox styles, we'll use the preview image or a placeholder
-    const imageUrl = skyboxStyle.preview_url || skyboxStyle.image_jpg || skyboxStyle.image;
+    const imageUrl = skyboxStyle.preview_url || skyboxStyle.preview_image_url || skyboxStyle.image || skyboxStyle.image_url || skyboxStyle.image_jpg;
     if (imageUrl) {
       setCurrentImageForDownload({ image: imageUrl, title: skyboxStyle.name });
       setShowDownloadPopup(true);
@@ -187,9 +201,9 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
             >
               {/* Preview Image */}
               <div className="aspect-square relative overflow-hidden">
-                {style.preview_url ? (
+                {(style.preview_url || style.preview_image_url || style.image || style.image_url) ? (
                   <img
-                    src={style.preview_url}
+                    src={style.preview_url || style.preview_image_url || style.image || style.image_url}
                     alt={style.name}
                     className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-300"
                     onError={(e) => {
@@ -200,7 +214,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
                 ) : null}
                 <div 
                   className={`w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-900 to-purple-900 ${
-                    style.preview_url ? 'hidden' : 'flex'
+                    (style.preview_url || style.preview_image_url || style.image || style.image_url) ? 'hidden' : 'flex'
                   }`}
                 >
                   <div className="text-center text-white/80">

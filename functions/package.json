@@ -15,6 +15,7 @@
   },
   "main": "lib/index.js",
   "dependencies": {
+    "@blockadelabs/sdk": "^1.1.7",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "axios": "^1.10.0",

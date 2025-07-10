@@ -15,9 +15,9 @@ const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showExploreDropdown, setShowExploreDropdown] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const dropdownRef = useRef(null);
-  const exploreDropdownRef = useRef(null);
+  const mobileMenuRef = useRef(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [subscription, setSubscription] = useState(null);
@@ -52,8 +52,8 @@ const Header = () => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
       }
-      if (exploreDropdownRef.current && !exploreDropdownRef.current.contains(event.target)) {
-        setShowExploreDropdown(false);
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target)) {
+        setShowMobileMenu(false);
       }
     };
 
@@ -125,16 +125,168 @@ const Header = () => {
     return plan?.limits.skyboxGenerations || 10;
   };
 
+  // Mobile nav links (including Careers and Blog)
+  const mobileNavLinks = (
+    <>
+      <Link
+        to="/main"
+        className={`block w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+          isActivePath('/main')
+            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30 shadow-lg'
+            : 'text-gray-300 hover:text-white hover:bg-white/10'
+        }`}
+        onClick={() => setShowMobileMenu(false)}
+      >
+        Create
+      </Link>
+      <Link
+        to="/careers"
+        className={`block w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+          isActivePath('/careers')
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-lg'
+            : 'text-gray-300 hover:text-white hover:bg-white/10'
+        }`}
+        onClick={() => setShowMobileMenu(false)}
+      >
+        Careers
+      </Link>
+      <Link
+        to="/blog"
+        className={`block w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+          isActivePath('/blog')
+            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-lg'
+            : 'text-gray-300 hover:text-white hover:bg-white/10'
+        }`}
+        onClick={() => setShowMobileMenu(false)}
+      >
+        Blog
+      </Link>
+      <Link
+        to="/explore"
+        className={`block w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+          isExploreActive()
+            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-lg'
+            : 'text-gray-300 hover:text-white hover:bg-white/10'
+        }`}
+        onClick={() => setShowMobileMenu(false)}
+      >
+        Explore
+      </Link>
+      <Link
+        to="/history"
+        className={`block w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
+          isActivePath('/history')
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-lg'
+            : 'text-gray-300 hover:text-white hover:bg-white/10'
+        }`}
+        onClick={() => setShowMobileMenu(false)}
+      >
+        History
+      </Link>
+    </>
+  );
+
+  // Mobile user actions
+  const mobileUserActions = user ? (
+    <>
+      <div className="px-4 py-3 border-b border-gray-700/50">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-medium">
+            {profile?.firstName?.[0] || user.email[0].toUpperCase()}
+          </div>
+          <div>
+            <div className="font-medium text-white">{profile?.firstName || user.email.split('@')[0]}</div>
+            <div className="text-xs text-gray-400">{user.email}</div>
+          </div>
+        </div>
+        <div className="mt-2 flex items-center space-x-2">
+          <span className={`px-2 py-1 text-xs rounded-full ${
+            subscription?.planId === 'free' 
+              ? 'bg-gray-700/50 text-gray-300' 
+              : 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-300 border border-purple-500/30'
+          }`}>
+            {getCurrentPlan()?.name || 'Free'} Plan
+          </span>
+        </div>
+      </div>
+      <div className="px-4 py-3 border-b border-gray-700/50">
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-400">Generations Used</span>
+          <span className="text-sm text-gray-300">
+            {getCurrentUsage()}/{getCurrentLimit() === Infinity ? '∞' : getCurrentLimit()}
+          </span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-gray-400">Remaining</span>
+          <span className="text-sm text-gray-300">
+            {getRemainingGenerations()} {getCurrentLimit() === Infinity ? '' : 'left'}
+          </span>
+        </div>
+        {getCurrentLimit() !== Infinity && (
+          <div className="w-full bg-gray-800 rounded-full h-2 mt-2">
+            <div
+              className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${getUsagePercentage()}%` }}
+            />
+          </div>
+        )}
+        {subscription?.planId === 'free' && (
+          <button
+            onClick={handleUpgradeClick}
+            className="w-full mt-2 px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-lg transition-all duration-200 text-sm font-medium"
+          >
+            Upgrade for Unlimited
+          </button>
+        )}
+      </div>
+      <div className="py-1 border-b border-gray-700/50">
+        <Link
+          to="/profile"
+          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white"
+          onClick={() => setShowMobileMenu(false)}
+        >
+          Profile Settings
+        </Link>
+        <Link
+          to="/history"
+          className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white"
+          onClick={() => setShowMobileMenu(false)}
+        >
+          Generation History
+        </Link>
+      </div>
+      <div className="py-1">
+        <button
+          onClick={handleLogout}
+          className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white"
+        >
+          Sign Out
+        </button>
+      </div>
+    </>
+  ) : (
+    <Link
+      to="/login"
+      className="block w-full px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg transition-all duration-200 font-medium shadow-lg text-center mt-4"
+      onClick={() => setShowMobileMenu(false)}
+    >
+      Sign In
+    </Link>
+  );
+
   return (
     <>
       <header className="bg-gray-900/80 backdrop-blur-xl border-b border-gray-800/50 sticky top-0 z-50">
-        <nav className="container mx-auto flex items-center justify-between px-6 py-4">
-          {/* Left Section - Logo and Main Nav */}
-          <div className="flex items-center space-x-8">
+        <nav className="container mx-auto flex items-center justify-between px-4 sm:px-6 py-4 relative">
+          {/* Left Section - Logo */}
+          <div className="flex items-center space-x-4">
             <Link to="/" className="flex items-center">
               <Logo />
             </Link>
-            
+          </div>
+
+          {/* Desktop Nav - hidden on mobile */}
+          <div className="hidden md:flex items-center space-x-8">
             {user && (
               <div className="flex items-center space-x-1">
                 <Link
@@ -153,136 +305,37 @@ const Header = () => {
                   </div>
                 </Link>
                 
-                <div className="relative" ref={exploreDropdownRef}>
-                  <Link
-                    to="/explore"
-                    className={`group relative px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
-                      isExploreActive()
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-lg'
-                        : 'text-gray-300 hover:text-white hover:bg-white/10'
-                    }`}
-                    onMouseEnter={() => setShowExploreDropdown(true)}
-                    onMouseLeave={() => setShowExploreDropdown(false)}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      <span>Explore</span>
-                      <svg className={`w-4 h-4 transition-transform duration-200 ${showExploreDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-
-                    {/* Explore Dropdown */}
-                    {showExploreDropdown && (
-                      <div 
-                        className="absolute left-0 mt-2 w-72 bg-gray-900/95 backdrop-blur-xl rounded-xl shadow-2xl py-2 border border-gray-700/50"
-                        onMouseEnter={() => setShowExploreDropdown(true)}
-                        onMouseLeave={() => setShowExploreDropdown(false)}
-                      >
-                        <div className="px-3 py-2">
-                          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Discover</div>
-                        </div>
-                        
-                        <div className="space-y-1">
-                          <Link
-                            to="/explore/gallery"
-                            className="block px-4 py-3 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white rounded-lg mx-2 transition-all duration-200"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
-                              </div>
-                              <div>
-                                <div className="font-medium">Featured Gallery</div>
-                                <div className="text-xs text-gray-500">Browse curated In3D.Ai environments</div>
-                              </div>
-                            </div>
-                          </Link>
-
-                          <Link
-                            to="/explore/styles"
-                            className="block px-4 py-3 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white rounded-lg mx-2 transition-all duration-200"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-teal-600 rounded-lg flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                                </svg>
-                              </div>
-                              <div>
-                                <div className="font-medium">Style Categories</div>
-                                <div className="text-xs text-gray-500">Explore different themes</div>
-                              </div>
-                            </div>
-                          </Link>
-
-                          <Link
-                            to="/explore/trending"
-                            className="block px-4 py-3 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white rounded-lg mx-2 transition-all duration-200"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-lg flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                                </svg>
-                              </div>
-                              <div>
-                                <div className="font-medium">Trending Now</div>
-                                <div className="text-xs text-gray-500">Popular creations</div>
-                              </div>
-                            </div>
-                          </Link>
-                        </div>
-
-                        <div className="border-t border-gray-700/50 my-2"></div>
-
-                        <div className="px-3 py-2">
-                          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Learn & Connect</div>
-                        </div>
-
-                        <div className="space-y-1">
-                          <Link
-                            to="/explore/tutorials"
-                            className="block px-4 py-3 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white rounded-lg mx-2 transition-all duration-200"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                </svg>
-                              </div>
-                              <div>
-                                <div className="font-medium">Tutorials</div>
-                                <div className="text-xs text-gray-500">Learn best practices</div>
-                              </div>
-                            </div>
-                          </Link>
-
-                          <Link
-                            to="/explore/community"
-                            className="block px-4 py-3 text-sm text-gray-300 hover:bg-gray-800/50 hover:text-white rounded-lg mx-2 transition-all duration-200"
-                          >
-                            <div className="flex items-center space-x-3">
-                              <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg flex items-center justify-center">
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                </svg>
-                              </div>
-                              <div>
-                                <div className="font-medium">Community</div>
-                                <div className="text-xs text-gray-500">Share & discover</div>
-                              </div>
-                            </div>
-                          </Link>
-                        </div>
-                      </div>
-                    )}
-                  </Link>
-                </div>
+                <Link
+                  to="/careers"
+                  className={`px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                    isActivePath('/careers')
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-lg'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2V6" />
+                    </svg>
+                    <span>Careers</span>
+                  </div>
+                </Link>
+                
+                <Link
+                  to="/explore"
+                  className={`px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                    isExploreActive()
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-lg'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <span>Explore</span>
+                  </div>
+                </Link>
 
                 <Link
                   to="/history"
@@ -303,8 +356,8 @@ const Header = () => {
             )}
           </div>
 
-          {/* Right Section - User Info & Actions */}
-          <div className="flex items-center space-x-4">
+          {/* Desktop User Actions - hidden on mobile */}
+          <div className="hidden md:flex items-center space-x-4">
             {user ? (
               <>
                 {/* Generation Counter */}
@@ -460,14 +513,84 @@ const Header = () => {
                 </div>
               </>
             ) : (
-              <Link
-                to="/login"
-                className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 border border-blue-500/30 font-medium shadow-lg"
-              >
-                Sign In
-              </Link>
+              <div className="flex items-center space-x-4">
+                <Link
+                  to="/careers"
+                  className={`px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                    isActivePath('/careers')
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-lg'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2V6" />
+                    </svg>
+                    <span>Careers</span>
+                  </div>
+                </Link>
+                
+                <Link
+                  to="/blog"
+                  className={`px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                    isActivePath('/blog')
+                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 shadow-lg'
+                      : 'text-gray-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <span>Blog</span>
+                  </div>
+                </Link>
+                
+                <Link
+                  to="/login"
+                  className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 border border-blue-500/30 font-medium shadow-lg"
+                >
+                  Sign In
+                </Link>
+              </div>
             )}
           </div>
+
+          {/* Hamburger for mobile */}
+          <div className="md:hidden flex items-center">
+            <button
+              aria-label="Open menu"
+              aria-controls="mobile-menu"
+              aria-expanded={showMobileMenu}
+              onClick={() => setShowMobileMenu((prev) => !prev)}
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-cyan-500"
+            >
+              <svg className="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                {showMobileMenu ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
+
+          {/* Mobile Menu */}
+          {showMobileMenu && (
+            <div
+              ref={mobileMenuRef}
+              id="mobile-menu"
+              className="absolute top-full left-0 w-full bg-gray-900/95 backdrop-blur-xl border-b border-gray-800/50 shadow-2xl z-50 md:hidden animate-fade-in"
+              role="menu"
+              aria-label="Mobile navigation"
+            >
+              <div className="py-4 flex flex-col space-y-2">
+                {mobileNavLinks}
+                <div className="border-t border-gray-700/50 my-2" />
+                {mobileUserActions}
+              </div>
+            </div>
+          )}
         </nav>
       </header>
 
