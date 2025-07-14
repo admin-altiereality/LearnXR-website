@@ -23,6 +23,7 @@ import Careers from './screens/Careers';
 import Blog from './screens/Blog';
 import PrivacyPolicy from './screens/PrivacyPolicy';
 import TermsConditions from './screens/TermsConditions';
+import ThreeDGenerate from './screens/MeshyGenerate';
 
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
@@ -260,6 +261,11 @@ function App() {
                       <Route path="/blog" element={<Blog />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
+                      <Route path="/3d-generate" element={
+                        <ProtectedRoute>
+                          <ThreeDGenerate />
+                        </ProtectedRoute>
+                      } />
 
                       {/* Protected routes - require authentication */}
                       <Route path="/main" element={
@@ -411,6 +417,11 @@ function App() {
                       <Route path="/blog" element={<Blog />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
+                      <Route path="/3d-generate" element={
+                        <ProtectedRoute>
+                          <ThreeDGenerate />
+                        </ProtectedRoute>
+                      } />
 
                       {/* Protected routes - require authentication */}
                       <Route path="/main" element={
