@@ -17,6 +17,49 @@ router.use((req, res, next) => {
   next();
 });
 
+// Proxy route for Meshy assets to handle CORS
+router.get('/proxy-asset', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+
+    console.log('🔗 Proxying asset request:', url);
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'In3D.ai-WebApp/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      console.error('❌ Asset proxy failed:', response.status, response.statusText);
+      return res.status(response.status).json({ 
+        error: `Failed to fetch asset: ${response.status} ${response.statusText}` 
+      });
+    }
+
+    // Get the content type
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    
+    // Set appropriate headers
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    // Stream the response
+    response.body?.pipe(res);
+    
+    console.log('✅ Asset proxy successful');
+  } catch (error) {
+    console.error('❌ Asset proxy error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Mount payment routes
 console.log('Mounting payment routes...');
 router.use('/payment', paymentRoutes);

@@ -198,6 +198,12 @@ function Footer() {
               >
                 Terms & Conditions
               </Link>
+              <Link
+                to="/3d-generate"
+                className="ml-4 px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow transition-all duration-200"
+              >
+                Generate 3D Asset
+              </Link>
             </div>
           </div>
         </div>

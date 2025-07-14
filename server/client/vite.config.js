@@ -22,6 +22,11 @@ export default defineConfig(({ mode }) => {
           target: 'http://localhost:5002',
           changeOrigin: true,
           secure: false,
+        },
+        '/api/proxy-asset': {
+          target: 'http://localhost:5002',
+          changeOrigin: true,
+          secure: false,
         }
       },
       hmr: {

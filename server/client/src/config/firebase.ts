@@ -2,58 +2,115 @@ import { getAnalytics, isSupported } from "firebase/analytics";
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBo9VsJMft4Qqap5oUmQowwbjiMQErloqU",
   authDomain: "in3devoneuralai.firebaseapp.com",
   projectId: "in3devoneuralai",
-  storageBucket: "in3devoneuralai.firebasestorage.app",
+  storageBucket: "in3devoneuralai.appspot.com",
   messagingSenderId: "708037023303",
   appId: "1:708037023303:web:f0d5b319b05aa119288362",
   measurementId: "G-FNENMQ3BMF"
 };
 
+// Initialize Firebase App FIRST
 const app = initializeApp(firebaseConfig);
+
+// Validate Firebase configuration
+console.log('🔧 Firebase configuration validation:', {
+  projectId: app.options.projectId,
+  storageBucket: app.options.storageBucket,
+  authDomain: app.options.authDomain,
+  apiKey: app.options.apiKey ? 'Configured' : 'Missing',
+  appId: app.options.appId ? 'Configured' : 'Missing'
+});
+
+// Check for required configuration
+if (!app.options.storageBucket) {
+  console.error('❌ Firebase Storage bucket not configured!');
+  console.error('💡 Make sure storageBucket is set in your Firebase config');
+}
+
+if (!app.options.apiKey) {
+  console.error('❌ Firebase API key not configured!');
+  console.error('💡 Make sure apiKey is set in your Firebase config');
+}
+
+// Initialize core services immediately
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+
+// Initialize Storage with error handling
+let storage: ReturnType<typeof getStorage> | null = null;
+
+const initializeStorage = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      if (!app.options.storageBucket) {
+        throw new Error('Storage bucket not configured');
+      }
+      
+      storage = getStorage(app);
+      console.log('✅ Firebase Storage initialized successfully');
+      console.log('📦 Storage bucket:', app.options.storageBucket);
+    } catch (error) {
+      console.error('❌ Firebase Storage initialization failed:', error);
+      storage = null;
+    }
+  }
+};
 
 // Initialize analytics only if supported and in browser environment
 let analytics = null;
 
-// Function to safely initialize analytics
 const initializeAnalytics = async () => {
   try {
     if (typeof window !== 'undefined' && await isSupported()) {
       analytics = getAnalytics(app);
+      console.log('✅ Firebase Analytics initialized');
     }
   } catch (error) {
     console.warn('Analytics initialization failed:', error);
   }
 };
 
-// Initialize analytics on client side
-if (typeof window !== 'undefined') {
-  initializeAnalytics();
-}
-
 // Initialize Functions with error handling
 let functions: ReturnType<typeof getFunctions> | undefined = undefined;
-if (typeof window !== 'undefined') {
-  try {
-    functions = getFunctions(app);
-    // Connect to emulator in development
-    if (process.env.NODE_ENV === 'development') {
-      try {
-        connectFunctionsEmulator(functions, 'localhost', 5001);
-      } catch (error) {
-        console.warn('Functions emulator connection failed:', error);
+
+const initializeFunctions = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      functions = getFunctions(app);
+      console.log('✅ Firebase Functions initialized');
+      
+      // Connect to emulator in development
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          connectFunctionsEmulator(functions, 'localhost', 5001);
+          console.log('🔧 Connected to Functions emulator');
+        } catch (error) {
+          console.warn('Functions emulator connection failed:', error);
+        }
       }
+    } catch (error) {
+      console.warn('Functions initialization failed:', error);
     }
-  } catch (error) {
-    console.warn('Functions initialization failed:', error);
   }
+};
+
+// Initialize services
+if (typeof window !== 'undefined') {
+  // Initialize storage immediately
+  initializeStorage();
+  
+  // Initialize analytics asynchronously
+  initializeAnalytics();
+  
+  // Initialize functions
+  initializeFunctions();
 }
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export { analytics, functions };
+export { analytics, functions, storage };
 export default app; 
