@@ -603,31 +603,88 @@ export class MeshyApiService {
       return `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
     }
     
-    // In production, you might want to use your own proxy endpoint
-    return `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+    // In production (Firebase hosting), try direct download first, fallback to proxy
+    return assetUrl;
   }
 
   /**
-   * Download an asset through proxy to avoid CORS issues
+   * Download an asset with fallback strategies
    */
   async downloadAsset(assetUrl: string): Promise<Blob> {
     if (!assetUrl) {
       throw new Error('Asset URL is required');
     }
 
-    try {
-      const proxyUrl = this.getProxyDownloadUrl(assetUrl);
-      const response = await fetch(proxyUrl);
+    // Try multiple download strategies
+    const strategies = [
+      // Strategy 1: Direct download (works for most cases)
+      async () => {
+        console.log('🔄 Trying direct download...');
+        const response = await fetch(assetUrl, {
+          method: 'GET',
+          mode: 'cors',
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Direct download failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      },
       
-      if (!response.ok) {
-        throw new Error(`Failed to download asset: ${response.status} ${response.statusText}`);
+      // Strategy 2: Proxy download (for development or when direct fails)
+      async () => {
+        console.log('🔄 Trying proxy download...');
+        const proxyUrl = `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+        const response = await fetch(proxyUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Proxy download failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      },
+      
+      // Strategy 3: Using a CORS proxy service (fallback)
+      async () => {
+        console.log('🔄 Trying CORS proxy service...');
+        const corsProxyUrl = `https://cors-anywhere.herokuapp.com/${assetUrl}`;
+        const response = await fetch(corsProxyUrl, {
+          method: 'GET',
+          headers: {
+            'Origin': window.location.origin,
+          },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`CORS proxy download failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
       }
-      
-      return await response.blob();
-    } catch (error) {
-      console.error('❌ Error downloading asset:', error);
-      throw error;
+    ];
+
+    let lastError: Error | null = null;
+
+    for (let i = 0; i < strategies.length; i++) {
+      try {
+        const blob = await strategies[i]();
+        console.log(`✅ Download successful using strategy ${i + 1}`);
+        return blob;
+      } catch (error) {
+        console.warn(`⚠️ Strategy ${i + 1} failed:`, error);
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+        
+        // If this is the last strategy, don't continue
+        if (i === strategies.length - 1) {
+          break;
+        }
+      }
     }
+
+    // If all strategies failed, throw the last error
+    console.error('❌ All download strategies failed');
+    throw lastError || new Error('Failed to download asset');
   }
 }
 

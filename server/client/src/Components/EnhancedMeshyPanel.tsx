@@ -198,15 +198,13 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
     if (!asset?.downloadUrl) return;
 
     try {
-      // Use proxy URL to avoid CORS issues
-      const proxyUrl = `/api/proxy-asset?url=${encodeURIComponent(asset.downloadUrl)}`;
-      const response = await fetch(proxyUrl);
+      console.log('📥 Starting download for asset:', assetId);
+      console.log('🔗 Download URL:', asset.downloadUrl);
       
-      if (!response.ok) {
-        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
-      }
+      // Use the improved download method with fallback strategies
+      const blob = await meshyApiService.downloadAsset(asset.downloadUrl);
       
-      const blob = await response.blob();
+      // Create download link
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -215,9 +213,11 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      console.log('✅ Download completed successfully');
     } catch (error) {
-      console.error('Download failed:', error);
-      setError('Failed to download asset');
+      console.error('❌ Download failed:', error);
+      setError(`Failed to download asset: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
