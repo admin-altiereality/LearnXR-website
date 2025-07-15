@@ -67,6 +67,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/proxy-asset"
+  to = "/.netlify/functions/proxy-asset"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200

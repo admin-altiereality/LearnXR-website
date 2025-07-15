@@ -77,13 +77,13 @@ function ModelViewer({ modelUrl, autoRotate, lighting, onLoad, onError }: ModelV
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<any>(null);
 
-  // Create proxy URL to avoid CORS issues
-  const proxyUrl = modelUrl ? `/api/proxy-asset?url=${encodeURIComponent(modelUrl)}` : '';
+  // Use direct URL for 3D model loading (most 3D loaders handle CORS better)
+  const modelUrlToUse = modelUrl || '';
 
   // Load the 3D model
   const gltf = useLoader(
     GLTFLoader,
-    proxyUrl || modelUrl,
+    modelUrlToUse,
     (loader) => {
       // Configure DRACO loader for compression
       const dracoLoader = new DRACOLoader();
