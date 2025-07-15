@@ -79,6 +79,7 @@ export class RazorpayService {
       }
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) throw new Error('Invalid plan selected');
+      // Razorpay expects amount in paise, so multiply by 100
       const amountInPaise = Math.round(plan.price * 100);
       const response = await api.post('/payment/create-order', {
         amount: amountInPaise,

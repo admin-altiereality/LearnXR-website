@@ -62,7 +62,7 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
             <div className="mb-6 text-sm text-gray-300">
               {plan.limits.skyboxGenerations === Infinity 
                 ? 'Unlimited generations'
-                : `${plan.limits.skyboxGenerations} generations per day`
+                : `${plan.limits.skyboxGenerations} generations per month`
               }
             </div>
 

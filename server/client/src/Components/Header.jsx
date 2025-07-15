@@ -122,7 +122,7 @@ const Header = () => {
   // Get current limit for display
   const getCurrentLimit = () => {
     const plan = getCurrentPlan();
-    return plan?.limits.skyboxGenerations || 10;
+    return plan?.limits.skyboxGenerations || 5;
   };
 
   // Mobile nav links (including Careers and Blog)

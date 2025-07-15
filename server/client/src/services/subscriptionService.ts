@@ -10,13 +10,13 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     price: 0,
     billingCycle: 'monthly',
     features: [
-      'Generate up to 10 skyboxes',
+      'Generate up to 5 skyboxes',
       'Basic styles available',
       'Standard quality output',
       'Community support'
     ],
     limits: {
-      skyboxGenerations: 10,
+      skyboxGenerations: 5,
       maxQuality: 'standard',
       customStyles: false,
       apiAccess: false
@@ -28,7 +28,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     price: 999, // ₹999/month
     billingCycle: 'monthly',
     features: [
-      'Unlimited skybox generations',
+      'Generate up to 50 skyboxes',
       'All styles available',
       'High quality output',
       'Priority support',
@@ -36,7 +36,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Custom style creation'
     ],
     limits: {
-      skyboxGenerations: Infinity,
+      skyboxGenerations: 50,
       maxQuality: 'high',
       customStyles: true,
       apiAccess: true
@@ -48,6 +48,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     price: 4999, // ₹4999/month
     billingCycle: 'monthly',
     features: [
+      'Generate up to 100 skyboxes',
       'Everything in Pro',
       'Dedicated support',
       'Custom integration',
@@ -55,7 +56,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Team management'
     ],
     limits: {
-      skyboxGenerations: Infinity,
+      skyboxGenerations: 100,
       maxQuality: 'ultra',
       customStyles: true,
       apiAccess: true

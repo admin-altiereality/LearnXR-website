@@ -364,7 +364,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
     generationsLeft: subscription?.usage?.limit - subscription?.usage?.count || 0,
     totalGenerations: subscription?.usage?.count || 0,
     planName: subscription?.planId === 'free' ? 'Free Plan' : subscription?.planId === 'pro' ? 'Pro Plan' : 'Enterprise Plan',
-    maxGenerations: subscription?.planId === 'free' ? 10 : subscription?.planId === 'pro' ? Infinity : Infinity
+    maxGenerations: subscription?.planId === 'free' ? 5 : subscription?.planId === 'pro' ? 50 : 100
   };
 
   // Get current plan details with proper type safety
