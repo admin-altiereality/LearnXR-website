@@ -1,8 +1,17 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
+// API base URL - use Firebase Functions in production, localhost in development
+const getApiBaseUrl = () => {
+  const region = 'us-central1';
+  const projectId = 'in3devoneuralai';
+  return import.meta.env.PROD 
+    ? `https://${region}-${projectId}.cloudfunctions.net/api`
+    : 'http://localhost:5001/in3devoneuralai/us-central1/api';
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://us-central1-in3devoneuralai.cloudfunctions.net/api',
+  baseURL: getApiBaseUrl(),
   withCredentials: false,
 });
 

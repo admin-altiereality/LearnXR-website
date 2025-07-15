@@ -53,12 +53,24 @@ const UpgradeModal = ({ isOpen, onClose, currentPlan, onSubscriptionUpdate }) =>
       }
     } catch (error) {
       console.error('Error handling upgrade:', error);
-      if (error instanceof Error && error.message === 'Payment cancelled') {
-        toast.error('Payment was cancelled');
-      } else if (error.message.includes('not properly initialized')) {
-        toast.error('Payment service is not available. Please try again later.');
+      
+      // Handle specific error types
+      if (error instanceof Error) {
+        if (error.message === 'Payment cancelled') {
+          toast.error('Payment was cancelled');
+        } else if (error.message.includes('not properly initialized')) {
+          toast.error('Payment service is not available. Please try again later.');
+        } else if (error.message.includes('popup') || error.message.includes('COOP') || error.message.includes('Cross-Origin')) {
+          toast.error('Popup blocked by browser. Please allow popups for this site and try again, or contact support for alternative payment methods.');
+        } else if (error.message.includes('Failed to create order') || error.message.includes('404')) {
+          toast.error('Payment service temporarily unavailable. Please try again in a few minutes or contact support.');
+        } else if (error.message.includes('Payment failed')) {
+          toast.error('Payment failed. Please check your payment details and try again.');
+        } else {
+          toast.error(`Payment error: ${error.message}`);
+        }
       } else {
-        toast.error('Failed to process upgrade. Please try again.');
+        toast.error('An unexpected error occurred. Please try again or contact support.');
       }
     }
   };

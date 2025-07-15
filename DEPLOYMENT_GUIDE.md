@@ -1,15 +1,16 @@
 # Deployment Guide
 
 ## Overview
-This guide covers deploying the In3D Neural Website project to various platforms.
+This guide covers deploying the In3D Neural Website project to Firebase Hosting and Functions.
 
-## GitHub Deployment
+## Firebase Deployment
 
 ### Prerequisites
-- Git configured with your GitHub credentials
+- Firebase CLI installed: `npm install -g firebase-tools`
+- Firebase project configured: `firebase init`
 - All environment variables properly set up
 
-### Steps for GitHub Deployment
+### Steps for Firebase Deployment
 
 1. **Prepare for Deployment**
    ```bash
@@ -45,11 +46,21 @@ This guide covers deploying the In3D Neural Website project to various platforms
 
 2. Fill in your actual values in the `.env` files
 
-#### For Production Deployment
-Set environment variables in your hosting platform:
-- **Vercel**: Use the Vercel dashboard
-- **Netlify**: Use the Netlify dashboard
-- **Railway**: Use Railway's environment variables section
+#### For Firebase Functions Production
+Set environment variables for Firebase Functions:
+
+```bash
+# Set environment variables
+firebase functions:config:set meshy.api_key="your_meshy_api_key"
+firebase functions:config:set razorpay.key_id="your_razorpay_key_id"
+firebase functions:config:set razorpay.key_secret="your_razorpay_secret"
+firebase functions:config:set firebase.project_id="in3devoneuralai"
+firebase functions:config:set firebase.client_email="your_firebase_client_email"
+firebase functions:config:set firebase.private_key="your_firebase_private_key"
+
+# Deploy functions with new config
+firebase deploy --only functions
+```
 
 ### Required Environment Variables
 
@@ -67,7 +78,7 @@ NODE_ENV=production
 
 #### Client (.env)
 ```
-VITE_API_URL=your_api_url
+VITE_API_BASE_URL=http://localhost:5001/in3devoneuralai/us-central1/api
 VITE_MESHY_API_KEY=your_meshy_api_key
 VITE_FIREBASE_API_KEY=your_firebase_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
@@ -79,96 +90,165 @@ VITE_FIREBASE_APP_ID=your_app_id
 
 ## Platform-Specific Deployment
 
-### Vercel Deployment
-1. Connect your GitHub repository to Vercel
-2. Set environment variables in Vercel dashboard
-3. Deploy automatically on push to main branch
+### Firebase Hosting & Functions
+1. Build the client application:
+   ```bash
+   cd server/client
+   npm run build
+   cd ../..
+   ```
 
-### Netlify Deployment
-1. Connect your GitHub repository to Netlify
-2. Set build command: `cd server/client && npm run build`
-3. Set publish directory: `server/client/dist`
-4. Set environment variables in Netlify dashboard
+2. Deploy to Firebase:
+   ```bash
+   firebase deploy
+   ```
 
-### Railway Deployment
-1. Connect your GitHub repository to Railway
-2. Set environment variables in Railway dashboard
-3. Railway will automatically detect and deploy your Node.js app
+3. Or deploy specific services:
+   ```bash
+   # Deploy only hosting
+   firebase deploy --only hosting
+   
+   # Deploy only functions
+   firebase deploy --only functions
+   
+   # Deploy hosting and functions
+   firebase deploy --only hosting,functions
+   ```
 
-## Security Best Practices
+### Architecture
 
-1. **Never commit .env files** - They contain sensitive information
-2. **Use environment templates** - Include `.env.template` files with placeholder values
-3. **Rotate API keys regularly** - Keep your API keys secure and up-to-date
-4. **Use different keys for development and production** - Never use production keys in development
+#### Development
+- Frontend: `http://localhost:5002` (served by Node.js server)
+- Backend: `http://localhost:5002/api` (Node.js Express server)
+- Firebase Functions: `http://localhost:5001/in3devoneuralai/us-central1/api`
+
+#### Production
+- Frontend: Firebase Hosting (https://in3devoneuralai.web.app)
+- Backend: Firebase Functions (https://us-central1-in3devoneuralai.cloudfunctions.net/api)
+
+## Payment Flow
+
+1. User clicks "SELECT PLAN"
+2. Frontend calls Firebase Function: `/api/payment/create-order`
+3. Firebase Function creates Razorpay order
+4. Razorpay modal opens for payment
+5. After payment, frontend calls: `/api/payment/verify`
+6. Firebase Function verifies payment and updates user subscription
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Environment Variables Missing**
-   - Check that all required environment variables are set
-   - Use the ConfigurationDiagnostic component to verify setup
+1. **Build Failures**
+   ```bash
+   # Clear cache and rebuild
+   cd server/client
+   rm -rf node_modules package-lock.json
+   npm install
+   npm run build
+   ```
 
-2. **Build Failures**
-   - Ensure all dependencies are installed
-   - Check for TypeScript errors
-   - Verify Node.js version compatibility
+2. **Firebase Functions Environment Variables**
+   ```bash
+   # Check current config
+   firebase functions:config:get
+   
+   # Set missing variables
+   firebase functions:config:set service.key="value"
+   ```
 
-3. **API Connection Issues**
-   - Verify API endpoints are correct
-   - Check CORS configuration
-   - Ensure API keys are valid
+3. **Permission Issues**
+   ```bash
+   # Check Firebase project access
+   firebase projects:list
+   
+   # Switch projects if needed
+   firebase use in3devoneuralai
+   ```
+
+4. **Hosting Cache Issues**
+   ```bash
+   # Clear Firebase cache
+   firebase hosting:clear
+   firebase deploy --only hosting
+   ```
 
 ### Debug Commands
+
 ```bash
-# Check environment setup
-cd server/client && npm run setup-env
+# Check Firebase status
+firebase projects:list
+firebase use
 
-# Test API connection
-curl http://localhost:5002/health
+# Check functions logs
+firebase functions:log
 
-# Check build process
-cd server/client && npm run build
+# Check hosting status
+firebase hosting:channel:list
+
+# Test functions locally
+firebase emulators:start
 ```
 
-## Continuous Deployment
+## Performance Optimization
 
-### GitHub Actions (Optional)
-Create `.github/workflows/deploy.yml` for automated deployment:
+### Hosting Optimization
+- ✅ **Static file caching** - Configured in firebase.json
+- ✅ **Gzip compression** - Automatic with Firebase Hosting
+- ✅ **CDN distribution** - Global CDN included
 
-```yaml
-name: Deploy
-on:
-  push:
-    branches: [main]
+### Functions Optimization
+- ✅ **Cold start optimization** - Keep functions warm
+- ✅ **Memory allocation** - Optimize based on usage
+- ✅ **Timeout configuration** - Set appropriate timeouts
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.ORG_ID }}
-          vercel-project-id: ${{ secrets.PROJECT_ID }}
+## Monitoring and Analytics
+
+### Firebase Console
+- **Hosting**: Monitor traffic and performance
+- **Functions**: View logs and execution metrics
+- **Firestore**: Monitor database usage
+- **Storage**: Track file uploads and downloads
+
+### Custom Analytics
+```javascript
+// Track custom events
+import { getAnalytics, logEvent } from "firebase/analytics";
+
+const analytics = getAnalytics();
+logEvent(analytics, 'asset_generated', {
+  asset_type: '3d_model',
+  generation_time: 5000
+});
 ```
 
-## Monitoring and Maintenance
+## Security Best Practices
 
-1. **Regular Updates**
-   - Keep dependencies updated
-   - Monitor for security vulnerabilities
-   - Update API keys as needed
+1. **Environment Variables**
+   - Never commit sensitive data
+   - Use Firebase Functions config for secrets
+   - Rotate API keys regularly
 
-2. **Performance Monitoring**
-   - Monitor API response times
-   - Check for memory leaks
-   - Optimize build sizes
+2. **Firestore Rules**
+   - Implement proper authentication checks
+   - Use role-based access control
+   - Validate data on write
 
-3. **Backup Strategy**
-   - Regular database backups
-   - Configuration backups
-   - Code repository backups 
+3. **Storage Rules**
+   - Restrict file uploads by type and size
+   - Implement user-based access control
+   - Scan uploaded files for malware
+
+## Cost Optimization
+
+### Hosting
+- **Free Tier**: 10GB storage, 360MB/day transfer
+- **Paid Tier**: $0.026/GB storage, $0.15/GB transfer
+
+### Functions
+- **Free Tier**: 2M invocations/month, 400K GB-seconds
+- **Paid Tier**: $0.40 per million invocations
+
+### Firestore
+- **Free Tier**: 1GB storage, 50K reads/day, 20K writes/day
+- **Paid Tier**: $0.18/GB storage, $0.06/100K reads, $0.18/100K writes 
