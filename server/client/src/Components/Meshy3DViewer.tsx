@@ -77,8 +77,8 @@ function ModelViewer({ modelUrl, autoRotate, lighting, onLoad, onError }: ModelV
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<any>(null);
 
-  // Use direct URL for 3D model loading (most 3D loaders handle CORS better)
-  const modelUrlToUse = modelUrl || '';
+  // Use proxy URL to avoid CORS issues for 3D model loading
+  const modelUrlToUse = modelUrl ? `/api/proxy-asset?url=${encodeURIComponent(modelUrl)}` : '';
 
   // Load the 3D model
   const gltf = useLoader(

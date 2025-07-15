@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { assetGenerationService, type AssetGenerationProgress, type AssetGenerationResult } from '../services/assetGenerationService';
+import { meshyApiService } from '../services/meshyApiService';
 import { useAuth } from '../contexts/AuthContext';
 import type { StoredAsset } from '../services/assetStorageService';
 
@@ -95,8 +96,13 @@ const AssetGenerationPanel: React.FC<AssetGenerationPanelProps> = ({
   const handleDownloadAsset = async (asset: StoredAsset) => {
     try {
       if (asset.downloadUrl) {
-        const response = await fetch(asset.downloadUrl);
-        const blob = await response.blob();
+        console.log('📥 Starting download for asset:', asset.id);
+        console.log('🔗 Download URL:', asset.downloadUrl);
+        
+        // Use the improved download method with fallback strategies
+        const blob = await meshyApiService.downloadAsset(asset.downloadUrl);
+        
+        // Create download link
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -105,10 +111,12 @@ const AssetGenerationPanel: React.FC<AssetGenerationPanelProps> = ({
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+        
+        console.log('✅ Download completed successfully');
       }
     } catch (error) {
-      console.error('Error downloading asset:', error);
-      setError('Failed to download asset');
+      console.error('❌ Download failed:', error);
+      setError(`Failed to download asset: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
