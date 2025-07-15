@@ -598,13 +598,8 @@ export class MeshyApiService {
   getProxyDownloadUrl(assetUrl: string): string {
     if (!assetUrl) return '';
     
-    // If we're in development, use a local proxy
-    if (import.meta.env.DEV) {
-      return `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
-    }
-    
-    // In production (Firebase hosting), try direct download first, fallback to proxy
-    return assetUrl;
+    // Always use proxy to avoid CORS issues in both development and production
+    return `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
   }
 
   /**
@@ -617,7 +612,20 @@ export class MeshyApiService {
 
     // Try multiple download strategies
     const strategies = [
-      // Strategy 1: Direct download (works for most cases)
+      // Strategy 1: Proxy download (primary method to avoid CORS)
+      async () => {
+        console.log('🔄 Trying proxy download...');
+        const proxyUrl = `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+        const response = await fetch(proxyUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Proxy download failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      },
+      
+      // Strategy 2: Direct download (fallback if proxy fails)
       async () => {
         console.log('🔄 Trying direct download...');
         const response = await fetch(assetUrl, {
@@ -632,20 +640,7 @@ export class MeshyApiService {
         return await response.blob();
       },
       
-      // Strategy 2: Proxy download (for development or when direct fails)
-      async () => {
-        console.log('🔄 Trying proxy download...');
-        const proxyUrl = `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
-        const response = await fetch(proxyUrl);
-        
-        if (!response.ok) {
-          throw new Error(`Proxy download failed: ${response.status} ${response.statusText}`);
-        }
-        
-        return await response.blob();
-      },
-      
-      // Strategy 3: Using a CORS proxy service (fallback)
+      // Strategy 3: Using a CORS proxy service (last resort)
       async () => {
         console.log('🔄 Trying CORS proxy service...');
         const corsProxyUrl = `https://cors-anywhere.herokuapp.com/${assetUrl}`;
