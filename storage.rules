@@ -1,31 +1,12 @@
 rules_version = '2';
 
-// Storage rules for In3D.ai application
+// DEVELOPMENT STORAGE RULES - VERY PERMISSIVE FOR TESTING
+// WARNING: These rules are for development only. DO NOT use in production!
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow authenticated users to read and write their own 3D assets
-    match /3d-assets/{userId}/{assetId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Allow authenticated users to access test files for debugging
-    match /test-uploads/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Allow authenticated users to create directories and test storage access
-    match /{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-    
-    // Allow public read access to completed 3D assets (optional)
-    match /3d-assets/{userId}/{assetId}/{allPaths=**} {
-      allow read: if resource.metadata.status == 'completed';
-    }
-    
-    // Default rule - allow authenticated users to create files (for initialization)
+    // Allow all read and write operations for development
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
   }
 } 

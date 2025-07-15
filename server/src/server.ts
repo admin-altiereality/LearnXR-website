@@ -24,6 +24,7 @@ if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
 
 const app = express();
 const buildPath = path.resolve(process.cwd(), 'client/dist');
+const isDevelopment = process.env.NODE_ENV === 'development';
 
 // CORS configuration
 const corsOptions = {
@@ -66,38 +67,54 @@ app.use('/api/payment', paymentRoutes);
 console.log('Mounting API routes at /api');
 app.use('/api', apiRouter);
 
-// Serve static files from the React build
-app.use(express.static(buildPath, {
-  setHeaders: (res) => {
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
-  }
-}));
+// Serve static files from the React build (only in production)
+if (!isDevelopment) {
+  app.use(express.static(buildPath, {
+    setHeaders: (res) => {
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Methods', 'GET');
+      res.set('Access-Control-Allow-Headers', 'Content-Type');
+    }
+  }));
 
-// Handle React routing - serve index.html for all non-API routes
-app.get('*', (req, res) => {
-  // Skip API routes
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({
-      status: 'error',
-      message: `API endpoint not found: ${req.path}`
-    });
-  }
-
-  const indexPath = path.join(buildPath, 'index.html');
-  console.log('Serving React app from:', indexPath);
-  
-  res.sendFile(indexPath, (err) => {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      res.status(500).json({
+  // Handle React routing - serve index.html for all non-API routes (only in production)
+  app.get('*', (req, res) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({
         status: 'error',
-        message: 'Failed to serve application'
+        message: `API endpoint not found: ${req.path}`
       });
     }
+
+    const indexPath = path.join(buildPath, 'index.html');
+    console.log('Serving React app from:', indexPath);
+    
+    res.sendFile(indexPath, (err) => {
+      if (err) {
+        console.error('Error serving index.html:', err);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to serve application'
+        });
+      }
+    });
   });
-});
+} else {
+  // In development, redirect to Vite dev server
+  app.get('*', (req, res) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({
+        status: 'error',
+        message: `API endpoint not found: ${req.path}`
+      });
+    }
+    
+    // Redirect to Vite dev server
+    res.redirect('http://localhost:3000' + req.path);
+  });
+}
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -114,6 +131,10 @@ app.listen(PORT, () => {
   console.log(`🚀 Server is running at http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🔧 API endpoints: http://localhost:${PORT}/api`);
-  console.log(`📁 Static files served from: ${buildPath}`);
+  if (isDevelopment) {
+    console.log(`🔄 Development mode: Frontend redirects to http://localhost:3000`);
+  } else {
+    console.log(`📁 Static files served from: ${buildPath}`);
+  }
 });
 

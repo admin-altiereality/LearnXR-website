@@ -13,6 +13,7 @@ import { assetGenerationService } from '../services/assetGenerationService';
 import { isStorageAvailable } from '../utils/firebaseStorage';
 import { StorageTestUtility } from '../utils/storageTest';
 import { StorageStatusIndicator } from './StorageStatusIndicator';
+import ConfigurationDiagnostic from './ConfigurationDiagnostic';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -48,17 +49,22 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [serviceStatusLoading, setServiceStatusLoading] = useState(true);
   const [serviceStatusError, setServiceStatusError] = useState(null);
 
-  // Reactive object detection
+  // Reactive object detection with error handling
   useEffect(() => {
     if (prompt.trim()) {
-      const extraction = assetGenerationService.previewExtraction(prompt);
-      setHas3DObjects(extraction.hasObjects);
-      console.log('🔄 Prompt changed, re-analyzing:', {
-        prompt,
-        hasObjects: extraction.hasObjects,
-        objects: extraction.objects,
-        meshyConfigured: assetGenerationService.isMeshyConfigured()
-      });
+      try {
+        const extraction = assetGenerationService.previewExtraction(prompt);
+        setHas3DObjects(extraction.hasObjects);
+        console.log('🔄 Prompt changed, re-analyzing:', {
+          prompt,
+          hasObjects: extraction.hasObjects,
+          objects: extraction.objects,
+          meshyConfigured: assetGenerationService.isMeshyConfigured()
+        });
+      } catch (error) {
+        console.error('Error analyzing prompt:', error);
+        setHas3DObjects(false);
+      }
     } else {
       setHas3DObjects(false);
     }
@@ -77,9 +83,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
         console.log('Fetched In3D.Ai styles:', styles);
       } catch (error) {
         setStylesLoading(false);
-        setStylesError("Failed to load In3D.Ai styles");
+        setStylesError("Failed to load In3D.Ai styles. Please check your API configuration.");
         setSkyboxStyles([]);
         console.error("Error fetching In3D.Ai styles:", error);
+        
+        // Show user-friendly error message
+        const errorMessage = document.createElement('div');
+        errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+        errorMessage.innerHTML = `
+          <div class="font-bold mb-2">⚠️ Configuration Issue</div>
+          <div class="text-sm">Unable to load 3D generation styles. Please check your API configuration.</div>
+        `;
+        document.body.appendChild(errorMessage);
+        setTimeout(() => document.body.removeChild(errorMessage), 5000);
       }
     };
     fetchSkyboxStyles();
@@ -91,20 +107,36 @@ const MainSection = ({ setBackgroundSkybox }) => {
       try {
         setServiceStatusLoading(true);
         setServiceStatusError(null);
+        
+        // Check if Meshy is configured first
+        const meshyConfigured = assetGenerationService.isMeshyConfigured();
+        console.log('🔧 Meshy configuration check:', meshyConfigured);
+        
+        if (!meshyConfigured) {
+          setServiceStatusError('Meshy API key not configured. Please add VITE_MESHY_API_KEY to your environment variables.');
+          setServiceStatusLoading(false);
+          setStorageAvailable(false);
+          return;
+        }
+        
         const available = await assetGenerationService.isServiceAvailable();
         setStorageAvailable(available);
         const status = await assetGenerationService.getServiceStatus();
         setServiceStatus(status);
         setServiceStatusLoading(false);
+        
         if (!available) {
           if (status.errors.length > 0) {
             setServiceStatusError(status.errors.join(' | '));
           }
         }
+        
+        console.log('🔧 Service availability check completed:', { available, status });
       } catch (error) {
         setServiceStatusLoading(false);
         setStorageAvailable(false);
         setServiceStatusError(error.message || 'Unknown error');
+        console.error('❌ Service availability check failed:', error);
       }
     };
     checkAvailability();
@@ -1129,6 +1161,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
       {/* Storage Status Indicator */}
       <StorageStatusIndicator />
+      
+      {/* Configuration Diagnostic - Show in development or when there are errors */}
+      {(process.env.NODE_ENV === 'development' || serviceStatusError || !storageAvailable) && (
+        <ConfigurationDiagnostic />
+      )}
     </div>
   );
 }

@@ -14,6 +14,8 @@ build/
 .env
 .env.local
 .env.*.local
+# But allow template files
+!.env.template
 
 # IDE files
 .idea/
