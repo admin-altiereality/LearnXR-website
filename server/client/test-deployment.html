@@ -134,7 +134,7 @@
     <div class="container">
         <div class="header">
             <h1>🚀 In3D.ai Deployment Test</h1>
-            <p>Comprehensive testing for Netlify Functions and API endpoints</p>
+            <p>Comprehensive testing for Firebase Functions and API endpoints</p>
         </div>
         
         <div class="content">
@@ -162,10 +162,14 @@
             </div>
 
             <div class="test-section">
-                <h2>🌐 Direct Function Tests</h2>
-                <p>Test Netlify functions directly.</p>
-                <button class="test-button" onclick="testDirectFunctions()">Test Direct Functions</button>
-                <div id="direct-result" class="result"></div>
+                <h3>🧪 Test Functions</h3>
+                <p>Test Firebase functions directly.</p>
+                <div class="button-group">
+                    <button onclick="testSkyboxFunction()">Test Skybox Function</button>
+                    <button onclick="testPaymentFunction()">Test Payment Function</button>
+                    <button onclick="testProxyFunction()">Test Proxy Function</button>
+                </div>
+                <div id="function-result" class="result"></div>
             </div>
 
             <div class="test-section">
@@ -286,37 +290,47 @@
             }
         }
 
-        // Test direct functions
-        async function testDirectFunctions() {
-            showLoading('direct-result');
+        // Test Firebase functions directly
+        async function testSkyboxFunction() {
+            showLoading('function-result');
             try {
-                const results = {};
-                
-                // Test direct skybox function
-                try {
-                    const skyboxResponse = await fetch('/.netlify/functions/skybox?path=/styles');
-                    const skyboxData = await skyboxResponse.json();
-                    results.skybox = { success: skyboxResponse.ok, data: skyboxData };
-                } catch (e) {
-                    results.skybox = { success: false, error: e.message };
-                }
-
-                // Test direct create-order function
-                try {
-                    const orderResponse = await fetch('/.netlify/functions/create-order', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ amount: 1000, currency: 'INR', planId: 'test' })
-                    });
-                    const orderData = await orderResponse.json();
-                    results.createOrder = { success: orderResponse.ok, data: orderData };
-                } catch (e) {
-                    results.createOrder = { success: false, error: e.message };
-                }
-
-                showResult('direct-result', results);
+                const response = await fetch('https://us-central1-in3devoneuralai.cloudfunctions.net/api/skybox/styles?page=1&limit=5');
+                const data = await response.json();
+                showResult('function-result', data, !response.ok);
             } catch (error) {
-                showResult('direct-result', { error: error.message }, true);
+                showResult('function-result', { error: error.message }, true);
+            }
+        }
+
+        async function testPaymentFunction() {
+            showLoading('function-result');
+            try {
+                const response = await fetch('https://us-central1-in3devoneuralai.cloudfunctions.net/api/payment/create-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: 1000,
+                        currency: 'INR',
+                        planId: 'test-plan'
+                    })
+                });
+                const data = await response.json();
+                showResult('function-result', data, !response.ok);
+            } catch (error) {
+                showResult('function-result', { error: error.message }, true);
+            }
+        }
+
+        async function testProxyFunction() {
+            showLoading('function-result');
+            try {
+                const response = await fetch('https://us-central1-in3devoneuralai.cloudfunctions.net/api/proxy-asset?url=https://example.com');
+                const data = await response.json();
+                showResult('function-result', data, !response.ok);
+            } catch (error) {
+                showResult('function-result', { error: error.message }, true);
             }
         }
 

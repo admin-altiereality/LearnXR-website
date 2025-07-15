@@ -1,1 +1,0 @@
-module.exports = require('./server/client/netlify/functions/env-check.js')

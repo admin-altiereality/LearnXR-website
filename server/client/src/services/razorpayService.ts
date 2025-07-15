@@ -80,7 +80,7 @@ export class RazorpayService {
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) throw new Error('Invalid plan selected');
       const amountInPaise = Math.round(plan.price * 100);
-      const response = await api.post('/api/payment/create-order', {
+      const response = await api.post('/payment/create-order', {
         amount: amountInPaise,
         currency: 'INR',
         planId,
@@ -131,18 +131,120 @@ export class RazorpayService {
             handleback: true
           },
           theme: { color: '#3B82F6' },
+          // Add these options to prevent COOP issues
+          config: {
+            display: {
+              blocks: {
+                banks: {
+                  name: "Pay using UPI",
+                  instruments: [
+                    {
+                      method: "upi"
+                    }
+                  ]
+                }
+              },
+              sequence: ["block.banks"],
+              preferences: {
+                show_default_blocks: false
+              }
+            }
+          }
         };
-        const rzp = new window.Razorpay(options);
-        rzp.open();
+        
+        try {
+          const rzp = new window.Razorpay(options);
+          
+          // Add event listeners to handle popup issues
+          rzp.on('payment.failed', (response: any) => {
+            console.error('Payment failed:', response.error);
+            reject(new Error(`Payment failed: ${response.error.description || 'Unknown error'}`));
+          });
+          
+          rzp.on('payment.cancelled', () => {
+            reject(new Error('Payment was cancelled by user'));
+          });
+          
+          // Try to open the payment modal
+          try {
+            const popup = rzp.open();
+            
+            // Check if popup was blocked
+            if (popup && popup.closed) {
+              throw new Error('Popup blocked by browser');
+            }
+            
+            // Add a timeout to detect if popup is blocked
+            setTimeout(() => {
+              if (popup && popup.closed) {
+                reject(new Error('Popup blocked by browser. Please allow popups for this site.'));
+              }
+            }, 1000);
+            
+          } catch (popupError) {
+            console.warn('Popup blocked, trying redirect method:', popupError);
+            // Fallback to redirect method if popup is blocked
+            this.initializePaymentWithRedirect(options, resolve, reject);
+          }
+        } catch (error) {
+          console.error('Error opening Razorpay modal:', error);
+          reject(new Error('Failed to open payment modal. Please try again.'));
+        }
       });
     } catch (error) {
+      console.error('Payment initialization error:', error);
       throw error;
+    }
+  }
+
+  private initializePaymentWithRedirect(options: any, resolve: () => void, reject: (error: Error) => void): void {
+    try {
+      // Create a form and submit it to redirect to Razorpay
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://checkout.razorpay.com/v1/checkout.html';
+      form.target = '_blank';
+      
+      // Add all the options as hidden fields
+      Object.keys(options).forEach(key => {
+        if (key !== 'handler' && key !== 'modal' && key !== 'config') {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = typeof options[key] === 'object' ? JSON.stringify(options[key]) : options[key];
+          form.appendChild(input);
+        }
+      });
+      
+      // Add success and cancel URLs
+      const successInput = document.createElement('input');
+      successInput.type = 'hidden';
+      successInput.name = 'callback_url';
+      successInput.value = `${window.location.origin}/payment-success`;
+      form.appendChild(successInput);
+      
+      const cancelInput = document.createElement('input');
+      cancelInput.type = 'hidden';
+      cancelInput.name = 'cancel_url';
+      cancelInput.value = `${window.location.origin}/payment-cancelled`;
+      form.appendChild(cancelInput);
+      
+      document.body.appendChild(form);
+      form.submit();
+      document.body.removeChild(form);
+      
+      // For redirect method, we can't easily track the result
+      // The user will be redirected back to our success/cancel URLs
+      resolve();
+    } catch (error) {
+      console.error('Error with redirect payment:', error);
+      reject(new Error('Failed to initialize redirect payment'));
     }
   }
 
   private async verifyPayment(response: any, userId: string, planId: string): Promise<void> {
     try {
-      const verifyRes = await api.post('/api/payment/verify', {
+      const verifyRes = await api.post('/payment/verify', {
         razorpay_order_id: response.razorpay_order_id,
         razorpay_payment_id: response.razorpay_payment_id,
         razorpay_signature: response.razorpay_signature
@@ -151,7 +253,7 @@ export class RazorpayService {
         throw new Error('Payment verification failed');
       }
       // Create subscription after payment verification
-      await api.post('/api/subscription/create', {
+      await api.post('/subscription/create', {
         userId,
         planId,
         planName: SUBSCRIPTION_PLANS.find(p => p.id === planId)?.name || planId
