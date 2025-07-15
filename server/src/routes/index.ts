@@ -1,4 +1,5 @@
 import express from 'express';
+import { Readable } from 'stream';
 import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
@@ -51,7 +52,9 @@ router.get('/proxy-asset', async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     
     // Stream the response
-    response.body?.pipe(res);
+    if (response.body) {
+      Readable.fromWeb(response.body as any).pipe(res);
+    }
     
     console.log('✅ Asset proxy successful');
   } catch (error) {

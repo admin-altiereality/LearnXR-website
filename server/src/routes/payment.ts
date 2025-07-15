@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import express from 'express';
 import * as admin from 'firebase-admin';
 import Razorpay from 'razorpay';
-import { db } from '../config/firebase-admin';
+import { db, isFirebaseInitialized } from '../config/firebase-admin';
 
 dotenv.config();
 
@@ -120,7 +120,7 @@ router.post('/verify-payment', async (req, res) => {
 
     if (generated_signature === razorpay_signature) {
       // Update subscription in Firestore
-      if (userId && planId) {
+      if (userId && planId && isFirebaseInitialized() && db) {
         const subscriptionRef = db.collection('subscriptions').doc(userId);
         const subscriptionData = {
           planId,
@@ -130,6 +130,8 @@ router.post('/verify-payment', async (req, res) => {
           orderId: razorpay_order_id
         };
         await subscriptionRef.set(subscriptionData, { merge: true });
+      } else if (userId && planId) {
+        console.warn('⚠️  Firebase not available - subscription update skipped');
       }
 
       res.json({
