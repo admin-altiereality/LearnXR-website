@@ -515,7 +515,7 @@ app.post('/payment/create-order', async (req: Request, res: Response) => {
     }
     
     const options = {
-      amount: amount * 100, // Razorpay expects amount in paise
+      amount: amount, // Client already sends amount in paise
       currency,
       receipt,
       notes: { ...notes, userId }
