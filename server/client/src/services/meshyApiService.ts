@@ -543,34 +543,43 @@ export class MeshyApiService {
       console.log('🔧 Base URL:', this.baseUrl);
       console.log('🔑 API Key:', this.apiKey.substring(0, 10) + '...');
       
-      // Test the health endpoint
-      const healthResponse = await fetch('https://api.meshy.ai/health', {
+      // Test by fetching existing tasks (this is a valid endpoint that requires authentication)
+      const response = await fetch(`${this.baseUrl}/text-to-3d`, {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
         },
       });
       
-      console.log('📊 Health endpoint response:', healthResponse.status, healthResponse.statusText);
+      console.log('📊 API response:', response.status, response.statusText);
       
-      if (healthResponse.ok) {
-        const healthData = await healthResponse.text();
-        console.log('✅ Health endpoint working:', healthData);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ API connection successful, found', Array.isArray(data) ? data.length : 0, 'existing tasks');
         
         return {
           success: true,
           message: 'Meshy API connection successful',
           details: {
             baseUrl: this.baseUrl,
-            healthEndpoint: true,
-            healthResponse: healthData
+            existingTasks: Array.isArray(data) ? data.length : 0,
+            responseStatus: response.status,
+            responseStatusText: response.statusText
           }
         };
       } else {
-        console.log('❌ Health endpoint failed:', healthResponse.status, healthResponse.statusText);
+        console.log('❌ API test failed:', response.status, response.statusText);
+        const errorData = await response.text().catch(() => 'Unable to read error response');
+        
         return {
           success: false,
-          message: 'Health endpoint failed',
-          details: { baseUrl: this.baseUrl, healthStatus: healthResponse.status }
+          message: `API test failed: ${response.status} ${response.statusText}`,
+          details: { 
+            baseUrl: this.baseUrl, 
+            status: response.status,
+            statusText: response.statusText,
+            errorData: errorData
+          }
         };
       }
     } catch (error) {

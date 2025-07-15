@@ -133,7 +133,7 @@ router.post('/verify-payment', async (req, res) => {
             .digest('hex');
         if (generated_signature === razorpay_signature) {
             // Update subscription in Firestore
-            if (userId && planId) {
+            if (userId && planId && (0, firebase_admin_1.isFirebaseInitialized)() && firebase_admin_1.db) {
                 const subscriptionRef = firebase_admin_1.db.collection('subscriptions').doc(userId);
                 const subscriptionData = {
                     planId,
@@ -143,6 +143,9 @@ router.post('/verify-payment', async (req, res) => {
                     orderId: razorpay_order_id
                 };
                 await subscriptionRef.set(subscriptionData, { merge: true });
+            }
+            else if (userId && planId) {
+                console.warn('⚠️  Firebase not available - subscription update skipped');
             }
             res.json({
                 status: 'success',
