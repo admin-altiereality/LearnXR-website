@@ -3,6 +3,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import dotenv from 'dotenv';
 import path from 'path';
+import { createSubscriptionIfNotExists } from '../services/subscriptionService';
 
 // Load environment variables
 const envPath = path.resolve(__dirname, '../../.env');
@@ -48,9 +49,16 @@ async function fixUserAuth() {
         emailVerified: true
       });
       console.log('Successfully created user:', userRecord.uid);
+      
+      // Create subscription document for the user
+      await createSubscriptionIfNotExists(userRecord.uid, 'free');
     }
 
-    console.log('User authentication fixed successfully');
+    // Also check if existing user has a subscription
+    const userRecord = await auth.getUserByEmail('dev@in3devo.com');
+    await createSubscriptionIfNotExists(userRecord.uid, 'free');
+
+    console.log('User authentication and subscription fixed successfully');
   } catch (error) {
     console.error('Error fixing user authentication:', error);
   } finally {

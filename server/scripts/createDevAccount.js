@@ -11,6 +11,9 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const auth = admin.auth();
 
+// Import the subscription service helper
+const { createDefaultSubscriptionServer } = require('../dist/services/subscriptionService');
+
 async function createDevAccount() {
   const email = 'dev@in3devo.com';
   const password = 'dev123!@#'; // You should change this password
@@ -31,19 +34,8 @@ async function createDevAccount() {
       createdAt: new Date().toISOString()
     });
 
-    // Set up pro subscription
-    await db.collection('subscriptions').doc(userRecord.uid).set({
-      userId: userRecord.uid,
-      planId: 'pro',
-      status: 'active',
-      currentPeriodStart: new Date(),
-      currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      cancelAtPeriodEnd: false,
-      usage: {
-        count: 0,
-        limit: Infinity
-      }
-    });
+    // Set up pro subscription using the helper function
+    await createDefaultSubscriptionServer(userRecord.uid, 'pro');
 
     console.log('Developer account created successfully!');
     console.log('Email:', email);
