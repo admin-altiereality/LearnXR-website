@@ -55,6 +55,31 @@ export class UnifiedStorageService {
     this.initializeStorage();
   }
 
+  /**
+   * Filter out undefined values from an object to prevent Firestore errors
+   */
+  private filterUndefinedValues(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.filter(item => item !== undefined).map(item => this.filterUndefinedValues(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const filtered: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+          filtered[key] = this.filterUndefinedValues(value);
+        }
+      }
+      return filtered;
+    }
+    
+    return obj;
+  }
+
   private async initializeStorage() {
     if (this.initialized) return;
 
@@ -135,10 +160,14 @@ export class UnifiedStorageService {
   ): Promise<void> {
     try {
       const jobRef = doc(db, this.jobsCollection, jobId);
-      await updateDoc(jobRef, {
+      
+      // Filter out undefined values to prevent Firestore errors
+      const cleanUpdates = this.filterUndefinedValues({
         ...updates,
         updatedAt: new Date().toISOString()
       });
+      
+      await updateDoc(jobRef, cleanUpdates);
       console.log(`✅ Job updated: ${jobId}`);
     } catch (error) {
       console.error('❌ Failed to update job:', error);
