@@ -150,6 +150,7 @@ const Header = () => {
       >
         3D Assets
       </Link>
+
       <Link
         to="/careers"
         className={`block w-full text-left px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
@@ -331,6 +332,8 @@ const Header = () => {
                     <span>3D Assets</span>
                   </div>
                 </Link>
+                
+
                 
                 <Link
                   to="/careers"

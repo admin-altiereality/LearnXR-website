@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, Suspense } from 'react';
-import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { 
   OrbitControls, 
   Environment, 
-  useGLTF, 
   PresentationControls,
   Float,
   Sparkles,
@@ -17,6 +16,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 
+// Get the correct API base URL
+const getApiBaseUrl = () => {
+  const region = 'us-central1';
+  const projectId = 'in3devoneuralai';
+  return `https://${region}-${projectId}.cloudfunctions.net/api`;
+};
+
 interface Meshy3DViewerProps {
   modelUrl: string;
   modelFormat?: 'glb' | 'usdz' | 'obj' | 'fbx';
@@ -28,6 +34,8 @@ interface Meshy3DViewerProps {
   backgroundColor?: string;
   lighting?: 'studio' | 'outdoor' | 'indoor' | 'dramatic';
   cameraPosition?: [number, number, number];
+  interactionMode?: 'rotate' | 'zoom' | 'pan';
+  enableInteraction?: boolean;
   onLoad?: (model: any) => void;
   onError?: (error: Error) => void;
   className?: string;
@@ -36,9 +44,9 @@ interface Meshy3DViewerProps {
 interface ModelViewerProps {
   modelUrl: string;
   autoRotate: boolean;
-  lighting: string;
-  onLoad: (model: any) => void;
-  onError: (error: Error) => void;
+  lighting: 'studio' | 'outdoor' | 'indoor' | 'dramatic';
+  onLoad?: (model: any) => void;
+  onError?: (error: Error) => void;
 }
 
 // Loading component
@@ -54,65 +62,152 @@ function Loader() {
   );
 }
 
-// Error component
+// Error display component
 function ErrorDisplay({ error }: { error: string }) {
   return (
     <Html center>
-      <div className="flex flex-col items-center space-y-4 p-6 bg-red-900/50 rounded-lg border border-red-500/50">
-        <div className="text-red-400 text-2xl">⚠️</div>
-        <div className="text-white text-sm text-center max-w-xs">
-          Failed to load 3D model
-        </div>
-        <div className="text-red-300 text-xs text-center">
-          {error}
+      <div className="flex flex-col items-center space-y-4 p-6 bg-red-900/90 rounded-lg backdrop-blur-sm max-w-md">
+        <div className="text-red-400 text-4xl">⚠️</div>
+        <div className="text-red-100 text-center">
+          <div className="font-semibold mb-2">Failed to load 3D model</div>
+          <div className="text-sm opacity-80">{error}</div>
         </div>
       </div>
     </Html>
   );
 }
 
-// Model component with advanced features
-function ModelViewer({ modelUrl, autoRotate, lighting, onLoad, onError }: ModelViewerProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [model, setModel] = useState<any>(null);
+// Enhanced model loading with fallback strategies
+class ModelLoader {
+  private gltfLoader: GLTFLoader;
+  private dracoLoader: DRACOLoader;
 
-  // Use proxy URL to avoid CORS issues for 3D model loading
-  const modelUrlToUse = modelUrl ? `/api/proxy-asset?url=${encodeURIComponent(modelUrl)}` : '';
+  constructor() {
+    this.gltfLoader = new GLTFLoader();
+    this.dracoLoader = new DRACOLoader();
+    this.dracoLoader.setDecoderPath('/draco/');
+    this.gltfLoader.setDRACOLoader(this.dracoLoader);
+  }
 
-  // Load the 3D model
-  const gltf = useLoader(
-    GLTFLoader,
-    modelUrlToUse,
-    (loader) => {
-      // Configure DRACO loader for compression
-      const dracoLoader = new DRACOLoader();
-      dracoLoader.setDecoderPath('/draco/');
-      loader.setDRACOLoader(dracoLoader);
+  async loadModel(url: string): Promise<any> {
+    const strategies = [
+      // Strategy 1: Use proxy URL (primary method to avoid CORS)
+      async () => {
+        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+        console.log('🔄 Loading via proxy:', proxyUrl);
+        return this.loadGLTF(proxyUrl);
+      },
+      
+      // Strategy 2: Direct URL (fallback if proxy fails)
+      async () => {
+        console.log('🔄 Loading direct URL:', url);
+        return this.loadGLTF(url);
+      },
+      
+      // Strategy 3: Local development server proxy
+      async () => {
+        const localProxy = `http://localhost:5002/proxy-asset?url=${encodeURIComponent(url)}`;
+        console.log('🔄 Loading via local proxy:', localProxy);
+        return this.loadGLTF(localProxy);
+      }
+    ];
+
+    let lastError: Error | null = null;
+
+    for (const strategy of strategies) {
+      try {
+        const result = await strategy();
+        console.log('✅ Model loaded successfully');
+        return result;
+      } catch (error) {
+        console.warn('⚠️ Strategy failed:', error);
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+      }
     }
-  );
+
+    throw lastError || new Error('All loading strategies failed');
+  }
+
+  private loadGLTF(url: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.gltfLoader.load(
+        url,
+        (gltf) => resolve(gltf),
+        (progress) => {
+          console.log('Loading progress:', progress);
+        },
+        (error) => {
+          console.error('GLTF loading error:', error);
+          reject(error);
+        }
+      );
+    });
+  }
+
+  dispose() {
+    this.dracoLoader.dispose();
+  }
+}
+
+// Model component with enhanced loading
+function ModelViewer({ modelUrl, autoRotate, lighting, onLoad, onError }: ModelViewerProps) {
+  const meshRef = useRef<THREE.Group>(null);
+  const [gltf, setGltf] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loaderRef = useRef<ModelLoader | null>(null);
 
   useEffect(() => {
-    if (gltf) {
-      setModel(gltf);
-      onLoad?.(gltf);
-      
-      // Optimize the model
-      gltf.scene.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          // Enable shadows
-          child.castShadow = true;
-          child.receiveShadow = true;
-          
-          // Optimize materials
-          if (child.material) {
-            child.material.needsUpdate = true;
-            child.material.side = THREE.DoubleSide;
-          }
+    if (!modelUrl) return;
+
+    const loadModel = async () => {
+      setIsLoading(true);
+      setError(null);
+      setGltf(null);
+
+      try {
+        if (!loaderRef.current) {
+          loaderRef.current = new ModelLoader();
         }
-      });
-    }
-  }, [gltf, onLoad]);
+
+        const loadedGltf = await loaderRef.current.loadModel(modelUrl);
+        setGltf(loadedGltf);
+        setIsLoading(false);
+        
+        // Optimize the model
+        loadedGltf.scene.traverse((child: THREE.Object3D) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            
+            if (child.material) {
+              child.material.needsUpdate = true;
+              child.material.side = THREE.DoubleSide;
+            }
+          }
+        });
+
+        onLoad?.(loadedGltf);
+      } catch (error) {
+        console.error('Model loading failed:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        setError(errorMessage);
+        setIsLoading(false);
+        onError?.(error instanceof Error ? error : new Error(errorMessage));
+      }
+    };
+
+    loadModel();
+  }, [modelUrl, onLoad, onError]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (loaderRef.current) {
+        loaderRef.current.dispose();
+      }
+    };
+  }, []);
 
   // Auto-rotation
   useFrame((state) => {
@@ -121,19 +216,16 @@ function ModelViewer({ modelUrl, autoRotate, lighting, onLoad, onError }: ModelV
     }
   });
 
-  // Handle loading errors
-  useEffect(() => {
-    if (error) {
-      onError?.(new Error(error));
-    }
-  }, [error, onError]);
+  if (isLoading) {
+    return <Loader />;
+  }
 
   if (error) {
     return <ErrorDisplay error={error} />;
   }
 
   if (!gltf) {
-    return <Loader />;
+    return <ErrorDisplay error="No model data available" />;
   }
 
   return (
@@ -194,19 +286,24 @@ function ModelViewer({ modelUrl, autoRotate, lighting, onLoad, onError }: ModelV
         <>
           <ambientLight intensity={0.1} />
           <directionalLight 
-            position={[10, 10, 5]} 
-            intensity={1.5} 
+            position={[0, 10, 0]} 
+            intensity={2} 
             castShadow
             shadow-mapSize-width={2048}
             shadow-mapSize-height={2048}
           />
-          <pointLight position={[0, 0, 10]} intensity={0.8} color="#ff6b6b" />
-          <pointLight position={[0, 0, -10]} intensity={0.8} color="#4ecdc4" />
+          <pointLight position={[10, 0, 10]} intensity={1} color="#ff4444" />
+          <pointLight position={[-10, 0, -10]} intensity={1} color="#4444ff" />
         </>
       )}
 
-      {/* Environment */}
-      <Environment preset="studio" />
+      {/* Particles for dramatic effect */}
+      {lighting === 'dramatic' && (
+        <>
+          <Sparkles count={100} scale={[10, 10, 10]} size={2} speed={0.5} />
+          <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+        </>
+      )}
     </>
   );
 }
@@ -223,6 +320,8 @@ export const Meshy3DViewer: React.FC<Meshy3DViewerProps> = ({
   backgroundColor = '#000000',
   lighting = 'studio',
   cameraPosition = [0, 0, 5],
+  interactionMode = 'rotate',
+  enableInteraction = true,
   onLoad,
   onError,
   className = ''
@@ -233,10 +332,12 @@ export const Meshy3DViewer: React.FC<Meshy3DViewerProps> = ({
 
   const handleLoad = (model: any) => {
     setIsLoading(false);
+    setHasError(false);
     onLoad?.(model);
   };
 
   const handleError = (error: Error) => {
+    console.error('3D Model loading error:', error);
     setIsLoading(false);
     setHasError(true);
     setErrorMessage(error.message);
@@ -258,25 +359,19 @@ export const Meshy3DViewer: React.FC<Meshy3DViewerProps> = ({
       {/* Error overlay */}
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
-          <div className="flex flex-col items-center space-y-4 p-6 bg-red-900/50 rounded-lg border border-red-500/50 max-w-sm">
-            <div className="text-red-400 text-2xl">⚠️</div>
-            <div className="text-white text-sm text-center">
-              Failed to load 3D model
+          <div className="flex flex-col items-center space-y-4 p-6 bg-gray-800/90 rounded-lg max-w-md">
+            <div className="text-red-400 text-4xl">⚠️</div>
+            <div className="text-white text-center">
+              <div className="font-semibold mb-2">Failed to load 3D model</div>
+              <div className="text-sm text-gray-300">{errorMessage}</div>
+              <div className="text-xs text-gray-400 mt-2">
+                This may be due to CORS restrictions or network issues.
+              </div>
             </div>
-            <div className="text-red-300 text-xs text-center">
-              {errorMessage}
-            </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
-            >
-              Retry
-            </button>
           </div>
         </div>
       )}
 
-      {/* 3D Canvas */}
       <Canvas
         camera={{ 
           position: cameraPosition, 
@@ -308,8 +403,8 @@ export const Meshy3DViewer: React.FC<Meshy3DViewerProps> = ({
         {/* Axes */}
         {showAxes && <axesHelper args={[5]} />}
 
-        {/* Controls */}
-        {showControls && (
+        {/* Enhanced Controls with Interaction Modes */}
+        {showControls && enableInteraction && (
           <PresentationControls
             global
             rotation={[0, -Math.PI / 4, 0]}
@@ -319,35 +414,47 @@ export const Meshy3DViewer: React.FC<Meshy3DViewerProps> = ({
             snap={{ mass: 4, tension: 400 }}
           >
             <OrbitControls
-              enablePan={true}
-              enableZoom={true}
-              enableRotate={true}
+              enablePan={interactionMode === 'pan'}
+              enableZoom={interactionMode === 'zoom'}
+              enableRotate={interactionMode === 'rotate'}
               minDistance={1}
               maxDistance={20}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
+              dampingFactor={0.05}
+              enableDamping={true}
+              mouseButtons={{
+                LEFT: interactionMode === 'rotate' ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: interactionMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
+              }}
             />
           </PresentationControls>
         )}
 
         {/* Stars background for dramatic lighting */}
-        {lighting === 'dramatic' && <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />}
+        {lighting === 'dramatic' && (
+          <Stars 
+            radius={100} 
+            depth={50} 
+            count={5000} 
+            factor={4} 
+            saturation={0} 
+            fade 
+            speed={1} 
+          />
+        )}
+
+        {/* Environment */}
+        {showEnvironment && (
+          <Environment preset="sunset" />
+        )}
       </Canvas>
-
-      {/* Info overlay */}
-      <div className="absolute top-4 left-4 bg-black/50 text-white text-xs px-2 py-1 rounded">
-        Format: {modelFormat.toUpperCase()}
-      </div>
-
-      {/* Controls info */}
-      {showControls && (
-        <div className="absolute bottom-4 left-4 bg-black/50 text-white text-xs px-2 py-1 rounded">
-          Mouse: Rotate | Scroll: Zoom | Right-click: Pan
-        </div>
-      )}
     </div>
   );
 };
+
+export default Meshy3DViewer;
 
 // Asset Card Component for displaying generated models
 interface MeshyAssetCardProps {

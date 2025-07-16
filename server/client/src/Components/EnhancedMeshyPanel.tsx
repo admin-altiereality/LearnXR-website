@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface EnhancedMeshyPanelProps {
   onAssetGenerated?: (asset: any) => void;
+  onGenerationStart?: () => void;
   onClose?: () => void;
   className?: string;
 }
@@ -19,6 +20,7 @@ interface GenerationProgress {
 
 export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
   onAssetGenerated,
+  onGenerationStart,
   onClose,
   className = ''
 }) => {
@@ -109,6 +111,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
       progress: 0,
       message: 'Initiating generation...'
     });
+    onGenerationStart?.(); // Call the new prop
 
     try {
       const request: MeshyGenerationRequest = {
@@ -231,37 +234,37 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
   };
 
   return (
-    <div className={`bg-black/20 backdrop-blur-sm rounded-lg border border-gray-700/50 p-6 ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-xl font-bold text-white">🎨 3D Asset Generator</h2>
-          <p className="text-gray-400 text-sm">Powered by Meshy.ai</p>
-        </div>
-        {onClose && (
+    <div className={`bg-black/20 backdrop-blur-sm rounded-lg border border-gray-700/50 p-2 sm:p-3 lg:p-4 w-full ${className}`}>
+      {/* Header - Hidden in this context since it's in the left panel */}
+      {onClose && (
+        <div className="flex items-center justify-between mb-2 sm:mb-3">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-white">🎨 3D Asset Generator</h2>
+            <p className="text-gray-400 text-xs">Powered by Meshy.ai</p>
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
           >
             ✕
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Usage Info */}
+      {/* Usage Info - Compact */}
       {usage && (
-        <div className="mb-6 p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-blue-300">Quota Remaining:</span>
-            <span className="text-white">{usage.quota_remaining} / {usage.quota_limit}</span>
+        <div className="mb-2 sm:mb-3 p-2 sm:p-3 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-blue-300">Quota:</span>
+            <span className="text-white">{usage.quota_remaining}/{usage.quota_limit}</span>
           </div>
-          <div className="flex items-center justify-between text-sm mt-1">
-            <span className="text-blue-300">Total Cost:</span>
+          <div className="flex items-center justify-between text-xs mt-1">
+            <span className="text-blue-300">Cost:</span>
             <span className="text-white">${usage.total_cost.toFixed(2)}</span>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
+          <div className="w-full bg-gray-700 rounded-full h-1 mt-1">
             <div 
-              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+              className="bg-blue-500 h-1 rounded-full transition-all duration-300"
               style={{ width: `${((usage.quota_limit - usage.quota_remaining) / usage.quota_limit) * 100}%` }}
             ></div>
           </div>
@@ -269,29 +272,29 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
       )}
 
       {/* Generation Form */}
-      <div className="space-y-4 mb-6">
+      <div className="space-y-2 sm:space-y-3 mb-2 sm:mb-3">
         {/* Prompt Input */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
+          <label className="block text-xs font-medium text-gray-300 mb-1">
             Describe your 3D object *
           </label>
           <textarea
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., A futuristic spaceship with glowing engines and metallic wings"
-            className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            rows={3}
+            className="w-full px-2 py-1.5 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-xs sm:text-sm"
+            rows={2}
             maxLength={600}
           />
           <div className="flex justify-between text-xs text-gray-400 mt-1">
-            <span>{prompt.length}/600 characters</span>
-            <span>Cost: ${estimateCost().toFixed(2)} | Time: ~{Math.ceil(estimateTime() / 60)} minutes</span>
+            <span>{prompt.length}/600</span>
+            <span>${estimateCost().toFixed(2)} | ~{Math.ceil(estimateTime() / 60)}min</span>
           </div>
         </div>
 
         {/* Negative Prompt */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
+          <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
             Negative Prompt (optional)
           </label>
           <input
@@ -299,22 +302,22 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
             value={negativePrompt}
             onChange={(e) => setNegativePrompt(e.target.value)}
             placeholder="e.g., blurry, low quality, distorted"
-            className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             maxLength={1000}
           />
         </div>
 
         {/* Basic Controls */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
           {/* Art Style Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
               Art Style
             </label>
             <select
               value={selectedArtStyle}
               onChange={(e) => setSelectedArtStyle(e.target.value as 'realistic' | 'sculpture')}
-              className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
               <option value="realistic">Realistic</option>
               <option value="sculpture">Sculpture</option>
@@ -323,13 +326,13 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
           {/* AI Model Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
               AI Model
             </label>
             <select
               value={selectedAiModel}
               onChange={(e) => setSelectedAiModel(e.target.value as 'meshy-4' | 'meshy-5')}
-              className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
               <option value="meshy-4">Meshy 4 (Faster)</option>
               <option value="meshy-5">Meshy 5 (Better Quality)</option>
@@ -340,7 +343,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
         {/* Advanced Controls Toggle */}
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white transition-colors"
+          className="flex items-center space-x-2 text-xs sm:text-sm text-gray-400 hover:text-white transition-colors"
         >
           <span>{showAdvanced ? '▼' : '▶'}</span>
           <span>Advanced Options</span>
@@ -348,17 +351,17 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
         {/* Advanced Controls */}
         {showAdvanced && (
-          <div className="space-y-4 p-4 bg-gray-800/30 rounded-lg border border-gray-700/30">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-3 sm:space-y-4 p-2 sm:p-3 lg:p-4 bg-gray-800/30 rounded-lg border border-gray-700/30">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
               {/* Topology */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Topology
                 </label>
                 <select
                   value={selectedTopology}
                   onChange={(e) => setSelectedTopology(e.target.value as 'quad' | 'triangle')}
-                  className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 >
                   <option value="triangle">Triangle (Default)</option>
                   <option value="quad">Quad (Better for editing)</option>
@@ -367,7 +370,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
               {/* Target Polycount */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Target Polycount
                 </label>
                 <input
@@ -376,7 +379,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
                   max="300000"
                   value={targetPolycount}
                   onChange={(e) => setTargetPolycount(parseInt(e.target.value))}
-                  className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
                 <div className="text-xs text-gray-400 mt-1">
                   Range: 100 - 300,000
@@ -385,13 +388,13 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
               {/* Symmetry Mode */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Symmetry Mode
                 </label>
                 <select
                   value={symmetryMode}
                   onChange={(e) => setSymmetryMode(e.target.value as 'off' | 'auto' | 'on')}
-                  className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 >
                   <option value="auto">Auto (Recommended)</option>
                   <option value="on">On (Force symmetry)</option>
@@ -401,7 +404,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
               {/* Seed */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Seed (Optional)
                 </label>
                 <input
@@ -409,7 +412,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
                   value={seed || ''}
                   onChange={(e) => setSeed(e.target.value ? parseInt(e.target.value) : undefined)}
                   placeholder="Random"
-                  className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                 />
                 <div className="text-xs text-gray-400 mt-1">
                   Leave empty for random
@@ -426,7 +429,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
                   onChange={(e) => setShouldRemesh(e.target.checked)}
                   className="rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500"
                 />
-                <span className="text-sm font-medium text-gray-300">Should Remesh (Recommended)</span>
+                <span className="text-xs sm:text-sm font-medium text-gray-300">Should Remesh (Recommended)</span>
               </label>
               <label className="flex items-center space-x-2">
                 <input
@@ -435,7 +438,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
                   onChange={(e) => setModeration(e.target.checked)}
                   className="rounded border-gray-600 bg-gray-800 text-blue-500 focus:ring-blue-500"
                 />
-                <span className="text-sm font-medium text-gray-300">Enable Content Moderation</span>
+                <span className="text-xs sm:text-sm font-medium text-gray-300">Enable Content Moderation</span>
               </label>
             </div>
           </div>
@@ -443,27 +446,27 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
         {/* Error Display */}
         {error && (
-          <div className="p-3 bg-red-900/50 border border-red-500/50 rounded-md">
-            <div className="text-red-400 text-sm">{error}</div>
+          <div className="p-2 sm:p-3 bg-red-900/50 border border-red-500/50 rounded-md">
+            <div className="text-red-400 text-xs sm:text-sm">{error}</div>
           </div>
         )}
 
         {/* Progress Display */}
         {isGenerating && (
-          <div className="p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-blue-300 text-sm">{progress.message}</span>
-              <span className="text-white text-sm">{progress.progress}%</span>
+          <div className="p-2 sm:p-3 lg:p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+            <div className="flex items-center justify-between mb-1 sm:mb-2">
+              <span className="text-blue-300 text-xs sm:text-sm">{progress.message}</span>
+              <span className="text-white text-xs sm:text-sm">{progress.progress}%</span>
             </div>
-            <div className="w-full bg-gray-700 rounded-full h-2">
+            <div className="w-full bg-gray-700 rounded-full h-1.5 sm:h-2">
               <div 
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                className="bg-blue-500 h-1.5 sm:h-2 rounded-full transition-all duration-300"
                 style={{ width: `${progress.progress}%` }}
               ></div>
             </div>
             {progress.estimatedTime && (
               <div className="text-xs text-gray-400 mt-1">
-                Estimated time remaining: ~{Math.ceil(progress.estimatedTime / 60)} minutes
+                ~{Math.ceil(progress.estimatedTime / 60)} minutes remaining
               </div>
             )}
           </div>
@@ -473,7 +476,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
         <button
           onClick={handleGenerate}
           disabled={isGenerating || !prompt.trim()}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-500/50 to-purple-600/50 hover:from-blue-600/60 hover:to-purple-700/60 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50"
+          className="w-full py-2 sm:py-3 px-3 sm:px-4 bg-gradient-to-r from-blue-500/50 to-purple-600/50 hover:from-blue-600/60 hover:to-purple-700/60 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50 text-sm sm:text-base"
         >
           {isGenerating ? 'Generating...' : `Generate 3D Asset (${estimateCost().toFixed(2)})`}
         </button>
@@ -481,9 +484,9 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
       {/* Generated Assets */}
       {generatedAssets.length > 0 && (
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-white mb-4">Generated Assets</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="mt-4 sm:mt-6 lg:mt-8">
+          <h3 className="text-base sm:text-lg font-semibold text-white mb-2 sm:mb-4">Generated Assets</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
             {generatedAssets.map((asset) => (
               <MeshyAssetCard
                 key={asset.id}

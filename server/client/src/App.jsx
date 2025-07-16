@@ -24,6 +24,9 @@ import Blog from './screens/Blog';
 import PrivacyPolicy from './screens/PrivacyPolicy';
 import TermsConditions from './screens/TermsConditions';
 import ThreeDGenerate from './screens/MeshyGenerate';
+import AssetGenerator from './screens/AssetGenerator';
+import { PreviewScene } from './screens/PreviewScene';
+import { PromptPanel } from './components/PromptPanel';
 
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
@@ -349,6 +352,31 @@ function App() {
                           <Profile />
                         </ProtectedRoute>
                       } />
+                      <Route path="/asset-generator" element={
+                        <ProtectedRoute>
+                          <AssetGenerator />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/unified-prompt" element={
+                        <ProtectedRoute>
+                          <div className="min-h-screen bg-gray-900 p-4">
+                            <div className="max-w-4xl mx-auto">
+                              <PromptPanel 
+                                onAssetsGenerated={(jobId) => {
+                                  // Navigate to preview after successful generation
+                                  window.location.href = `/preview/${jobId}`;
+                                }}
+                                className="w-full"
+                              />
+                            </div>
+                          </div>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/preview/:jobId" element={
+                        <ProtectedRoute>
+                          <PreviewScene />
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Redirect unknown routes to home */}
                       <Route path="*" element={<Navigate to="/" />} />
@@ -503,6 +531,31 @@ function App() {
                       <Route path="/profile" element={
                         <ProtectedRoute>
                           <Profile />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/asset-generator" element={
+                        <ProtectedRoute>
+                          <AssetGenerator />
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/unified-prompt" element={
+                        <ProtectedRoute>
+                          <div className="min-h-screen bg-gray-900 p-4">
+                            <div className="max-w-4xl mx-auto">
+                              <PromptPanel 
+                                onAssetsGenerated={(jobId) => {
+                                  // Navigate to preview after successful generation
+                                  window.location.href = `/preview/${jobId}`;
+                                }}
+                                className="w-full"
+                              />
+                            </div>
+                          </div>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/preview/:jobId" element={
+                        <ProtectedRoute>
+                          <PreviewScene />
                         </ProtectedRoute>
                       } />
                       
