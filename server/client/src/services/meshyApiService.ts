@@ -103,6 +103,13 @@ export interface MeshyUsage {
   reset_date: string;
 }
 
+// Get the correct API base URL
+const getApiBaseUrl = () => {
+  const region = 'us-central1';
+  const projectId = 'in3devoneuralai';
+  return `https://${region}-${projectId}.cloudfunctions.net/api`;
+};
+
 export class MeshyApiService {
   private apiKey: string;
   private baseUrl: string;
@@ -115,10 +122,7 @@ export class MeshyApiService {
     this.baseUrl = import.meta.env.VITE_MESHY_API_BASE_URL || 'https://api.meshy.ai/openapi/v2';
     
     if (!this.apiKey) {
-      console.warn('⚠️ Meshy API key not configured. 3D asset generation will be disabled.');
-      console.warn('💡 Add VITE_MESHY_API_KEY to your .env file to enable 3D asset generation.');
-    } else {
-      console.log('✅ Meshy API key configured successfully');
+      console.warn('Meshy API key not configured. Set VITE_MESHY_API_KEY environment variable.');
     }
   }
   
@@ -599,7 +603,7 @@ export class MeshyApiService {
     if (!assetUrl) return '';
     
     // Always use proxy to avoid CORS issues in both development and production
-    return `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+    return `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
   }
 
   /**
@@ -615,7 +619,7 @@ export class MeshyApiService {
       // Strategy 1: Proxy download (primary method to avoid CORS)
       async () => {
         console.log('🔄 Trying proxy download...');
-        const proxyUrl = `/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {

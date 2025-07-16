@@ -51,18 +51,30 @@ const PUBLIC_ENDPOINTS = [
   { method: 'POST', path: '/payment/verify' },
   { method: 'POST', path: '/subscription/create' },
   { method: 'GET', path: '/subscription' },
-  { method: 'POST', path: '/user/subscription-status' }
+  { method: 'POST', path: '/user/subscription-status' },
+  { method: 'GET', path: '/proxy-asset' },
+  { method: 'HEAD', path: '/proxy-asset' }
 ];
 
-const isPublicEndpoint = (req: Request) =>
-  PUBLIC_ENDPOINTS.some(
+const isPublicEndpoint = (req: Request) => {
+  const isPublic = PUBLIC_ENDPOINTS.some(
     ep => ep.method === req.method && req.path.startsWith(ep.path)
   );
+  console.log(`[${(req as any).requestId}] Checking public endpoint: ${req.method} ${req.path} -> ${isPublic}`);
+  return isPublic;
+};
 
 // Authentication middleware
 const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
-  if (isPublicEndpoint(req)) return next();
+  const requestId = (req as any).requestId;
+  console.log(`[${requestId}] Auth check for ${req.method} ${req.path}`);
+  
+  if (isPublicEndpoint(req)) {
+    console.log(`[${requestId}] Public endpoint, skipping auth`);
+    return next();
+  }
 
+  console.log(`[${requestId}] Private endpoint, checking auth`);
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ 
@@ -755,6 +767,71 @@ app.post('/user/subscription-status', async (req: Request, res: Response) => {
         requestId
       });
     }
+});
+
+// Proxy route for Meshy assets to handle CORS
+app.get('/proxy-asset', async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+  const { url } = req.query;
+  
+  try {
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ 
+        error: 'URL parameter is required',
+        requestId 
+      });
+    }
+
+    console.log(`[${requestId}] Proxying asset request:`, url);
+
+    const response = await axios.get(url, {
+      responseType: 'stream',
+      headers: {
+        'User-Agent': 'In3D.ai-WebApp/1.0',
+      },
+      timeout: 30000, // 30 second timeout
+    });
+
+    if (!response.data) {
+      console.error(`[${requestId}] Asset proxy failed: No data received`);
+      return res.status(500).json({ 
+        error: 'Failed to fetch asset: No data received',
+        requestId 
+      });
+    }
+
+    // Get the content type
+    const contentType = response.headers['content-type'] || 'application/octet-stream';
+    
+    // Set appropriate headers
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    
+    // Stream the response
+    response.data.pipe(res);
+    
+    console.log(`[${requestId}] Asset proxy successful`);
+    return; // Explicit return for TypeScript
+  } catch (error: any) {
+    console.error(`[${requestId}] Asset proxy error:`, error);
+    
+    if (error.response) {
+      // Forward the error status from the target server
+      return res.status(error.response.status).json({ 
+        error: `Failed to fetch asset: ${error.response.status} ${error.response.statusText}`,
+        requestId 
+      });
+    }
+    
+    return res.status(500).json({ 
+      error: 'Internal server error during asset proxy',
+      details: error.message,
+      requestId 
+    });
+  }
 });
 
 // Error handling middleware

@@ -84,6 +84,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     
+    // Unified jobs collection - users can read/write their own jobs
+    match /unified_jobs/{jobId} {
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+      
+      allow update: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow delete: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+    }
+    
     // Public collections - read access for all authenticated users
     match /public/{document=**} {
       allow read: if request.auth != null;
