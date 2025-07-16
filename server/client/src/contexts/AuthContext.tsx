@@ -12,6 +12,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { auth, db } from '../config/firebase';
+import { createDefaultSubscription } from '../services/subscriptionService';
 
 export type ModalType = 'subscription' | 'upgrade' | null;
 
@@ -84,6 +85,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 createdAt: new Date().toISOString()
               };
               await setDoc(userDocRef, userData);
+              
+              // Create default subscription document for users without one
+              await createDefaultSubscription(user.uid);
+              
               setUser({
                 ...user,
                 ...userData
@@ -114,12 +119,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     try {
       const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Create user document
       await setDoc(doc(db, 'users', user.uid), {
         name,
         email,
         role: 'user',
         createdAt: new Date().toISOString()
       });
+      
+      // Create default subscription document
+      await createDefaultSubscription(user.uid);
+      
       toast.success('Account created successfully!');
       return user;
     } catch (error: any) {
@@ -170,6 +181,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           role: 'user',
           createdAt: new Date().toISOString()
         });
+        
+        // Create default subscription document for new Google users
+        await createDefaultSubscription(user.uid);
       }
       toast.success('Logged in successfully with Google!');
       return user;

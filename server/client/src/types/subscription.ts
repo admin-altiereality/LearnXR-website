@@ -19,9 +19,11 @@ export interface UserSubscription {
   userId: string;
   planId: string;
   status: SubscriptionStatus;
-  currentPeriodStart: Date;
-  currentPeriodEnd: Date;
-  cancelAtPeriodEnd: boolean;
+  createdAt: string;
+  updatedAt: string;
+  currentPeriodStart?: Date;
+  currentPeriodEnd?: Date;
+  cancelAtPeriodEnd?: boolean;
   paymentMethod?: string;
   lastPayment?: {
     amount: number;
@@ -29,7 +31,8 @@ export interface UserSubscription {
     transactionId: string;
   };
   usage: {
-    count: number;
-    limit: number;
+    skyboxGenerations: number;
+    count?: number;
+    limit?: number;
   };
 }

@@ -64,6 +64,34 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   }
 ];
 
+/**
+ * Creates a default subscription document for a new user
+ * @param userId - The user's unique identifier
+ * @returns Default subscription document
+ */
+export const createDefaultSubscription = async (userId: string): Promise<UserSubscription> => {
+  if (!db) {
+    throw new Error('Firestore is not available');
+  }
+
+  const defaultSubscription: UserSubscription = {
+    userId,
+    planId: 'free',
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    usage: {
+      skyboxGenerations: 0
+    }
+  };
+
+  const subscriptionRef = doc(db, 'subscriptions', userId);
+  await setDoc(subscriptionRef, defaultSubscription);
+  
+  console.log(`Default subscription created for user: ${userId}`);
+  return defaultSubscription;
+};
+
 class SubscriptionService {
   async getUserSubscription(userId: string): Promise<UserSubscription> {
     try {
@@ -77,20 +105,8 @@ class SubscriptionService {
       if (subscriptionDoc.exists()) {
         return subscriptionDoc.data() as UserSubscription;
       } else {
-        // Create default free subscription
-        const defaultSubscription: UserSubscription = {
-          userId,
-          planId: 'free',
-          status: 'active',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          usage: {
-            skyboxGenerations: 0
-          }
-        };
-        
-        await setDoc(subscriptionRef, defaultSubscription);
-        return defaultSubscription;
+        // Create default free subscription using the helper function
+        return await createDefaultSubscription(userId);
       }
     } catch (error) {
       console.error('Error getting user subscription:', error);
