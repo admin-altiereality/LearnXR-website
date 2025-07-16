@@ -21,6 +21,7 @@ import { useGenerate } from '../hooks/useGenerate';
 import { useAuth } from '../contexts/AuthContext';
 import { skyboxApiService } from '../services/skyboxApiService';
 import type { GenerationRequest } from '../types/unifiedGeneration';
+import type { SkyboxStyle } from '../types/skybox';
 
 interface PromptPanelProps {
   onAssetsGenerated?: (jobId: string) => void;
@@ -53,6 +54,20 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
     downloadAsset,
     cancelGeneration
   } = useGenerate();
+  
+  // Debug logging for progress
+  useEffect(() => {
+    if (progress) {
+      console.log('📊 PromptPanel progress update:', {
+        stage: progress.stage,
+        skyboxProgress: progress.skyboxProgress,
+        meshProgress: progress.meshProgress,
+        overallProgress: progress.overallProgress,
+        message: progress.message,
+        isGenerating
+      });
+    }
+  }, [progress, isGenerating]);
 
   // Form state
   const [prompt, setPrompt] = useState('');
@@ -131,6 +146,15 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
       return;
     }
 
+    console.log('🎮 Starting generation from PromptPanel:', {
+      prompt: prompt.trim(),
+      enableSkybox,
+      enableMesh,
+      selectedStyle: selectedStyle?.id,
+      meshQuality,
+      meshStyle
+    });
+
     onGenerationStart?.();
 
     const request: GenerationRequest = {
@@ -147,14 +171,37 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
       } : false
     };
 
+    console.log('📤 Sending generation request:', request);
+
     try {
       const response = await generateAssets(request);
+      console.log('📥 Generation response:', response);
+      
       if (response.success) {
+        console.log('✅ Generation successful, job ID:', response.jobId);
         onAssetsGenerated?.(response.jobId);
         setIsMinimized(true);
+        
+        // Show success message
+        const successMessage = document.createElement('div');
+        successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+        successMessage.innerHTML = `
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+          </svg>
+          <span>Assets generated successfully!</span>
+        `;
+        document.body.appendChild(successMessage);
+        setTimeout(() => {
+          if (document.body.contains(successMessage)) {
+            document.body.removeChild(successMessage);
+          }
+        }, 5000);
+      } else {
+        console.error('❌ Generation failed:', response.errors);
       }
     } catch (error) {
-      console.error('Generation failed:', error);
+      console.error('💥 Generation error:', error);
     }
   }, [
     user,
@@ -553,7 +600,7 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
                 {enableSkybox && (
                   <ProgressBar
                     label="Skybox Generation"
-                    progress={progress.skyboxProgress}
+                    progress={progress.skyboxProgress || 0}
                     active={progress.stage === 'skybox_generating'}
                   />
                 )}
@@ -561,16 +608,21 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
                 {enableMesh && (
                   <ProgressBar
                     label="3D Mesh Generation"
-                    progress={progress.meshProgress}
+                    progress={progress.meshProgress || 0}
                     active={progress.stage === 'mesh_generating'}
                   />
                 )}
                 
                 <ProgressBar
                   label="Overall Progress"
-                  progress={progress.overallProgress}
+                  progress={progress.overallProgress || 0}
                   active={true}
                 />
+                
+                {/* Debug info */}
+                <div className="text-xs text-gray-500 mt-2">
+                  Stage: {progress.stage} | Job: {progress.jobId}
+                </div>
               </div>
             )}
 
@@ -615,7 +667,14 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
               <div className="p-3 bg-red-900/20 border border-red-500 rounded-lg">
                 <div className="flex items-center space-x-2">
                   <FaExclamationTriangle className="w-4 h-4 text-red-400" />
-                  <span className="text-sm text-red-300">{error}</span>
+                  <div className="flex-1">
+                    <span className="text-sm text-red-300">{error}</span>
+                    {error.includes('CORS') && (
+                      <div className="text-xs text-red-400/80 mt-1">
+                        This may be due to network restrictions. The system will use fallback strategies to handle this.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

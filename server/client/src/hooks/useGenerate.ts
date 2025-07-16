@@ -141,26 +141,109 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
     onProgress: (progress: number) => void
   ): Promise<MeshResult> => {
     try {
-      const completedAsset = await meshyApiService.pollForCompletion(taskId);
+      console.log(`🔄 Starting mesh polling for task: ${taskId}`);
       
-      return {
-        id: taskId,
-        status: 'completed',
-        downloadUrl: completedAsset.downloadUrl,
-        previewUrl: completedAsset.previewUrl,
-        prompt: completedAsset.prompt || '',
-        format: 'glb',
-        quality: 'medium',
-        style: 'realistic',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        metadata: {
-          polycount: completedAsset.metadata?.polycount,
-          size: completedAsset.metadata?.size,
-          generationTime: completedAsset.metadata?.generationTime,
-          cost: completedAsset.metadata?.cost
+      // Use polling with progress callback
+      const maxAttempts = 120; // 5 minutes max
+      const baseIntervalMs = 3000; // 3 seconds
+      let attempts = 0;
+      let currentInterval = baseIntervalMs;
+      
+      while (attempts < maxAttempts) {
+        try {
+          const status = await meshyApiService.getGenerationStatus(taskId);
+          
+          // Update progress based on Meshy status
+          let progressPercent = 0;
+          if (status.status === 'PENDING') {
+            progressPercent = 10;
+          } else if (status.status === 'IN_PROGRESS') {
+            progressPercent = Math.min(20 + (status.progress || 0) * 0.7, 90);
+          } else if (status.status === 'SUCCEEDED') {
+            progressPercent = 100;
+          }
+          
+          onProgress(progressPercent);
+          
+          // Log progress
+          console.log(`📊 Mesh generation progress: ${progressPercent}% (${status.status})`);
+          
+          if (status.status === 'SUCCEEDED') {
+            console.log('✅ Mesh generation completed successfully');
+            
+            // Map to our asset format
+            const completedAsset = meshyApiService.mapToAsset ? 
+              meshyApiService.mapToAsset(status) : 
+              {
+                id: taskId,
+                prompt: status.prompt || '',
+                status: 'completed' as const,
+                downloadUrl: status.model_urls?.glb,
+                previewUrl: status.video_url,
+                thumbnailUrl: status.thumbnail_url,
+                format: 'glb' as const,
+                createdAt: new Date(status.created_at).toISOString(),
+                updatedAt: new Date(status.finished_at || status.started_at || status.created_at).toISOString(),
+                metadata: {
+                  art_style: status.art_style,
+                  seed: status.seed,
+                  polycount: status.target_polycount,
+                  generationTime: status.finished_at - status.started_at,
+                  cost: 0.05 // Estimated cost
+                }
+              };
+            
+            return {
+              id: taskId,
+              status: 'completed',
+              downloadUrl: completedAsset.downloadUrl,
+              previewUrl: completedAsset.previewUrl,
+              prompt: completedAsset.prompt || '',
+              format: 'glb',
+              quality: 'medium',
+              style: 'realistic',
+              createdAt: completedAsset.createdAt,
+              updatedAt: completedAsset.updatedAt,
+              metadata: {
+                polycount: completedAsset.metadata?.polycount,
+                size: completedAsset.metadata?.size,
+                generationTime: completedAsset.metadata?.generationTime,
+                cost: completedAsset.metadata?.cost
+              }
+            };
+          } else if (status.status === 'FAILED') {
+            const errorMsg = status.task_error?.message || 'Unknown error';
+            throw new Error(`Mesh generation failed: ${errorMsg}`);
+          } else if (status.status === 'CANCELED') {
+            throw new Error('Mesh generation was cancelled');
+          }
+          
+          // Wait before next poll
+          const jitter = Math.random() * 0.1 * currentInterval;
+          const delay = currentInterval + jitter;
+          
+          console.log(`⏳ Waiting ${Math.round(delay)}ms before next poll (attempt ${attempts + 1}/${maxAttempts})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Increase interval for next attempt (exponential backoff)
+          currentInterval = Math.min(currentInterval * 1.2, 30000); // Max 30 seconds
+          attempts++;
+        } catch (error) {
+          console.error(`❌ Error polling mesh task ${taskId}:`, error);
+          attempts++;
+          
+          // If it's a network error, wait longer before retrying
+          if (error instanceof Error && (
+            error.message.includes('network') || 
+            error.message.includes('fetch') ||
+            error.message.includes('timeout')
+          )) {
+            await new Promise(resolve => setTimeout(resolve, currentInterval * 2));
+          }
         }
-      };
+      }
+      
+      throw new Error(`Mesh generation timed out after ${maxAttempts} attempts`);
     } catch (error) {
       console.error('Error polling mesh status:', error);
       throw error;
@@ -205,6 +288,8 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
   ): Promise<MeshResult> => {
     const meshConfig = request.meshConfig || {};
     
+    console.log('🎨 Starting mesh generation with config:', meshConfig);
+    
     const meshRequest = {
       prompt: request.prompt,
       art_style: meshConfig.style || 'realistic',
@@ -216,11 +301,30 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
       moderation: false
     };
 
+    // Update progress to starting mesh generation
+    setProgress(prev => prev ? {
+      ...prev,
+      stage: 'mesh_generating',
+      meshProgress: 5,
+      message: 'Initiating mesh generation...',
+      overallProgress: request.skyboxConfig ? (prev.skyboxProgress + 5) / 2 : 5
+    } : null);
+
     const response = await meshyApiService.generateAsset(meshRequest);
 
     if (!response.result) {
       throw new Error('Failed to start mesh generation');
     }
+
+    console.log('✅ Mesh generation initiated with task ID:', response.result);
+    
+    // Update progress to polling
+    setProgress(prev => prev ? {
+      ...prev,
+      meshProgress: 10,
+      message: 'Mesh generation started, polling for completion...',
+      overallProgress: request.skyboxConfig ? (prev.skyboxProgress + 10) / 2 : 10
+    } : null);
 
     return await pollMeshStatus(
       response.result,
@@ -229,7 +333,8 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         setProgress(prev => prev ? {
           ...prev,
           meshProgress: progress,
-          overallProgress: (prev.skyboxProgress + progress) / 2
+          message: progress === 100 ? 'Mesh generation completed!' : `Generating mesh... ${Math.round(progress)}%`,
+          overallProgress: request.skyboxConfig ? (prev.skyboxProgress + progress) / 2 : progress
         } : null);
       }
     );
@@ -266,6 +371,12 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         overallProgress: 0,
         message: 'Initializing generation...',
         errors: []
+      });
+      
+      console.log('🚀 Starting unified generation with config:', {
+        skyboxEnabled: !!request.skyboxConfig,
+        meshEnabled: request.meshConfig !== false,
+        prompt: request.prompt.substring(0, 50) + '...'
       });
 
       // Create abort controller
@@ -316,7 +427,7 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         }
       });
 
-      // Store assets in Firebase Storage
+      // Store assets in Firebase Storage with fallback to direct URLs
       setProgress(prev => prev ? { ...prev, stage: 'storing', message: 'Storing assets...' } : null);
       
       let skyboxUrl: string | undefined;
@@ -324,6 +435,7 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
 
       if (skyboxResult && skyboxResult.downloadUrl) {
         try {
+          // Try to store in Firebase Storage
           skyboxUrl = await unifiedStorageService.storeAssetFromUrl(
             skyboxResult.downloadUrl,
             jobId,
@@ -332,14 +444,17 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
             'skybox',
             skyboxResult.format
           );
+          console.log('✅ Skybox stored in Firebase Storage:', skyboxUrl);
         } catch (error) {
-          console.error('Failed to store skybox:', error);
-          errors.push(`Failed to store skybox: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.warn('⚠️ Failed to store skybox in Firebase Storage, using direct URL:', error);
+          // Fallback to direct URL like the working route
+          skyboxUrl = skyboxResult.downloadUrl;
         }
       }
 
       if (meshResult && meshResult.downloadUrl) {
         try {
+          // Try to store in Firebase Storage
           meshUrl = await unifiedStorageService.storeAssetFromUrl(
             meshResult.downloadUrl,
             jobId,
@@ -348,9 +463,11 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
             'mesh',
             meshResult.format
           );
+          console.log('✅ Mesh stored in Firebase Storage:', meshUrl);
         } catch (error) {
-          console.error('Failed to store mesh:', error);
-          errors.push(`Failed to store mesh: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          console.warn('⚠️ Failed to store mesh in Firebase Storage, using direct URL:', error);
+          // Fallback to direct URL like the working route
+          meshUrl = meshResult.downloadUrl;
         }
       }
 
@@ -435,7 +552,47 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
     try {
       const downloadInfo = await unifiedStorageService.getDownloadInfo(jobId, type);
       
-      // Create download link
+      // Check if this is a direct Meshy.ai URL that needs proxy handling
+      const isMeshyUrl = downloadInfo.url.includes('assets.meshy.ai');
+      
+      if (isMeshyUrl) {
+        console.log('🔄 Downloading Meshy.ai asset via proxy:', downloadInfo.url);
+        
+        // Use proxy strategies for Meshy.ai URLs
+        const getApiBaseUrl = () => {
+          const region = 'us-central1';
+          const projectId = 'in3devoneuralai';
+          return `https://${region}-${projectId}.cloudfunctions.net/api`;
+        };
+        
+        try {
+          // Try proxy first
+          const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(downloadInfo.url)}`;
+          const response = await fetch(proxyUrl);
+          
+          if (response.ok) {
+            const blob = await response.blob();
+            
+            // Create download link with blob
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = downloadInfo.filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(blobUrl);
+            document.body.removeChild(link);
+            
+            console.log('✅ Download completed via proxy');
+            return downloadInfo;
+          }
+        } catch (proxyError) {
+          console.warn('⚠️ Proxy download failed, trying direct download:', proxyError);
+        }
+      }
+      
+      // Fallback to direct download
       const link = document.createElement('a');
       link.href = downloadInfo.url;
       link.download = downloadInfo.filename;
