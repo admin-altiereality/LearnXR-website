@@ -26,7 +26,7 @@ import TermsConditions from './screens/TermsConditions';
 import ThreeDGenerate from './screens/MeshyGenerate';
 import AssetGenerator from './screens/AssetGenerator';
 import { PreviewScene } from './screens/PreviewScene';
-import { PromptPanel } from './components/PromptPanel';
+import { PromptPanel } from './Components/PromptPanel';
 
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);

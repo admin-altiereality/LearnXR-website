@@ -285,7 +285,7 @@ export class UnifiedStorageService {
   }
 
   /**
-   * Store asset from URL (for direct URLs from APIs)
+   * Store asset from URL (for direct URLs from APIs) with CORS handling
    */
   async storeAssetFromUrl(
     url: string,
@@ -296,13 +296,10 @@ export class UnifiedStorageService {
     format: string
   ): Promise<string> {
     try {
-      // Fetch the asset
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch asset: ${response.statusText}`);
-      }
-
-      const blob = await response.blob();
+      console.log(`🔄 Storing ${type} asset from URL:`, url);
+      
+      // Use proxy strategies to avoid CORS issues
+      const blob = await this.fetchAssetWithProxy(url);
       
       // Store based on type
       if (type === 'skybox') {
@@ -314,6 +311,81 @@ export class UnifiedStorageService {
       console.error('❌ Failed to store asset from URL:', error);
       throw new Error(`Failed to store asset from URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Fetch asset with proxy strategies to avoid CORS issues
+   */
+  private async fetchAssetWithProxy(url: string): Promise<Blob> {
+    if (!url) {
+      throw new Error('Asset URL is required');
+    }
+
+    // Get the correct API base URL
+    const getApiBaseUrl = () => {
+      const region = 'us-central1';
+      const projectId = 'in3devoneuralai';
+      return `https://${region}-${projectId}.cloudfunctions.net/api`;
+    };
+
+    // Try multiple download strategies (same as working components)
+    const strategies = [
+      // Strategy 1: Use proxy URL (primary method to avoid CORS)
+      async () => {
+        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+        console.log('🔄 Fetching via proxy:', proxyUrl);
+        const response = await fetch(proxyUrl);
+        
+        if (!response.ok) {
+          throw new Error(`Proxy fetch failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      },
+      
+      // Strategy 2: Direct URL (fallback if proxy fails)
+      async () => {
+        console.log('🔄 Fetching direct URL:', url);
+        const response = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Direct fetch failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      },
+      
+      // Strategy 3: Local development server proxy
+      async () => {
+        const localProxy = `http://localhost:5002/proxy-asset?url=${encodeURIComponent(url)}`;
+        console.log('🔄 Fetching via local proxy:', localProxy);
+        const response = await fetch(localProxy);
+        
+        if (!response.ok) {
+          throw new Error(`Local proxy fetch failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      }
+    ];
+
+    let lastError: Error | null = null;
+
+    for (const strategy of strategies) {
+      try {
+        const result = await strategy();
+        console.log('✅ Asset fetched successfully via proxy');
+        return result;
+      } catch (error) {
+        console.warn('⚠️ Fetch strategy failed:', error);
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+      }
+    }
+
+    throw lastError || new Error('All fetch strategies failed');
   }
 
   /**
