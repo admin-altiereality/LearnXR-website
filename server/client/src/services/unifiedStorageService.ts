@@ -330,42 +330,58 @@ export class UnifiedStorageService {
 
     // Try multiple download strategies (same as working components)
     const strategies = [
-      // Strategy 1: Use proxy URL (primary method to avoid CORS)
+      // Strategy 1: Use Firebase Functions proxy URL (primary method to avoid CORS)
       async () => {
         const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
-        console.log('🔄 Fetching via proxy:', proxyUrl);
-        const response = await fetch(proxyUrl);
+        console.log('🔄 Fetching via Firebase Functions proxy:', proxyUrl);
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': '*/*',
+            'User-Agent': 'In3D.ai-WebApp/1.0'
+          }
+        });
         
         if (!response.ok) {
-          throw new Error(`Proxy fetch failed: ${response.status} ${response.statusText}`);
+          throw new Error(`Firebase proxy fetch failed: ${response.status} ${response.statusText}`);
         }
         
         return await response.blob();
       },
       
-      // Strategy 2: Direct URL (fallback if proxy fails)
+      // Strategy 2: Local development server proxy (for development)
       async () => {
-        console.log('🔄 Fetching direct URL:', url);
+        const localProxy = `http://localhost:5002/proxy-asset?url=${encodeURIComponent(url)}`;
+        console.log('🔄 Fetching via local development proxy:', localProxy);
+        const response = await fetch(localProxy, {
+          method: 'GET',
+          headers: {
+            'Accept': '*/*',
+            'User-Agent': 'In3D.ai-WebApp/1.0'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Local proxy fetch failed: ${response.status} ${response.statusText}`);
+        }
+        
+        return await response.blob();
+      },
+      
+      // Strategy 3: Direct URL (last resort - will likely fail due to CORS)
+      async () => {
+        console.log('🔄 Fetching direct URL (last resort):', url);
         const response = await fetch(url, {
           method: 'GET',
           mode: 'cors',
+          headers: {
+            'Accept': '*/*',
+            'User-Agent': 'In3D.ai-WebApp/1.0'
+          }
         });
         
         if (!response.ok) {
           throw new Error(`Direct fetch failed: ${response.status} ${response.statusText}`);
-        }
-        
-        return await response.blob();
-      },
-      
-      // Strategy 3: Local development server proxy
-      async () => {
-        const localProxy = `http://localhost:5002/proxy-asset?url=${encodeURIComponent(url)}`;
-        console.log('🔄 Fetching via local proxy:', localProxy);
-        const response = await fetch(localProxy);
-        
-        if (!response.ok) {
-          throw new Error(`Local proxy fetch failed: ${response.status} ${response.statusText}`);
         }
         
         return await response.blob();

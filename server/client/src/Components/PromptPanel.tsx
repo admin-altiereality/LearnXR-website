@@ -101,6 +101,26 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
       }
     } catch (error) {
       console.error('Failed to load skybox styles:', error);
+      
+      // If skybox service is down, disable skybox generation but allow mesh generation
+      if (error instanceof Error && error.message.includes('not configured properly')) {
+        setEnableSkybox(false);
+        // Show a user-friendly message
+        const warningMessage = document.createElement('div');
+        warningMessage.className = 'fixed top-4 right-4 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+        warningMessage.innerHTML = `
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+          </svg>
+          <span>Skybox service is temporarily unavailable. Mesh generation is still available.</span>
+        `;
+        document.body.appendChild(warningMessage);
+        setTimeout(() => {
+          if (document.body.contains(warningMessage)) {
+            document.body.removeChild(warningMessage);
+          }
+        }, 8000);
+      }
     } finally {
       setStylesLoading(false);
     }
@@ -122,8 +142,12 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
       errors.push('Prompt must be 1000 characters or less');
     }
     
-    if (enableSkybox && !selectedStyle) {
+    if (enableSkybox && !selectedStyle && availableStyles.length > 0) {
       errors.push('Please select a skybox style');
+    }
+    
+    if (enableSkybox && availableStyles.length === 0 && !stylesLoading) {
+      errors.push('Skybox service is currently unavailable. Please try mesh generation only.');
     }
     
     if (!enableSkybox && !enableMesh) {
@@ -199,9 +223,50 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
         }, 5000);
       } else {
         console.error('❌ Generation failed:', response.errors);
+        
+        // Show partial success message if mesh worked but skybox failed
+        if (response.errors.some(error => error.includes('Skybox service'))) {
+          const partialMessage = document.createElement('div');
+          partialMessage.className = 'fixed top-4 right-4 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+          partialMessage.innerHTML = `
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+            </svg>
+            <span>Mesh generated successfully! Skybox service is temporarily unavailable.</span>
+          `;
+          document.body.appendChild(partialMessage);
+          setTimeout(() => {
+            if (document.body.contains(partialMessage)) {
+              document.body.removeChild(partialMessage);
+            }
+          }, 6000);
+        }
       }
     } catch (error) {
       console.error('💥 Generation error:', error);
+      
+      // Show user-friendly error message
+      if (error instanceof Error) {
+        if (error.message.includes('Skybox service is not available')) {
+          // Automatically disable skybox and suggest mesh-only generation
+          setEnableSkybox(false);
+          
+          const suggestionMessage = document.createElement('div');
+          suggestionMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+          suggestionMessage.innerHTML = `
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+            </svg>
+            <span>Skybox service is down. Try mesh generation only instead!</span>
+          `;
+          document.body.appendChild(suggestionMessage);
+          setTimeout(() => {
+            if (document.body.contains(suggestionMessage)) {
+              document.body.removeChild(suggestionMessage);
+            }
+          }, 6000);
+        }
+      }
     }
   }, [
     user,

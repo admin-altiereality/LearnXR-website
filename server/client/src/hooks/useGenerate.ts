@@ -258,28 +258,47 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
       throw new Error('Skybox configuration is required');
     }
 
-    const response = await skyboxApiService.generateSkybox({
-      prompt: request.prompt,
-      style_id: request.skyboxConfig.styleId,
-      negative_prompt: request.skyboxConfig.negativePrompt,
-      userId: request.userId
-    });
+    try {
+      console.log('🌅 Starting skybox generation...');
+      
+      const response = await skyboxApiService.generateSkybox({
+        prompt: request.prompt,
+        style_id: request.skyboxConfig.styleId,
+        negative_prompt: request.skyboxConfig.negativePrompt,
+        userId: request.userId
+      });
 
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to start skybox generation');
-    }
-
-    return await pollSkyboxStatus(
-      response.data.generationId,
-      jobId,
-      (progress) => {
-        setProgress(prev => prev ? {
-          ...prev,
-          skyboxProgress: progress,
-          overallProgress: (progress + prev.meshProgress) / 2
-        } : null);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to start skybox generation');
       }
-    );
+
+      console.log('✅ Skybox generation initiated, polling for completion...');
+      
+      return await pollSkyboxStatus(
+        response.data.generationId,
+        jobId,
+        (progress) => {
+          setProgress(prev => prev ? {
+            ...prev,
+            skyboxProgress: progress,
+            overallProgress: request.meshConfig !== false ? (progress + prev.meshProgress) / 2 : progress
+          } : null);
+        }
+      );
+    } catch (error) {
+      console.error('❌ Skybox generation failed:', error);
+      
+      // Add specific error context
+      if (error instanceof Error) {
+        if (error.message.includes('not configured properly')) {
+          throw new Error('Skybox service is not available. Please contact support or try mesh generation only.');
+        } else if (error.message.includes('temporarily unavailable')) {
+          throw new Error('Skybox service is temporarily down. Please try again later or use mesh generation only.');
+        }
+      }
+      
+      throw error;
+    }
   }, [pollSkyboxStatus]);
 
   const generateMesh = useCallback(async (
