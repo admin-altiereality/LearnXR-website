@@ -17,15 +17,13 @@ import {
   FaDatabase,
   FaCog
 } from 'react-icons/fa';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { MeshyTestPanel } from './MeshyTestPanel';
 import { MeshyDebugPanel } from './MeshyDebugPanel';
 
 function Footer() {
   const currentYear = new Date().getFullYear();
-  const [showServiceStatus, setShowServiceStatus] = useState(false);
-  const [showTestPanel, setShowTestPanel] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const navigate = useNavigate();
 
   const socialLinks = [
     {
@@ -189,21 +187,21 @@ function Footer() {
             <h3 className="text-lg font-semibold text-white mb-4">Service Status</h3>
             <div className="space-y-3">
               <button
-                onClick={() => setShowServiceStatus(!showServiceStatus)}
+                onClick={() => navigate('/service-status')}
                 className="flex items-center space-x-3 text-gray-400 hover:text-white transition-colors group w-full"
               >
                 <FaServer className="w-4 h-4 text-cyan-400 group-hover:text-cyan-300" />
                 <span className="text-sm">System Status</span>
               </button>
               <button
-                onClick={() => setShowTestPanel(!showTestPanel)}
+                onClick={() => navigate('/test-panel')}
                 className="flex items-center space-x-3 text-gray-400 hover:text-white transition-colors group w-full"
               >
                 <FaWifi className="w-4 h-4 text-green-400 group-hover:text-green-300" />
                 <span className="text-sm">Test Panel</span>
               </button>
               <button
-                onClick={() => setShowDebugPanel(!showDebugPanel)}
+                onClick={() => navigate('/debug-panel')}
                 className="flex items-center space-x-3 text-gray-400 hover:text-white transition-colors group w-full"
               >
                 <FaCog className="w-4 h-4 text-yellow-400 group-hover:text-yellow-300" />
@@ -244,72 +242,6 @@ function Footer() {
             </div>
           </div>
         </div>
-
-        {/* Service Status Panels */}
-        {(showServiceStatus || showTestPanel || showDebugPanel) && (
-          <div className="border-t border-gray-800/50 pt-6 mb-6">
-            <div className="space-y-4">
-              {showTestPanel && (
-                <div className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <FaWifi className="w-4 h-4 text-green-400 mr-2" />
-                    Test Panel
-                  </h4>
-                  <MeshyTestPanel />
-                </div>
-              )}
-              
-              {showDebugPanel && (
-                <div className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <FaCog className="w-4 h-4 text-yellow-400 mr-2" />
-                    Debug Panel
-                  </h4>
-                  <MeshyDebugPanel />
-                </div>
-              )}
-              
-              {showServiceStatus && (
-                <div className="bg-gray-800/30 rounded-lg p-4 border border-gray-700/50">
-                  <h4 className="text-white font-semibold mb-3 flex items-center">
-                    <FaServer className="w-4 h-4 text-cyan-400 mr-2" />
-                    System Status
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="flex items-center space-x-3 p-3 bg-green-900/20 border border-green-700/30 rounded-lg">
-                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                      <div>
-                        <p className="text-white text-sm font-medium">API Status</p>
-                        <p className="text-green-400 text-xs">Operational</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-green-900/20 border border-green-700/30 rounded-lg">
-                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                      <div>
-                        <p className="text-white text-sm font-medium">Database</p>
-                        <p className="text-green-400 text-xs">Connected</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-green-900/20 border border-green-700/30 rounded-lg">
-                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                      <div>
-                        <p className="text-white text-sm font-medium">Storage</p>
-                        <p className="text-green-400 text-xs">Available</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-green-900/20 border border-green-700/30 rounded-lg">
-                      <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                      <div>
-                        <p className="text-white text-sm font-medium">3D Engine</p>
-                        <p className="text-green-400 text-xs">Ready</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </footer>
   );
