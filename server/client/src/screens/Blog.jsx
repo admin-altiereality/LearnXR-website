@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import image1 from '../../public/assests/Gearningupimg.jpg';
 import image2 from '../../public/assests/Bitspilanis.jpg';
@@ -89,6 +89,10 @@ const hardcodedBlogPosts = [
 ];
 
 const Blog = () => {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const [selectedCategory, setSelectedCategory] = useState('all');
   // Use hardcoded posts directly
   const blogPosts = hardcodedBlogPosts;
