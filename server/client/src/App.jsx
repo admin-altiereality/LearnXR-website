@@ -30,6 +30,7 @@ import { PromptPanel } from './Components/PromptPanel';
 import { MeshyTestPanel } from './Components/MeshyTestPanel';
 import { MeshyDebugPanel } from './Components/MeshyDebugPanel';
 import { ServiceStatusPanel } from './Components/ServiceStatusPanel';
+import SystemStatus from './screens/SystemStatus';
 
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
@@ -564,9 +565,7 @@ function App() {
                           <PreviewScene />
                         </ProtectedRoute>
                       } />
-                      <Route path="/service-status" element={<ServiceStatusPanel />} />
-                      <Route path="/test-panel" element={<MeshyTestPanel />} />
-                      <Route path="/debug-panel" element={<MeshyDebugPanel />} />
+                      <Route path="/system-status" element={<SystemStatus />} />
                       
                       {/* Redirect unknown routes to home */}
                       <Route path="*" element={<Navigate to="/" />} />

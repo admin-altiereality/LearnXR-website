@@ -58,7 +58,7 @@ function Footer() {
     },
     {
       name: "Blog",
-      url: "#", // Placeholder - update when available
+      url: "/blog",
       icon: FaRss,
       color: "hover:text-orange-500"
     }
@@ -167,17 +167,30 @@ function Footer() {
             <h3 className="text-lg font-semibold text-white mb-4">Connect With Us</h3>
             <div className="grid grid-cols-3 gap-3">
               {socialLinks.map((social) => (
-                <a
-                  key={social.name}
-                  href={social.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`flex flex-col items-center p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 text-gray-400 transition-all duration-300 hover:border-cyan-500/50 hover:bg-gray-800/70 ${social.color}`}
-                  title={social.name}
-                >
-                  <social.icon className="w-5 h-5 mb-1" />
-                  <span className="text-xs text-center">{social.name}</span>
-                </a>
+                social.name === "Blog" ? (
+                  <button
+                    key={social.name}
+                    onClick={() => navigate('/blog')}
+                    className={`flex flex-col items-center p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 text-gray-400 transition-all duration-300 hover:border-cyan-500/50 hover:bg-gray-800/70 ${social.color}`}
+                    title={social.name}
+                    type="button"
+                  >
+                    <social.icon className="w-5 h-5 mb-1" />
+                    <span className="text-xs text-center">{social.name}</span>
+                  </button>
+                ) : (
+                  <a
+                    key={social.name}
+                    href={social.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`flex flex-col items-center p-3 rounded-lg bg-gray-800/50 border border-gray-700/50 text-gray-400 transition-all duration-300 hover:border-cyan-500/50 hover:bg-gray-800/70 ${social.color}`}
+                    title={social.name}
+                  >
+                    <social.icon className="w-5 h-5 mb-1" />
+                    <span className="text-xs text-center">{social.name}</span>
+                  </a>
+                )
               ))}
             </div>
           </div>
@@ -187,21 +200,21 @@ function Footer() {
             <h3 className="text-lg font-semibold text-white mb-4">Service Status</h3>
             <div className="space-y-3">
               <button
-                onClick={() => navigate('/service-status')}
+                onClick={() => navigate('/system-status?tab=system-status')}
                 className="flex items-center space-x-3 text-gray-400 hover:text-white transition-colors group w-full"
               >
                 <FaServer className="w-4 h-4 text-cyan-400 group-hover:text-cyan-300" />
                 <span className="text-sm">System Status</span>
               </button>
               <button
-                onClick={() => navigate('/test-panel')}
+                onClick={() => navigate('/system-status?tab=test-panel')}
                 className="flex items-center space-x-3 text-gray-400 hover:text-white transition-colors group w-full"
               >
                 <FaWifi className="w-4 h-4 text-green-400 group-hover:text-green-300" />
                 <span className="text-sm">Test Panel</span>
               </button>
               <button
-                onClick={() => navigate('/debug-panel')}
+                onClick={() => navigate('/system-status?tab=debug-panel')}
                 className="flex items-center space-x-3 text-gray-400 hover:text-white transition-colors group w-full"
               >
                 <FaCog className="w-4 h-4 text-yellow-400 group-hover:text-yellow-300" />
