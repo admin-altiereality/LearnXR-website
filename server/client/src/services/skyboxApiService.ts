@@ -26,7 +26,7 @@ export const skyboxApiService = {
     try {
       const response = await api.post('/skybox/generate', { 
         prompt, 
-        style_id: style_id, 
+        skybox_style_id: style_id, // <-- FIXED: use correct field name
         negative_text: negative_prompt, 
         userId 
       });

@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import image1 from '../../public/assests/Gearningupimg.jpg';
+import image2 from '../../public/assests/Bitspilanis.jpg';
+import image4 from '../../public/assests/evoneural.jpg';
+import image5 from '../../public/assests/startup.jpg';
 import { 
   FaTrophy, 
   FaRocket, 
@@ -15,34 +19,83 @@ import {
   FaCode,
   FaHeart,
   FaComment,
-  FaShare,
-  FaSpinner
+  FaShare
 } from 'react-icons/fa';
-import linkedinScraperService from '../services/linkedinScraperService';
+// Removed linkedinScraperService import
+
+const hardcodedBlogPosts = [
+  {
+    id: '1',
+    title: 'Gearing Up for the Future of XR ',
+    excerpt: "At Evoneural AI, innovation drives everything we do. We’re currently gearing up to launch In3D.ai, an AI-powered platform that converts simple text into immersive 3D VR environments.",
+    image: image1,
+    date: '2025-07-01',
+    readTime: '3 min read',
+    category: 'technology',
+    featured: true,
+    achievements: ['Tech Innovation by Evoneural AI', 'Innovation in the AVGC-XR Space'],
+    likes: 20,
+    comments: "",
+    shares: "",
+    linkedInUrl: 'https://www.linkedin.com/posts/evoneural-ai-opc_ai-xr-vr-activity-7340623176650973184-aPgO?utm_source=share&utm_medium=member_desktop&rcm=ACoAADt7irUBQuGEa2JuaKPDgg5osTNrI_6WU20',
+  },
+  {
+    id: '2',
+    title: '🚀 Welcoming Bright Minds from BITS Pilani! 🎓✨',
+    excerpt: "We’re excited to announce that Evoneural AI | In3D.ai has welcomed an incredible group of Practice School 1 (PS-1) interns from Birla Institute of Technology and Science, Pilani Practice School -1 Pilani Campus, who joined us on May 26, 2025!",
+    image: image2,
+    date: '2025-05-26',
+    readTime: '4 min read',
+    category: 'company',
+    featured: true,
+    achievements: ['Prompt Engineering Interns', 'AI/ML Interns'],
+    likes: 6,
+    comments: "",
+    shares: 1,
+    linkedInUrl: 'https://www.linkedin.com/posts/evoneural-ai-opc_welcoming-bright-minds-from-bits-pilani-activity-7334510314740199425-cvwZ?utm_source=share&utm_medium=member_desktop&rcm=ACoAADt7irUBQuGEa2JuaKPDgg5osTNrI_6WU20',
+  },
+  {
+    id: '3',
+    title: 'Evoneural AI Selected for STPI OCP 6.0 OctaNE under CoE in Emerging Technologies (AR/VR),',
+    excerpt: "We're excited to announce that Evoneural Artificial Intelligence has been selected for OCTANE 6.0, a distinguished program run by STPI - Software Technology Parks of India aimed at advancing India's deeptech innovation ecosystem.",
+    image: image5,
+    date: '2025-06-20',
+    readTime: '2 min read',
+    category: 'achievements',
+    featured: false,
+    achievements: ['Selected for STPI OCTANE 6.0','Recognized for Innovation in AI + XR'],
+    likes: 3,
+    comments: "",
+    shares: "",
+    linkedInUrl: 'https://www.linkedin.com/posts/evoneural-ai-opc_evoneuralai-octane-stpiindia-activity-7332008861211455488-8FDm?utm_source=share&utm_medium=member_desktop&rcm=ACoAADt7irUBQuGEa2JuaKPDgg5osTNrI_6WU20',
+  },
+  {
+    id: '4',
+    title: 'Evoneural AI Joins Rajasthan’s Thriving Tech Ecosystem',
+    excerpt: "Through iStart Rajasthan, a program by the Government of Rajasthan to empower and elevate entrepreneurs, we have started our entrepreneurial adventure with our founder, JAGRATI SHARMA, at the helm. Through Bhamashah Technohub's incubation program, we're preparing to propel artificial intelligence innovation and provide AI-based solutions for the AVGC-XR sector.",
+
+    image:image4 ,
+    date: '2024-12-10',
+    readTime: '2 min read',
+    category: 'company',
+    featured: false,
+    achievements: ['Accepted into iStart Rajasthan Program','Incubated at Bhamashah Technohub, Jaipur'],
+    likes: 18,
+    comments: 4,
+    shares: 1,
+    linkedInUrl: 'https://www.linkedin.com/posts/evoneural-ai-opc_evoneuralai-istartrajasthan-innovation-activity-7259577034354376706-WcqX?utm_source=share&utm_medium=member_desktop&rcm=ACoAADt7irUBQuGEa2JuaKPDgg5osTNrI_6WU20',
+  },
+  // Add more posts as needed
+];
 
 const Blog = () => {
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [blogPosts, setBlogPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   useEffect(() => {
-    fetchBlogPosts();
+    window.scrollTo(0, 0);
   }, []);
 
-  const fetchBlogPosts = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const posts = await linkedinScraperService.fetchLinkedInPosts();
-      setBlogPosts(posts);
-    } catch (err) {
-      console.error('Error fetching blog posts:', err);
-      setError('Failed to load blog posts. Please try again later.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  // Use hardcoded posts directly
+  const blogPosts = hardcodedBlogPosts;
 
   const categories = [
     { id: 'all', name: 'All Posts', icon: FaGlobe },
@@ -68,37 +121,7 @@ const Blog = () => {
     window.open('https://www.linkedin.com/company/evoneural-ai-opc/?viewAsMember=true', '_blank', 'noopener,noreferrer');
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white flex items-center justify-center">
-        <div className="text-center">
-          <FaSpinner className="w-12 h-12 text-cyan-400 animate-spin mx-auto mb-4" />
-          <p className="text-gray-300">Loading blog posts...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <div className="w-16 h-16 rounded-xl bg-red-500/20 flex items-center justify-center mx-auto mb-6">
-            <FaRocket className="text-2xl text-red-400" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-4">Oops! Something went wrong</h2>
-          <p className="text-gray-300 mb-6">{error}</p>
-          <button
-            onClick={fetchBlogPosts}
-            className="px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white rounded-xl font-semibold transition-all duration-300"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+  // Remove loading and error states, render directly
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white">
       {/* Header Section */}
