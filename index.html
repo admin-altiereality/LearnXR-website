@@ -36,6 +36,40 @@
     <title>LearnXR - Altie Reality</title>
   </head>
   <body>
+    <!-- Responsive ClassVR-style Header -->
+    <header class="w-full z-50 fixed top-0 left-0 right-0">
+      <!-- Top Navigation Bar -->
+      <div class="w-full bg-[#0a1a3c] flex flex-wrap items-center justify-between px-4 md:px-8 py-3 ">
+        <!-- Left: Logo -->
+        <div class="flex items-center gap-2 min-w-[120px]">
+          <!-- <img src="/assets/logo.png" alt="LearnXR Logo" class="h-10 w-10 object-contain" /> -->
+          <span class="text-white text-xl md:text-2xl font-bold tracking-wide">LearnXR</span>
+        </div>
+        <!-- Right: Navigation Items -->
+        <div class="flex flex-wrap items-center gap-2 md:gap-4 lg:gap-6">
+          <a href="#support" class="text-white text-sm md:text-base hover:text-orange-400 transition">Support</a>
+          <a href="#contact" class="text-white text-sm md:text-base hover:text-orange-400 transition">Contact</a>
+          <button class="text-white text-xl hover:text-orange-400 transition p-2">
+            <i class="ri-search-line"></i>
+          </button>
+          <button class="bg-orange-500 hover:bg-orange-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-full font-semibold text-xs md:text-base transition whitespace-nowrap">BOOK A FREE DEMO</button>
+          <button class="bg-orange-500 hover:bg-orange-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-full font-semibold text-xs md:text-base transition whitespace-nowrap">REQUEST A QUOTE</button>
+          <button class="text-white text-xl hover:text-orange-400 transition p-2">
+            <i class="ri-mail-line"></i>
+          </button>
+          <span class="text-white text-sm md:text-base cursor-pointer hover:text-orange-400 transition">Sign In</span>
+          <!-- <img src="/img/india-flag.png" alt="India Flag" class="h-5 w-7 rounded-sm border border-white ml-1" /> -->
+        </div>
+      </div>
+      <!-- Sub-Navigation Bar -->
+      <nav class="w-full bg-white flex flex-wrap items-center justify-center gap-4 md:gap-10 py-2 shadow text-xs md:text-base overflow-x-auto">
+        <a href="#vr-solutions" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">VR Solutions</a>
+        <a href="#grants" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">Grants & Funding</a>
+        <a href="#vr-education" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">VR in Education</a>
+        <a href="#case-studies" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">Case Studies</a>
+        <a href="#resources" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">Resource Hub</a>
+      </nav>
+    </header>
     <div class="flex h-screen w-full" id="main2">
       <!-- THIS IS THE CANVAS PART: 3D EARTH -->
       <div class="w-full fixed h-screen" id="canvasContainer">
@@ -43,14 +77,14 @@
       </div>
 
       <!-- CUSTOM cursur -->
-      <div
+      <!-- <div
         id="cursur"
         class="absolute z-[100] w-20 h-20 opacity-[0.3] bg-purple-600 rounded-[50%] flex items-center justify-center"
-      ></div>
+      ></div> -->
 
       <!-- REST OF THE WEBPAGES? -->
-      <div id="main" class="absolute h-screen w-full bg-transparent">
-        <div id="page1" class="w-full h-screen">
+      <div id="main" class="absolute h-screen w-full bg-none">
+        <div id="page1" class="w-full h-screen bg-transparent" style="background: transparent !important;">
             <div
               id="page1-content"
               class="h-[100vmin] z-10 flex flex-col relative items-center justify-between"
@@ -68,10 +102,10 @@
               </nav>
 
 
-              <div class="absolute overflow-hidden">
+              <div class="absolute overflow-hidden ">
                 <img
                   id="vr-img"
-                  class="z-[9] h-[50vh] w-[40vw] translate-y-[0vh]"
+                  class="z-[9] h-[50vh] w-[40vw] translate-y-[13vh]"
                   src="/img/vr image.png"
                   alt=""
                 />
@@ -90,7 +124,7 @@
                 class="overflow-hidden flex flex-col items-center justify-center h-fit relative"
               >
                 <h1
-                  class="text-white text-[14rem] tracking-[0.9rem] inline-block overflow-hidden h-fit leading-none"
+                  class="text-white text-[14rem] tracking-[0.9rem] inline-block overflow-hidden h-fit leading-none "
                 >
                   <span>L</span><span>e</span><span>a</span><span>r</span
                   ><span>n</span><span class="text-purple-700">X</span
@@ -113,36 +147,78 @@
             id="page2"
             class="w-full h-[90vmin] flex justify-center relative items-center flex-col"
           >
-            <div
-              id="vr-img3-cont"
-              class="absolute right-[1rem] bottom-0 w-[43vw]"
-            >
-              <img
-                id="vr-imgg3"
-                class="w-[100%]"
-                src="img/vr image3.jpg"
-                alt=""
-              />
+          <div class="flex flex-col md:flex-row w-full h-full items-center justify-center">
+            <!-- Left: About Content -->
+            <div class="w-full md:w-1/2 flex flex-col items-start justify-center px-6 md:px-12 py-8">
+              <h1 class="text-2xl md:text-3xl font-bold text-purple-700 mb-4">WHO WE ARE</h1>
+              <p class="text-white text-lg md:text-2xl mb-2">LearnXR by Altie Reality is proudly funded by Meta Inc</p>
+              <p class="text-white text-lg md:text-2xl mb-4">through Meta XR Startup program</p>
+              <span class="text-white text-sm md:text-base opacity-80 mt-2">In association with iStart & SPTBI</span>
             </div>
-            <div id="heading" class="overflow-hidden h-fit mb-4">
-              <h1 class="text-[2rem] text-purple-700 z-10">WHO WE ARE</h1>
-            </div>
-            <div id="page2-para" class="">
-              <div id="elem" class="text-white text-[3rem] overflow-hidden">
-                <h1>LearnXR by Altie Reality is proudly funded by Meta Inc</h1>
+            <!-- Right: VR Image -->
+            <div class="w-full md:w-1/2 flex items-center justify-center px-6 md:px-12 py-8">
+              <div class="w-full max-w-md">
+                <img id="vr-imgg3" class="w-full object-contain" src="img/vr image3.jpg" alt="VR Experience" />
               </div>
-              <div id="elem" class="text-white text-[3rem] overflow-hidden">
-                <h1>through Meta XR Startup program</h1>
-              </div>
-            </div>
-            <div id="lower" class="overflow-hidden">
-              <h4 class="text-white text-2xl mt-4">
-               Inassociation with iStart & SPTBI
-              </h4>
             </div>
           </div>
+          <!-- Features Section: Added below existing #page2 content -->
+          <div class="w-full flex flex-col items-center justify-center mt-8">
+            <h2 class="text-3xl md:text-4xl font-bold text-center mb-2 text-gray-900 dark:text-white">About LearnXR</h2>
+            <p class="text-center text-gray-700 dark:text-gray-200 max-w-3xl mb-10 text-lg md:text-xl">Revolutionizing education through immersive virtual reality experiences. Create, share, and explore educational content in virtual worlds.</p>
+            <div class="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12 px-2 md:px-0">
+              <!-- Card 1 -->
+              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-blue-100">
+                  <i class="ri-book-open-line text-3xl text-blue-500"></i>
+                </div>
+                <h3 class="font-semibold text-lg text-center mb-2 text-gray-900 dark:text-white">Self-Paced Learning</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-center text-base">Students learn at their own pace with personalized VR experiences</p>
+              </div>
+              <!-- Card 2 -->
+              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-green-100">
+                  <i class="ri-group-line text-3xl text-green-500"></i>
+                </div>
+                <h3 class="font-semibold text-lg text-center mb-2 text-gray-900 dark:text-white">Group Learning</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-center text-base">Collaborative virtual classrooms for interactive group sessions</p>
+              </div>
+              <!-- Card 3 -->
+              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-purple-100">
+                  <i class="ri-brain-line text-3xl text-purple-500"></i>
+                </div>
+                <h3 class="font-semibold text-lg text-center mb-2 text-gray-900 dark:text-white">AI Tutor</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-center text-base">Intelligent AI assistant guides students through VR lessons</p>
+              </div>
+              <!-- Card 4 -->
+              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-orange-100">
+                  <i class="ri-smartphone-line text-3xl text-orange-500"></i>
+                </div>
+                <h3 class="font-semibold text-lg text-center mb-2 text-gray-900 dark:text-white">Multi-Platform</h3>
+                <p class="text-gray-600 dark:text-gray-300 text-center text-base">Compatible with Meta Quest, Cardboard VR, and mobile devices</p>
+              </div>
+            </div>
+            <!-- Download Section -->
+            <div class="flex flex-col items-center mt-2 mb-4">
+              <h3 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Download LearnXR</h3>
+              <div class="flex flex-row gap-4">
+                <a href="#" class="flex items-center gap-2 px-6 py-2 rounded-lg bg-green-500 hover:bg-green-600 text-white font-semibold shadow transition">
+                  <span class="w-5 h-5 bg-green-700 rounded-sm inline-block"></span>
+                  Play Store
+                </a>
+                <a href="#" class="flex items-center gap-2 px-6 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-semibold shadow transition">
+                  <span class="w-5 h-5 bg-blue-700 rounded-sm inline-block"></span>
+                  SideQuest
+                </a>
+              </div>
+            </div>
+          </div>
+          <!-- End Features Section -->
+        </div>
 
-          <div
+          <!-- <div
             id="page3"
             class="w-full h-screen flex flex-col justify-center items-center"
           >
@@ -241,7 +317,7 @@
               </div>
               <div class="right-arrow"><i class="fa fa-angle-right text-white" style="font-size:24px"></i></div>
             </div>
-          </div>
+          </div> -->
 
         <div
           id="page4"
@@ -329,6 +405,53 @@
             </div>
           </div>
 
+          <!-- Powerful Features Section: Inserted above Our Mobile App -->
+          <div class="w-full flex flex-col items-center justify-center mb-12">
+            <h2 class="text-4xl md:text-5xl font-bold text-center mb-2 text-gray-900">Powerful Features</h2>
+            <p class="text-center text-gray-600 max-w-3xl mb-10 text-lg md:text-xl">Everything you need to create immersive educational experiences</p>
+            <div class="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 px-2 md:px-0">
+              <!-- Card 1 -->
+              <div class="flex flex-col items-start bg-white rounded-2xl shadow p-8 border border-gray-100">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-yellow-100">
+                  <span class="text-3xl">⚡</span>
+                </div>
+                <h3 class="font-bold text-2xl mb-2 text-gray-900">No-Code Platform</h3>
+                <p class="text-gray-700 mb-4">Create VR experiences without any programming knowledge. Drag, drop, and publish.</p>
+                <ul class="space-y-1">
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Visual editor</li>
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Template library</li>
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Asset marketplace</li>
+                </ul>
+              </div>
+              <!-- Card 2 -->
+              <div class="flex flex-col items-start bg-white rounded-2xl shadow p-8 border border-gray-100">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-blue-100">
+                  <span class="text-3xl">🌐</span>
+                </div>
+                <h3 class="font-bold text-2xl mb-2 text-gray-900">Virtual Field Trips</h3>
+                <p class="text-gray-700 mb-4">Take students on immersive journeys to historical sites, museums, and more.</p>
+                <ul class="space-y-1">
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Historical locations</li>
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Science simulations</li>
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Cultural experiences</li>
+                </ul>
+              </div>
+              <!-- Card 3 -->
+              <div class="flex flex-col items-start bg-white rounded-2xl shadow p-8 border border-gray-100">
+                <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-green-100">
+                  <span class="text-3xl">🎯</span>
+                </div>
+                <h3 class="font-bold text-2xl mb-2 text-gray-900">Analytics & Tracking</h3>
+                <p class="text-gray-700 mb-4">Monitor student progress and engagement with detailed analytics.</p>
+                <ul class="space-y-1">
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Learning progress</li>
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Engagement metrics</li>
+                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Performance reports</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <!-- End Powerful Features Section -->
           <div class="overflow-hidden">
             <h1 class="text-3xl pt-10 pb-6">
               Our Mobile App converts a Mobile Phone into fully loaded VR
