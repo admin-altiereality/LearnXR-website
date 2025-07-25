@@ -408,4 +408,15 @@ function expandableCard() {
 
 expandableCard()
 
+// --- Feature Card Click Animation ---
+document.addEventListener('DOMContentLoaded', function () {
+  const featureCards = document.querySelectorAll('.feature-card');
+  featureCards.forEach(card => {
+    card.addEventListener('click', function () {
+      featureCards.forEach(c => c.classList.remove('scale-150'));
+      card.classList.add('scale-150');
+    });
+  });
+});
+
 

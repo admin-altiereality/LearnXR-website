@@ -39,35 +39,36 @@
     <!-- Responsive ClassVR-style Header -->
     <header class="w-full z-50 fixed top-0 left-0 right-0">
       <!-- Top Navigation Bar -->
-      <div class="w-full bg-[#0a1a3c] flex flex-wrap items-center justify-between px-4 md:px-8 py-3 ">
+      <div class="w-full bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg flex flex-wrap items-center justify-between px-4 md:px-8 py-3 ">
         <!-- Left: Logo -->
         <div class="flex items-center gap-2 min-w-[120px]">
           <!-- <img src="/assets/logo.png" alt="LearnXR Logo" class="h-10 w-10 object-contain" /> -->
-          <span class="text-white text-xl md:text-2xl font-bold tracking-wide">LearnXR</span>
+          <span class="text-white text-xl md:text-2xl font-bold tracking-wide">Learn</span>
+          <span class="text-[#7E23CF] text-xl md:text-2xl font-bold tracking-wide">XR</span>
         </div>
         <!-- Right: Navigation Items -->
         <div class="flex flex-wrap items-center gap-2 md:gap-4 lg:gap-6">
-          <a href="#support" class="text-white text-sm md:text-base hover:text-orange-400 transition">Support</a>
-          <a href="#contact" class="text-white text-sm md:text-base hover:text-orange-400 transition">Contact</a>
-          <button class="text-white text-xl hover:text-orange-400 transition p-2">
-            <i class="ri-search-line"></i>
+          <a href="#support" class="text-white text-sm md:text-base hover:text-[#7E23CF] transition">Support</a>
+          <a href="#contact" class="text-white text-sm md:text-base hover:text-[#7E23CF] transition">Contact</a>
+          <button class="text-white text-xl hover:text-[#7E23CF] transition p-2">
+            <i class="ri-search-line hover:text-[#7E23CF]"></i>
           </button>
-          <button class="bg-orange-500 hover:bg-orange-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-full font-semibold text-xs md:text-base transition whitespace-nowrap">BOOK A FREE DEMO</button>
-          <button class="bg-orange-500 hover:bg-orange-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-full font-semibold text-xs md:text-base transition whitespace-nowrap">REQUEST A QUOTE</button>
+          <button class="bg-[#7E23CF] hover:bg-orange-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-full font-semibold text-xs md:text-base transition whitespace-nowrap btn-fill-animate">BOOK A FREE DEMO</button>
+          <button class="bg-[#7E23CF] hover:bg-orange-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-full font-semibold text-xs md:text-base transition whitespace-nowrap btn-fill-animate">REQUEST A QUOTE</button>
           <button class="text-white text-xl hover:text-orange-400 transition p-2">
-            <i class="ri-mail-line"></i>
+            <i class="ri-mail-line hover:text-[#7E23CF]"></i>
           </button>
-          <span class="text-white text-sm md:text-base cursor-pointer hover:text-orange-400 transition">Sign In</span>
+          <span class="text-white text-sm md:text-base cursor-pointer hover:text-[#7E23CF] transition">Sign In</span>
           <!-- <img src="/img/india-flag.png" alt="India Flag" class="h-5 w-7 rounded-sm border border-white ml-1" /> -->
         </div>
       </div>
       <!-- Sub-Navigation Bar -->
-      <nav class="w-full bg-white flex flex-wrap items-center justify-center gap-4 md:gap-10 py-2 shadow text-xs md:text-base overflow-x-auto">
-        <a href="#vr-solutions" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">VR Solutions</a>
-        <a href="#grants" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">Grants & Funding</a>
-        <a href="#vr-education" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">VR in Education</a>
-        <a href="#case-studies" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">Case Studies</a>
-        <a href="#resources" class="text-[#0a1a3c] font-semibold hover:text-orange-500 transition whitespace-nowrap">Resource Hub</a>
+      <nav class="w-full bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg flex flex-wrap items-center justify-center gap-4 md:gap-10 py-2 shadow text-xs text-white md:text-base overflow-x-auto">
+        <a href="#vr-solutions" class="text-white font-semibold hover:text-[#7E23CF] transition whitespace-nowrap">VR Solutions</a>
+        <a href="#grants" class="text-white font-semibold hover:text-[#7E23CF] transition whitespace-nowrap">Grants & Funding</a>
+        <a href="#vr-education" class="text-white font-semibold hover:text-[#7E23CF] transition whitespace-nowrap">VR in Education</a>
+        <a href="#case-studies" class="text-white font-semibold hover:text-[#7E23CF] transition whitespace-nowrap">Case Studies</a>
+        <a href="#resources" class="text-white font-semibold hover:text-[#7E23CF] transition whitespace-nowrap">Resource Hub</a>
       </nav>
     </header>
     <div class="flex h-screen w-full" id="main2">
@@ -83,8 +84,8 @@
       ></div> -->
 
       <!-- REST OF THE WEBPAGES? -->
-      <div id="main" class="absolute h-screen w-full bg-none">
-        <div id="page1" class="w-full h-screen bg-transparent" style="background: transparent !important;">
+      <div id="main" class="absolute h-screen w-full">
+        <div id="page1" class="w-full h-screen ">
             <div
               id="page1-content"
               class="h-[100vmin] z-10 flex flex-col relative items-center justify-between"
@@ -168,7 +169,7 @@
             <p class="text-center text-gray-700 dark:text-gray-200 max-w-3xl mb-10 text-lg md:text-xl">Revolutionizing education through immersive virtual reality experiences. Create, share, and explore educational content in virtual worlds.</p>
             <div class="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12 px-2 md:px-0">
               <!-- Card 1 -->
-              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+              <div class="feature-card flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800 transition-transform duration-300 ease-in-out hover:scale-105 cursor-pointer">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-blue-100">
                   <i class="ri-book-open-line text-3xl text-blue-500"></i>
                 </div>
@@ -176,7 +177,7 @@
                 <p class="text-gray-600 dark:text-gray-300 text-center text-base">Students learn at their own pace with personalized VR experiences</p>
               </div>
               <!-- Card 2 -->
-              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+              <div class="feature-card flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800 transition-transform duration-300 ease-in-out hover:scale-105 cursor-pointer">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-green-100">
                   <i class="ri-group-line text-3xl text-green-500"></i>
                 </div>
@@ -184,7 +185,7 @@
                 <p class="text-gray-600 dark:text-gray-300 text-center text-base">Collaborative virtual classrooms for interactive group sessions</p>
               </div>
               <!-- Card 3 -->
-              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+              <div class="feature-card flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800 transition-transform duration-300 ease-in-out hover:scale-105 cursor-pointer">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-purple-100">
                   <i class="ri-brain-line text-3xl text-purple-500"></i>
                 </div>
@@ -192,7 +193,7 @@
                 <p class="text-gray-600 dark:text-gray-300 text-center text-base">Intelligent AI assistant guides students through VR lessons</p>
               </div>
               <!-- Card 4 -->
-              <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800">
+              <div class="feature-card flex flex-col items-center bg-white/80 dark:bg-gray-900/60 rounded-xl shadow p-6 border border-gray-100 dark:border-gray-800 transition-transform duration-300 ease-in-out hover:scale-105 cursor-pointer">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-orange-100">
                   <i class="ri-smartphone-line text-3xl text-orange-500"></i>
                 </div>
@@ -201,7 +202,7 @@
               </div>
             </div>
             <!-- Download Section -->
-            <div class="flex flex-col items-center mt-2 mb-4">
+            <div class="flex flex-col items-center mt-2 mb-10">
               <h3 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">Download LearnXR</h3>
               <div class="flex flex-row gap-4">
                 <a href="#" class="flex items-center gap-2 px-6 py-2 rounded-lg bg-green-500 hover:bg-green-600 text-white font-semibold shadow transition">
@@ -245,7 +246,7 @@
                         STEM Lesson
                       </div>
                       <h4 class="text-[2.2vmin]">Virtual reality transforms STEM learning by providing interactive experiences that enhance understanding of complex concepts in science, technology, engineering, and mathematics.</h4>
-                      <div class="card-button tracking-wide">
+                      <div class="card-button tracking-wide btn-fill-animate">
                         learn more
                       </div>
                     </div>
@@ -266,7 +267,7 @@
                         Humanities
                       </div>
                       <h4 class="text-[2.2vmin]">VR revolutionizes humanities education with immersive, interactive experiences.</h4>
-                      <div class="card-button tracking-wide">
+                      <div class="card-button tracking-wide btn-fill-animate">
                         learn more
                       </div>
                     </div>
@@ -286,7 +287,7 @@
                         Immersive Learning
                       </div>
                       <h4 class="text-[2.2vmin]">VR enables immersive learning through interactive, virtual experiences.</h4>
-                      <div class="card-button tracking-wide">
+                      <div class="card-button tracking-wide btn-fill-animate">
                         learn more
                       </div>
                     </div>
@@ -306,7 +307,7 @@
                         Field Trip
                       </div>
                       <h4 class="text-[2.2vmin] tracking-normal">A virtual reality field trip offers immersive educational experiences, allowing students to explore diverse environments and historical sites without leaving the classroom.</h4>
-                      <div class="card-button tracking-wide">
+                      <div class="card-button tracking-wide btn-fill-animate">
                         learn more
                       </div>
                     </div>
@@ -321,15 +322,15 @@
 
         <div
           id="page4"
-          class=" h-fit flex flex-col items-center bg-white pt-[10vmin] pb-[10vmin]"
+          class=" h-fit flex flex-col items-center bg-[#7E23CF] pt-[10vmin] pb-[10vmin]"
         >
           <div class="overflow-hidden">
             <h3 class="text-purple-700 text-2xl mb-2">FEATURES</h3>
           </div>
-          <div class="overflow-hidden">
+          <!-- <div class="overflow-hidden">
             <h3 class="text-black text-6xl">Our Platform provides</h3>
-          </div>
-
+          </div> -->
+<!-- 
           <div class="container mb-10">
             <div
               class="panel active"
@@ -353,9 +354,9 @@
             <div class="panel" style="background-image: url('img/do5.jpg')">
               <h3 class="text-[2em]">In-House Content Creation</h3>
             </div>
-          </div>
+          </div> -->
 
-          <div
+          <!-- <div
             class="part4-middle w-full h-fit flex justify-between items-center px-[5vw] py-[5vh] mt-10"
           >
             <div id="part4-middle1" class="w-[50%] h-fit rounded-md p-4">
@@ -403,56 +404,56 @@
               </div>
 
             </div>
-          </div>
+          </div> -->
 
           <!-- Powerful Features Section: Inserted above Our Mobile App -->
           <div class="w-full flex flex-col items-center justify-center mb-12">
-            <h2 class="text-4xl md:text-5xl font-bold text-center mb-2 text-gray-900">Powerful Features</h2>
-            <p class="text-center text-gray-600 max-w-3xl mb-10 text-lg md:text-xl">Everything you need to create immersive educational experiences</p>
+            <h2 class="text-4xl md:text-5xl font-bold text-center mb-2 text-black">Powerful Features</h2>
+            <p class="text-center text-white max-w-3xl mb-10 text-lg md:text-xl">Everything you need to create immersive educational experiences</p>
             <div class="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 px-2 md:px-0">
               <!-- Card 1 -->
-              <div class="flex flex-col items-start bg-white rounded-2xl shadow p-8 border border-gray-100">
+              <div class="flex flex-col items-start bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg rounded-2xl shadow p-8 border border-gray-100">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-yellow-100">
                   <span class="text-3xl">⚡</span>
                 </div>
-                <h3 class="font-bold text-2xl mb-2 text-gray-900">No-Code Platform</h3>
-                <p class="text-gray-700 mb-4">Create VR experiences without any programming knowledge. Drag, drop, and publish.</p>
+                <h3 class="font-bold text-2xl mb-2 text-white">No-Code Platform</h3>
+                <p class="text-white mb-4">Create VR experiences without any programming knowledge. Drag, drop, and publish.</p>
                 <ul class="space-y-1">
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Visual editor</li>
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Template library</li>
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Asset marketplace</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Visual editor</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Template library</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Asset marketplace</li>
                 </ul>
               </div>
               <!-- Card 2 -->
-              <div class="flex flex-col items-start bg-white rounded-2xl shadow p-8 border border-gray-100">
+              <div class="flex flex-col items-start bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg rounded-2xl shadow p-8 border border-gray-100">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-blue-100">
                   <span class="text-3xl">🌐</span>
                 </div>
-                <h3 class="font-bold text-2xl mb-2 text-gray-900">Virtual Field Trips</h3>
-                <p class="text-gray-700 mb-4">Take students on immersive journeys to historical sites, museums, and more.</p>
+                <h3 class="font-bold text-2xl mb-2 text-white">Virtual Field Trips</h3>
+                <p class="text-white mb-4">Take students on immersive journeys to historical sites, museums, and more.</p>
                 <ul class="space-y-1">
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Historical locations</li>
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Science simulations</li>
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Cultural experiences</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Historical locations</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Science simulations</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Cultural experiences</li>
                 </ul>
               </div>
               <!-- Card 3 -->
-              <div class="flex flex-col items-start bg-white rounded-2xl shadow p-8 border border-gray-100">
+              <div class="flex flex-col items-start bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg rounded-2xl shadow p-8 border border-gray-100">
                 <div class="mb-4 flex items-center justify-center w-14 h-14 rounded-xl bg-green-100">
                   <span class="text-3xl">🎯</span>
                 </div>
-                <h3 class="font-bold text-2xl mb-2 text-gray-900">Analytics & Tracking</h3>
-                <p class="text-gray-700 mb-4">Monitor student progress and engagement with detailed analytics.</p>
+                <h3 class="font-bold text-2xl mb-2 text-white">Analytics & Tracking</h3>
+                <p class="text-white mb-4">Monitor student progress and engagement with detailed analytics.</p>
                 <ul class="space-y-1">
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Learning progress</li>
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Engagement metrics</li>
-                  <li class="flex items-center text-green-600"><span class="mr-2">✔️</span>Performance reports</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Learning progress</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Engagement metrics</li>
+                  <li class="flex items-center text-orange-500"><span class="mr-2">✔️</span>Performance reports</li>
                 </ul>
               </div>
             </div>
           </div>
           <!-- End Powerful Features Section -->
-          <div class="overflow-hidden">
+          <!-- <div class="overflow-hidden">
             <h1 class="text-3xl pt-10 pb-6">
               Our Mobile App converts a Mobile Phone into fully loaded VR
               device.
@@ -499,8 +500,95 @@
                 </p>
               </div>
             </div>
+          </div> -->
+        </div>
+        <!-- End of #page4 -->
+
+        <!-- Altie Reality Timeline and Team Section -->
+        <div id="page4-1" class="w-full flex flex-col items-center justify-center py-16 px-2 md:px-0">
+          <h2 class="text-4xl md:text-5xl font-bold text-center mb-2 text-white">About Altie Reality</h2>
+          <p class="text-center text-white max-w-3xl mb-8 text-lg md:text-xl">Pioneering the future of immersive education technology</p>
+          <!-- Recognition Badges -->
+          <div class="flex flex-wrap justify-center gap-4 mb-12">
+            <span class="flex items-center gap-2 px-6 py-2 rounded-full border border-gray-200 bg-white/80 text-gray-900 font-semibold text-lg shadow-sm"><i class="ri-medal-2-line"></i> Meta Partner</span>
+            <span class="flex items-center gap-2 px-6 py-2 rounded-full border border-gray-200 bg-white/80 text-gray-900 font-semibold text-lg shadow-sm"><i class="ri-medal-2-line"></i> iStart Recognized</span>
+            <span class="flex items-center gap-2 px-6 py-2 rounded-full border border-gray-200 bg-white/80 text-gray-900 font-semibold text-lg shadow-sm"><i class="ri-medal-2-line"></i> MeitY Supported</span>
+            <span class="flex items-center gap-2 px-6 py-2 rounded-full border border-gray-200 bg-white/80 text-gray-900 font-semibold text-lg shadow-sm"><i class="ri-medal-2-line"></i> FITT IIT Delhi</span>
+          </div>
+          <!-- Team Cards -->
+          <div class="w-full max-w-7xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- Card 1 -->
+            <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg rounded-2xl shadow p-10 border border-gray-100">
+              <div class="mb-6 flex items-center justify-center w-32 h-32 rounded-full bg-blue-100">
+                <span class="text-4xl md:text-5xl font-bold text-blue-600">GP</span>
+              </div>
+              <h3 class="font-bold text-2xl mb-1 text-white text-center">Gaurav Purbia</h3>
+              <p class="text-orange-500 font-semibold text-lg mb-2 text-center">Chief Executive Officer</p>
+              <p class="text-white text-center">Visionary leader driving innovation in educational technology and VR experiences.</p>
+            </div>
+            <!-- Card 2 -->
+            <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg rounded-2xl shadow p-10 border border-gray-100">
+              <div class="mb-6 flex items-center justify-center w-32 h-32 rounded-full bg-green-100">
+                <span class="text-4xl md:text-5xl font-bold text-green-600">D</span>
+              </div>
+              <h3 class="font-bold text-2xl mb-1 text-white text-center">Dhanraj</h3>
+              <p class="text-orange-500 font-semibold text-lg mb-2 text-center">Chief Technology Officer</p>
+              <p class="text-white text-center">Ex-Embibe, IIT-KGP graduate. Technical architect of LearnXR platform.</p>
+            </div>
+            <!-- Card 3 -->
+            <div class="flex flex-col items-center bg-white/80 dark:bg-gray-900/60 backdrop-blur-lg rounded-2xl shadow p-10 border border-gray-100">
+              <div class="mb-6 flex items-center justify-center w-32 h-32 rounded-full bg-purple-100">
+                <span class="text-4xl md:text-5xl font-bold text-purple-600">VT</span>
+              </div>
+              <h3 class="font-bold text-2xl mb-1 text-white text-center">Vijay Tyagi</h3>
+              <p class="text-orange-600 font-semibold text-lg mb-2 text-center">Chief Operating Officer</p>
+              <p class="text-white text-center">IIT Tirupati alumnus. Operations expert scaling educational technology solutions.</p>
+            </div>
           </div>
         </div>
+        <!-- End Altie Reality Timeline and Team Section -->
+
+        <!-- Pricing Table Section -->
+        <section id="page-4-2" class="w-full flex flex-col items-center justify-center py-20 px-2 md:px-0 bg-transparent">
+          <h2 class="text-4xl md:text-5xl font-bold text-center mb-2 text-white">Simple, Transparent Pricing</h2>
+          <p class="text-center text-white/80 max-w-2xl mb-12 text-lg md:text-xl">Choose the plan that works best for your educational needs</p>
+          <div class="flex flex-col md:flex-row gap-8 w-full max-w-4xl justify-center items-stretch">
+            <!-- Monthly Plan -->
+            <div class="flex-1 flex flex-col bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl p-8 min-w-[300px] max-w-[400px] text-white shadow-xl">
+              <h3 class="text-2xl font-bold mb-2 text-white">Monthly Plan</h3>
+              <div class="flex items-end mb-6">
+                <span class="text-4xl font-bold text-white mr-2">₹99</span>
+                <span class="text-lg text-white/70 mb-1">/month</span>
+              </div>
+              <ul class="mb-8 space-y-3">
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Access to all VR templates</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Up to 50 students</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Basic analytics</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Email support</li>
+              </ul>
+              <button class="btn-fill-animate w-full py-3 rounded-lg border border-white/20 text-white font-semibold text-lg mt-auto transition-all">Start Monthly Plan</button>
+            </div>
+            <!-- Yearly Plan -->
+            <div class="flex-1 flex flex-col bg-white/10 backdrop-blur-lg border border-white/20 rounded-2xl p-8 min-w-[300px] max-w-[400px] text-white shadow-xl relative">
+              <span class="absolute -top-5 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-bold px-4 py-1 rounded-full shadow-lg">Most Popular</span>
+              <h3 class="text-2xl font-bold mb-2 text-white">Yearly Plan</h3>
+              <div class="flex items-end mb-2">
+                <span class="text-4xl font-bold text-white mr-2">₹499</span>
+                <span class="text-lg text-white/70 mb-1">/year</span>
+              </div>
+              <div class="text-green-400 font-semibold mb-6">Save 58%</div>
+              <ul class="mb-8 space-y-3">
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Everything in Monthly</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Unlimited students</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Advanced analytics</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Priority support</li>
+                <li class="flex items-center gap-2"><svg class="w-5 h-5 text-green-400 inline" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>Custom branding</li>
+              </ul>
+              <button class="btn-fill-animate w-full py-3 rounded-lg border border-white/20 text-white font-semibold text-lg mt-auto hover:transition-all">Start Yearly Plan</button>
+            </div>
+          </div>
+        </section>
+        <!-- End Pricing Table Section -->
 
         <div
           id="page5"
@@ -668,6 +756,58 @@
             <img class="w-[11%] h-[13%]" src="img/sptbilogo.png" alt="" />
           </div>
         </div>
+
+        <!-- Contact Section -->
+        <section id="page-6-1" class="w-full flex justify-center items-center py-20 px-4 bg-white/5 backdrop-blur-md">
+          <div class="w-full max-w-5xl flex flex-col md:flex-row gap-12 items-stretch">
+            <!-- Left Column -->
+            <div class="flex-1 flex flex-col justify-center mb-8 md:mb-0">
+              <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Get in Touch</h2>
+              <p class="text-white/90 mb-8">Ready to transform your classroom with VR? Let's discuss how LearnXR can enhance your educational experience.</p>
+              <div class="mb-6 flex items-center gap-4">
+                <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/10 text-white"><i class="ri-mail-line text-2xl"></i></span>
+                <div>
+                  <div class="text-white/70 text-sm">Email</div>
+                  <div class="text-white font-semibold">contact@altiereality.com</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-4">
+                <span class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/10 text-white"><i class="ri-global-line text-2xl"></i></span>
+                <div>
+                  <div class="text-white/70 text-sm">Website</div>
+                  <div class="text-white font-semibold">www.altiereality.com</div>
+                </div>
+              </div>
+            </div>
+            <!-- Right Column: Contact Form -->
+            <form class="flex-1 rounded-2xl p-8 flex flex-col gap-6 shadow-xl border border-gray-200">
+              <div class="flex flex-col md:flex-row gap-4">
+                <div class="flex-1 flex flex-col gap-1">
+                  <label class="text-white font-semibold mb-1" for="firstName">First Name</label>
+                  <input id="firstName" type="text" placeholder="Enter your first name" class="w-full px-4 py-3 rounded-lg bg-white border border-white-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" required />
+                </div>
+                <div class="flex-1 flex flex-col gap-1">
+                  <label class="text-white font-semibold mb-1" for="lastName">Last Name</label>
+                  <input id="lastName" type="text" placeholder="Enter your last name" class="w-full px-4 py-3 rounded-lg bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" required />
+                </div>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-white font-semibold mb-1" for="email">Email</label>
+                <input id="email" type="email" placeholder="Enter your email" class="w-full px-4 py-3 rounded-lg bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" required />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-white font-semibold mb-1" for="organization">Organization</label>
+                <input id="organization" type="text" placeholder="Enter your school/organization" class="w-full px-4 py-3 rounded-lg bg-white border border-gray-100 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-white font-semibold mb-1" for="message">Message</label>
+                <textarea id="message" placeholder="Tell us about your VR education needs..." rows="4" class="w-full px-4 py-3 rounded-lg bg-white border border-gray-200 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition resize-none" required></textarea>
+              </div>
+              <button type="submit" class="w-full py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-lg flex items-center justify-center gap-2 transition-all mt-2">Send Message <span class="ml-1"><i class="ri-arrow-right-line"></i></span></button>
+            </form>
+          </div>
+        </section>
+        <!-- End Contact Section -->
 
         <div id="footer" class="w-full h-fit bg-black">
           <div
