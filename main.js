@@ -111,3 +111,116 @@ gsap.to(camera.position, {
     markers: true, // Enable markers for debugging
   },
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Partner logo click tracking and keyboard accessibility
+  document.querySelectorAll('.carousel-track a').forEach(function(card) {
+    card.addEventListener('click', function(e) {
+      const partner = card.getAttribute('data-partner');
+      const url = card.getAttribute('href');
+      console.log(`Partner clicked: ${partner} (${url})`);
+    });
+    card.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        card.click();
+      }
+    });
+    card.setAttribute('tabindex', '0');
+  });
+
+  // Partnership Carousel Logic
+  const track = document.getElementById('carouselTrack');
+  const dotsContainer = document.getElementById('carouselDots');
+  const items = Array.from(track.querySelectorAll('a'));
+  let visibleCount = 5;
+  let currentIndex = 0;
+
+  function updateVisibleCount() {
+    if (window.innerWidth < 500) visibleCount = 2;
+    else if (window.innerWidth < 768) visibleCount = 3;
+    else if (window.innerWidth < 1024) visibleCount = 4;
+    else visibleCount = 5;
+  }
+
+  function renderDots() {
+    dotsContainer.innerHTML = '';
+    const dotCount = Math.max(1, items.length - visibleCount + 1);
+    for (let i = 0; i < dotCount; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'carousel-dot' + (i === currentIndex ? ' active' : '');
+      dot.setAttribute('tabindex', '0');
+      dot.setAttribute('aria-label', `Go to logos ${i+1} to ${i+visibleCount}`);
+      dot.addEventListener('click', () => scrollToIndex(i));
+      dot.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') scrollToIndex(i);
+      });
+      dotsContainer.appendChild(dot);
+    }
+  }
+
+  function scrollToIndex(idx) {
+    currentIndex = idx;
+    const item = items[idx];
+    if (item) {
+      item.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+    }
+    updateDotsActive();
+  }
+
+  function updateDotsActive() {
+    const dots = dotsContainer.querySelectorAll('.carousel-dot');
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i === currentIndex);
+    });
+  }
+
+  function updateCurrentIndexOnScroll() {
+    // Find the leftmost fully visible item
+    let minDiff = Infinity;
+    let idx = 0;
+    const trackRect = track.getBoundingClientRect();
+    items.forEach((item, i) => {
+      const rect = item.getBoundingClientRect();
+      const diff = Math.abs(rect.left - trackRect.left);
+      if (diff < minDiff) {
+        minDiff = diff;
+        idx = i;
+      }
+    });
+    if (currentIndex !== idx) {
+      currentIndex = idx;
+      updateDotsActive();
+    }
+  }
+
+  // Touch/swipe support
+  let startX = 0;
+  track.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+  });
+  track.addEventListener('touchend', (e) => {
+    const endX = e.changedTouches[0].clientX;
+    const diff = startX - endX;
+    if (Math.abs(diff) > 30) {
+      if (diff > 0 && currentIndex < items.length - visibleCount) {
+        scrollToIndex(currentIndex + 1);
+      } else if (diff < 0 && currentIndex > 0) {
+        scrollToIndex(currentIndex - 1);
+      }
+    }
+  });
+
+  // Listen for scroll to update active dot
+  track.addEventListener('scroll', () => {
+    updateCurrentIndexOnScroll();
+  });
+
+  // Responsive: update visibleCount and dots on resize
+  function handleResize() {
+    updateVisibleCount();
+    renderDots();
+  }
+  window.addEventListener('resize', handleResize);
+  updateVisibleCount();
+  renderDots();
+});
