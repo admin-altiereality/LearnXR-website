@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-JT2G7WKPZC"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-JT2G7WKPZC');
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="icon" type="img/altierealitylogo" href="/img/altierealitylogo.png" />
+  <title>Resource Hub - LearnXR | Altie Reality</title>
+  <meta name="description" content="Access educational resources, whitepapers, guides, and learning materials for VR education. Download free resources and explore our knowledge base." />
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'fade-in': 'fadeIn 0.6s ease-out',
+            'slide-up': 'slideUp 0.8s ease-out',
+            'float': 'float 6s ease-in-out infinite',
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'bounce-slow': 'bounce 2s infinite',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(30px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-20px)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 min-h-screen text-white overflow-x-hidden">
+  <!-- Animated Background Elements -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute top-20 left-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-float"></div>
+    <div class="absolute bottom-20 right-10 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-float" style="animation-delay: -3s;"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-3xl animate-pulse-slow"></div>
+  </div>
+
+  <!-- Fixed Header with Glassmorphism -->
+  <header class="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-xl border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 lg:h-20">
+        <!-- Logo with Hover Animation -->
+        <a href="/index.html" class="flex items-center gap-2 group">
+          <div class="relative">
+            <span class="text-white text-xl lg:text-2xl font-bold tracking-wide transition-all duration-300 group-hover:text-purple-300">Learn</span>
+            <span class="text-purple-400 text-xl lg:text-2xl font-bold tracking-wide transition-all duration-300 group-hover:text-purple-200">XR</span>
+            <div class="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg blur opacity-0 group-hover:opacity-20 transition duration-300"></div>
+          </div>
+        </a>
+
+        <!-- Desktop Navigation -->
+        <nav class="hidden lg:flex items-center space-x-8">
+          <a href="/vr-education-india.html" class="relative group px-3 py-2 text-white font-medium transition-all duration-300 hover:text-purple-300">
+            VR Education In India
+            <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 to-blue-400 transition-all duration-300 group-hover:w-full"></span>
+          </a>
+          <a href="/index.html#page-6-1" class="relative group px-3 py-2 text-white font-medium transition-all duration-300 hover:text-purple-300">
+            Collaborate With Us
+            <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 to-blue-400 transition-all duration-300 group-hover:w-full"></span>
+          </a>
+          <a href="/resources-hub.html" class="relative group px-3 py-2 text-purple-300 font-medium transition-all duration-300">
+            Resource Hub
+            <span class="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-400 to-blue-400"></span>
+          </a>
+        </nav>
+
+        <!-- CTA Buttons -->
+        <div class="flex items-center space-x-4">
+          <a href="https://calendly.com/info-altiereality/altie-reality-1-1-2?month=2025-07" 
+             target="_blank" rel="noopener noreferrer"
+             class="hidden sm:inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25">
+            <i class="ri-calendar-line mr-2"></i>
+            Book Demo
+          </a>
+          <span class="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 cursor-pointer">
+            <i class="ri-vr-line mr-2"></i>
+            <span class="hidden sm:inline">MetaQuest</span>
+            <span class="sm:hidden">Quest</span>
+          </span>
+          
+          <!-- Mobile Menu Toggle -->
+          <button id="mobileMenuToggle" class="lg:hidden flex flex-col justify-center items-center w-8 h-8 space-y-1">
+            <span class="w-6 h-0.5 bg-white transition-all duration-300"></span>
+            <span class="w-6 h-0.5 bg-white transition-all duration-300"></span>
+            <span class="w-6 h-0.5 bg-white transition-all duration-300"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="lg:hidden bg-white/10 backdrop-blur-xl border-t border-white/10 transform -translate-y-full transition-transform duration-300 ease-in-out">
+      <div class="px-4 py-6 space-y-4">
+        <a href="/vr-education-india.html" class="block text-white font-medium hover:text-purple-300 transition-colors duration-300">VR Education In India</a>
+        <a href="/index.html#page-6-1" class="block text-white font-medium hover:text-purple-300 transition-colors duration-300">Collaborate With Us</a>
+        <a href="/resources-hub.html" class="block text-purple-300 font-medium">Resource Hub</a>
+        <div class="pt-4 border-t border-white/20">
+          <a href="https://calendly.com/info-altiereality/altie-reality-1-1-2?month=2025-07" 
+             target="_blank" rel="noopener noreferrer"
+             class="block w-full text-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105">
+            Book Demo
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="pt-16 lg:pt-20">
+    <!-- Hero Section with Search -->
+    <section class="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8">
+      <div class="max-w-6xl mx-auto text-center">
+        <!-- Breadcrumb -->
+        <nav class="flex items-center justify-center space-x-2 text-sm text-white/60 mb-8">
+          <a href="/index.html" class="hover:text-white transition-colors duration-300">Home</a>
+          <span>/</span>
+          <span class="text-white font-medium">Resource Hub</span>
+        </nav>
+
+        <!-- Hero Content -->
+        <div class="animate-fade-in">
+          <h1 class="text-4xl sm:text-5xl lg:text-7xl font-bold mb-6 leading-tight">
+            Educational 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Resources</span>
+          </h1>
+          <p class="text-lg sm:text-xl lg:text-2xl text-white/80 mb-8 max-w-4xl mx-auto leading-relaxed">
+            Access comprehensive VR education resources, whitepapers, guides, and learning materials 
+            to transform your educational institution with immersive technology.
+          </p>
+          
+          <!-- Search Bar -->
+          <div class="max-w-2xl mx-auto mb-12">
+            <div class="relative">
+              <input type="text" placeholder="Search resources, guides, tutorials..." 
+                     class="w-full px-6 py-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300"
+                     id="searchInput">
+              <button class="absolute right-2 top-2 p-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-full hover:scale-105 transition-all duration-300">
+                <i class="ri-search-line"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stats Section -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 mt-16 animate-slide-up" style="animation-delay: 0.2s;">
+          <div class="text-center">
+            <div class="text-3xl sm:text-4xl font-bold text-purple-400 mb-2">500+</div>
+            <div class="text-white/70">Resources Available</div>
+          </div>
+          <div class="text-center">
+            <div class="text-3xl sm:text-4xl font-bold text-blue-400 mb-2">10K+</div>
+            <div class="text-white/70">Downloads</div>
+          </div>
+          <div class="text-center">
+            <div class="text-3xl sm:text-4xl font-bold text-indigo-400 mb-2">100%</div>
+            <div class="text-white/70">Free Access</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Resource Categories Section -->
+    <section id="resources" class="py-20 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-7xl mx-auto">
+        <div class="text-center mb-16 animate-slide-up">
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
+            Resource 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Categories</span>
+          </h2>
+          <p class="text-xl text-white/70 max-w-3xl mx-auto">
+            Explore our comprehensive collection of VR education resources organized by category
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <!-- Whitepapers -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.1s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-purple-500 to-blue-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <i class="ri-file-text-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+              Whitepapers & Reports
+            </h3>
+            <p class="text-white/70 mb-6">
+              In-depth research papers and industry reports on VR education implementation,
+              best practices, and future trends in India.
+            </p>
+            <ul class="text-white/60 space-y-2 mb-6">
+              <li>• VR Education Implementation Guide</li>
+              <li>• ROI Analysis for VR in Education</li>
+              <li>• Future of Immersive Learning</li>
+              <li>• Best Practices for VR Labs</li>
+            </ul>
+            <div class="flex items-center justify-between">
+              <a href="#downloads" class="inline-flex items-center text-purple-300 hover:text-purple-200 font-semibold transition-colors group-hover:gap-3">
+                Download Whitepapers
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+              <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">15 Files</span>
+            </div>
+          </div>
+
+          <!-- Video Tutorials -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.2s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <i class="ri-video-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+              Video Tutorials
+            </h3>
+            <p class="text-white/70 mb-6">
+              Step-by-step video guides and demonstrations for setting up and using
+              VR education technology effectively in Indian classrooms.
+            </p>
+            <ul class="text-white/60 space-y-2 mb-6">
+              <li>• VR Setup & Installation</li>
+              <li>• Content Creation Tutorials</li>
+              <li>• Classroom Management</li>
+              <li>• Troubleshooting Guides</li>
+            </ul>
+            <div class="flex items-center justify-between">
+              <a href="#videos" class="inline-flex items-center text-purple-300 hover:text-purple-200 font-semibold transition-colors group-hover:gap-3">
+                Watch Tutorials
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+              <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">25 Videos</span>
+            </div>
+          </div>
+
+          <!-- Lesson Plans -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.3s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <i class="ri-book-open-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+              Lesson Plans
+            </h3>
+            <p class="text-white/70 mb-6">
+              Ready-to-use VR lesson plans and curriculum materials for various subjects
+              and grade levels aligned with Indian education standards.
+            </p>
+            <ul class="text-white/60 space-y-2 mb-6">
+              <li>• Science Experiments</li>
+              <li>• Historical Tours</li>
+              <li>• Math Visualizations</li>
+              <li>• Language Learning</li>
+            </ul>
+            <div class="flex items-center justify-between">
+              <a href="#lessons" class="inline-flex items-center text-purple-300 hover:text-purple-200 font-semibold transition-colors group-hover:gap-3">
+                Access Lesson Plans
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+              <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">50 Plans</span>
+            </div>
+          </div>
+
+          <!-- Case Studies -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.4s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-pink-500 to-red-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <i class="ri-folder-chart-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+              Case Studies
+            </h3>
+            <p class="text-white/70 mb-6">
+              Detailed case studies and success stories from Indian institutions that have
+              successfully implemented VR education.
+            </p>
+            <ul class="text-white/60 space-y-2 mb-6">
+              <li>• K-12 Implementation</li>
+              <li>• Higher Education</li>
+              <li>• Corporate Training</li>
+              <li>• Special Education</li>
+            </ul>
+            <div class="flex items-center justify-between">
+              <a href="/case-studies.html" class="inline-flex items-center text-purple-300 hover:text-purple-200 font-semibold transition-colors group-hover:gap-3">
+                Read Case Studies
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+              <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">12 Studies</span>
+            </div>
+          </div>
+
+          <!-- Technical Guides -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.5s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-green-500 to-teal-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <i class="ri-tools-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+              Technical Guides
+            </h3>
+            <p class="text-white/70 mb-6">
+              Technical documentation, API guides, and development resources for
+              creating custom VR content for Indian educational needs.
+            </p>
+            <ul class="text-white/60 space-y-2 mb-6">
+              <li>• Hardware Setup Guides</li>
+              <li>• Software Integration</li>
+              <li>• Content Development</li>
+              <li>• Performance Optimization</li>
+            </ul>
+            <div class="flex items-center justify-between">
+              <a href="#technical" class="inline-flex items-center text-purple-300 hover:text-purple-200 font-semibold transition-colors group-hover:gap-3">
+                View Technical Docs
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+              <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">8 Guides</span>
+            </div>
+          </div>
+
+          <!-- FAQ & Support -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.6s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+              <i class="ri-question-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+              FAQ & Support
+            </h3>
+            <p class="text-white/70 mb-6">
+              Frequently asked questions, troubleshooting guides, and support resources
+              to help you get the most out of VR education in India.
+            </p>
+            <ul class="text-white/60 space-y-2 mb-6">
+              <li>• Common Questions</li>
+              <li>• Troubleshooting</li>
+              <li>• Support Contact</li>
+              <li>• Community Forum</li>
+            </ul>
+            <div class="flex items-center justify-between">
+              <a href="#faq" class="inline-flex items-center text-purple-300 hover:text-purple-200 font-semibold transition-colors group-hover:gap-3">
+                Get Support
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+              <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">24/7 Help</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Featured Resources Section -->
+    <section class="py-20 px-4 sm:px-6 lg:px-8 bg-white/5 backdrop-blur-xl">
+      <div class="max-w-6xl mx-auto">
+        <div class="text-center mb-16 animate-slide-up">
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
+            Featured 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Resources</span>
+          </h2>
+          <p class="text-xl text-white/70 max-w-3xl mx-auto">
+            Most downloaded and highly recommended resources for VR education
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <!-- Featured Resource 1 -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.1s;">
+            <div class="relative overflow-hidden">
+              <img src="/img/do1.jpg" alt="VR Implementation Guide" class="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-700" />
+              <div class="absolute top-4 left-4">
+                <span class="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-1 rounded-full text-sm font-semibold">Featured</span>
+              </div>
+              <div class="absolute top-4 right-4">
+                <button class="bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-all duration-300">
+                  <i class="ri-heart-line"></i>
+                </button>
+              </div>
+            </div>
+            <div class="p-6">
+              <div class="flex items-center gap-2 mb-3 text-sm text-white/60">
+                <span>Whitepaper</span>
+                <span>•</span>
+                <span>Free Download</span>
+                <span>•</span>
+                <span class="flex items-center gap-1">
+                  <i class="ri-star-fill text-yellow-400"></i>
+                  4.8
+                </span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-3 group-hover:text-purple-300 transition-colors duration-300">
+                Complete VR Education Implementation Guide
+              </h3>
+              <p class="text-white/70 mb-6 line-clamp-3">
+                A comprehensive guide covering everything from initial planning to successful implementation of VR
+                education in Indian schools and institutions.
+              </p>
+              <div class="flex items-center justify-between">
+                <a href="#" class="inline-flex items-center gap-2 text-purple-300 font-semibold hover:text-purple-200 transition-colors duration-300 group-hover:gap-3">
+                  Download Now
+                  <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+                </a>
+                <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">2.5K Downloads</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Featured Resource 2 -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.2s;">
+            <div class="relative overflow-hidden">
+              <img src="/img/do3.jpg" alt="VR Lesson Plans" class="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-700" />
+              <div class="absolute top-4 left-4">
+                <span class="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-semibold">Popular</span>
+              </div>
+              <div class="absolute top-4 right-4">
+                <button class="bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-all duration-300">
+                  <i class="ri-heart-line"></i>
+                </button>
+              </div>
+            </div>
+            <div class="p-6">
+              <div class="flex items-center gap-2 mb-3 text-sm text-white/60">
+                <span>Lesson Plans</span>
+                <span>•</span>
+                <span>50+ Plans</span>
+                <span>•</span>
+                <span class="flex items-center gap-1">
+                  <i class="ri-star-fill text-yellow-400"></i>
+                  4.9
+                </span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-3 group-hover:text-purple-300 transition-colors duration-300">
+                VR Lesson Plans for Indian Curriculum
+              </h3>
+              <p class="text-white/70 mb-6 line-clamp-3">
+                Ready-to-use VR lesson plans aligned with CBSE and state board curricula, covering science, history,
+                geography, and mathematics.
+              </p>
+              <div class="flex items-center justify-between">
+                <a href="#" class="inline-flex items-center gap-2 text-purple-300 font-semibold hover:text-purple-200 transition-colors duration-300 group-hover:gap-3">
+                  Access Plans
+                  <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+                </a>
+                <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">1.8K Downloads</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Featured Resource 3 -->
+          <div class="group bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.3s;">
+            <div class="relative overflow-hidden">
+              <img src="/img/do4.jpg" alt="VR Training Videos" class="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-700" />
+              <div class="absolute top-4 left-4">
+                <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-semibold">Video</span>
+              </div>
+              <div class="absolute top-4 right-4">
+                <button class="bg-white/20 backdrop-blur-sm text-white p-2 rounded-full hover:bg-white/30 transition-all duration-300">
+                  <i class="ri-heart-line"></i>
+                </button>
+              </div>
+            </div>
+            <div class="p-6">
+              <div class="flex items-center gap-2 mb-3 text-sm text-white/60">
+                <span>Video Series</span>
+                <span>•</span>
+                <span>10 Episodes</span>
+                <span>•</span>
+                <span class="flex items-center gap-1">
+                  <i class="ri-star-fill text-yellow-400"></i>
+                  4.7
+                </span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-3 group-hover:text-purple-300 transition-colors duration-300">
+                VR Education Masterclass Series
+              </h3>
+              <p class="text-white/70 mb-6 line-clamp-3">
+                A comprehensive video series covering VR setup, content creation, classroom management, and best
+                practices for Indian educators.
+              </p>
+              <div class="flex items-center justify-between">
+                <a href="#" class="inline-flex items-center gap-2 text-purple-300 font-semibold hover:text-purple-200 transition-colors duration-300 group-hover:gap-3">
+                  Watch Series
+                  <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+                </a>
+                <span class="text-xs text-white/40 bg-white/10 px-2 py-1 rounded-full">3.2K Views</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Newsletter Section -->
+    <section class="py-20 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-4xl mx-auto">
+        <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 lg:p-12 text-center animate-slide-up">
+          <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+            Stay Updated with 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Resources</span>
+          </h2>
+          <p class="text-xl text-white/70 mb-8 max-w-2xl mx-auto">
+            Get notified when new resources are added to our library
+          </p>
+          <div class="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
+            <input type="email" placeholder="Enter your email address"
+                   class="flex-1 px-6 py-4 rounded-full bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300" />
+            <button class="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25">
+              Subscribe
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-black/50 backdrop-blur-xl border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <!-- Brand Section -->
+        <div class="space-y-6">
+          <div class="flex items-center gap-2">
+            <span class="text-white text-xl font-bold tracking-wide">Learn</span>
+            <span class="text-purple-400 text-xl font-bold tracking-wide">XR</span>
+          </div>
+          <p class="text-white/70 text-sm leading-relaxed">
+            Transforming education through immersive virtual reality experiences
+          </p>
+          <div class="flex space-x-4">
+            <a href="https://www.youtube.com/channel/UCXhsQN9jsazg4FDoIuSseBg" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-youtube-line text-xl"></i>
+            </a>
+            <a href="https://www.facebook.com/altiereality" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-facebook-circle-line text-xl"></i>
+            </a>
+            <a href="https://www.instagram.com/learn__xr/" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-instagram-line text-xl"></i>
+            </a>
+            <a href="https://www.linkedin.com/company/altie-reality/mycompany/" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-linkedin-box-line text-xl"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- Contact Info -->
+        <div class="space-y-6">
+          <h3 class="text-purple-400 font-semibold text-lg">Contact</h3>
+          <div class="space-y-3">
+            <div class="flex items-center space-x-3">
+              <i class="ri-phone-line text-purple-400"></i>
+              <div class="text-white/70 text-sm">
+                <div>+91 8619953434</div>
+                <div>+91 9145822691</div>
+              </div>
+            </div>
+            <div class="flex items-center space-x-3">
+              <i class="ri-mail-line text-purple-400"></i>
+              <a href="mailto:admin@altiereality.com" class="text-white/70 text-sm hover:text-purple-400 transition-colors">
+                admin@altiereality.com
+              </a>
+            </div>
+            <div class="flex items-start space-x-3">
+              <i class="ri-map-pin-line text-purple-400 mt-1"></i>
+              <div class="text-white/70 text-sm">
+                41,42 Bhamashah Technohub<br>
+                Santhan Path, Malviya Nagar<br>
+                Jaipur 302007
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download Apps -->
+        <div class="space-y-6">
+          <h3 class="text-purple-400 font-semibold text-lg">Download</h3>
+          <div class="space-y-3">
+            <a href="https://play.google.com/store/apps/details?id=com.altiereality1.lexrn&hl=en&gl=US&pli=1"
+               class="flex items-center space-x-3 bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-lg transition-all duration-300 hover:scale-105">
+              <i class="fa-brands fa-android text-xl"></i>
+              <div>
+                <div class="text-sm font-medium">Google Play</div>
+                <div class="text-xs text-white/60">Android App</div>
+              </div>
+            </a>
+            <a href="https://www.meta.com/in/"
+               class="flex items-center space-x-3 bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-lg transition-all duration-300 hover:scale-105">
+              <img src="./assest/Meta.png" alt="MetaQuest" class="w-5 h-5">
+              <div>
+                <div class="text-sm font-medium">MetaQuest</div>
+                <div class="text-xs text-white/60">VR Experience</div>
+              </div>
+            </a>
+            
+          </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="space-y-6">
+          <h3 class="text-purple-400 font-semibold text-lg">Quick Links</h3>
+          <div class="space-y-3">
+            <a href="/vr-education-india.html" class="block text-white/70 hover:text-purple-400 transition-colors duration-300">VR Education in India</a>
+            <a href="/resources-hub.html" class="block text-white/70 hover:text-purple-400 transition-colors duration-300">Resource Hub</a>
+            <a href="/collaborate.html" class="block text-white/70 hover:text-purple-400 transition-colors duration-300">Collaborate With Us</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Copyright -->
+      <div class="border-t border-white/10 mt-12 pt-8 text-center">
+        <p class="text-white/50 text-sm">
+          &copy; 2020-2025 Altie Reality. All rights reserved.
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- JavaScript -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Mobile Menu Toggle
+      const mobileMenuToggle = document.getElementById('mobileMenuToggle');
+      const mobileMenu = document.getElementById('mobileMenu');
+      const hamburgerSpans = mobileMenuToggle.querySelectorAll('span');
+      let isMenuOpen = false;
+
+      mobileMenuToggle.addEventListener('click', function() {
+        isMenuOpen = !isMenuOpen;
+
+        if (isMenuOpen) {
+          mobileMenu.classList.remove('-translate-y-full');
+          mobileMenu.classList.add('translate-y-0');
+          hamburgerSpans[0].style.transform = 'rotate(45deg) translate(5px, 5px)';
+          hamburgerSpans[1].style.opacity = '0';
+          hamburgerSpans[2].style.transform = 'rotate(-45deg) translate(7px, -6px)';
+        } else {
+          mobileMenu.classList.remove('translate-y-0');
+          mobileMenu.classList.add('-translate-y-full');
+          hamburgerSpans[0].style.transform = 'none';
+          hamburgerSpans[1].style.opacity = '1';
+          hamburgerSpans[2].style.transform = 'none';
+        }
+      });
+
+      // Close mobile menu when clicking on links
+      const mobileNavLinks = mobileMenu.querySelectorAll('a');
+      mobileNavLinks.forEach(link => {
+        link.addEventListener('click', function() {
+          if (isMenuOpen) {
+            mobileMenuToggle.click();
+          }
+        });
+      });
+
+      // Close mobile menu when clicking outside
+      document.addEventListener('click', function(event) {
+        if (isMenuOpen && !mobileMenuToggle.contains(event.target) && !mobileMenu.contains(event.target)) {
+          mobileMenuToggle.click();
+        }
+      });
+
+      // Smooth scrolling for anchor links
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+          }
+        });
+      });
+
+      // Search functionality
+      const searchInput = document.getElementById('searchInput');
+      if (searchInput) {
+        searchInput.addEventListener('input', function() {
+          const searchTerm = this.value.toLowerCase();
+          // Add search logic here
+          console.log('Searching for:', searchTerm);
+        });
+      }
+
+      // Intersection Observer for animations
+      const observerOptions = {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+      };
+
+      const observer = new IntersectionObserver(function(entries) {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.style.opacity = '1';
+            entry.target.style.transform = 'translateY(0)';
+          }
+        });
+      }, observerOptions);
+
+      // Observe elements for animation
+      document.querySelectorAll('.animate-slide-up').forEach(el => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(30px)';
+        observer.observe(el);
+      });
+
+      // Header scroll effect
+      let lastScrollTop = 0;
+      const header = document.querySelector('header');
+      
+      window.addEventListener('scroll', function() {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        
+        if (scrollTop > lastScrollTop && scrollTop > 100) {
+          // Scrolling down
+          header.style.transform = 'translateY(-100%)';
+        } else {
+          // Scrolling up
+          header.style.transform = 'translateY(0)';
+        }
+        
+        lastScrollTop = scrollTop;
+      });
+
+      // Resource card interactions
+      document.querySelectorAll('.group').forEach(card => {
+        card.addEventListener('mouseenter', function() {
+          this.style.transform = 'scale(1.02) translateY(-8px)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+          this.style.transform = 'scale(1) translateY(0)';
+        });
+      });
+    });
+  </script>
+</body>
+</html>

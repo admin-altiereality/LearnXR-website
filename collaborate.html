@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-JT2G7WKPZC"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-JT2G7WKPZC');
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="icon" type="img/altierealitylogo" href="/img/altierealitylogo.png" />
+  <title>Collaborate With Us - LearnXR | Altie Reality</title>
+  <meta name="description" content="Partner with LearnXR to transform education through cutting-edge VR technology. Join us in revolutionizing learning experiences." />
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'fade-in': 'fadeIn 0.6s ease-out',
+            'slide-up': 'slideUp 0.8s ease-out',
+            'float': 'float 6s ease-in-out infinite',
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(30px)', opacity: '0' },
+              '100%': { transform: 'translateY(0)', opacity: '1' },
+            },
+            float: {
+              '0%, 100%': { transform: 'translateY(0px)' },
+              '50%': { transform: 'translateY(-20px)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 min-h-screen text-white overflow-x-hidden">
+  <!-- Animated Background Elements -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute top-20 left-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-float"></div>
+    <div class="absolute bottom-20 right-10 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-float" style="animation-delay: -3s;"></div>
+    <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-3xl animate-pulse-slow"></div>
+  </div>
+
+  <!-- Fixed Header with Glassmorphism -->
+  <header class="fixed top-0 left-0 right-0 z-50 bg-white/5 backdrop-blur-xl border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16 lg:h-20">
+        <!-- Logo with Hover Animation -->
+        <div class="flex items-center gap-2 min-w-[120px]">
+          <a href="/index.html" class="flex items-center gap-2">
+            <span class="text-white text-xl md:text-2xl font-bold tracking-wide">Learn</span>
+            <span class="text-[#7E23CF] text-xl md:text-2xl font-bold tracking-wide">XR</span>
+          </a>
+        </div>
+
+        <!-- Desktop Navigation -->
+        <nav class="hidden lg:flex items-center space-x-8">
+          <a href="/vr-education-india.html" class="relative group px-3 py-2 text-white font-medium transition-all duration-300 hover:text-purple-300">
+            VR Education In India
+            <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 to-blue-400 transition-all duration-300 group-hover:w-full"></span>
+          </a>
+          <a href="/collaborate.html" class="relative group px-3 py-2 text-purple-300 font-bold transition-all duration-300 hover:text-white">
+            Collaborate With Us
+            <span class="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-purple-400 to-blue-400"></span>
+          </a>
+          <a href="/resources-hub.html" class="relative group px-3 py-2 text-white font-medium transition-all duration-300 hover:text-purple-300">
+            Resource Hub
+            <span class="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-purple-400 to-blue-400 transition-all duration-300 group-hover:w-full"></span>
+          </a>
+        </nav>
+
+        <!-- CTA Buttons -->
+        <div class="flex items-center space-x-4">
+          <a href="https://calendly.com/info-altiereality/altie-reality-1-1-2?month=2025-07" 
+             target="_blank" rel="noopener noreferrer"
+             class="hidden sm:inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25">
+            <i class="ri-calendar-line mr-2"></i>
+            Book Demo
+          </a>
+          <span class="inline-flex items-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25 cursor-pointer">
+            <i class="ri-vr-line mr-2"></i>
+            <span class="hidden sm:inline">MetaQuest</span>
+            <span class="sm:hidden">Quest</span>
+          </span>
+          
+          <!-- Mobile Menu Toggle -->
+          <button id="mobileMenuToggle" class="lg:hidden flex flex-col justify-center items-center w-8 h-8 space-y-1">
+            <span class="w-6 h-0.5 bg-white transition-all duration-300"></span>
+            <span class="w-6 h-0.5 bg-white transition-all duration-300"></span>
+            <span class="w-6 h-0.5 bg-white transition-all duration-300"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="lg:hidden bg-white/10 backdrop-blur-xl border-t border-white/10 transform -translate-y-full transition-transform duration-300 ease-in-out">
+      <div class="px-4 py-6 space-y-4">
+        <a href="/vr-education-india.html" class="block text-white font-medium hover:text-purple-300 transition-colors duration-300">VR Education In India</a>
+        <a href="/collaborate.html" class="block text-purple-300 font-bold hover:text-white transition-colors duration-300">Collaborate With Us</a>
+        <a href="/resources-hub.html" class="block text-white font-medium hover:text-purple-300 transition-colors duration-300">Resource Hub</a>
+        <div class="pt-4 border-t border-white/20">
+          <a href="https://calendly.com/info-altiereality/altie-reality-1-1-2?month=2025-07" 
+             target="_blank" rel="noopener noreferrer"
+             class="block w-full text-center px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105">
+            Book Demo
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="pt-16 lg:pt-20">
+    <!-- Hero Section -->
+    <section class="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8">
+      <div class="max-w-6xl mx-auto text-center">
+        <!-- Breadcrumb -->
+        <nav class="flex items-center justify-center space-x-2 text-sm text-white/60 mb-8">
+          <a href="/index.html" class="hover:text-white transition-colors duration-300">Home</a>
+          <span>/</span>
+          <span class="text-white font-medium">Collaborate With Us</span>
+        </nav>
+
+        <!-- Hero Content -->
+        <div class="animate-fade-in">
+          <h1 class="text-4xl sm:text-5xl lg:text-7xl font-bold mb-6 leading-tight">
+            Collaborate With 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">LearnXR</span>
+          </h1>
+          <p class="text-lg sm:text-xl lg:text-2xl text-white/80 mb-8 max-w-4xl mx-auto leading-relaxed">
+            Join us in revolutionizing education through cutting-edge VR technology. Let's create immersive learning experiences together.
+          </p>
+          
+          <!-- CTA Buttons -->
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
+            <a href="#partnership-opportunities" class="inline-flex items-center px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/25">
+              <i class="ri-handshake-line mr-2"></i>
+              Explore Opportunities
+            </a>
+            <a href="#contact-form" class="inline-flex items-center px-8 py-4 border-2 border-white/20 text-white font-semibold rounded-full transition-all duration-300 hover:bg-white/10 hover:scale-105">
+              <i class="ri-message-3-line mr-2"></i>
+              Get In Touch
+            </a>
+          </div>
+        </div>
+
+        <!-- Stats Section -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 mt-16 animate-slide-up" style="animation-delay: 0.2s;">
+          <div class="text-center">
+            <div class="text-3xl sm:text-4xl font-bold text-purple-400 mb-2">50+</div>
+            <div class="text-white/70">Partners Worldwide</div>
+          </div>
+          <div class="text-center">
+            <div class="text-3xl sm:text-4xl font-bold text-blue-400 mb-2">100+</div>
+            <div class="text-white/70">VR Experiences</div>
+          </div>
+          <div class="text-center">
+            <div class="text-3xl sm:text-4xl font-bold text-indigo-400 mb-2">15+</div>
+            <div class="text-white/70">Countries Reached</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Partnership Opportunities Section -->
+    <section id="partnership-opportunities" class="py-20 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-7xl mx-auto">
+        <!-- Section Header -->
+        <div class="text-center mb-16 animate-slide-up">
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
+            Partnership 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Opportunities</span>
+          </h2>
+          <p class="text-xl text-white/70 max-w-3xl mx-auto">
+            Discover how you can partner with LearnXR to transform education and create innovative learning solutions
+          </p>
+        </div>
+
+        <!-- Partnership Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <!-- Card 1 - Educational Institutions -->
+          <article class="group bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.1s;">
+            <div class="relative overflow-hidden">
+              <img src="./assest/virtualclasss.png" alt="Educational institutions collaboration" class="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-700" />
+              <div class="absolute top-4 left-4">
+                <span class="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-semibold">Education</span>
+              </div>
+            </div>
+            <div class="p-6">
+              <div class="flex items-center gap-2 mb-3 text-sm text-white/60">
+                <span>Schools & Universities</span>
+                <span>•</span>
+                <span>Partnership</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+                Educational Institutions
+              </h3>
+              <p class="text-white/70 mb-6 line-clamp-3">
+                Partner with schools, colleges, and universities to integrate VR technology into their curriculum and enhance student engagement.
+              </p>
+              <ul class="text-white/70 mb-6 space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-green-400"></i>
+                  Custom VR curriculum development
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-green-400"></i>
+                  Teacher training programs
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-green-400"></i>
+                  Infrastructure setup support
+                </li>
+              </ul>
+              <a href="#contact-form" class="inline-flex items-center gap-2 text-purple-300 font-semibold hover:text-purple-200 transition-colors duration-300 group-hover:gap-3">
+                Partner With Us
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+            </div>
+          </article>
+
+          <!-- Card 2 - Technology Partners -->
+          <article class="group bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.2s;">
+            <div class="relative overflow-hidden">
+              <img src="./assest/exploring the vr.png" alt="Technology partnership" class="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-700" />
+              <div class="absolute top-4 left-4">
+                <span class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-semibold">Technology</span>
+              </div>
+            </div>
+            <div class="p-6">
+              <div class="flex items-center gap-2 mb-3 text-sm text-white/60">
+                <span>Tech Companies</span>
+                <span>•</span>
+                <span>Innovation</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+                Technology Partners
+              </h3>
+              <p class="text-white/70 mb-6 line-clamp-3">
+                Collaborate with tech companies to develop innovative VR solutions and expand our platform capabilities.
+              </p>
+              <ul class="text-white/70 mb-6 space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-blue-400"></i>
+                  Hardware integration
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-blue-400"></i>
+                  Software development
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-blue-400"></i>
+                  Platform optimization
+                </li>
+              </ul>
+              <a href="#contact-form" class="inline-flex items-center gap-2 text-purple-300 font-semibold hover:text-purple-200 transition-colors duration-300 group-hover:gap-3">
+                Partner With Us
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+            </div>
+          </article>
+
+          <!-- Card 3 - Content Creators -->
+          <article class="group bg-white/5 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/10 animate-slide-up" style="animation-delay: 0.3s;">
+            <div class="relative overflow-hidden">
+              <img src="./assest/effective higher education.png" alt="Content creation partnership" class="w-full h-48 object-cover group-hover:scale-110 transition-transform duration-700" />
+              <div class="absolute top-4 left-4">
+                <span class="bg-purple-500 text-white px-3 py-1 rounded-full text-sm font-semibold">Content</span>
+              </div>
+            </div>
+            <div class="p-6">
+              <div class="flex items-center gap-2 mb-3 text-sm text-white/60">
+                <span>Creators & Educators</span>
+                <span>•</span>
+                <span>Content</span>
+              </div>
+              <h3 class="text-xl font-bold text-white mb-4 group-hover:text-purple-300 transition-colors duration-300">
+                Content Creators
+              </h3>
+              <p class="text-white/70 mb-6 line-clamp-3">
+                Work with educators and content creators to develop engaging VR educational content and experiences.
+              </p>
+              <ul class="text-white/70 mb-6 space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-purple-400"></i>
+                  3D modeling and animation
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-purple-400"></i>
+                  Interactive simulations
+                </li>
+                <li class="flex items-center gap-2">
+                  <i class="ri-check-line text-purple-400"></i>
+                  Educational storytelling
+                </li>
+              </ul>
+              <a href="#contact-form" class="inline-flex items-center gap-2 text-purple-300 font-semibold hover:text-purple-200 transition-colors duration-300 group-hover:gap-3">
+                Partner With Us
+                <i class="ri-arrow-right-line transition-transform duration-300 group-hover:translate-x-1"></i>
+              </a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why Partner With Us Section -->
+    <section class="py-20 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-7xl mx-auto">
+        <!-- Section Header -->
+        <div class="text-center mb-16 animate-slide-up">
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6">
+            Why Partner With 
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">LearnXR</span>
+          </h2>
+          <p class="text-xl text-white/70 max-w-3xl mx-auto">
+            Join a community of innovators dedicated to transforming education through immersive technology
+          </p>
+        </div>
+
+        <!-- Features Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <!-- Feature 1 -->
+          <div class="text-center bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 animate-slide-up" style="animation-delay: 0.1s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <i class="ri-award-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-4">Proven Track Record</h3>
+            <p class="text-white/70 text-sm">Successfully implemented VR solutions in multiple educational institutions with measurable results.</p>
+          </div>
+
+          <!-- Feature 2 -->
+          <div class="text-center bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 animate-slide-up" style="animation-delay: 0.2s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <i class="ri-team-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-4">Expert Team</h3>
+            <p class="text-white/70 text-sm">Backed by Meta Inc. and staffed with VR education specialists and developers.</p>
+          </div>
+
+          <!-- Feature 3 -->
+          <div class="text-center bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 animate-slide-up" style="animation-delay: 0.3s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-green-400 to-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <i class="ri-lightbulb-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-4">Innovation Focus</h3>
+            <p class="text-white/70 text-sm">Constantly evolving platform with cutting-edge VR and AI technologies.</p>
+          </div>
+
+          <!-- Feature 4 -->
+          <div class="text-center bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 hover:border-purple-500/30 transition-all duration-500 hover:scale-105 animate-slide-up" style="animation-delay: 0.4s;">
+            <div class="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <i class="ri-global-line text-2xl text-white"></i>
+            </div>
+            <h3 class="text-xl font-bold text-white mb-4">Global Reach</h3>
+            <p class="text-white/70 text-sm">Part of the Meta XR Startup program with international collaboration opportunities.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact Form Section -->
+    <section id="contact-form" class="py-20 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-4xl mx-auto">
+        <div class="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 p-8 lg:p-12 animate-slide-up">
+          <div class="text-center mb-12">
+            <h2 class="text-3xl sm:text-4xl font-bold mb-4">
+              Let's Start 
+              <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">Collaborating</span>
+            </h2>
+            <p class="text-xl text-white/70 max-w-2xl mx-auto">
+              Ready to transform education together? Get in touch with our partnership team and let's create something amazing.
+            </p>
+          </div>
+          
+          <form id="contactForm" method="POST" action="/send-message"
+            class="flex-1 rounded-2xl p-8 flex flex-col gap-6 shadow-xl border border-gray-200 bg-white/5 backdrop-blur-sm"
+            novalidate>
+            <!-- Form Header -->
+
+
+            <div class="flex flex-col md:flex-row gap-4">
+              <div class="flex-1 flex flex-col gap-1">
+                <label class="text-white font-semibold mb-1 flex items-center gap-1" for="firstName">
+                  First Name <span class="text-red-400">*</span>
+                </label>
+                <div class="relative">
+                  <input id="firstName" name="firstName" type="text" placeholder="Enter your first name"
+                    class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                    required />
+                  <div class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                    <i class="ri-user-line"></i>
+                  </div>
+                </div>
+                <span class="text-red-400 text-sm hidden flex items-center gap-1 mt-1" id="firstNameError">
+                  <i class="ri-error-warning-line"></i>
+                  First name is required
+                </span>
+              </div>
+              <div class="flex-1 flex flex-col gap-1">
+                <label class="text-white font-semibold mb-1 flex items-center gap-1" for="lastName">
+                  Last Name <span class="text-red-400">*</span>
+                </label>
+                <div class="relative">
+                  <input id="lastName" name="lastName" type="text" placeholder="Enter your last name"
+                    class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                    required />
+                  <div class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                    <i class="ri-user-line"></i>
+                  </div>
+                </div>
+                <span class="text-red-400 text-sm hidden flex items-center gap-1 mt-1" id="lastNameError">
+                  <i class="ri-error-warning-line"></i>
+                  Last name is required
+                </span>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-white font-semibold mb-1 flex items-center gap-1" for="email">
+                Email Address <span class="text-red-400">*</span>
+              </label>
+              <div class="relative">
+                <input id="email" name="email" type="email" placeholder="Enter your email address"
+                  class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                  required />
+                <div class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                  <i class="ri-mail-line"></i>
+                </div>
+              </div>
+              <span class="text-red-400 text-sm hidden flex items-center gap-1 mt-1" id="emailError">
+                <i class="ri-error-warning-line"></i>
+                Please enter a valid email address
+              </span>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-white font-semibold mb-1 flex items-center gap-1" for="organization">
+                Organization <span class="text-gray-400 text-sm">(Optional)</span>
+              </label>
+              <div class="relative">
+                <input id="organization" name="organization" type="text" placeholder="Enter your school/organization"
+                  class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none" />
+                <div class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                  <i class="ri-building-line"></i>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-white font-semibold mb-1 flex items-center gap-1" for="phone">
+                Phone Number <span class="text-gray-400 text-sm">(Optional)</span>
+              </label>
+              <div class="relative">
+                <input id="phone" name="phone" type="tel" placeholder="Enter your phone number"
+                  class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none" />
+                <div class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400">
+                  <i class="ri-phone-line"></i>
+                </div>
+              </div>
+              <span class="text-red-400 text-sm hidden flex items-center gap-1 mt-1" id="phoneError">
+                <i class="ri-error-warning-line"></i>
+                Please enter a valid phone number
+              </span>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-white font-semibold mb-1 flex items-center gap-1" for="subject">
+                Subject <span class="text-red-400">*</span>
+              </label>
+              <div class="relative">
+                <select id="subject" name="subject"
+                  class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  required>
+                  <option value="">Select a subject</option>
+                  <option value="General Inquiry">General Inquiry</option>
+                  <option value="VR Education Solutions">VR Education Solutions</option>
+                  <option value="Product Demo">Product Demo</option>
+                  <option value="Partnership">Franchise Partnership Inquiry</option>
+                  <option value="Support">Support</option>
+                  <option value="Other">Other</option>
+                </select>
+               
+              </div>
+              <span class="text-red-400 text-sm hidden flex items-center gap-1 mt-1" id="subjectError">
+                <i class="ri-error-warning-line"></i>
+                Please select a subject
+              </span>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-white font-semibold mb-1 flex items-center gap-1" for="message">
+                Message <span class="text-red-400">*</span>
+              </label>
+              <div class="relative">
+                <textarea id="message" name="message"
+                  placeholder="Tell us about your VR education needs, questions, or how we can help you..." rows="4"
+                  class="w-full px-4 py-3 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                  required></textarea>
+                <div class="absolute right-3 top-3 text-gray-400">
+                  <i class="ri-message-2-line"></i>
+                </div>
+              </div>
+              <div class="flex justify-between items-center mt-1">
+                <span class="text-red-400 text-sm hidden flex items-center gap-1" id="messageError">
+                  <i class="ri-error-warning-line"></i>
+                  Message must be at least 10 characters
+                </span>
+                <span class="text-white/50 text-xs" id="messageCounter">0/500</span>
+              </div>
+            </div>
+
+            <!-- Honeypot field for spam protection -->
+            <div style="position: absolute; left: -9999px; opacity: 0;">
+              <input type="text" name="honeypot" id="honeypot" tabindex="-1" autocomplete="off" />
+            </div>
+
+            <button type="submit" id="submitBtn"
+              class="w-full py-4 rounded-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold text-lg flex items-center justify-center gap-2 transition-all duration-300 mt-4 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl">
+              <span id="submitText">Send Message</span>
+              <span id="submitIcon" class="ml-1 transition-transform group-hover:translate-x-1">
+                <i class="ri-arrow-right-line"></i>
+              </span>
+              <span id="loadingSpinner" class="hidden">
+                <i class="ri-loader-4-line animate-spin"></i>
+              </span>
+            </button>
+
+            <!-- Success Message -->
+            <div id="successMessage"
+              class="hidden text-center p-4 bg-gradient-to-r from-green-50 to-green-100 border border-green-200 text-green-800 rounded-lg shadow-sm">
+              <div class="flex items-center justify-center gap-2 mb-2">
+                <i class="ri-checkbox-circle-line text-2xl text-green-600"></i>
+                <span class="font-semibold">Message Sent Successfully!</span>
+              </div>
+              <p class="text-sm">Thank you for contacting us. We'll get back to you soon!</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage"
+              class="hidden text-center p-4 bg-gradient-to-r from-red-50 to-red-100 border border-red-200 text-red-800 rounded-lg shadow-sm">
+              <div class="flex items-center justify-center gap-2 mb-2">
+                <i class="ri-error-warning-line text-2xl text-red-600"></i>
+                <span class="font-semibold">Oops! Something went wrong</span>
+              </div>
+              <p class="text-sm">Sorry, there was an error sending your message. Please try again.</p>
+            </div>
+          </form>
+</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-black/50 backdrop-blur-xl border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <!-- Brand Section -->
+        <div class="space-y-6">
+          <div class="flex items-center gap-2">
+            <span class="text-white text-xl font-bold tracking-wide">Learn</span>
+            <span class="text-purple-400 text-xl font-bold tracking-wide">XR</span>
+          </div>
+          <p class="text-white/70 text-sm leading-relaxed">
+            Transforming education through immersive virtual reality experiences
+          </p>
+          <div class="flex space-x-4">
+            <a href="https://www.youtube.com/channel/UCXhsQN9jsazg4FDoIuSseBg" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-youtube-line text-xl"></i>
+            </a>
+            <a href="https://www.facebook.com/altiereality" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-facebook-circle-line text-xl"></i>
+            </a>
+            <a href="https://www.instagram.com/learn__xr/" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-instagram-line text-xl"></i>
+            </a>
+            <a href="https://www.linkedin.com/company/altie-reality/mycompany/" class="text-white/70 hover:text-purple-400 transition-colors duration-300">
+              <i class="ri-linkedin-box-line text-xl"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- Contact Info -->
+        <div class="space-y-6">
+          <h3 class="text-purple-400 font-semibold text-lg">Contact</h3>
+          <div class="space-y-3">
+            <div class="flex items-center space-x-3">
+              <i class="ri-phone-line text-purple-400"></i>
+              <div class="text-white/70 text-sm">
+                <div>+91 8619953434</div>
+                <div>+91 9145822691</div>
+              </div>
+            </div>
+            <div class="flex items-center space-x-3">
+              <i class="ri-mail-line text-purple-400"></i>
+              <a href="mailto:admin@altiereality.com" class="text-white/70 text-sm hover:text-purple-400 transition-colors">
+                admin@altiereality.com
+              </a>
+            </div>
+            <div class="flex items-start space-x-3">
+              <i class="ri-map-pin-line text-purple-400 mt-1"></i>
+              <div class="text-white/70 text-sm">
+                41,42 Bhamashah Technohub<br>
+                Santhan Path, Malviya Nagar<br>
+                Jaipur 302007
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Download Apps -->
+        <div class="space-y-6">
+          <h3 class="text-purple-400 font-semibold text-lg">Download</h3>
+          <div class="space-y-3">
+            <a href="https://play.google.com/store/apps/details?id=com.altiereality1.lexrn&hl=en&gl=US&pli=1"
+               class="flex items-center space-x-3 bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-lg transition-all duration-300 hover:scale-105">
+              <i class="fa-brands fa-android text-xl"></i>
+              <div>
+                <div class="text-sm font-medium">Google Play</div>
+                <div class="text-xs text-white/60">Android App</div>
+              </div>
+            </a>
+            <a href="https://www.meta.com/in/"
+               class="flex items-center space-x-3 bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-lg transition-all duration-300 hover:scale-105">
+              <img src="img/sidequest.png" alt="MetaQuest" class="w-5 h-5">
+              <div>
+                <div class="text-sm font-medium">MetaQuest</div>
+                <div class="text-xs text-white/60">VR Experience</div>
+              </div>
+            </a>
+           
+          </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="space-y-6">
+          <h3 class="text-purple-400 font-semibold text-lg">Quick Links</h3>
+          <div class="space-y-3">
+            <a href="/vr-education-india.html" class="block text-white/70 hover:text-purple-400 transition-colors duration-300">VR Education in India</a>
+            <a href="/resources-hub.html" class="block text-white/70 hover:text-purple-400 transition-colors duration-300">Resource Hub</a>
+           
+            <a href="/collaborate.html" class="block text-purple-400 font-semibold">Collaborate With Us</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Copyright -->
+      <div class="border-t border-white/10 mt-12 pt-8 text-center">
+        <p class="text-white/50 text-sm">
+          &copy; 2020-2025 Altie Reality. All rights reserved.
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- JavaScript -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Mobile Menu Toggle
+      const mobileMenuToggle = document.getElementById('mobileMenuToggle');
+      const mobileMenu = document.getElementById('mobileMenu');
+      const hamburgerSpans = mobileMenuToggle.querySelectorAll('span');
+      let isMenuOpen = false;
+
+      mobileMenuToggle.addEventListener('click', function() {
+        isMenuOpen = !isMenuOpen;
+
+        if (isMenuOpen) {
+          mobileMenu.classList.remove('-translate-y-full');
+          mobileMenu.classList.add('translate-y-0');
+          hamburgerSpans[0].style.transform = 'rotate(45deg) translate(5px, 5px)';
+          hamburgerSpans[1].style.opacity = '0';
+          hamburgerSpans[2].style.transform = 'rotate(-45deg) translate(7px, -6px)';
+        } else {
+          mobileMenu.classList.remove('translate-y-0');
+          mobileMenu.classList.add('-translate-y-full');
+          hamburgerSpans[0].style.transform = 'none';
+          hamburgerSpans[1].style.opacity = '1';
+          hamburgerSpans[2].style.transform = 'none';
+        }
+      });
+
+      // Close mobile menu when clicking on links
+      const mobileNavLinks = mobileMenu.querySelectorAll('a');
+      mobileNavLinks.forEach(link => {
+        link.addEventListener('click', function() {
+          if (isMenuOpen) {
+            mobileMenuToggle.click();
+          }
+        });
+      });
+
+      // Close mobile menu when clicking outside
+      document.addEventListener('click', function(event) {
+        if (isMenuOpen && !mobileMenuToggle.contains(event.target) && !mobileMenu.contains(event.target)) {
+          mobileMenuToggle.click();
+        }
+      });
+
+      // Smooth scrolling for anchor links
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({
+              behavior: 'smooth',
+              block: 'start'
+            });
+          }
+        });
+      });
+
+      // Intersection Observer for animations
+      const observerOptions = {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+      };
+
+      const observer = new IntersectionObserver(function(entries) {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.style.opacity = '1';
+            entry.target.style.transform = 'translateY(0)';
+          }
+        });
+      }, observerOptions);
+
+      // Observe elements for animation
+      document.querySelectorAll('.animate-slide-up').forEach(el => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(30px)';
+        observer.observe(el);
+      });
+
+      // Header scroll effect
+      let lastScrollTop = 0;
+      const header = document.querySelector('header');
+      
+      window.addEventListener('scroll', function() {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        
+        if (scrollTop > lastScrollTop && scrollTop > 100) {
+          // Scrolling down
+          header.style.transform = 'translateY(-100%)';
+        } else {
+          // Scrolling up
+          header.style.transform = 'translateY(0)';
+        }
+        
+        lastScrollTop = scrollTop;
+      });
+
+      // Partnership Form Validation and Submission
+      const partnershipForm = document.getElementById('contactForm');
+      if (contactForm) {
+        const submitBtn = document.getElementById('submitBtn');
+        const submitText = document.getElementById('submitText');
+        const submitIcon = document.getElementById('submitIcon');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const successMessage = document.getElementById('successMessage');
+        const errorMessage = document.getElementById('errorMessage');
+        const messageCounter = document.getElementById('messageCounter');
+        const messageTextarea = document.getElementById('message');
+
+        // Message counter functionality
+        if (messageTextarea && messageCounter) {
+          messageTextarea.addEventListener('input', function() {
+            const length = this.value.length;
+            messageCounter.textContent = `${length}/500`;
+            
+            if (length > 450) {
+              messageCounter.classList.add('text-red-400');
+            } else {
+              messageCounter.classList.remove('text-red-400');
+            }
+          });
+        }
+
+        // Form validation
+        function validateForm() {
+          let isValid = true;
+          
+          // Reset all error messages
+          document.querySelectorAll('[id$="Error"]').forEach(error => {
+            error.classList.add('hidden');
+          });
+
+          // Validate First Name
+          const firstName = document.getElementById('firstName');
+          if (!firstName.value.trim()) {
+            document.getElementById('firstNameError').classList.remove('hidden');
+            isValid = false;
+          }
+
+          // Validate Last Name
+          const lastName = document.getElementById('lastName');
+          if (!lastName.value.trim()) {
+            document.getElementById('lastNameError').classList.remove('hidden');
+            isValid = false;
+          }
+
+          // Validate Email
+          const email = document.getElementById('email');
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!email.value.trim() || !emailRegex.test(email.value)) {
+            document.getElementById('emailError').classList.remove('hidden');
+            isValid = false;
+          }
+
+          // Validate Phone (optional but if provided, must be valid)
+          const phone = document.getElementById('phone');
+          if (phone.value.trim()) {
+            const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+            if (!phoneRegex.test(phone.value.replace(/[\s\-\(\)]/g, ''))) {
+              document.getElementById('phoneError').classList.remove('hidden');
+              isValid = false;
+            }
+          }
+
+          // Validate Organization
+          const organization = document.getElementById('organization');
+          if (!organization.value.trim()) {
+            document.getElementById('organizationError').classList.remove('hidden');
+            isValid = false;
+          }
+
+          // Validate Partnership Type
+          const partnershipType = document.getElementById('partnershipType');
+          if (!partnershipType.value) {
+            document.getElementById('partnershipTypeError').classList.remove('hidden');
+            isValid = false;
+          }
+
+          // Validate Message
+          const message = document.getElementById('message');
+          if (!message.value.trim() || message.value.trim().length < 10) {
+            document.getElementById('messageError').classList.remove('hidden');
+            isValid = false;
+          }
+
+          return isValid;
+        }
+
+        // Hide messages
+        function hideMessages() {
+          successMessage.classList.add('hidden');
+          errorMessage.classList.add('hidden');
+        }
+
+        // Show loading state
+        function showLoading() {
+          submitBtn.disabled = true;
+          submitText.textContent = 'Sending...';
+          submitIcon.classList.add('hidden');
+          loadingSpinner.classList.remove('hidden');
+        }
+
+        // Hide loading state
+        function hideLoading() {
+          submitBtn.disabled = false;
+          submitText.textContent = 'Send Partnership Request';
+          submitIcon.classList.remove('hidden');
+          loadingSpinner.classList.add('hidden');
+        }
+
+        // Show success message
+        function showSuccess() {
+          hideMessages();
+          successMessage.classList.remove('hidden');
+          partnershipForm.reset();
+          messageCounter.textContent = '0/500';
+        }
+
+        // Show error message
+        function showError() {
+          hideMessages();
+          errorMessage.classList.remove('hidden');
+        }
+
+        // Form submission
+        contactForm.addEventListener('submit', function(e) {
+          e.preventDefault();
+          
+          // Check honeypot field
+          const honeypot = document.getElementById('honeypot');
+          if (honeypot.value) {
+            return; // Bot detected, don't submit
+          }
+
+          // Validate form
+          if (!validateForm()) {
+            return;
+          }
+
+          // Hide any existing messages
+          hideMessages();
+
+          // Show loading state
+          showLoading();
+
+          // Collect form data
+          const formData = new FormData(contactForm);
+          const data = {
+            firstName: formData.get('firstName'),
+            lastName: formData.get('lastName'),
+            email: formData.get('email'),
+            phone: formData.get('phone'),
+            organization: formData.get('organization'),
+            partnershipType: formData.get('partnershipType'),
+            message: formData.get('message'),
+            honeypot: formData.get('honeypot')
+          };
+
+          // Send email using the same endpoint as the main contact form
+          fetch('/send-message', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              ...data,
+              subject: `Partnership Request - ${data.partnershipType}`,
+              type: 'partnership'
+            })
+          })
+          .then(response => {
+            if (response.ok) {
+              return response.json();
+            }
+            throw new Error('Network response was not ok');
+          })
+          .then(data => {
+            hideLoading();
+            if (data.success) {
+              showSuccess();
+            } else {
+              showError();
+            }
+          })
+          .catch(error => {
+            console.error('Error:', error);
+            hideLoading();
+            showError();
+          });
+        });
+
+        // Real-time validation on input
+        const inputs = partnershipForm.querySelectorAll('input, select, textarea');
+        inputs.forEach(input => {
+          input.addEventListener('blur', function() {
+            validateForm();
+          });
+        });
+      }
+    });
+  </script>
+   <script src="contact-form.js"></script>
+</body>
+</html> 

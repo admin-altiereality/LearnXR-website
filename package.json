@@ -24,6 +24,8 @@
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
     "express-rate-limit": "^7.1.5",
+    "google-auth-library": "^10.2.0",
+    "google-spreadsheet": "^4.1.5",
     "gsap": "^3.12.5",
     "helmet": "^7.1.0",
     "nodemailer": "^6.9.7",

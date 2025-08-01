@@ -143,6 +143,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function renderDots() {
+    if (!dotsContainer) return; // Guard clause to prevent null reference
     dotsContainer.innerHTML = '';
     const dotCount = Math.max(1, items.length - visibleCount + 1);
     for (let i = 0; i < dotCount; i++) {
@@ -168,6 +169,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function updateDotsActive() {
+    if (!dotsContainer) return; // Guard clause to prevent null reference
     const dots = dotsContainer.querySelectorAll('.carousel-dot');
     dots.forEach((dot, i) => {
       dot.classList.toggle('active', i === currentIndex);
@@ -175,6 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function updateCurrentIndexOnScroll() {
+    if (!track) return; // Guard clause to prevent null reference
     // Find the leftmost fully visible item
     let minDiff = Infinity;
     let idx = 0;
@@ -195,25 +198,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Touch/swipe support
   let startX = 0;
-  track.addEventListener('touchstart', (e) => {
-    startX = e.touches[0].clientX;
-  });
-  track.addEventListener('touchend', (e) => {
-    const endX = e.changedTouches[0].clientX;
-    const diff = startX - endX;
-    if (Math.abs(diff) > 30) {
-      if (diff > 0 && currentIndex < items.length - visibleCount) {
-        scrollToIndex(currentIndex + 1);
-      } else if (diff < 0 && currentIndex > 0) {
-        scrollToIndex(currentIndex - 1);
+  if (track) {
+    track.addEventListener('touchstart', (e) => {
+      startX = e.touches[0].clientX;
+    });
+    track.addEventListener('touchend', (e) => {
+      const endX = e.changedTouches[0].clientX;
+      const diff = startX - endX;
+      if (Math.abs(diff) > 30) {
+        if (diff > 0 && currentIndex < items.length - visibleCount) {
+          scrollToIndex(currentIndex + 1);
+        } else if (diff < 0 && currentIndex > 0) {
+          scrollToIndex(currentIndex - 1);
+        }
       }
-    }
-  });
+    });
 
-  // Listen for scroll to update active dot
-  track.addEventListener('scroll', () => {
-    updateCurrentIndexOnScroll();
-  });
+    // Listen for scroll to update active dot
+    track.addEventListener('scroll', () => {
+      updateCurrentIndexOnScroll();
+    });
+  }
 
   // Responsive: update visibleCount and dots on resize
   function handleResize() {

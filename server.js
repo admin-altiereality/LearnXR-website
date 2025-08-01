@@ -1,3 +1,6 @@
+import { GoogleSpreadsheet } from 'google-spreadsheet';
+import { JWT } from 'google-auth-library';
+
 import express from 'express';
 import nodemailer from 'nodemailer';
 import path from 'path';
@@ -30,6 +33,21 @@ app.use(helmet({
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+const serviceAccountAuth = new JWT({
+  email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'princisharma@dev-firmament-400319.iam.gserviceaccount.com',
+  // The private key might have escaped newlines ('\n') if stored in a single line env var.
+  // Replace them back to actual newlines.
+  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'], // Scope for full sheets access
+});
+
+const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID || '1ilBTbl2BovgOmp2CL8ncxIw-fXUKsGYfMp9qoHwGkD4';
+
+if (!SPREADSHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+  console.error('Missing required Google Sheet environment variables. Please check your .env file.');
+  process.exit(1); // Exit if critical variables are missing
+}
 
 // Rate limiting for form submissions
 const limiter = rateLimit({
@@ -275,6 +293,98 @@ function logSubmission(data, success = true) {
   }
 }
 
+
+// Chatbot form submission endpoint
+app.post('/api/send-quote-request', async (req, res) => {
+  try {
+    const rawData = req.body;
+    
+    // Sanitize input data
+    const data = sanitizeData(rawData);
+    data.ipAddress = req.ip || req.connection.remoteAddress;
+    data.userAgent = req.get('User-Agent');
+    data.source = 'chatbot'; // Mark as chatbot submission
+    
+    // Validate form data
+    const errors = validateFormData(data);
+    if (Object.keys(errors).length > 0) {
+      logSubmission(data, false);
+      return res.status(400).json({
+        success: false,
+        errors: errors
+      });
+    }
+    
+    // Email configuration for owner
+    const ownerMailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.OWNER_EMAIL || 'princisharma086@gmail.com',
+      replyTo: data.email,
+      subject: `New Chatbot Lead - ${data.firstName} ${data.lastName}`,
+      html: createOwnerEmailTemplate(data),
+      text: `
+New Chatbot Lead
+
+Name: ${data.firstName} ${data.lastName}
+Email: ${data.email}
+Organization: ${data.organization || 'Not specified'}
+Phone: ${data.phone || 'Not provided'}
+Subject: ${data.subject || 'General Inquiry'}
+Message: ${data.message}
+
+Submitted via: Chatbot
+Submitted on: ${new Date().toLocaleString()}
+IP Address: ${data.ipAddress}
+
+---
+This message was sent from your website chatbot.
+      `
+    };
+    try{
+      await transporter.sendMail(ownerMailOptions);
+    }
+    // Send email to owner
+    catch (e){
+     console.log(e);
+    }
+    
+    // Send confirmation email to user (optional)
+    if (process.env.SEND_USER_CONFIRMATION === 'true') {
+      const userMailOptions = {
+        from: process.env.EMAIL_USER,
+        to: data.email,
+        subject: 'Thank you for your interest in LearnXR',
+        html: createUserConfirmationTemplate(data)
+      };
+      
+      try {
+        await transporter.sendMail(userMailOptions);
+      } catch (error) {
+        console.error('Error sending user confirmation:', error);
+        // Don't fail the main request if user confirmation fails
+      }
+    }
+    
+    // Log successful submission
+    logSubmission(data, true);
+    console.log(`Chatbot lead sent successfully from ${data.email} to ${ownerMailOptions.to}`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Request sent successfully! We will get back to you soon.'
+    });
+    
+  } catch (error) {
+    console.error('Error sending chatbot lead:', error);
+    logSubmission(req.body, false);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send request. Please try again later.'
+    });
+  }
+});
+
 // Contact form submission endpoint
 app.post('/send-message', async (req, res) => {
   try {
@@ -294,6 +404,26 @@ app.post('/send-message', async (req, res) => {
         errors: errors
       });
     }
+    try{
+      const doc = new GoogleSpreadsheet(SPREADSHEET_ID, serviceAccountAuth);
+      await doc.loadInfo(); // loads document properties and worksheets
+      const sheet = doc.sheetsByIndex[0]; // Access the first sheet, or by title: doc.sheetsByTitle['Sheet1']
+  
+      // Append a new row with the data
+      await sheet.addRow({
+        "firstname":data.firstName,
+        "lastname":data.lastName,
+        "email":data.email,
+        "organization":data.organization,
+        "phone":data.phone,
+        "subject":data.subject,
+        "message":data.message
+      });
+    }
+    catch (e){
+      console.log(e)
+    }
+    
     
     // Email configuration for owner
     const ownerMailOptions = {
@@ -339,6 +469,8 @@ This message was sent from your website contact form.
         // Don't fail the main request if user confirmation fails
       }
     }
+
+ 
     
     // Log successful submission
     logSubmission(data, true);
@@ -360,6 +492,9 @@ This message was sent from your website contact form.
   }
 });
 
+// Serve static files (after API routes)
+app.use(express.static(path.join(__dirname)));
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
@@ -372,6 +507,21 @@ app.get('/health', (req, res) => {
 // Serve the main page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Serve VR Education in India page
+app.get('/vr-education-india', (req, res) => {
+  res.sendFile(path.join(__dirname, 'vr-education-india.html'));
+});
+
+// Serve Case Studies page
+app.get('/case-studies', (req, res) => {
+  res.sendFile(path.join(__dirname, 'case-studies.html'));
+});
+
+// Serve Resources Hub page
+app.get('/resources-hub', (req, res) => {
+  res.sendFile(path.join(__dirname, 'resources-hub.html'));
 });
 
 // Error handling middleware

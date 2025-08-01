@@ -1,6 +1,5 @@
-app.use(express.static(__dirname + '/'));
-app.use(express.static(path.join(__dirname, 'public')));
-var publicPath = path.join(__dirname, 'public');
+// Browser-side JavaScript - Remove Express.js code
+// These lines were causing the error and should not be in browser-side code
 
 function loaderAnim() {
   var tl = gsap.timeline();
