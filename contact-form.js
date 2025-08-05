@@ -94,163 +94,180 @@ document.addEventListener('DOMContentLoaded', function() {
     const messageError = document.getElementById('messageError');
 
     // Add input event listeners for real-time validation
-    firstName.addEventListener('input', () => {
+    if (firstName) firstName.addEventListener('input', () => {
         validateField(firstName, firstNameError, validateRequired);
     });
 
-    lastName.addEventListener('input', () => {
+    if (lastName) lastName.addEventListener('input', () => {
         validateField(lastName, lastNameError, validateRequired);
     });
 
-    email.addEventListener('input', () => {
+    if (email) email.addEventListener('input', () => {
         validateField(email, emailError, validateEmail);
     });
 
-    phone.addEventListener('input', () => {
+    if (phone) phone.addEventListener('input', () => {
         validateField(phone, phoneError, validatePhone);
     });
 
-    subject.addEventListener('change', () => {
+    if (subject) subject.addEventListener('change', () => {
         validateField(subject, subjectError, validateSubject);
     });
 
-    message.addEventListener('input', () => {
+    if (message) message.addEventListener('input', () => {
         validateField(message, messageError, validateMessage);
         updateMessageCounter();
     });
 
     // Initialize message counter
-    updateMessageCounter();
+    if (message) updateMessageCounter();
 
     // Form submission
-    form.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        // Hide previous messages
-        successMessage.classList.add('hidden');
-        errorMessage.classList.add('hidden');
-        
-        // Validate all fields
-        const isFirstNameValid = validateField(firstName, firstNameError, validateRequired);
-        const isLastNameValid = validateField(lastName, lastNameError, validateRequired);
-        const isEmailValid = validateField(email, emailError, validateEmail);
-        const isPhoneValid = validateField(phone, phoneError, validatePhone);
-        const isSubjectValid = validateField(subject, subjectError, validateSubject);
-        const isMessageValid = validateField(message, messageError, validateMessage);
-        
-        if (!isFirstNameValid || !isLastNameValid || !isEmailValid || !isPhoneValid || !isSubjectValid || !isMessageValid) {
-            // Focus on first error field
-            if (!isFirstNameValid) firstName.focus();
-            else if (!isLastNameValid) lastName.focus();
-            else if (!isEmailValid) email.focus();
-            else if (!isPhoneValid) phone.focus();
-            else if (!isSubjectValid) subject.focus();
-            else if (!isMessageValid) message.focus();
-            return;
-        }
-        
-        // Show loading state
-        submitBtn.disabled = true;
-        submitText.textContent = 'Sending...';
-        submitIcon.classList.add('hidden');
-        loadingSpinner.classList.remove('hidden');
-        
-        try {
-            // Prepare form data
-            const formData = {
-                firstName: firstName.value.trim(),
-                lastName: lastName.value.trim(),
-                email: email.value.trim(),
-                organization: organization.value.trim(),
-                phone: phone.value.trim(),
-                subject: subject.value,
-                message: message.value.trim(),
-                honeypot: document.getElementById('honeypot').value.trim()
-            };
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
             
-                         // Send to server endpoint
-             const response = await fetch('http://localhost:3000/send-message', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify(formData)
-             });
+            // Hide previous messages
+            successMessage.classList.add('hidden');
+            errorMessage.classList.add('hidden');
             
-            const result = await response.json();
+            // Validate all fields
+            const isFirstNameValid = validateField(firstName, firstNameError, validateRequired);
+            const isLastNameValid = validateField(lastName, lastNameError, validateRequired);
+            const isEmailValid = validateField(email, emailError, validateEmail);
+            const isPhoneValid = validateField(phone, phoneError, validatePhone);
+            const isSubjectValid = validateField(subject, subjectError, validateSubject);
+            const isMessageValid = validateField(message, messageError, validateMessage);
             
-            if (response.ok && result.success) {
-                // Show success message
-                successMessage.classList.remove('hidden');
+            if (!isFirstNameValid || !isLastNameValid || !isEmailValid || !isPhoneValid || !isSubjectValid || !isMessageValid) {
+                // Focus on first error field
+                if (!isFirstNameValid) firstName.focus();
+                else if (!isLastNameValid) lastName.focus();
+                else if (!isEmailValid) email.focus();
+                else if (!isPhoneValid) phone.focus();
+                else if (!isSubjectValid) subject.focus();
+                else if (!isMessageValid) message.focus();
+                return;
+            }
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitText.textContent = 'Sending...';
+            submitIcon.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+            
+            try {
+                // Prepare form data
+                const formData = {
+                    firstName: firstName.value.trim(),
+                    lastName: lastName.value.trim(),
+                    email: email.value.trim(),
+                    organization: organization.value.trim(),
+                    phone: phone.value.trim(),
+                    subject: subject.value,
+                    message: message.value.trim(),
+                    honeypot: document.getElementById('honeypot').value.trim()
+                };
                 
-                // Reset form
-                form.reset();
+                // Determine the correct endpoint based on environment
+                const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                const endpoint = isLocalhost ? 'http://localhost:5001/your-project-id/us-central1/app/send-message' : '/send-message';
                 
-                // Reset field styles
-                [firstName, lastName, email, organization, phone, subject, message].forEach(field => {
-                    if (field) {
-                        field.classList.remove('border-red-500', 'focus:ring-red-500');
-                        field.classList.add('border-gray-200', 'focus:ring-blue-500');
-                    }
+                console.log('Submitting to endpoint:', endpoint);
+                
+                // Send to server endpoint
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
                 });
                 
-                // Reset message counter
-                updateMessageCounter();
+                console.log('Response status:', response.status);
                 
-                // Scroll to success message
-                successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 
-                // Log success for analytics
-                console.log('Contact form submitted successfully');
+                const result = await response.json();
+                console.log('Response data:', result);
                 
-            } else {
-                // Handle server validation errors
-                if (result.errors) {
-                    Object.keys(result.errors).forEach(fieldName => {
-                        const field = document.getElementById(fieldName);
-                        const errorElement = document.getElementById(fieldName + 'Error');
-                        if (field && errorElement) {
-                            errorElement.textContent = result.errors[fieldName];
-                            errorElement.classList.remove('hidden');
-                            field.classList.add('border-red-500', 'focus:ring-red-500');
-                            field.classList.remove('border-gray-200', 'focus:ring-blue-500');
+                if (result.success) {
+                    // Show success message
+                    successMessage.classList.remove('hidden');
+                    
+                    // Reset form
+                    form.reset();
+                    
+                    // Reset field styles
+                    [firstName, lastName, email, organization, phone, subject, message].forEach(field => {
+                        if (field) {
+                            field.classList.remove('border-red-500', 'focus:ring-red-500');
+                            field.classList.add('border-gray-200', 'focus:ring-blue-500');
                         }
                     });
                     
-                    // Focus on first error field
-                    const firstErrorField = Object.keys(result.errors)[0];
-                    if (firstErrorField) {
-                        document.getElementById(firstErrorField).focus();
-                    }
+                    // Reset message counter
+                    updateMessageCounter();
+                    
+                    // Scroll to success message
+                    successMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    
+                    // Log success for analytics
+                    console.log('Contact form submitted successfully');
+                    
                 } else {
-                    // Show generic error message
-                    errorMessage.classList.remove('hidden');
-                    errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Handle server validation errors
+                    if (result.errors) {
+                        Object.keys(result.errors).forEach(fieldName => {
+                            const field = document.getElementById(fieldName);
+                            const errorElement = document.getElementById(fieldName + 'Error');
+                            if (field && errorElement) {
+                                errorElement.textContent = result.errors[fieldName];
+                                errorElement.classList.remove('hidden');
+                                field.classList.add('border-red-500', 'focus:ring-red-500');
+                                field.classList.remove('border-gray-200', 'focus:ring-blue-500');
+                            }
+                        });
+                        
+                        // Focus on first error field
+                        const firstErrorField = Object.keys(result.errors)[0];
+                        if (firstErrorField) {
+                            document.getElementById(firstErrorField).focus();
+                        }
+                    } else {
+                        // Show generic error message
+                        errorMessage.classList.remove('hidden');
+                        errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
+            } catch (error) {
+                console.error('Form submission error:', error);
+                
+                // Show error message
+                errorMessage.classList.remove('hidden');
+                errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                submitText.textContent = 'Send Message';
+                submitIcon.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
             }
-        } catch (error) {
-            console.error('Form submission error:', error);
-            
-            // Show error message
-            errorMessage.classList.remove('hidden');
-            errorMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            
-        } finally {
-            // Reset button state
-            submitBtn.disabled = false;
-            submitText.textContent = 'Send Message';
-            submitIcon.classList.remove('hidden');
-            loadingSpinner.classList.add('hidden');
-        }
-    });
+        });
+    }
 
     // Clear error messages when user starts typing
     function clearErrorOnInput(field, errorElement) {
-        field.addEventListener('input', () => {
-            if (errorElement.classList.contains('hidden') === false) {
-                errorElement.classList.add('hidden');
-                field.classList.remove('border-red-500', 'focus:ring-red-500');
-                field.classList.add('border-gray-200', 'focus:ring-blue-500');
-            }
-        });
+        if (field && errorElement) {
+            field.addEventListener('input', () => {
+                if (errorElement.classList.contains('hidden') === false) {
+                    errorElement.classList.add('hidden');
+                    field.classList.remove('border-red-500', 'focus:ring-red-500');
+                    field.classList.add('border-gray-200', 'focus:ring-blue-500');
+                }
+            });
+        }
     }
 
     // Add focus effects for better UX
@@ -273,6 +290,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize focus effects
     addFocusEffects();
 
+    // Initialize error clearing
     clearErrorOnInput(firstName, firstNameError);
     clearErrorOnInput(lastName, lastNameError);
     clearErrorOnInput(email, emailError);
