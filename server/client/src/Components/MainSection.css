@@ -48,6 +48,9 @@
   color: #fff;
   font-size: 14px;
   resize: none;
+  max-height: 140px;
+  overflow-y: auto;
+  box-sizing: border-box;
   transition: all 0.3s ease;
 }
 

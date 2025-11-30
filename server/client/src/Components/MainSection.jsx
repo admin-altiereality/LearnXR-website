@@ -14,9 +14,14 @@ import { isStorageAvailable } from '../utils/firebaseStorage';
 import { StorageTestUtility } from '../utils/storageTest';
 import { StorageStatusIndicator } from './StorageStatusIndicator';
 import ConfigurationDiagnostic from './ConfigurationDiagnostic';
+import { db } from '../config/firebase';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
+
+  // -------------------------
+  // UI State
+  // -------------------------
   const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
   const [skyboxStyles, setSkyboxStyles] = useState([]);
   const [selectedSkybox, setSelectedSkybox] = useState(null);
@@ -24,7 +29,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [negativeText, setNegativeText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(null);
-  const [showStylePreview, setShowStylePreview] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [generatedImageId, setGeneratedImageId] = useState(null);
@@ -49,7 +53,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [serviceStatusLoading, setServiceStatusLoading] = useState(true);
   const [serviceStatusError, setServiceStatusError] = useState(null);
 
-  // Reactive object detection with error handling
+  // -------------------------
+  // Reactive object detection
+  // -------------------------
   useEffect(() => {
     if (prompt.trim()) {
       try {
@@ -70,24 +76,29 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   }, [prompt]);
 
+  // -------------------------
+  // Load Skybox styles
+  // -------------------------
   useEffect(() => {
     setStylesLoading(true);
     setStylesError(null);
     const fetchSkyboxStyles = async () => {
       try {
         const response = await skyboxApiService.getStyles(1, 100);
-        const styles = response.data || [];
-        setSkyboxStyles(styles);
+        // Handle nested response structure: { success, data: { styles: [...] } }
+        const styles = response?.data?.styles || response?.styles || response?.data || [];
+        const stylesArray = Array.isArray(styles) ? styles : [];
+        setSkyboxStyles(stylesArray);
         setStylesLoading(false);
         setStylesError(null);
-        console.log('Fetched In3D.Ai styles:', styles);
+        console.log('Fetched In3D.Ai styles:', stylesArray);
       } catch (error) {
         setStylesLoading(false);
         setStylesError("Failed to load In3D.Ai styles. Please check your API configuration.");
         setSkyboxStyles([]);
         console.error("Error fetching In3D.Ai styles:", error);
-        
-        // Show user-friendly error message
+
+        // Existing top-right DOM toast (kept for logic compatibility)
         const errorMessage = document.createElement('div');
         errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
         errorMessage.innerHTML = `
@@ -101,14 +112,15 @@ const MainSection = ({ setBackgroundSkybox }) => {
     fetchSkyboxStyles();
   }, []);
 
+  // -------------------------
+  // Service availability checks
+  // -------------------------
   useEffect(() => {
-    // Check service availability with alternative storage support
     const checkAvailability = async () => {
       try {
         setServiceStatusLoading(true);
         setServiceStatusError(null);
         
-        // Check if Meshy is configured first
         const meshyConfigured = assetGenerationService.isMeshyConfigured();
         console.log('🔧 Meshy configuration check:', meshyConfigured);
         
@@ -142,22 +154,21 @@ const MainSection = ({ setBackgroundSkybox }) => {
     checkAvailability();
   }, []);
 
-  // Add recovery function for storage issues with alternative storage support
+  // -------------------------
+  // Storage recovery handler
+  // -------------------------
   const handleStorageRecovery = async () => {
     try {
       console.log('🔄 User requested storage recovery...');
       setError('Attempting to recover storage connection...');
       
-      // Check current service status
       const status = await assetGenerationService.getServiceStatus();
       
-      // If alternative storage is available, we can still work
       if (status.alternativeStorageAvailable) {
         setStorageAvailable(true);
         setError(null);
         console.log('✅ Alternative storage available - service can continue');
         
-        // Show success message about alternative storage
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
         successMessage.innerHTML = `
@@ -171,10 +182,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
         return;
       }
       
-      // Try to recover Firebase Storage
       const fixes = await StorageTestUtility.attemptAutoFix();
-      
-      // Check if recovery was successful
       const available = await isStorageAvailable();
       
       if (available) {
@@ -182,7 +190,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         setError(null);
         console.log('✅ Firebase Storage recovery successful');
         
-        // Show success message
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
         successMessage.innerHTML = `
@@ -197,7 +204,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         setError('Storage recovery failed. Alternative storage is also unavailable.');
         console.error('❌ All storage recovery failed');
         
-        // Show detailed error with fixes attempted
         const errorMessage = document.createElement('div');
         errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
         errorMessage.innerHTML = `
@@ -217,18 +223,16 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
-  // Add diagnostic function for debugging with alternative storage support
+  // -------------------------
+  // Diagnostics
+  // -------------------------
   const runDiagnostics = async () => {
     try {
       console.log('🔧 Running comprehensive diagnostics...');
       
-      // Get asset generation service status
       const serviceStatus = await assetGenerationService.getServiceStatus();
-      
-      // Run Firebase storage diagnostics
       const firebaseResults = await StorageTestUtility.runFullDiagnostics();
       
-      // Combine results
       const results = {
         ...firebaseResults,
         serviceStatus,
@@ -242,13 +246,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
         }
       };
       
-      // Display enhanced results
       const diagnosticMessage = document.createElement('div');
       diagnosticMessage.className = 'fixed top-4 right-4 bg-gray-800 text-white px-6 py-4 rounded-lg shadow-lg z-50 max-w-lg';
       
       let messageHtml = '<div class="font-bold mb-3">🔧 Diagnostic Results</div>';
       
-      // Service status
       messageHtml += '<div class="mb-3"><div class="font-semibold text-sm">Service Status:</div>';
       messageHtml += `<div class="text-xs">• Meshy API: ${serviceStatus.meshyConfigured ? '✅' : '❌'}</div>`;
       messageHtml += `<div class="text-xs">• Firebase Storage: ${serviceStatus.firebaseStorageAvailable ? '✅' : '❌'}</div>`;
@@ -256,7 +258,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       messageHtml += `<div class="text-xs">• User Auth: ${serviceStatus.userAuthenticated ? '✅' : '❌'}</div>`;
       messageHtml += '</div>';
       
-      // Alternative storage providers
       if (serviceStatus.alternativeStorageAvailable) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm">Alternative Storage Providers:</div>';
         results.alternativeStorage.providers.forEach(provider => {
@@ -265,7 +266,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         messageHtml += '</div>';
       }
       
-      // Errors
       if (serviceStatus.errors.length > 0) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm text-red-400">Errors:</div>';
         serviceStatus.errors.forEach(error => {
@@ -274,7 +274,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         messageHtml += '</div>';
       }
       
-      // Firebase results
       if (firebaseResults.network) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm">Network Status:</div>';
         messageHtml += `<div class="text-xs">• Connectivity: ${firebaseResults.network.connectivity ? '✅' : '❌'}</div>`;
@@ -291,7 +290,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
     } catch (error) {
       console.error('❌ Diagnostics failed:', error);
       
-      // Show simple error message
       const errorMessage = document.createElement('div');
       errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
       errorMessage.innerHTML = `
@@ -303,7 +301,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
-  // Modify the effect to handle navigation source and style selection
+  // -------------------------
+  // Handle navigation source / style selection
+  // -------------------------
   useEffect(() => {
     const fromExplore = sessionStorage.getItem('fromExplore');
     const savedStyle = sessionStorage.getItem('selectedSkyboxStyle');
@@ -313,9 +313,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
       try {
         const parsedStyle = JSON.parse(savedStyle);
         setSelectedSkybox(parsedStyle);
-        setShowStylePreview(true);
         
-        // Show success message that style is now selected
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
         successMessage.innerHTML = `
@@ -326,14 +324,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
         `;
         document.body.appendChild(successMessage);
         
-        // Remove the message after 3 seconds
         setTimeout(() => {
           if (successMessage.parentNode) {
             successMessage.parentNode.removeChild(successMessage);
           }
         }, 3000);
         
-        // Clear the stored data after using it
         sessionStorage.removeItem('fromExplore');
         sessionStorage.removeItem('selectedSkyboxStyle');
         sessionStorage.removeItem('navigateToMain');
@@ -346,7 +342,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   }, [setBackgroundSkybox]);
 
-  // Load subscription data
+  // -------------------------
+  // Load subscription
+  // -------------------------
   useEffect(() => {
     const loadSubscription = async () => {
       if (user?.uid) {
@@ -358,7 +356,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     loadSubscription();
   }, [user?.uid]);
 
-  // Calculate subscription info from subscription data
+  // -------------------------
+  // Subscription info
+  // -------------------------
   const subscriptionInfo = {
     plan: subscription?.planId || 'Free',
     generationsLeft: subscription?.usage?.limit - subscription?.usage?.count || 0,
@@ -367,33 +367,27 @@ const MainSection = ({ setBackgroundSkybox }) => {
     maxGenerations: subscription?.planId === 'free' ? 5 : subscription?.planId === 'pro' ? 50 : 100
   };
 
-  // Get current plan details with proper type safety
   const currentPlan = subscriptionService.getPlanById(subscription?.planId || 'free');
   const currentUsage = parseInt(subscription?.usage?.skyboxGenerations || 0);
   const currentLimit = currentPlan?.limits.skyboxGenerations || 10;
   const isUnlimited = currentLimit === Infinity;
-  
-  // Calculate remaining generations (current)
+
   const remainingGenerations = isUnlimited 
     ? '∞' 
     : Math.max(0, currentLimit - currentUsage);
   
-  // Calculate remaining generations after current generation
   const remainingAfterGeneration = isUnlimited 
     ? '∞' 
     : Math.max(0, currentLimit - currentUsage - numVariations);
   
-  // Calculate usage percentage (current usage only)
   const usagePercentage = isUnlimited 
     ? 0 
     : Math.min((currentUsage / currentLimit) * 100, 100);
   
-  // Calculate projected usage percentage (for warning display)
   const projectedUsagePercentage = isUnlimited 
     ? 0 
     : Math.min(((currentUsage + numVariations) / currentLimit) * 100, 100);
 
-  // Update subscription after generation
   const updateSubscriptionCount = async () => {
     if (user?.uid) {
       const updatedSubscription = await subscriptionService.getUserSubscription(user.uid);
@@ -401,26 +395,27 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
+  // -------------------------
+  // Skybox generation
+  // -------------------------
   const generateSkybox = async () => {
     if (!prompt || !selectedSkybox) {
-              setError("Please provide a prompt and select an In3D.Ai style");
+      setError("Please provide a prompt and select an In3D.Ai style");
       return;
     }
 
-    // Check subscription limits before generating
     if (!isUnlimited && remainingGenerations < numVariations) {
       const canGenerate = Math.max(0, remainingGenerations);
       setError(
         subscription?.planId === 'free' 
-                  ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please upgrade to continue generating environments.`
-        : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please try again tomorrow.`
+          ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please upgrade to continue generating environments.`
+          : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please try again tomorrow.`
       );
       return;
     }
 
     setIsGenerating(true);
     setError(null);
-    setShowStylePreview(false);
     setProgress(0);
     setGeneratedVariations([]);
     setCurrentVariationIndex(0);
@@ -429,7 +424,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
     let pollInterval;
 
     try {
-      // Generate all skyboxes as variations
       const variations = [];
       for (let i = 0; i < numVariations; i++) {
         setCurrentSkyboxIndex(i);
@@ -442,7 +436,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
         if (variationResponse && variationResponse.data && variationResponse.data.id) {
           variations.push(variationResponse.data.id);
-          // Update progress after each variation is queued
           const baseProgress = 30;
           const progressPerSkybox = 60 / numVariations;
           const currentProgress = baseProgress + (i * progressPerSkybox);
@@ -450,13 +443,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
         }
       }
 
-      // Poll for variation statuses
       const variationResults = await Promise.all(
         variations.map(async (variationId) => {
           let variationStatus;
           do {
             const statusResponse = await skyboxApiService.getSkyboxStatus(variationId);
-            variationStatus = statusResponse.data; // New API structure
+            variationStatus = statusResponse.data;
             console.log(`Status for ${variationId}:`, variationStatus);
             
             if (variationStatus.status !== "completed" && variationStatus.status !== "complete") {
@@ -464,7 +456,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
             }
           } while (variationStatus.status !== "completed" && variationStatus.status !== "complete");
 
-          // Ensure we have a valid image URL
           const imageUrl = variationStatus.file_url || variationStatus.image || variationStatus.thumb_url;
           if (!imageUrl) {
             throw new Error(`No image URL found for variation ${variationId}`);
@@ -479,35 +470,25 @@ const MainSection = ({ setBackgroundSkybox }) => {
         })
       );
 
-      // Set all variations
       setGeneratedVariations(variationResults);
       setBackgroundSkybox(variationResults[0]);
-      
-      // Set the current image for download (first variation)
       setCurrentImageForDownload(variationResults[0]);
       
-      // Update subscription usage count
       if (user?.uid) {
         try {
-          // Increment usage for each variation generated
           for (let i = 0; i < numVariations; i++) {
             await subscriptionService.incrementUsage(user.uid, 'skyboxGenerations');
           }
-          
-          // Refresh subscription data
           await updateSubscriptionCount();
-          
           console.log(`Updated subscription usage: ${numVariations} In3D.Ai generations added`);
         } catch (error) {
           console.error('Error updating subscription usage:', error);
-          // Don't fail the generation if usage tracking fails
         }
       }
 
       setProgress(100);
       setIsGenerating(false);
       
-      // Add minimized state after successful generation
       setTimeout(() => {
         setIsMinimized(true);
       }, 1000);
@@ -516,7 +497,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       
       let errorMessage = "Failed to generate In3D.Ai environment";
       
-      // Handle specific error types from Firebase Functions
       if (error.response && error.response.data) {
         const { error: apiError, code } = error.response.data;
         
@@ -543,6 +523,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     };
   };
 
+  // -------------------------
+  // Variations navigation
+  // -------------------------
   const handleVariationChange = (direction) => {
     if (generatedVariations.length === 0) return;
 
@@ -558,26 +541,30 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setCurrentImageForDownload(generatedVariations[newIndex]);
   };
 
-  // Modify the skybox style selection handler
+  // -------------------------
+  // Skybox style change
+  // -------------------------
   const handleSkyboxStyleChange = (e) => {
     const style = skyboxStyles.find(
       (style) => style.id === parseInt(e.target.value)
     );
     setSelectedSkybox(style);
-    setShowStylePreview(true);
   };
 
-  // Modify the handleUpgrade function to show modal instead of direct navigation
+  // -------------------------
+  // Upgrade handler
+  // -------------------------
   const handleUpgrade = () => {
-    setShowUpgradeModal(true); // Show modal instead of navigating directly
+    setShowUpgradeModal(true);
   };
 
-  // Add function to toggle panel size
+  // -------------------------
+  // Panel size toggle
+  // -------------------------
   const togglePanelSize = () => {
     setIsMinimized(!isMinimized);
   };
 
-  // Helper for progress status text
   const getProgressStatusText = () => {
     if (progress < 30) return "Initializing generation...";
     if (progress < 60) return "Generating skybox variations...";
@@ -585,12 +572,13 @@ const MainSection = ({ setBackgroundSkybox }) => {
     return "Finalizing...";
   };
 
-  // Handle 3D asset generation
+  // -------------------------
+  // 3D asset generation handler
+  // -------------------------
   const handleAssetGeneration = (assets) => {
     setGeneratedAssets(assets);
     setShowAssetPanel(false);
     
-    // Show success notification
     const successMessage = document.createElement('div');
     successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
     successMessage.innerHTML = `
@@ -603,7 +591,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setTimeout(() => document.body.removeChild(successMessage), 5000);
   };
 
-  // Debug logging for button visibility
   console.log('🔍 Current state:', {
     prompt,
     has3DObjects,
@@ -611,24 +598,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
     shouldShowButton: has3DObjects && assetGenerationService.isMeshyConfigured()
   });
 
-  // Debug function to test Meshy integration
   const testMeshyIntegration = async () => {
     console.log('🧪 Testing Meshy integration...');
     
-    // Test 1: Check if Meshy is configured
     const isConfigured = assetGenerationService.isMeshyConfigured();
     console.log('✅ Meshy configured:', isConfigured);
     
-    // Test 2: Test keyword extraction
     const testPrompt = "A sci-fi jungle with alien structures and a crashed spaceship";
     const extraction = assetGenerationService.previewExtraction(testPrompt);
     console.log('✅ Keyword extraction test:', extraction);
     
-    // Test 3: Test cost estimation
     const costEstimate = assetGenerationService.estimateCost(testPrompt, 'medium');
     console.log('✅ Cost estimation test:', costEstimate);
     
-    // Test 4: Test single asset generation (if configured)
     if (isConfigured && user?.uid) {
       try {
         console.log('🚀 Testing single asset generation...');
@@ -645,15 +627,13 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
-  // Check Firebase services on component mount
   useEffect(() => {
     console.log('🔧 Checking Firebase services...');
     console.log('📦 Storage available:', isStorageAvailable());
     console.log('🔑 Auth available:', !!useAuth);
-    console.log('🗄️ Firestore available:', !!require('../config/firebase').db);
+    console.log('🗄️ Firestore available:', !!db);
   }, []);
 
-  // Helper: get missing requirements
   const getMissingRequirements = () => {
     if (!serviceStatus) return [];
     const missing = [];
@@ -663,365 +643,424 @@ const MainSection = ({ setBackgroundSkybox }) => {
     return missing;
   };
 
-
+  // -------------------------
+  // Render
+  // -------------------------
   return (
     <div className="relative w-full min-h-screen">
-      {/* Sidebar for Style Preview */}
-      {showStylePreview && selectedSkybox && (
-        <div className="fixed right-0 top-[64px] bottom-[64px] w-72 bg-gray-800/40 shadow-2xl backdrop-blur-sm border-l border-gray-700/50 transform transition-transform duration-300 ease-in-out z-20">
-          <div className="h-full flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b border-gray-700/50">
-              <h3 className="text-lg font-semibold text-gray-100">Style Preview</h3>
-              <button
-                onClick={() => setShowStylePreview(false)}
-                className="text-gray-300 hover:text-white focus:outline-none"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-200 mb-2">{selectedSkybox.name}</h4>
-                  {selectedSkybox.description && (
-                    <p className="text-sm text-gray-300 mb-4">
-                      {selectedSkybox.description}
-                    </p>
+      {/* Bottom Dock Control Panel */}
+      <div
+        className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 ${
+          isMinimized ? 'pb-4' : 'pb-6'
+        }`}
+      >
+        <div
+          className={`w-full max-w-6xl mx-auto px-4 transition-all ${
+            isMinimized ? 'max-w-2xl' : 'max-w-7xl'
+          }`}
+        >
+          <div
+            className={`
+              relative 
+              bg-[#141414]/95 
+              border border-[#262626] 
+              rounded-xl 
+              shadow-[0_-10px_40px_rgba(0,0,0,0.65)] 
+              overflow-hidden 
+              transition-all 
+               ${isMinimized ? 'py-2 px-3' : 'py-3 px-4'}
+            `}
+          >
+            {/* Top Bar / Header */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-green-500/80 shadow-[0_0_10px_rgba(34,197,94,0.7)]" />
+                  <span className="w-2 h-2 rounded-full bg-yellow-400/70" />
+                  <span className="w-2 h-2 rounded-full bg-red-500/70" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs tracking-[0.2em] text-gray-500 uppercase">
+                    IN3D ENVIRONMENT STUDIO
+                  </span>
+                  {!isMinimized && (
+                    <span className="text-[11px] text-gray-400 mt-0.5">
+                      Prompt-based skybox & asset generation
+                    </span>
                   )}
                 </div>
+              </div>
 
-                {selectedSkybox.image_jpg && (
-                  <div className="space-y-4">
-                    <div className="aspect-square w-full relative rounded-lg overflow-hidden">
-                      <img
-                        src={selectedSkybox.image_jpg}
-                        alt={selectedSkybox.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    
-                    <div className="bg-gray-700/50 backdrop-blur-sm rounded-lg p-4">
-                      <h5 className="text-sm font-medium text-gray-200 mb-2">Style Details</h5>
-                      <div className="space-y-2 text-sm text-gray-300">
-                        <p>Model: {selectedSkybox.model}</p>
-                        {selectedSkybox.dimensions && (
-                          <p>Dimensions: {selectedSkybox.dimensions}</p>
-                        )}
+              <div className="flex items-center gap-3">
+                {/* Plan / Usage pill */}
+                {!isMinimized && (
+                  <div className="hidden md:flex flex-col items-end text-[11px]">
+                    <span className="uppercase tracking-[0.2em] text-gray-500">
+                      {subscriptionInfo.planName}
+                    </span>
+                    {!isUnlimited && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="w-24 h-1.5 rounded-full bg-[#1e1e1e] overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-500 to-yellow-400"
+                            style={{ width: `${usagePercentage}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {currentUsage}/{currentLimit} used
+                        </span>
                       </div>
-                    </div>
+                    )}
                   </div>
+                )}
+
+                {/* Minimize / Expand button */}
+                {setBackgroundSkybox && (
+                  <button
+                    onClick={togglePanelSize}
+                    className="w-7 h-7 flex items-center justify-center rounded-md bg-[#1e1e1e] border border-[#333] hover:bg-[#262626] text-gray-300"
+                    aria-label={isMinimized ? "Expand panel" : "Minimize panel"}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"}
+                      />
+                    </svg>
+                  </button>
                 )}
               </div>
             </div>
-            
-            <div className="p-4 border-t border-gray-700/50">
-              <button
-                onClick={() => setShowStylePreview(false)}
-                className="w-full py-2 px-4 bg-gray-700/50 hover:bg-gray-600/50 text-gray-200 rounded-md transition-colors duration-200 backdrop-blur-sm"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Main Control Panel with dynamic classes */}
-      <div 
-        className={`fixed inset-x-0 bottom-0 flex items-end justify-center transition-all duration-500 ease-in-out ${
-          isMinimized ? 'pb-4' : 'pb-16'
-        } ${showStylePreview ? 'mr-72' : ''}`}
-      >
-        <div className={`relative w-full max-w-4xl mx-auto px-4 transition-all duration-500 ease-in-out ${
-          isMinimized ? 'max-w-lg' : ''
-        }`}>
-          <div className={`relative z-10 bg-gray-800/30 rounded-xl shadow-2xl backdrop-blur-sm border border-gray-700/50 transition-all duration-500 ease-in-out ${
-            isMinimized ? 'bg-gray-800/20' : ''
-          }`}>
-            {/* Toggle button for panel size */}
-            {setBackgroundSkybox && (
-              <button
-                onClick={togglePanelSize}
-                className="absolute -top-3 right-3 w-6 h-6 rounded-full bg-gray-700/50 hover:bg-gray-600/50 flex items-center justify-center transition-all duration-200"
-                aria-label={isMinimized ? "Expand panel" : "Minimize panel"}
-              >
-                <svg
-                  className={`w-4 h-4 text-gray-300 transition-transform duration-300 ${
-                    isMinimized ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            {/* Minimized State */}
+            {isMinimized ? (
+              <div className="flex items-center justify-between text-xs text-gray-300">
+                <button
+                  onClick={() => setIsMinimized(false)}
+                  className="px-3 py-1.5 rounded-md bg-[#1f1f1f] border border-[#333333] hover:bg-[#262626] text-[11px] tracking-[0.16em] uppercase"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"}
-                  />
-                </svg>
-              </button>
-            )}
-
-            <div className={`transition-all duration-500 ease-in-out ${
-              isMinimized ? 'p-2' : 'p-4'
-            }`}>
-              {isMinimized ? (
-                // Minimized View
-                <div className="flex items-center justify-center">
-                  <button
-                    onClick={() => setIsMinimized(false)}
-                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
-                  >
-                    New Generation
-                  </button>
-                </div>
-              ) : (
-                // Full View - Show only progress during generation
-                <>
-                  {error && (
-                    <div className="mb-4 text-sm text-red-400">
-                      {error}
-                    </div>
+                  New Generation
+                </button>
+                <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                  {generatedVariations.length > 0 && (
+                    <span>
+                      {currentVariationIndex + 1}/{generatedVariations.length} variations
+                    </span>
                   )}
-
-                  {/* Prompt - Full Width */}
-                  <div>
-                    <label htmlFor="prompt" className="block text-xs font-medium mb-1 text-gray-200">
-                      Prompt
-                    </label>
-                    <textarea
-                      id="prompt"
-                      maxLength={600}
-                      rows={2}
-                      placeholder="Tell us what to bring to life..."
-                      className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      disabled={isGenerating}
-                    />
+                  {isGenerating && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                      Generating…
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // Expanded State
+              <div className="space-y-4">
+                {/* Error Banner */}
+                {error && (
+                  <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-2 text-xs text-red-300 flex items-start gap-2">
+                    <svg className="w-4 h-4 mt-[2px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                      />
+                    </svg>
+                    <span>{error}</span>
                   </div>
+                )}
 
-                  {/* Variations Input */}
-                  <div className="mt-4">
-                    <label htmlFor="variations" className="block text-xs font-medium mb-1 text-gray-200">
-                      Number of Variations
-                    </label>
-                    <input
-                      type="number"
-                      id="variations"
-                      min="1"
-                      max="10"
-                      placeholder="Enter number of variations (1-10)"
-                      className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                      value={numVariations}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 1;
-                        setNumVariations(Math.min(10, Math.max(1, value)));
-                      }}
-                      disabled={isGenerating}
-                    />
-                  </div>
-
-                  {/* Negative Text Toggle */}
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="negativeTextToggle"
-                      className="mr-2 focus:ring-blue-400/50 h-3 w-3"
-                      checked={showNegativeTextInput}
-                      onChange={() => setShowNegativeTextInput(!showNegativeTextInput)}
-                    />
-                    <label htmlFor="negativeTextToggle" className="text-xs text-gray-200">
-                      Add Negative Text
-                    </label>
-                  </div>
-
-                  {/* Negative Text - Full Width */}
-                  {showNegativeTextInput && (
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-200">Negative Text</label>
-                      <input
-                        type="text"
-                        placeholder="Optional negative text..."
-                        className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                        value={negativeText}
-                        onChange={(e) => setNegativeText(e.target.value)}
+                {/* PROGRESS BAR (when generating) */}
+                {isGenerating && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-gray-400">
+                      <span>{getProgressStatusText()}</span>
+                      <span>{Math.round(progress)}%</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-[#1f1f1f] overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 transition-all"
+                        style={{ width: `${progress}%` }}
                       />
                     </div>
-                  )}
+                  </div>
+                )}
 
-                  {/* 3D Asset Generation Button */}
-                  {has3DObjects && assetGenerationService && storageAvailable && (
-                    <div className="mb-4">
-                      <button
-                        onClick={() => setShowAssetPanel(true)}
-                        className="w-full py-2 px-4 bg-gradient-to-r from-green-500/50 to-emerald-600/50 hover:from-green-600/60 hover:to-emerald-700/60 text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500/50 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm"
-                      >
-                        <div className="flex items-center justify-center space-x-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                          </svg>
-                          <span className="text-sm">Generate 3D Assets</span>
-                        </div>
-                      </button>
-                      <p className="text-xs text-gray-400 mt-1 text-center">
-                        Found objects in your prompt - generate 3D models
-                      </p>
+                {/* Main Grid (Editor style) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Column 1: Prompt */}
+                  <div className="md:col-span-2 space-y-3">
+                    <div className="border border-[#262626] bg-[#121212] rounded-md px-3 py-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase">
+                          Prompt
+                        </span>
+                        <span className="text-[11px] text-gray-500">
+                          {prompt.length}/600
+                        </span>
+                      </div>
+                      <textarea
+                        id="prompt"
+                        maxLength={600}
+                        rows={3}
+                        placeholder="Describe the environment: lighting, mood, props, architecture..."
+                        className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none"
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        disabled={isGenerating}
+                      />
                     </div>
-                  )}
 
-                  {/* Storage Error Message */}
-                  {!storageAvailable && (
-                    <div className="mt-4 p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
-                      <p className="text-red-400 text-sm">
-                        ⚠️ 3D Asset generation is temporarily unavailable due to storage configuration issues.
-                      </p>
-                      <button
-                        onClick={handleStorageRecovery}
-                        className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors duration-200"
-                      >
-                        Try Recovery
-                      </button>
-                      <button
-                        onClick={runDiagnostics}
-                        className="ml-2 px-4 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700 transition-colors duration-200"
-                      >
-                        Run Diagnostics
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Debug Test Button (only in development) */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <div className="mb-4">
-                      <button
-                        onClick={() => setShowTestPanel(!showTestPanel)}
-                        className="w-full py-2 px-4 bg-gradient-to-r from-yellow-500/50 to-orange-600/50 hover:from-yellow-600/60 hover:to-orange-700/60 text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500/50 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm"
-                      >
-                        <div className="flex items-center justify-center space-x-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span className="text-sm">{showTestPanel ? 'Hide' : 'Show'} Meshy Test Panel</span>
-                        </div>
-                      </button>
-                      <p className="text-xs text-gray-400 mt-1 text-center">
-                        Debug: Test Meshy.ai integration components
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Show error if requirements are missing */}
-                  {(!storageAvailable || serviceStatusError) && (
-                    <div className="mb-4">
-                      <div className="bg-red-500/80 text-white px-4 py-3 rounded-lg shadow flex flex-col items-center">
-                        <div className="font-bold flex items-center mb-1">
-                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                          </svg>
-                          Asset Generation Unavailable
-                        </div>
-                        <div className="text-sm mb-2">The following requirements are missing:</div>
-                        <ul className="list-disc list-inside text-sm mb-2">
-                          {getMissingRequirements().map(req => (
-                            <li key={req}>{req}</li>
-                          ))}
-                        </ul>
-                        {serviceStatusError && (
-                          <div className="text-xs text-gray-200 mb-2">{serviceStatusError}</div>
-                        )}
-                        <button
-                          className="w-full mt-2 py-2 px-4 rounded-md bg-red-600/90 hover:bg-red-700/90 text-white font-medium flex items-center justify-center transition-all duration-300"
-                          onClick={runDiagnostics}
+                    {/* Advanced Prompt Controls */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="md:col-span-1">
+                        <label
+                          htmlFor="variations"
+                          className="block text-[11px] tracking-[0.16em] text-gray-500 uppercase mb-1"
                         >
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                          </svg>
-                          Debug Services (Check Console)
-                        </button>
+                          Variations
+                        </label>
+                        <input
+                          type="number"
+                          id="variations"
+                          min="1"
+                          max="10"
+                          placeholder="1–10"
+                          className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                          value={numVariations}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 1;
+                            setNumVariations(Math.min(10, Math.max(1, value)));
+                          }}
+                          disabled={isGenerating}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="negativeTextToggle"
+                            className="h-3 w-3 rounded border border-[#444] bg-[#151515]"
+                            checked={showNegativeTextInput}
+                            onChange={() => setShowNegativeTextInput(!showNegativeTextInput)}
+                          />
+                          <label
+                            htmlFor="negativeTextToggle"
+                            className="text-[11px] text-gray-400"
+                          >
+                            Enable Negative Prompt
+                          </label>
+                        </div>
+
+                        {showNegativeTextInput && (
+                          <input
+                            type="text"
+                            placeholder="Elements to avoid: low-res, blurry, washed out..."
+                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            value={negativeText}
+                            onChange={(e) => setNegativeText(e.target.value)}
+                          />
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  {/* Temporary Debug Button - Always Show */}
-                  <div className="mb-4">
-                    <button
-                      onClick={() => {
-                        console.log('🔧 Manual Debug Test');
-                        console.log('Prompt:', prompt);
-                        console.log('Has 3D Objects State:', has3DObjects);
-                        console.log('Meshy Configured:', assetGenerationService.isMeshyConfigured());
-                        console.log('Preview Extraction:', assetGenerationService.previewExtraction(prompt));
-                        console.log('Should Show Button:', has3DObjects && assetGenerationService.isMeshyConfigured());
-                      }}
-                      className="w-full py-2 px-4 bg-gradient-to-r from-red-500/50 to-pink-600/50 hover:from-red-600/60 hover:to-pink-700/60 text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500/50 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm"
-                    >
-                      <div className="flex items-center justify-center space-x-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        <span className="text-sm">Debug Services (Check Console)</span>
+                    {/* 3D Asset Generation */}
+                    {has3DObjects && assetGenerationService && storageAvailable && (
+                      <div className="border border-[#2a3a2a] bg-[#101712] rounded-md px-3 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-[11px] tracking-[0.16em] text-emerald-400 uppercase">
+                              3D Assets Detected
+                            </p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              Convert key objects in your prompt into Meshy assets.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setShowAssetPanel(true)}
+                            className="px-3 py-1.5 rounded-md bg-emerald-600/80 hover:bg-emerald-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
+                          >
+                            Generate Assets
+                          </button>
+                        </div>
                       </div>
-                    </button>
-                    <p className="text-xs text-gray-400 mt-1 text-center">
-                      Temporary: Test all services and show debug info
-                    </p>
+                    )}
+
+                    {!storageAvailable && (
+                      <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-3 space-y-2">
+                        <p className="text-xs text-red-300">
+                          ⚠ 3D Asset generation is temporarily unavailable due to storage configuration issues.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={handleStorageRecovery}
+                            className="px-3 py-1.5 rounded-md bg-sky-600/80 hover:bg-sky-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
+                          >
+                            Try Recovery
+                          </button>
+                          <button
+                            onClick={runDiagnostics}
+                            className="px-3 py-1.5 rounded-md bg-purple-600/80 hover:bg-purple-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
+                          >
+                            Diagnostics
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Debug / Meshy Test in dev */}
+                    {process.env.NODE_ENV === 'development' && (
+                      <div className="border border-[#343434] bg-[#151515] rounded-md px-3 py-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase">
+                            Debug / Meshy
+                          </span>
+                          <button
+                            onClick={() => setShowTestPanel(!showTestPanel)}
+                            className="px-3 py-1.5 rounded-md bg-[#262626] hover:bg-[#2f2f2f] text-[11px] text-gray-200 uppercase tracking-[0.12em]"
+                          >
+                            {showTestPanel ? 'Hide Panel' : 'Show Panel'}
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => {
+                            console.log('🔧 Manual Debug Test');
+                            console.log('Prompt:', prompt);
+                            console.log('Has 3D Objects State:', has3DObjects);
+                            console.log('Meshy Configured:', assetGenerationService.isMeshyConfigured());
+                            console.log('Preview Extraction:', assetGenerationService.previewExtraction(prompt));
+                            console.log('Should Show Button:', has3DObjects && assetGenerationService.isMeshyConfigured());
+                          }}
+                          className="w-full mt-1 px-3 py-1.5 rounded-md bg-gradient-to-r from-red-500/70 to-pink-600/70 hover:from-red-500 hover:to-pink-500 text-[11px] text-white font-semibold tracking-[0.12em] uppercase"
+                        >
+                          Debug Services (Console)
+                        </button>
+                        {showTestPanel && (
+                          <div className="mt-2 border-t border-[#2a2a2a] pt-2">
+                            <MeshyTestPanel />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Meshy Test Panel */}
-                  {showTestPanel && (
-                    <div className="mb-4">
-                      <MeshyTestPanel />
-                    </div>
-                  )}
+                  {/* Column 2: Style & Actions */}
+                    <div className="space-y-3">
+                      {/* Style selector */}
+                     <div className="border border-[#262626] bg-[#121212] rounded-md px-3 py-3 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase">
+                          In3D.Ai Style
+                        </span>
+                        {selectedSkybox && (
+                          <span className="text-[10px] text-gray-400">
+                            {selectedSkybox.name}
+                          </span>
+                        )}
+                      </div>
 
-                  {/* Skybox Style and Generate Button - Three Columns */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-200">In3D.Ai Style</label>
+                       {/* Active style preview above style list – mimic Skybox panel */}
+                       {selectedSkybox && (
+                         <div className="mb-3 rounded-lg overflow-hidden border border-[#363636] bg-[#101010]">
+                           <div className="relative">
+                             {selectedSkybox.image_jpg && (
+                               <img
+                                 src={selectedSkybox.image_jpg}
+                                 alt={selectedSkybox.name}
+                                 className="w-full h-36 object-cover"
+                               />
+                             )}
+                             <div className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 space-y-0.5">
+                               <p className="text-xs font-medium text-gray-100 truncate">
+                                 {selectedSkybox.name}
+                               </p>
+                               {selectedSkybox.description && (
+                                 <p className="text-[11px] text-gray-300/90 line-clamp-2">
+                                   {selectedSkybox.description}
+                                 </p>
+                               )}
+                             </div>
+                           </div>
+                         </div>
+                       )}
+
                       {stylesLoading ? (
-                        <div className="text-gray-400 text-xs py-2">Loading styles...</div>
+                        <div className="text-[11px] text-gray-500 py-1">Loading styles…</div>
                       ) : stylesError ? (
-                        <div className="text-red-400 text-xs py-2">{stylesError}</div>
+                        <div className="text-[11px] text-red-400 py-1">{stylesError}</div>
                       ) : (
-                        <select
-                          className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                          onChange={handleSkyboxStyleChange}
-                          value={selectedSkybox?.id || ""}
-                        >
-                          <option value="" disabled>
-                            -- Choose an In3D.Ai Style --
-                          </option>
-                          {skyboxStyles.map((style) => (
-                            <option key={style.id} value={style.id}>
-                              {style.name} {style.model ? `(Model: ${style.model})` : ""}
+                        <div className="mt-1 relative">
+                          <select
+                            value={selectedSkybox?.id ?? ''}
+                            onChange={handleSkyboxStyleChange}
+                            className="w-full appearance-none rounded-md border border-emerald-500/70 bg-[#151515] px-3 py-2 pr-8 text-xs text-gray-100 shadow-[0_0_0_1px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-500/80 focus:border-emerald-500/80"
+                          >
+                            <option value="" disabled>
+                              Select a style
                             </option>
-                          ))}
-                        </select>
+                            {skyboxStyles.map((style) => (
+                              <option key={style.id} value={style.id}>
+                                {style.name}
+                                {style.model ? ` · ${style.model}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                            <svg
+                              className="h-3 w-3 text-gray-300"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    <div className="flex items-end">
-                      <button
-                        className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50 ${
-                          isGenerating 
-                            ? 'bg-blue-500/50 cursor-not-allowed backdrop-blur-sm'
-                            : !isUnlimited && remainingAfterGeneration < 0
-                            ? 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
-                            : 'bg-gradient-to-r from-blue-500/50 to-indigo-600/50 hover:from-blue-600/60 hover:to-indigo-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
-                        }`}
-                        onClick={!isUnlimited && remainingAfterGeneration < 0 ? handleUpgrade : generateSkybox}
-                        disabled={isGenerating}
-                      >
-                        <div className="relative flex items-center justify-center">
+                    {/* Generation / Download buttons */}
+                    <div className="border border-[#262626] bg-[#121212] rounded-md px-3 py-3 space-y-2">
+                      <div className="space-y-2">
+                        <button
+                          className={`
+                            w-full py-2.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em]
+                            flex items-center justify-center gap-2
+                            ${
+                              isGenerating
+                                ? 'bg-sky-600/60 text-white cursor-not-allowed'
+                                : !isUnlimited && remainingAfterGeneration < 0
+                                ? 'bg-gradient-to-r from-purple-500/80 to-pink-600/80 text-white'
+                                : 'bg-gradient-to-r from-sky-500/80 to-indigo-600/80 hover:from-sky-500 hover:to-indigo-500 text-white'
+                            }
+                          `}
+                          onClick={
+                            !isUnlimited && remainingAfterGeneration < 0
+                              ? handleUpgrade
+                              : generateSkybox
+                          }
+                          disabled={isGenerating}
+                        >
                           {isGenerating ? (
                             <>
                               <svg
-                                className="animate-spin -ml-1 mr-2 h-4 w-4"
+                                className="animate-spin h-4 w-4"
                                 xmlns="http://www.w3.org/2000/svg"
                                 fill="none"
                                 viewBox="0 0 24 24"
@@ -1040,72 +1079,140 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                 />
                               </svg>
-                              <span className="text-sm">{progress < 100 ? 'Generating...' : 'Applying In3D.Ai...'}</span>
+                              <span>Generating</span>
                             </>
                           ) : !isUnlimited && remainingAfterGeneration < 0 ? (
-                            <div className="flex items-center space-x-2">
-                              <svg 
-                                className="w-4 h-4" 
-                                fill="none" 
-                                stroke="currentColor" 
+                            <>
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
                                 viewBox="0 0 24 24"
                               >
-                                <path 
-                                  strokeLinecap="round" 
-                                  strokeLinejoin="round" 
-                                  strokeWidth={2} 
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
                                   d="M5 10l7-7m0 0l7 7m-7-7v18"
                                 />
                               </svg>
-                              <span className="text-sm">
-                                {subscription?.planId === 'free' 
+                              <span>
+                                {subscription?.planId === 'free'
                                   ? 'Upgrade to Pro'
                                   : 'Upgrade Plan'}
                               </span>
-                            </div>
+                            </>
                           ) : (
-                            <span className="text-sm">Generate In3D.Ai</span>
+                            <>
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.8}
+                                  d="M12 4v9m0 0l-3-3m3 3l3-3m-9 8h12"
+                                />
+                              </svg>
+                              <span>Generate In3D.Ai</span>
+                            </>
                           )}
-                        </div>
-                      </button>
-                    </div>
+                        </button>
 
-                    <div className="flex items-end">
-                      <button
-                        className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500/50 
-                          ${!currentImageForDownload 
-                            ? 'bg-gray-600/30 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0'} 
-                          backdrop-blur-sm`}
-                        onClick={() => setShowDownloadPopup(true)}
-                        disabled={!currentImageForDownload}
-                      >
-                        <div className="relative flex items-center justify-center">
-                          <svg 
-                            className="w-4 h-4 mr-2" 
-                            fill="none" 
-                            stroke="currentColor" 
+                        <button
+                          className={`
+                            w-full py-2.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2
+                            ${
+                              !currentImageForDownload
+                                ? 'bg-[#1f1f1f] text-gray-500 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-purple-500/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 text-white'
+                            }
+                          `}
+                          onClick={() => setShowDownloadPopup(true)}
+                          disabled={!currentImageForDownload}
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
                             viewBox="0 0 24 24"
                           >
-                            <path 
-                              strokeLinecap="round" 
-                              strokeLinejoin="round" 
-                              strokeWidth={2} 
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={1.8}
                               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                             />
                           </svg>
-                          <span className="text-sm">Download</span>
+                          <span>Download</span>
+                        </button>
+                      </div>
+
+                      {/* Requirements / Service Status */}
+                      {(!storageAvailable || serviceStatusError) && (
+                        <div className="mt-2 border border-red-500/30 bg-red-900/10 rounded-md px-2.5 py-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <svg
+                              className="w-3.5 h-3.5 text-red-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                              />
+                            </svg>
+                            <span className="text-[11px] text-red-300 font-medium">
+                              Asset Generation Unavailable
+                            </span>
+                          </div>
+                          <ul className="list-disc list-inside text-[11px] text-red-200/90">
+                            {getMissingRequirements().map(req => (
+                              <li key={req}>{req}</li>
+                            ))}
+                          </ul>
+                          {serviceStatusError && (
+                            <p className="text-[10px] text-red-200 mt-1">
+                              {serviceStatusError}
+                            </p>
+                          )}
+                          <button
+                            className="mt-2 w-full py-1.5 rounded-md bg-red-600/80 hover:bg-red-500 text-[11px] text-white uppercase tracking-[0.12em] flex items-center justify-center gap-1"
+                            onClick={runDiagnostics}
+                          >
+                            <svg
+                              className="w-3.5 h-3.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                              />
+                            </svg>
+                            Debug Services
+                          </button>
                         </div>
-                      </button>
+                      )}
                     </div>
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Download Popup */}
       <DownloadPopup
         isOpen={showDownloadPopup}
         onClose={() => setShowDownloadPopup(false)}
@@ -1113,12 +1220,14 @@ const MainSection = ({ setBackgroundSkybox }) => {
         title={prompt || 'In3D.Ai environment'}
       />
 
+      {/* Upgrade Modal */}
       <UpgradeModal 
         isOpen={showUpgradeModal} 
         onClose={() => setShowUpgradeModal(false)}
         currentPlan={subscriptionInfo.plan}
       />
 
+      {/* Asset Panel */}
       <AssetGenerationPanel
         isVisible={showAssetPanel}
         prompt={prompt}
@@ -1127,47 +1236,42 @@ const MainSection = ({ setBackgroundSkybox }) => {
         onClose={() => setShowAssetPanel(false)}
       />
 
-      {/* Replace the bottom navigation with side arrows */}
+      {/* Variation Navigation Arrows */}
       {generatedVariations.length > 0 && (
         <>
-          {/* Left Arrow */}
           <button
             onClick={() => handleVariationChange('prev')}
-            className="fixed left-4 top-1/2 transform -translate-y-1/2 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm border border-gray-700/50 transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50 z-50"
+            className="absolute left-4 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-black/60 hover:bg-black/80 border border-[#333] text-white backdrop-blur-md transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-sky-500/60 z-40"
             aria-label="Previous variation"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
 
-          {/* Right Arrow */}
           <button
             onClick={() => handleVariationChange('next')}
-            className="fixed right-4 top-1/2 transform -translate-y-1/2 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm border border-gray-700/50 transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50 z-50"
+            className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-black/60 hover:bg-black/80 border border-[#333] text-white backdrop-blur-md transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-sky-500/60 z-40"
             aria-label="Next variation"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5l7 7-7 7" />
             </svg>
           </button>
 
-          {/* Variation Counter */}
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 px-4 py-2 rounded-lg backdrop-blur-sm border border-gray-700/50 text-white text-sm z-50">
-            {currentVariationIndex + 1} / {generatedVariations.length}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 px-3 py-1.5 rounded-md backdrop-blur-md border border-[#333] text-[11px] text-gray-200 z-40">
+            Variation {currentVariationIndex + 1} / {generatedVariations.length}
           </div>
         </>
       )}
 
-      {/* Storage Status Indicator */}
+      {/* Storage Status & Diagnostic overlays */}
       <StorageStatusIndicator />
-      
-      {/* Configuration Diagnostic - Show in development or when there are errors */}
       {(process.env.NODE_ENV === 'development' || serviceStatusError || !storageAvailable) && (
-        <ConfigurationDiagnostic />
+        <ConfigurationDiagnostic />  
       )}
     </div>
   );
-}
+};
 
 export default MainSection;
