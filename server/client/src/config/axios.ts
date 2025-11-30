@@ -1,8 +1,13 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
-// API base URL - use Firebase Functions for both development and production
+// API base URL - use local server in development, Firebase Functions in production
 const getApiBaseUrl = () => {
+  // Use local backend in development
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5002/api';
+  }
+  // Use Firebase Functions in production
   const region = 'us-central1';
   const projectId = 'in3devoneuralai';
   return `https://${region}-${projectId}.cloudfunctions.net/api`;
