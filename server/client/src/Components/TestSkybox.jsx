@@ -27,8 +27,11 @@ const TestSkybox = () => {
       setLoading(true);
       setError(null);
       const response = await skyboxApiService.getStyles(1, 10);
-      setStyles(response.data);
-      console.log('Styles fetched successfully:', response.data);
+      // Handle nested response structure: { success, data: { styles: [...] } }
+      const rawStyles = response?.data?.styles || response?.styles || response?.data || [];
+      const stylesArr = Array.isArray(rawStyles) ? rawStyles : [];
+      setStyles(stylesArr);
+      console.log('Styles fetched successfully:', stylesArr);
     } catch (err) {
       setError(err.message);
       console.error('Failed to fetch styles:', err);
