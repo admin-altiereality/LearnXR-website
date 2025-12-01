@@ -1,7 +1,19 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from "react";
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../config/axios';
 import { useAuth } from '../contexts/AuthContext';
+
+// ============================================
+// TRIAL USER CONSTANTS
+// ============================================
+const TRIAL_ALLOWED_STYLES = [
+  { id: 2, name: 'Realistic', slug: 'realistic' },
+  { id: 5, name: 'Fantasy', slug: 'fantasy' },
+  { id: 15, name: 'Low Poly', slug: 'low-poly' },
+  { id: 8, name: 'Stylized', slug: 'stylized' },
+  { id: 12, name: 'Cyberpunk', slug: 'cyberpunk' },
+];
+const TRIAL_MAX_VARIATIONS = 1;
 import { subscriptionService } from '../services/subscriptionService';
 import DownloadPopup from './DownloadPopup';
 import UpgradeModal from './UpgradeModal';
@@ -18,6 +30,12 @@ import { db } from '../config/firebase';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
+
+  // -------------------------
+  // Dev Mode & URL Params
+  // -------------------------
+  const [searchParams] = useSearchParams();
+  const isDevMode = searchParams.get('dev') === 'true';
 
   // -------------------------
   // UI State
@@ -367,6 +385,39 @@ const MainSection = ({ setBackgroundSkybox }) => {
     maxGenerations: subscription?.planId === 'free' ? 5 : subscription?.planId === 'pro' ? 50 : 100
   };
 
+  // -------------------------
+  // Trial User Detection
+  // -------------------------
+  const isTrialUser = useMemo(() => {
+    return !subscription || subscription.planId === 'free';
+  }, [subscription]);
+
+  // Filter styles based on trial status
+  const availableStyles = useMemo(() => {
+    if (isTrialUser) {
+      // For trial users, filter skyboxStyles to only show allowed styles
+      // Match by ID or name (case-insensitive)
+      const allowedIds = TRIAL_ALLOWED_STYLES.map(s => s.id);
+      const allowedNames = TRIAL_ALLOWED_STYLES.map(s => s.name.toLowerCase());
+      
+      const filtered = skyboxStyles.filter(style => 
+        allowedIds.includes(style.id) || 
+        allowedNames.includes(style.name?.toLowerCase())
+      );
+      
+      // If no matches found in API styles, return the predefined trial styles
+      return filtered.length > 0 ? filtered : TRIAL_ALLOWED_STYLES;
+    }
+    return skyboxStyles;
+  }, [isTrialUser, skyboxStyles]);
+
+  // Lock variations for trial users
+  useEffect(() => {
+    if (isTrialUser && numVariations !== TRIAL_MAX_VARIATIONS) {
+      setNumVariations(TRIAL_MAX_VARIATIONS);
+    }
+  }, [isTrialUser, numVariations]);
+
   const currentPlan = subscriptionService.getPlanById(subscription?.planId || 'free');
   const currentUsage = parseInt(subscription?.usage?.skyboxGenerations || 0);
   const currentLimit = currentPlan?.limits.skyboxGenerations || 10;
@@ -545,7 +596,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // Skybox style change
   // -------------------------
   const handleSkyboxStyleChange = (e) => {
-    const style = skyboxStyles.find(
+    // Search in availableStyles (filtered for trial users) first, then skyboxStyles
+    const style = availableStyles.find(
+      (style) => style.id === parseInt(e.target.value)
+    ) || skyboxStyles.find(
       (style) => style.id === parseInt(e.target.value)
     );
     setSelectedSkybox(style);
@@ -821,62 +875,76 @@ const MainSection = ({ setBackgroundSkybox }) => {
                       />
                     </div>
 
-                    {/* Advanced Prompt Controls */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="md:col-span-1">
-                        <label
-                          htmlFor="variations"
-                          className="block text-[11px] tracking-[0.16em] text-gray-500 uppercase mb-1"
-                        >
-                          Variations
-                        </label>
-                        <input
-                          type="number"
-                          id="variations"
-                          min="1"
-                          max="10"
-                          placeholder="1–10"
-                          className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
-                          value={numVariations}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value) || 1;
-                            setNumVariations(Math.min(10, Math.max(1, value)));
-                          }}
-                          disabled={isGenerating}
-                        />
-                      </div>
-
-                      <div className="md:col-span-2 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="negativeTextToggle"
-                            className="h-3 w-3 rounded border border-[#444] bg-[#151515]"
-                            checked={showNegativeTextInput}
-                            onChange={() => setShowNegativeTextInput(!showNegativeTextInput)}
-                          />
+                    {/* Advanced Prompt Controls - Hidden for trial users */}
+                    {!isTrialUser && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="md:col-span-1">
                           <label
-                            htmlFor="negativeTextToggle"
-                            className="text-[11px] text-gray-400"
+                            htmlFor="variations"
+                            className="block text-[11px] tracking-[0.16em] text-gray-500 uppercase mb-1"
                           >
-                            Enable Negative Prompt
+                            Variations
                           </label>
+                          <input
+                            type="number"
+                            id="variations"
+                            min="1"
+                            max="10"
+                            placeholder="1–10"
+                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            value={numVariations}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 1;
+                              setNumVariations(Math.min(10, Math.max(1, value)));
+                            }}
+                            disabled={isGenerating}
+                          />
                         </div>
 
-                        {showNegativeTextInput && (
-                          <input
-                            type="text"
-                            placeholder="Elements to avoid: low-res, blurry, washed out..."
-                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
-                            value={negativeText}
-                            onChange={(e) => setNegativeText(e.target.value)}
-                          />
-                        )}
-                      </div>
-                    </div>
+                        <div className="md:col-span-2 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="negativeTextToggle"
+                              className="h-3 w-3 rounded border border-[#444] bg-[#151515]"
+                              checked={showNegativeTextInput}
+                              onChange={() => setShowNegativeTextInput(!showNegativeTextInput)}
+                            />
+                            <label
+                              htmlFor="negativeTextToggle"
+                              className="text-[11px] text-gray-400"
+                            >
+                              Enable Negative Prompt
+                            </label>
+                          </div>
 
-                    {/* 3D Asset Generation */}
-                    {has3DObjects && assetGenerationService && storageAvailable && (
+                          {showNegativeTextInput && (
+                            <input
+                              type="text"
+                              placeholder="Elements to avoid: low-res, blurry, washed out..."
+                              className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                              value={negativeText}
+                              onChange={(e) => setNegativeText(e.target.value)}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Trial user info badge */}
+                    {isTrialUser && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md">
+                        <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-[11px] text-amber-300">
+                          Trial: 1 variation, {TRIAL_ALLOWED_STYLES.length} styles available. <button onClick={handleUpgrade} className="underline hover:text-amber-200">Upgrade</button> for full access.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* 3D Asset Generation - Hidden for trial users */}
+                    {!isTrialUser && has3DObjects && assetGenerationService && storageAvailable && (
                       <div className="border border-[#2a3a2a] bg-[#101712] rounded-md px-3 py-3">
                         <div className="flex items-center justify-between mb-2">
                           <div>
@@ -897,7 +965,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
                       </div>
                     )}
 
-                    {!storageAvailable && (
+                    {/* Storage warnings - only show to non-trial users or in dev mode */}
+                    {!storageAvailable && (!isTrialUser || isDevMode) && (
                       <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-3 space-y-2">
                         <p className="text-xs text-red-300">
                           ⚠ 3D Asset generation is temporarily unavailable due to storage configuration issues.
@@ -909,22 +978,25 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           >
                             Try Recovery
                           </button>
-                          <button
-                            onClick={runDiagnostics}
-                            className="px-3 py-1.5 rounded-md bg-purple-600/80 hover:bg-purple-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
-                          >
-                            Diagnostics
-                          </button>
+                          {isDevMode && (
+                            <button
+                              onClick={runDiagnostics}
+                              className="px-3 py-1.5 rounded-md bg-purple-600/80 hover:bg-purple-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
+                            >
+                              Diagnostics
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
 
-                    {/* Debug / Meshy Test in dev */}
-                    {process.env.NODE_ENV === 'development' && (
+                    {/* Debug / Meshy Test - ONLY visible with ?dev=true */}
+                    {isDevMode && (
                       <div className="border border-[#343434] bg-[#151515] rounded-md px-3 py-3 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase">
-                            Debug / Meshy
+                          <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            Dev Mode
                           </span>
                           <button
                             onClick={() => setShowTestPanel(!showTestPanel)}
@@ -941,6 +1013,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             console.log('Meshy Configured:', assetGenerationService.isMeshyConfigured());
                             console.log('Preview Extraction:', assetGenerationService.previewExtraction(prompt));
                             console.log('Should Show Button:', has3DObjects && assetGenerationService.isMeshyConfigured());
+                            console.log('Is Trial User:', isTrialUser);
+                            console.log('Available Styles:', availableStyles);
                           }}
                           className="w-full mt-1 px-3 py-1.5 rounded-md bg-gradient-to-r from-red-500/70 to-pink-600/70 hover:from-red-500 hover:to-pink-500 text-[11px] text-white font-semibold tracking-[0.12em] uppercase"
                         >
@@ -1009,7 +1083,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             <option value="" disabled>
                               Select a style
                             </option>
-                            {skyboxStyles.map((style) => (
+                            {/* Use availableStyles which is filtered for trial users */}
+                            {availableStyles.map((style) => (
                               <option key={style.id} value={style.id}>
                                 {style.name}
                                 {style.model ? ` · ${style.model}` : ''}
@@ -1031,6 +1106,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               />
                             </svg>
                           </div>
+                          {/* Trial style count indicator */}
+                          {isTrialUser && (
+                            <p className="text-[10px] text-gray-500 mt-1">
+                              {availableStyles.length} styles available in trial
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1182,25 +1263,28 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               {serviceStatusError}
                             </p>
                           )}
-                          <button
-                            className="mt-2 w-full py-1.5 rounded-md bg-red-600/80 hover:bg-red-500 text-[11px] text-white uppercase tracking-[0.12em] flex items-center justify-center gap-1"
-                            onClick={runDiagnostics}
-                          >
-                            <svg
-                              className="w-3.5 h-3.5"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+                          {/* Debug button only visible in dev mode */}
+                          {isDevMode && (
+                            <button
+                              className="mt-2 w-full py-1.5 rounded-md bg-red-600/80 hover:bg-red-500 text-[11px] text-white uppercase tracking-[0.12em] flex items-center justify-center gap-1"
+                              onClick={runDiagnostics}
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
-                              />
-                            </svg>
-                            Debug Services
-                          </button>
+                              <svg
+                                className="w-3.5 h-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                                />
+                              </svg>
+                              Debug Services
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1265,10 +1349,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
         </>
       )}
 
-      {/* Storage Status & Diagnostic overlays */}
-      <StorageStatusIndicator />
-      {(process.env.NODE_ENV === 'development' || serviceStatusError || !storageAvailable) && (
-        <ConfigurationDiagnostic />  
+      {/* Storage Status & Diagnostic overlays - ONLY in dev mode */}
+      {isDevMode && (
+        <>
+          <StorageStatusIndicator />
+          <ConfigurationDiagnostic />
+        </>
       )}
     </div>
   );
