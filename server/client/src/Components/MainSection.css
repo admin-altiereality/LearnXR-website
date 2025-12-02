@@ -52,6 +52,8 @@
   overflow-y: auto;
   box-sizing: border-box;
   transition: all 0.3s ease;
+  scroll-behavior: smooth;
+  
 }
 
 .prompt-input textarea:focus,

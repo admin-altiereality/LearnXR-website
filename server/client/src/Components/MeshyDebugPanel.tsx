@@ -103,12 +103,12 @@ export const MeshyDebugPanel: React.FC = () => {
       const generation = await meshyApiService.generateAsset(request);
       console.log('Generation initiated:', generation);
       
-      setTestResults(prev => ({
+      setTestResults((prev: typeof testResults) => ({
         ...prev,
         generation: {
           success: true,
-          generationId: generation.id,
-          status: generation.status
+          generationId: generation.result, // 'result' contains the task ID
+          status: 'pending'
         }
       }));
     } catch (err) {
