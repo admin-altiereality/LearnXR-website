@@ -534,7 +534,7 @@ app.post('/payment/create-order', async (req: Request, res: Response) => {
     };
     
     const order = await razorpay.orders.create(options);
-    
+
     // Store order in Firebase
     const db = admin.firestore();
     await db.collection('orders').doc(order.id).set({
@@ -543,12 +543,16 @@ app.post('/payment/create-order', async (req: Request, res: Response) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       status: 'created'
     });
-    
+
     console.log(`[${requestId}] Order created:`, order.id);
-    
+
+    // NOTE: The frontend expects `data.id` for Razorpay order_id.
+    // We also keep `order_id` for backward compatibility with any
+    // older clients or test tools that relied on that field.
     return res.json({
       success: true,
       data: {
+        id: order.id,
         order_id: order.id,
         amount: order.amount,
         currency: order.currency,

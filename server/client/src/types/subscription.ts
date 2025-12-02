@@ -35,4 +35,7 @@ export interface UserSubscription {
     count?: number;
     limit?: number;
   };
+  orderId?: string;
+  paymentId?: string;
+  amount?: number;
 }

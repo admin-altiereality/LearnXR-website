@@ -49,4 +49,9 @@ exports.env = (0, envsafe_1.envsafe)({
         allowEmpty: true,
         default: "",
     }),
+    RAZORPAY_WEBHOOK_SECRET: (0, envsafe_1.str)({
+        desc: "Razorpay Webhook Secret",
+        allowEmpty: true,
+        default: "",
+    }),
 });

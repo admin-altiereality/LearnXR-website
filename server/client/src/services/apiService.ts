@@ -122,7 +122,7 @@ class ApiService {
   }
 
   async getUserSubscriptionStatus(userId: string) {
-    return this.makeRequest('/user/subscription-status', {
+    return this.makeRequest('/subscription/status', {
       method: 'POST',
       body: JSON.stringify({ userId }),
     });
