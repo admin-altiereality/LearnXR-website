@@ -179,12 +179,12 @@ class SubscriptionService {
   }
 
   async createSubscription(userId: string, planId: string, planName: string) {
-    const response = await api.post('/api/subscription/create', { userId, planId, planName });
+    const response = await api.post('/subscription/create', { userId, planId, planName });
     return response.data;
   }
 
   async getUserSubscriptionStatus(userId: string) {
-    const response = await api.post('/api/user/subscription-status', { userId });
+    const response = await api.post('/subscription/status', { userId });
     return response.data;
   }
 

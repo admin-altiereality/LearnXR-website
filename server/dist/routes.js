@@ -31,14 +31,10 @@ const express = __importStar(require("express"));
 const multer_1 = __importDefault(require("multer"));
 const skybox_1 = __importDefault(require("./routes/skybox"));
 const imagine_controller_1 = require("./controllers/imagine.controller");
-const payment_controller_1 = require("./controllers/payment.controller");
 const router = express.Router();
 exports.router = router;
 // Mount skybox routes
 router.use("/skybox", skybox_1.default);
-// Payment routes
-router.post("/payment/create-order", payment_controller_1.createOrder);
-router.post("/payment/verify", payment_controller_1.verifyPayment);
 // Imagine routes
 router.get("/imagine/getGenerators", imagine_controller_1.getGenerators);
 router.post("/imagine/generateImagine", (0, multer_1.default)().any(), imagine_controller_1.generateImagine);
