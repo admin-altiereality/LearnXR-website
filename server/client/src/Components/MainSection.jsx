@@ -27,6 +27,7 @@ import { StorageTestUtility } from '../utils/storageTest';
 import { StorageStatusIndicator } from './StorageStatusIndicator';
 import ConfigurationDiagnostic from './ConfigurationDiagnostic';
 import { db } from '../config/firebase';
+import SkyboxEnvironmentViewer from './SkyboxEnvironmentViewer';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -65,11 +66,14 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [showAssetPanel, setShowAssetPanel] = useState(false);
   const [showTestPanel, setShowTestPanel] = useState(false);
   const [generatedAssets, setGeneratedAssets] = useState([]);
+  const [isSkyboxLoading, setIsSkyboxLoading] = useState(false);
+  const [isAssetsLoading, setIsAssetsLoading] = useState(false);
   const [has3DObjects, setHas3DObjects] = useState(false);
   const [storageAvailable, setStorageAvailable] = useState(false);
   const [serviceStatus, setServiceStatus] = useState(null);
   const [serviceStatusLoading, setServiceStatusLoading] = useState(true);
   const [serviceStatusError, setServiceStatusError] = useState(null);
+  const [assetPositions, setAssetPositions] = useState({});
 
   // -------------------------
   // Reactive object detection
@@ -441,15 +445,218 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
   const updateSubscriptionCount = async () => {
     if (user?.uid) {
-      const updatedSubscription = await subscriptionService.getUserSubscription(user.uid);
+      const updatedSubscription = await subscriptionService.getUserSubscription(
+        user.uid
+      );
       setSubscription(updatedSubscription);
     }
   };
 
   // -------------------------
-  // Skybox generation
+  // Unified generation decision
+  // -------------------------
+  // We treat generation as "unified" whenever Meshy is configured and the user
+  // is not on the trial plan. Object detection & storage issues are handled
+  // inside the asset generation path so the skybox flow is never blocked.
+  const shouldGenerateUnified = useMemo(() => {
+    if (isTrialUser) return false;
+    return !!assetGenerationService?.isMeshyConfigured();
+  }, [isTrialUser]);
+
+  // -------------------------
+  // Unified generation (Skybox + 3D Assets)
+  // -------------------------
+  const generateUnified = async () => {
+    if (!prompt || !selectedSkybox) {
+      setError("Please provide a prompt and select an In3D.Ai style");
+      return;
+    }
+
+    if (!isUnlimited && remainingGenerations < numVariations) {
+      const canGenerate = Math.max(0, remainingGenerations);
+      setError(
+        subscription?.planId === "free"
+          ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${
+              canGenerate === 1 ? "" : "s"
+            }. Please upgrade to continue generating environments.`
+          : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${
+              canGenerate === 1 ? "" : "s"
+            }. Please try again tomorrow.`
+      );
+      return;
+    }
+
+    setIsGenerating(true);
+    setIsSkyboxLoading(true);
+    setIsAssetsLoading(true);
+    setError(null);
+    setProgress(0);
+    setGeneratedVariations([]);
+    setCurrentVariationIndex(0);
+    setCurrentSkyboxIndex(0);
+
+    try {
+      // SKYBOX GENERATION
+      const skyboxPromise = (async () => {
+        const variationIds = [];
+        for (let i = 0; i < numVariations; i++) {
+          setCurrentSkyboxIndex(i);
+          const variationResponse = await skyboxApiService.generateSkybox({
+            prompt,
+            style_id: selectedSkybox.id,
+            negative_prompt: negativeText,
+            userId: user?.uid,
+          });
+
+          if (variationResponse?.data?.id) {
+            variationIds.push(variationResponse.data.id);
+            setProgress((prev) => Math.min(prev + 30 / numVariations, 45));
+          }
+        }
+
+        const variationResults = await Promise.all(
+          variationIds.map(async (variationId) => {
+            let variationStatus;
+            do {
+              const statusResponse = await skyboxApiService.getSkyboxStatus(
+                variationId
+              );
+              variationStatus = statusResponse.data;
+              if (
+                variationStatus.status !== "completed" &&
+                variationStatus.status !== "complete"
+              ) {
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            } while (
+              variationStatus.status !== "completed" &&
+              variationStatus.status !== "complete"
+            );
+
+            const imageUrl =
+              variationStatus.file_url ||
+              variationStatus.image ||
+              variationStatus.thumb_url;
+
+            if (!imageUrl) {
+              throw new Error(
+                `No image URL found for variation ${variationId}`
+              );
+            }
+
+            return {
+              image: imageUrl,
+              image_jpg: imageUrl,
+              title: variationStatus.title || prompt,
+              prompt: variationStatus.prompt || prompt,
+              id: variationId,
+            };
+          })
+        );
+
+        return variationResults;
+      })();
+
+      // 3D ASSET GENERATION (in parallel, non-blocking)
+      const assetPromise = (async () => {
+        try {
+          const extraction = assetGenerationService.previewExtraction(prompt);
+          if (!extraction.objects?.length) {
+            console.log('ℹ️ No 3D objects detected in prompt');
+            return [];
+          }
+
+          console.log(`🎨 Generating ${extraction.objects.length} 3D assets from prompt`);
+          
+          const generationResults = await Promise.all(
+            extraction.objects.slice(0, 3).map((obj) =>
+              assetGenerationService.generateSingleAsset(
+                obj.suggestedPrompt || obj.keyword, // Pass the keyword string, not the object
+                user?.uid,
+                "unified-skybox",
+                "medium"
+              )
+            )
+          );
+
+          // Flatten the assets from all generation results
+          const allAssets = generationResults
+            .filter(result => result.success && result.assets?.length)
+            .flatMap(result => result.assets);
+
+          console.log(`✅ Generated ${allAssets.length} 3D assets successfully`);
+          setProgress((prev) => Math.min(prev + 25, 95));
+          return allAssets;
+        } catch (err) {
+          console.error(
+            "Meshy 3D asset generation failed (non-blocking):",
+            err
+          );
+          return [];
+        } finally {
+          setIsAssetsLoading(false);
+        }
+      })();
+
+      const [skyboxResults, assetResults] = await Promise.all([
+        skyboxPromise,
+        assetPromise,
+      ]);
+
+      setIsSkyboxLoading(false);
+
+      setGeneratedVariations(skyboxResults);
+      setBackgroundSkybox(skyboxResults[0]);
+      setCurrentImageForDownload(skyboxResults[0]);
+
+      if (assetResults?.length) {
+        setGeneratedAssets(assetResults);
+        console.log(
+          `✅ Generated ${assetResults.length} 3D assets alongside skybox`
+        );
+      }
+
+      if (user?.uid) {
+        try {
+          for (let i = 0; i < numVariations; i++) {
+            await subscriptionService.incrementUsage(
+              user.uid,
+              "skyboxGenerations"
+            );
+          }
+          await updateSubscriptionCount();
+        } catch (error) {
+          console.error("Error updating subscription usage:", error);
+        }
+      }
+
+      setProgress(100);
+      setIsGenerating(false);
+      setTimeout(() => setIsMinimized(true), 800);
+    } catch (error) {
+      console.error("Error in unified generation:", error);
+      let errorMessage = "Failed to generate In3D.Ai environment";
+      if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage += ": " + error.message;
+      }
+      setError(errorMessage);
+      setIsGenerating(false);
+      setProgress(0);
+      setIsSkyboxLoading(false);
+      setIsAssetsLoading(false);
+    }
+  };
+
+  // -------------------------
+  // Skybox generation (entry point for Generate button)
   // -------------------------
   const generateSkybox = async () => {
+    if (shouldGenerateUnified) {
+      return generateUnified();
+    }
+
     if (!prompt || !selectedSkybox) {
       setError("Please provide a prompt and select an In3D.Ai style");
       return;
@@ -466,6 +673,8 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
 
     setIsGenerating(true);
+    setIsSkyboxLoading(true);
+    setIsAssetsLoading(false);
     setError(null);
     setProgress(0);
     setGeneratedVariations([]);
@@ -539,6 +748,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
       setProgress(100);
       setIsGenerating(false);
+      setIsSkyboxLoading(false);
       
       setTimeout(() => {
         setIsMinimized(true);
@@ -567,6 +777,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setError(errorMessage);
       setIsGenerating(false);
       setProgress(0);
+      setIsSkyboxLoading(false);
     }
 
     return () => {
@@ -705,28 +916,30 @@ const MainSection = ({ setBackgroundSkybox }) => {
       {/* Bottom Dock Control Panel */}
       <div
         className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 ${
-          isMinimized ? 'pb-4' : 'pb-6'
+          isMinimized ? 'pb-3' : 'pb-4'
         }`}
       >
         <div
-          className={`w-full max-w-6xl mx-auto px-4 transition-all ${
-            isMinimized ? 'max-w-2xl' : 'max-w-7xl'
+          className={`w-full mx-auto px-4 transition-all ${
+            isMinimized ? 'max-w-2xl' : 'max-w-[1310px]'
           }`}
         >
           <div
             className={`
               relative 
-              bg-[#141414]/95 
-              border border-[#262626] 
+              
+              bg-[#0a0a0a]/45
+              backdrop-blur-0
+              border border-[#ffffff08]
               rounded-xl 
               shadow-[0_-10px_40px_rgba(0,0,0,0.65)] 
               overflow-hidden 
               transition-all 
-               ${isMinimized ? 'py-2 px-3' : 'py-3 px-4'}
+               ${isMinimized ? 'py-0.5 px-2' : 'py-1 px-3'}
             `}
           >
             {/* Top Bar / Header */}
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-green-500/80 shadow-[0_0_10px_rgba(34,197,94,0.7)]" />
@@ -818,7 +1031,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
               </div>
             ) : (
               // Expanded State
-              <div className="space-y-4">
+              <div className="space-y-1.5">
                 {/* Error Banner */}
                 {error && (
                   <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-2 text-xs text-red-300 flex items-start gap-2">
@@ -837,51 +1050,86 @@ const MainSection = ({ setBackgroundSkybox }) => {
                 {/* PROGRESS BAR (when generating) */}
                 {isGenerating && (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between text-[11px] text-gray-400">
-                      <span>{getProgressStatusText()}</span>
-                      <span>{Math.round(progress)}%</span>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-gray-300 font-medium">
+                        {getProgressStatusText()}
+                      </span>
+                      <span className="text-emerald-400 font-semibold">
+                        {Math.round(progress)}%
+                      </span>
                     </div>
-                    <div className="w-full h-1.5 rounded-full bg-[#1f1f1f] overflow-hidden">
+                    <div className="w-full h-1 rounded-full bg-[#1f1f1f] overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 transition-all"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
+                    {/* Per-service loading indicators */}
+                    <div className="flex flex-wrap gap-3 text-[10px] text-gray-400">
+                      <span className="flex items-center gap-1">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isSkyboxLoading ? "bg-sky-400 animate-pulse" : "bg-sky-500"
+                          }`}
+                        />
+                        Skybox {isSkyboxLoading ? "generating…" : "ready"}
+                      </span>
+                      {shouldGenerateUnified && (
+                        <span className="flex items-center gap-1">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isAssetsLoading
+                                ? "bg-emerald-400 animate-pulse"
+                                : "bg-emerald-500"
+                            }`}
+                          />
+                          3D assets {isAssetsLoading ? "generating…" : "ready"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
 
                 {/* Main Grid (Editor style) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {/* Column 1: Prompt */}
-                  <div className="md:col-span-2 space-y-3">
-                    <div className="border border-[#262626] bg-[#121212] rounded-md px-3 py-3 space-y-2">
+                  <div className="md:col-span-2 space-y-1.5">
+                    <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase">
+                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase">
                           Prompt
                         </span>
-                        <span className="text-[11px] text-gray-500">
+                        <span className="text-[10px] text-gray-500">
                           {prompt.length}/600
                         </span>
                       </div>
                       <textarea
                         id="prompt"
                         maxLength={600}
-                        rows={3}
+                        rows={2}
                         placeholder="Describe the environment: lighting, mood, props, architecture..."
-                        className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none"
+                        className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none"
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
                         disabled={isGenerating}
                       />
+                      
+                      {/* 3D Asset Detection - Simple indicator */}
+                      {has3DObjects && !isTrialUser && assetGenerationService?.isMeshyConfigured() && (
+                        <div className="flex items-center gap-2 text-[10px] text-emerald-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>{assetGenerationService.previewExtraction(prompt).count} 3D object{assetGenerationService.previewExtraction(prompt).count !== 1 ? 's' : ''} detected</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Advanced Prompt Controls - Hidden for trial users */}
                     {!isTrialUser && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                         <div className="md:col-span-1">
                           <label
                             htmlFor="variations"
-                            className="block text-[11px] tracking-[0.16em] text-gray-500 uppercase mb-1"
+                            className="block text-[10px] tracking-[0.16em] text-gray-500 uppercase mb-0.5"
                           >
                             Variations
                           </label>
@@ -891,7 +1139,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             min="1"
                             max="10"
                             placeholder="1–10"
-                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
                             value={numVariations}
                             onChange={(e) => {
                               const value = parseInt(e.target.value) || 1;
@@ -901,7 +1149,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           />
                         </div>
 
-                        <div className="md:col-span-2 space-y-1">
+                        <div className="md:col-span-2 space-y-0.5">
                           <div className="flex items-center gap-2">
                             <input
                               type="checkbox"
@@ -912,7 +1160,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             />
                             <label
                               htmlFor="negativeTextToggle"
-                              className="text-[11px] text-gray-400"
+                              className="text-[10px] text-gray-400"
                             >
                               Enable Negative Prompt
                             </label>
@@ -922,7 +1170,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             <input
                               type="text"
                               placeholder="Elements to avoid: low-res, blurry, washed out..."
-                              className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                              className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
                               value={negativeText}
                               onChange={(e) => setNegativeText(e.target.value)}
                             />
@@ -943,8 +1191,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
                       </div>
                     )}
 
-                    {/* 3D Asset Generation - Hidden for trial users */}
-                    {!isTrialUser && has3DObjects && assetGenerationService && storageAvailable && (
+                    {/* 3D Asset Generation - manual panel (extra) - hidden for trial users.
+                        When unified generation is active, we hide this to avoid a second,
+                        separate "generate assets" flow. */}
+                    {!isTrialUser && !shouldGenerateUnified && has3DObjects && assetGenerationService && storageAvailable && (
                       <div className="border border-[#2a3a2a] bg-[#101712] rounded-md px-3 py-3">
                         <div className="flex items-center justify-between mb-2">
                           <div>
@@ -1005,6 +1255,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             {showTestPanel ? 'Hide Panel' : 'Show Panel'}
                           </button>
                         </div>
+                        {/* Single unified Generate button – triggers skybox + Meshy 3D (when available) */}
                         <button
                           onClick={() => {
                             console.log('🔧 Manual Debug Test');
@@ -1030,15 +1281,15 @@ const MainSection = ({ setBackgroundSkybox }) => {
                   </div>
 
                   {/* Column 2: Style & Actions */}
-                    <div className="space-y-3">
+                    <div className="space-y-1.5">
                       {/* Style selector */}
-                     <div className="border border-[#262626] bg-[#121212] rounded-md px-3 py-3 space-y-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase">
+                     <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase">
                           In3D.Ai Style
                         </span>
                         {selectedSkybox && (
-                          <span className="text-[10px] text-gray-400">
+                          <span className="text-[9px] text-gray-400">
                             {selectedSkybox.name}
                           </span>
                         )}
@@ -1046,39 +1297,34 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
                        {/* Active style preview above style list – mimic Skybox panel */}
                        {selectedSkybox && (
-                         <div className="mb-3 rounded-lg overflow-hidden border border-[#363636] bg-[#101010]">
+                         <div className="rounded-md overflow-hidden border border-[#363636] bg-[#101010]">
                            <div className="relative">
                              {selectedSkybox.image_jpg && (
                                <img
                                  src={selectedSkybox.image_jpg}
                                  alt={selectedSkybox.name}
-                                 className="w-full h-36 object-cover"
+                                 className="w-full h-16 object-cover"
                                />
                              )}
-                             <div className="absolute inset-x-0 bottom-0 bg-black/75 px-3 py-2 space-y-0.5">
-                               <p className="text-xs font-medium text-gray-100 truncate">
+                             <div className="absolute inset-x-0 bottom-0 bg-black/75 px-2 py-1">
+                               <p className="text-[10px] font-medium text-gray-100 truncate">
                                  {selectedSkybox.name}
                                </p>
-                               {selectedSkybox.description && (
-                                 <p className="text-[11px] text-gray-300/90 line-clamp-2">
-                                   {selectedSkybox.description}
-                                 </p>
-                               )}
                              </div>
                            </div>
                          </div>
                        )}
 
                       {stylesLoading ? (
-                        <div className="text-[11px] text-gray-500 py-1">Loading styles…</div>
+                        <div className="text-[10px] text-gray-500 py-0.5">Loading styles…</div>
                       ) : stylesError ? (
-                        <div className="text-[11px] text-red-400 py-1">{stylesError}</div>
+                        <div className="text-[10px] text-red-400 py-0.5">{stylesError}</div>
                       ) : (
-                        <div className="mt-1 relative">
+                        <div className="relative">
                           <select
                             value={selectedSkybox?.id ?? ''}
                             onChange={handleSkyboxStyleChange}
-                            className="w-full appearance-none rounded-md border border-emerald-500/70 bg-[#151515] px-3 py-2 pr-8 text-xs text-gray-100 shadow-[0_0_0_1px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-500/80 focus:border-emerald-500/80"
+                            className="w-full appearance-none rounded-md border border-emerald-500/70 bg-[#151515] px-2.5 py-1.5 pr-7 text-xs text-gray-100 shadow-[0_0_0_1px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-500/80 focus:border-emerald-500/80"
                           >
                             <option value="" disabled>
                               Select a style
@@ -1091,9 +1337,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               </option>
                             ))}
                           </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                          <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
                             <svg
-                              className="h-3 w-3 text-gray-300"
+                              className="h-2.5 w-2.5 text-gray-300"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -1108,7 +1354,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           </div>
                           {/* Trial style count indicator */}
                           {isTrialUser && (
-                            <p className="text-[10px] text-gray-500 mt-1">
+                            <p className="text-[9px] text-gray-500 mt-0.5">
                               {availableStyles.length} styles available in trial
                             </p>
                           )}
@@ -1117,11 +1363,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
                     </div>
 
                     {/* Generation / Download buttons */}
-                    <div className="border border-[#262626] bg-[#121212] rounded-md px-3 py-3 space-y-2">
-                      <div className="space-y-2">
+                    <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
+                      <div className="space-y-1">
                         <button
                           className={`
-                            w-full py-2.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em]
+                            w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em]
                             flex items-center justify-center gap-2
                             ${
                               isGenerating
@@ -1160,7 +1406,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                 />
                               </svg>
-                              <span>Generating</span>
+                              <span>
+                                {shouldGenerateUnified
+                                  ? 'Generating env + 3D assets'
+                                  : 'Generating'}
+                              </span>
                             </>
                           ) : !isUnlimited && remainingAfterGeneration < 0 ? (
                             <>
@@ -1205,7 +1455,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
                         <button
                           className={`
-                            w-full py-2.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2
+                            w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2
                             ${
                               !currentImageForDownload
                                 ? 'bg-[#1f1f1f] text-gray-500 cursor-not-allowed'
@@ -1320,33 +1570,65 @@ const MainSection = ({ setBackgroundSkybox }) => {
         onClose={() => setShowAssetPanel(false)}
       />
 
-      {/* Variation Navigation Arrows */}
+      {/* Skybox + 3D Assets Environment */}
       {generatedVariations.length > 0 && (
-        <>
-          <button
-            onClick={() => handleVariationChange('prev')}
-            className="absolute left-4 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-black/60 hover:bg-black/80 border border-[#333] text-white backdrop-blur-md transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-sky-500/60 z-40"
-            aria-label="Previous variation"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-
-          <button
-            onClick={() => handleVariationChange('next')}
-            className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-black/60 hover:bg-black/80 border border-[#333] text-white backdrop-blur-md transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-sky-500/60 z-40"
-            aria-label="Next variation"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 px-3 py-1.5 rounded-md backdrop-blur-md border border-[#333] text-[11px] text-gray-200 z-40">
-            Variation {currentVariationIndex + 1} / {generatedVariations.length}
-          </div>
-        </>
+        <div className="absolute inset-0 z-20">
+          <SkyboxEnvironmentViewer
+            skyboxImageUrl={generatedVariations[currentVariationIndex]?.image}
+            assets={generatedAssets.map((asset, index) => ({
+              id: asset.id || `asset-${index}`,
+              prompt: asset.prompt || prompt,
+              downloadUrl: asset.downloadUrl || asset.modelUrl,
+              modelUrl: asset.modelUrl || asset.downloadUrl,
+              thumbnailUrl: asset.thumbnailUrl,
+              format: asset.format || 'glb',
+              status: asset.status || 'completed',
+              position: assetPositions[asset.id]?.position || [(index - Math.floor(generatedAssets.length / 2)) * 3, 0, 0],
+              rotation: assetPositions[asset.id]?.rotation || [0, 0, 0],
+              scale: assetPositions[asset.id]?.scale || 1
+            }))}
+            onAssetSelect={(assetId) => {
+              console.log('Selected asset:', assetId);
+            }}
+            onAssetTransform={(assetId, position, rotation, scale) => {
+              setAssetPositions(prev => ({
+                ...prev,
+                [assetId]: { position, rotation, scale }
+              }));
+            }}
+            showGrid={false}
+            showGizmo={generatedAssets.length > 0}
+            enableInteraction={true}
+            className="w-full h-full"
+          />
+          
+          {/* Variation Navigation */}
+          {generatedVariations.length > 1 && (
+            <>
+              <button
+                onClick={() => handleVariationChange('prev')}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 text-white transition-all z-40"
+                aria-label="Previous variation"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={() => handleVariationChange('next')}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 text-white transition-all z-40"
+                aria-label="Next variation"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-black/50 px-3 py-1 rounded text-[10px] text-white z-40">
+                {currentVariationIndex + 1} / {generatedVariations.length}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* Storage Status & Diagnostic overlays - ONLY in dev mode */}
