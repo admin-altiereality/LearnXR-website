@@ -72,15 +72,19 @@ export interface MeshyAsset {
     details?: any;
   };
   metadata?: {
-    category: string;
-    confidence: number;
-    originalPrompt: string;
-    userId: string;
+    category?: string;
+    confidence?: number;
+    originalPrompt?: string;
+    userId?: string;
     skyboxId?: string;
     vertices?: number;
     faces?: number;
     textures?: number;
     animations?: number;
+    // Meshy API specific fields
+    art_style?: string;
+    seed?: number;
+    texture_prompt?: string;
   };
 }
 
@@ -145,6 +149,10 @@ export class MeshyApiService {
   ): Promise<Response> {
     const url = `${this.baseUrl}${endpoint}`;
     
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    
     const defaultOptions: RequestInit = {
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -152,12 +160,13 @@ export class MeshyApiService {
         'User-Agent': 'In3D.ai-WebApp/1.0',
         ...options.headers,
       },
-      timeout: this.timeout,
+      signal: controller.signal, // Use AbortSignal for timeout
       ...options,
     };
 
     try {
       const response = await fetch(url, defaultOptions);
+      clearTimeout(timeoutId); // Clear timeout on successful fetch
       
       // Handle rate limiting
       if (response.status === 429) {
@@ -181,6 +190,13 @@ export class MeshyApiService {
       
       return response;
     } catch (error) {
+      clearTimeout(timeoutId); // Clear timeout on error
+      
+      // Handle AbortError (timeout)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${this.timeout}ms`);
+      }
+      
       if (retryCount < this.maxRetries) {
         const delay = this.retryDelay * Math.pow(2, retryCount);
         console.log(`🔄 Network error, retrying in ${delay}ms (attempt ${retryCount + 1}/${this.maxRetries})`);

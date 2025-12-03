@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import api from '../config/axios';
 import { useAuth } from '../contexts/AuthContext';
 
 // ============================================
@@ -17,7 +16,6 @@ const TRIAL_MAX_VARIATIONS = 1;
 import { subscriptionService } from '../services/subscriptionService';
 import DownloadPopup from './DownloadPopup';
 import UpgradeModal from './UpgradeModal';
-import LoadingPlaceholder from './LoadingPlaceholder';
 import { skyboxApiService } from '../services/skyboxApiService';
 import AssetGenerationPanel from './AssetGenerationPanel';
 import { MeshyTestPanel } from './MeshyTestPanel';
@@ -26,8 +24,9 @@ import { isStorageAvailable } from '../utils/firebaseStorage';
 import { StorageTestUtility } from '../utils/storageTest';
 import { StorageStatusIndicator } from './StorageStatusIndicator';
 import ConfigurationDiagnostic from './ConfigurationDiagnostic';
+import { AssetViewerWithSkybox } from './AssetViewerWithSkybox';
 import { db } from '../config/firebase';
-import SkyboxEnvironmentViewer from './SkyboxEnvironmentViewer';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -41,7 +40,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // -------------------------
   // UI State
   // -------------------------
-  const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
+  const [showNegativeTextInput, setShowNegativeTextInput] = useState(true);
   const [skyboxStyles, setSkyboxStyles] = useState([]);
   const [selectedSkybox, setSelectedSkybox] = useState(null);
   const [prompt, setPrompt] = useState("");
@@ -59,21 +58,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
-  const [currentSkyboxIndex, setCurrentSkyboxIndex] = useState(0);
   const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
   const [stylesLoading, setStylesLoading] = useState(true);
   const [stylesError, setStylesError] = useState(null);
   const [showAssetPanel, setShowAssetPanel] = useState(false);
   const [showTestPanel, setShowTestPanel] = useState(false);
-  const [generatedAssets, setGeneratedAssets] = useState([]);
-  const [isSkyboxLoading, setIsSkyboxLoading] = useState(false);
-  const [isAssetsLoading, setIsAssetsLoading] = useState(false);
   const [has3DObjects, setHas3DObjects] = useState(false);
   const [storageAvailable, setStorageAvailable] = useState(false);
   const [serviceStatus, setServiceStatus] = useState(null);
-  const [serviceStatusLoading, setServiceStatusLoading] = useState(true);
   const [serviceStatusError, setServiceStatusError] = useState(null);
-  const [assetPositions, setAssetPositions] = useState({});
+  // 3D Asset generation state
+  const [isGenerating3DAsset, setIsGenerating3DAsset] = useState(false);
+  const [generated3DAsset, setGenerated3DAsset] = useState(null);
+  const [assetGenerationProgress, setAssetGenerationProgress] = useState(null);
 
   // -------------------------
   // Reactive object detection
@@ -140,7 +137,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
   useEffect(() => {
     const checkAvailability = async () => {
       try {
-        setServiceStatusLoading(true);
         setServiceStatusError(null);
         
         const meshyConfigured = assetGenerationService.isMeshyConfigured();
@@ -148,7 +144,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         
         if (!meshyConfigured) {
           setServiceStatusError('Meshy API key not configured. Please add VITE_MESHY_API_KEY to your environment variables.');
-          setServiceStatusLoading(false);
           setStorageAvailable(false);
           return;
         }
@@ -157,7 +152,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         setStorageAvailable(available);
         const status = await assetGenerationService.getServiceStatus();
         setServiceStatus(status);
-        setServiceStatusLoading(false);
         
         if (!available) {
           if (status.errors.length > 0) {
@@ -167,7 +161,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         
         console.log('🔧 Service availability check completed:', { available, status });
       } catch (error) {
-        setServiceStatusLoading(false);
         setStorageAvailable(false);
         setServiceStatusError(error.message || 'Unknown error');
         console.error('❌ Service availability check failed:', error);
@@ -453,209 +446,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
   };
 
   // -------------------------
-  // Unified generation decision
-  // -------------------------
-  // We treat generation as "unified" whenever Meshy is configured and the user
-  // is not on the trial plan. Object detection & storage issues are handled
-  // inside the asset generation path so the skybox flow is never blocked.
-  const shouldGenerateUnified = useMemo(() => {
-    if (isTrialUser) return false;
-    return !!assetGenerationService?.isMeshyConfigured();
-  }, [isTrialUser]);
-
-  // -------------------------
-  // Unified generation (Skybox + 3D Assets)
-  // -------------------------
-  const generateUnified = async () => {
-    if (!prompt || !selectedSkybox) {
-      setError("Please provide a prompt and select an In3D.Ai style");
-      return;
-    }
-
-    if (!isUnlimited && remainingGenerations < numVariations) {
-      const canGenerate = Math.max(0, remainingGenerations);
-      setError(
-        subscription?.planId === "free"
-          ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${
-              canGenerate === 1 ? "" : "s"
-            }. Please upgrade to continue generating environments.`
-          : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${
-              canGenerate === 1 ? "" : "s"
-            }. Please try again tomorrow.`
-      );
-      return;
-    }
-
-    setIsGenerating(true);
-    setIsSkyboxLoading(true);
-    setIsAssetsLoading(true);
-    setError(null);
-    setProgress(0);
-    setGeneratedVariations([]);
-    setCurrentVariationIndex(0);
-    setCurrentSkyboxIndex(0);
-
-    try {
-      // SKYBOX GENERATION
-      const skyboxPromise = (async () => {
-        const variationIds = [];
-        for (let i = 0; i < numVariations; i++) {
-          setCurrentSkyboxIndex(i);
-          const variationResponse = await skyboxApiService.generateSkybox({
-            prompt,
-            style_id: selectedSkybox.id,
-            negative_prompt: negativeText,
-            userId: user?.uid,
-          });
-
-          if (variationResponse?.data?.id) {
-            variationIds.push(variationResponse.data.id);
-            setProgress((prev) => Math.min(prev + 30 / numVariations, 45));
-          }
-        }
-
-        const variationResults = await Promise.all(
-          variationIds.map(async (variationId) => {
-            let variationStatus;
-            do {
-              const statusResponse = await skyboxApiService.getSkyboxStatus(
-                variationId
-              );
-              variationStatus = statusResponse.data;
-              if (
-                variationStatus.status !== "completed" &&
-                variationStatus.status !== "complete"
-              ) {
-                await new Promise((r) => setTimeout(r, 2000));
-              }
-            } while (
-              variationStatus.status !== "completed" &&
-              variationStatus.status !== "complete"
-            );
-
-            const imageUrl =
-              variationStatus.file_url ||
-              variationStatus.image ||
-              variationStatus.thumb_url;
-
-            if (!imageUrl) {
-              throw new Error(
-                `No image URL found for variation ${variationId}`
-              );
-            }
-
-            return {
-              image: imageUrl,
-              image_jpg: imageUrl,
-              title: variationStatus.title || prompt,
-              prompt: variationStatus.prompt || prompt,
-              id: variationId,
-            };
-          })
-        );
-
-        return variationResults;
-      })();
-
-      // 3D ASSET GENERATION (in parallel, non-blocking)
-      const assetPromise = (async () => {
-        try {
-          const extraction = assetGenerationService.previewExtraction(prompt);
-          if (!extraction.objects?.length) {
-            console.log('ℹ️ No 3D objects detected in prompt');
-            return [];
-          }
-
-          console.log(`🎨 Generating ${extraction.objects.length} 3D assets from prompt`);
-          
-          const generationResults = await Promise.all(
-            extraction.objects.slice(0, 3).map((obj) =>
-              assetGenerationService.generateSingleAsset(
-                obj.suggestedPrompt || obj.keyword, // Pass the keyword string, not the object
-                user?.uid,
-                "unified-skybox",
-                "medium"
-              )
-            )
-          );
-
-          // Flatten the assets from all generation results
-          const allAssets = generationResults
-            .filter(result => result.success && result.assets?.length)
-            .flatMap(result => result.assets);
-
-          console.log(`✅ Generated ${allAssets.length} 3D assets successfully`);
-          setProgress((prev) => Math.min(prev + 25, 95));
-          return allAssets;
-        } catch (err) {
-          console.error(
-            "Meshy 3D asset generation failed (non-blocking):",
-            err
-          );
-          return [];
-        } finally {
-          setIsAssetsLoading(false);
-        }
-      })();
-
-      const [skyboxResults, assetResults] = await Promise.all([
-        skyboxPromise,
-        assetPromise,
-      ]);
-
-      setIsSkyboxLoading(false);
-
-      setGeneratedVariations(skyboxResults);
-      setBackgroundSkybox(skyboxResults[0]);
-      setCurrentImageForDownload(skyboxResults[0]);
-
-      if (assetResults?.length) {
-        setGeneratedAssets(assetResults);
-        console.log(
-          `✅ Generated ${assetResults.length} 3D assets alongside skybox`
-        );
-      }
-
-      if (user?.uid) {
-        try {
-          for (let i = 0; i < numVariations; i++) {
-            await subscriptionService.incrementUsage(
-              user.uid,
-              "skyboxGenerations"
-            );
-          }
-          await updateSubscriptionCount();
-        } catch (error) {
-          console.error("Error updating subscription usage:", error);
-        }
-      }
-
-      setProgress(100);
-      setIsGenerating(false);
-      setTimeout(() => setIsMinimized(true), 800);
-    } catch (error) {
-      console.error("Error in unified generation:", error);
-      let errorMessage = "Failed to generate In3D.Ai environment";
-      if (error.response?.data?.error) {
-        errorMessage = error.response.data.error;
-      } else if (error.message) {
-        errorMessage += ": " + error.message;
-      }
-      setError(errorMessage);
-      setIsGenerating(false);
-      setProgress(0);
-      setIsSkyboxLoading(false);
-      setIsAssetsLoading(false);
-    }
-  };
-
-  // -------------------------
   // Skybox generation (entry point for Generate button)
   // -------------------------
   const generateSkybox = async () => {
-    if (shouldGenerateUnified) {
-      return generateUnified();
-    }
 
     if (!prompt || !selectedSkybox) {
       setError("Please provide a prompt and select an In3D.Ai style");
@@ -673,20 +466,16 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
 
     setIsGenerating(true);
-    setIsSkyboxLoading(true);
-    setIsAssetsLoading(false);
     setError(null);
     setProgress(0);
     setGeneratedVariations([]);
     setCurrentVariationIndex(0);
-    setCurrentSkyboxIndex(0);
 
     let pollInterval;
 
     try {
       const variations = [];
       for (let i = 0; i < numVariations; i++) {
-        setCurrentSkyboxIndex(i);
         const variationResponse = await skyboxApiService.generateSkybox({
           prompt,
           style_id: selectedSkybox.id,
@@ -734,21 +523,206 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setBackgroundSkybox(variationResults[0]);
       setCurrentImageForDownload(variationResults[0]);
       
+      // CRITICAL: Save to Firestore skyboxes collection
       if (user?.uid) {
         try {
+          console.log(`💾 Starting to save ${variationResults.length} skybox variation(s) to Firestore for user ${user.uid}`);
+          console.log(`   Collection: skyboxes`);
+          console.log(`   User ID: ${user.uid}`);
+          
+          // Prepare variations array matching History component's expected structure
+          const variationsArray = variationResults.map((variation, index) => ({
+            image: variation.image,
+            image_jpg: variation.image_jpg || variation.image,
+            prompt: variation.prompt || prompt,
+            title: variation.title || `${prompt} (Variation ${index + 1})`,
+            generationId: variations[index].toString(),
+            status: 'completed'
+          }));
+          
+          // Create the skybox document with all variations
+          const skyboxData = {
+            userId: user.uid, // CRITICAL: Required for History query
+            promptUsed: prompt,
+            title: variationResults[0].title || prompt,
+            imageUrl: variationResults[0].image, // Main image (first variation)
+            style_id: selectedSkybox.id,
+            negative_prompt: negativeText || '',
+            status: 'completed',
+            variations: variationsArray, // Array of all variations
+            generationIds: variations.map(id => id.toString()), // Store all generation IDs
+            createdAt: serverTimestamp(), // Always set createdAt for new documents
+            updatedAt: serverTimestamp()
+          };
+          
+          console.log(`📝 Skybox data to save:`, {
+            userId: skyboxData.userId,
+            title: skyboxData.title,
+            imageUrl: skyboxData.imageUrl ? 'Present' : 'Missing',
+            variationsCount: variationsArray.length,
+            hasCreatedAt: true
+          });
+          
+          // Use the first variation ID as the document ID
+          const generationId = variations[0].toString();
+          const skyboxRef = doc(db, 'skyboxes', generationId);
+          
+          console.log(`📤 Attempting to save to: skyboxes/${generationId}`);
+          console.log(`   Firestore instance:`, db ? 'Available' : 'Missing');
+          console.log(`   Collection path: skyboxes`);
+          console.log(`   Document ID: ${generationId}`);
+          
+          // Check if document exists first
+          const existingDoc = await getDoc(skyboxRef);
+          const isNewDocument = !existingDoc.exists();
+          
+          console.log(`   Document exists: ${existingDoc.exists()}`);
+          console.log(`   Is new document: ${isNewDocument}`);
+          
+          // Always set createdAt for new documents (merge won't overwrite if it exists)
+          if (isNewDocument) {
+            skyboxData.createdAt = serverTimestamp();
+            console.log(`   ✅ Set createdAt for new document`);
+          } else {
+            // For existing documents, preserve createdAt but ensure it exists
+            if (!existingDoc.data()?.createdAt) {
+              skyboxData.createdAt = serverTimestamp();
+              console.log(`   ✅ Set createdAt for existing document that was missing it`);
+            }
+          }
+          
+          // Save the document - use setDoc to create or update
+          // This will CREATE the collection if it doesn't exist (Firestore auto-creates collections)
+          try {
+            await setDoc(skyboxRef, skyboxData, { merge: true });
+            console.log(`   ✅ setDoc completed successfully`);
+          } catch (setDocError) {
+            console.error(`   ❌ setDoc failed:`, setDocError);
+            console.error(`   Error code:`, setDocError?.code);
+            console.error(`   Error message:`, setDocError?.message);
+            throw setDocError; // Re-throw to be caught by outer catch
+          }
+          
+          console.log(`✅ setDoc completed, verifying save...`);
+          
+          // Verify the save was successful
+          const verifyDoc = await getDoc(skyboxRef);
+          
+          if (!verifyDoc.exists()) {
+            throw new Error('Document does not exist after save attempt');
+          }
+          
+          const verifyData = verifyDoc.data();
+          
+          if (verifyData?.userId === user.uid && verifyData?.createdAt) {
+            console.log(`✅ Successfully saved skybox generation to Firestore`);
+            console.log(`   - Collection: skyboxes`);
+            console.log(`   - Document ID: ${generationId}`);
+            console.log(`   - User ID: ${verifyData.userId}`);
+            console.log(`   - Variations: ${variationsArray.length}`);
+            console.log(`   - Created At: ${verifyData.createdAt ? 'Set' : 'Missing'}`);
+            console.log(`   - Status: ${verifyData.status}`);
+            console.log(`   - Image URL: ${verifyData.imageUrl ? 'Present' : 'Missing'}`);
+            
+            // Show success notification
+            const successMsg = document.createElement('div');
+            successMsg.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            successMsg.innerHTML = `✅ Skybox saved to history! (ID: ${generationId})`;
+            document.body.appendChild(successMsg);
+            setTimeout(() => document.body.removeChild(successMsg), 3000);
+          } else {
+            console.error(`❌ Verification failed for skybox generation`);
+            console.error(`   Document exists: ${verifyDoc.exists()}`);
+            console.error(`   Expected userId: ${user.uid}, Got: ${verifyData?.userId}`);
+            console.error(`   CreatedAt present: ${!!verifyData?.createdAt}`);
+            console.error(`   Full document data:`, verifyData);
+            
+            // Show error notification
+            const errorMsg = document.createElement('div');
+            errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            errorMsg.innerHTML = `⚠️ Failed to verify save. Check console for details.`;
+            document.body.appendChild(errorMsg);
+            setTimeout(() => document.body.removeChild(errorMsg), 5000);
+          }
+          
+          // Update subscription usage
           for (let i = 0; i < numVariations; i++) {
             await subscriptionService.incrementUsage(user.uid, 'skyboxGenerations');
           }
           await updateSubscriptionCount();
-          console.log(`Updated subscription usage: ${numVariations} In3D.Ai generations added`);
+          console.log(`✅ Updated subscription usage: ${numVariations} In3D.Ai generations added`);
         } catch (error) {
-          console.error('Error updating subscription usage:', error);
+          console.error('❌ CRITICAL ERROR: Failed to save skybox to Firestore:', error);
+          console.error('   Error name:', error?.name);
+          console.error('   Error code:', error?.code);
+          console.error('   Error message:', error?.message);
+          console.error('   Full error object:', error);
+          
+          // Show critical error notification
+          const errorMsg = document.createElement('div');
+          errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+          errorMsg.innerHTML = `
+            <div class="font-bold mb-2">❌ Failed to Save to History</div>
+            <div class="text-sm">Error: ${error?.message || 'Unknown error'}</div>
+            <div class="text-xs mt-2">Check console for details. Collection: skyboxes</div>
+          `;
+          document.body.appendChild(errorMsg);
+          setTimeout(() => document.body.removeChild(errorMsg), 8000);
+          
+          // Don't fail the generation if Firestore save fails, but log it clearly
         }
+      } else {
+        console.warn('⚠️ Cannot save skybox: user.uid is missing');
+        console.warn('   User object:', user);
       }
 
       setProgress(100);
       setIsGenerating(false);
-      setIsSkyboxLoading(false);
+      
+      // Auto-generate 3D asset if objects are detected
+      if (has3DObjects && storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid) {
+        console.log('🎯 Auto-generating 3D asset after skybox completion...');
+        try {
+          setIsGenerating3DAsset(true);
+          setAssetGenerationProgress({
+            stage: 'extracting',
+            progress: 0,
+            totalAssets: 0,
+            completedAssets: 0,
+            message: 'Analyzing prompt for 3D objects...'
+          });
+
+          const result = await assetGenerationService.generateAssetsFromPrompt({
+            originalPrompt: prompt,
+            userId: user.uid,
+            skyboxId: variations[0].toString(),
+            quality: 'medium',
+            style: 'realistic',
+            maxAssets: 1 // Generate single asset for unified view
+          }, (progressUpdate) => {
+            setAssetGenerationProgress(progressUpdate);
+          });
+
+          if (result.success && result.assets.length > 0) {
+            const asset = result.assets[0];
+            setGenerated3DAsset(asset);
+            console.log('✅ 3D asset generated successfully:', asset);
+            console.log('📦 Asset downloadUrl:', asset.downloadUrl);
+            console.log('📦 Asset previewUrl:', asset.previewUrl);
+            console.log('📦 Asset format:', asset.format);
+            console.log('📦 Asset status:', asset.status);
+          } else {
+            console.warn('⚠️ 3D asset generation completed but no assets returned');
+            console.warn('📦 Result:', result);
+          }
+        } catch (error) {
+          console.error('❌ Failed to auto-generate 3D asset:', error);
+          // Don't show error to user, just log it
+        } finally {
+          setIsGenerating3DAsset(false);
+          setAssetGenerationProgress(null);
+        }
+      }
       
       setTimeout(() => {
         setIsMinimized(true);
@@ -777,7 +751,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setError(errorMessage);
       setIsGenerating(false);
       setProgress(0);
-      setIsSkyboxLoading(false);
     }
 
     return () => {
@@ -841,7 +814,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // 3D asset generation handler
   // -------------------------
   const handleAssetGeneration = (assets) => {
-    setGeneratedAssets(assets);
     setShowAssetPanel(false);
     
     const successMessage = document.createElement('div');
@@ -1067,23 +1039,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
                     {/* Per-service loading indicators */}
                     <div className="flex flex-wrap gap-3 text-[10px] text-gray-400">
                       <span className="flex items-center gap-1">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isSkyboxLoading ? "bg-sky-400 animate-pulse" : "bg-sky-500"
-                          }`}
-                        />
-                        Skybox {isSkyboxLoading ? "generating…" : "ready"}
+                        <span className={`w-1.5 h-1.5 rounded-full ${isGenerating ? 'bg-sky-500 animate-pulse' : 'bg-emerald-500'}`} />
+                        {isGenerating ? 'Generating skybox...' : 'Skybox ready'}
                       </span>
-                      {shouldGenerateUnified && (
+                      {isGenerating3DAsset && (
                         <span className="flex items-center gap-1">
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              isAssetsLoading
-                                ? "bg-emerald-400 animate-pulse"
-                                : "bg-emerald-500"
-                            }`}
-                          />
-                          3D assets {isAssetsLoading ? "generating…" : "ready"}
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                          {assetGenerationProgress?.message || 'Generating 3D asset...'}
+                        </span>
+                      )}
+                      {generated3DAsset && !isGenerating3DAsset && (
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          3D asset ready
                         </span>
                       )}
                     </div>
@@ -1149,32 +1117,22 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           />
                         </div>
 
-                        <div className="md:col-span-2 space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id="negativeTextToggle"
-                              className="h-3 w-3 rounded border border-[#444] bg-[#151515]"
-                              checked={showNegativeTextInput}
-                              onChange={() => setShowNegativeTextInput(!showNegativeTextInput)}
-                            />
-                            <label
-                              htmlFor="negativeTextToggle"
-                              className="text-[10px] text-gray-400"
-                            >
-                              Enable Negative Prompt
-                            </label>
-                          </div>
-
-                          {showNegativeTextInput && (
-                            <input
-                              type="text"
-                              placeholder="Elements to avoid: low-res, blurry, washed out..."
-                              className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
-                              value={negativeText}
-                              onChange={(e) => setNegativeText(e.target.value)}
-                            />
-                          )}
+                        <div className="md:col-span-2">
+                          <label
+                            htmlFor="negativeText"
+                            className="block text-[10px] tracking-[0.16em] text-gray-500 uppercase mb-0.5"
+                          >
+                            Negative Prompt
+                          </label>
+                          <input
+                            type="text"
+                            id="negativeText"
+                            placeholder="Elements to avoid: low-res, blurry, washed out..."
+                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            value={negativeText}
+                            onChange={(e) => setNegativeText(e.target.value)}
+                            disabled={isGenerating}
+                          />
                         </div>
                       </div>
                     )}
@@ -1188,30 +1146,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         <span className="text-[11px] text-amber-300">
                           Trial: 1 variation, {TRIAL_ALLOWED_STYLES.length} styles available. <button onClick={handleUpgrade} className="underline hover:text-amber-200">Upgrade</button> for full access.
                         </span>
-                      </div>
-                    )}
-
-                    {/* 3D Asset Generation - manual panel (extra) - hidden for trial users.
-                        When unified generation is active, we hide this to avoid a second,
-                        separate "generate assets" flow. */}
-                    {!isTrialUser && !shouldGenerateUnified && has3DObjects && assetGenerationService && storageAvailable && (
-                      <div className="border border-[#2a3a2a] bg-[#101712] rounded-md px-3 py-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="text-[11px] tracking-[0.16em] text-emerald-400 uppercase">
-                              3D Assets Detected
-                            </p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">
-                              Convert key objects in your prompt into Meshy assets.
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => setShowAssetPanel(true)}
-                            className="px-3 py-1.5 rounded-md bg-emerald-600/80 hover:bg-emerald-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
-                          >
-                            Generate Assets
-                          </button>
-                        </div>
                       </div>
                     )}
 
@@ -1406,11 +1340,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                 />
                               </svg>
-                              <span>
-                                {shouldGenerateUnified
-                                  ? 'Generating env + 3D assets'
-                                  : 'Generating'}
-                              </span>
+                              <span>Generating</span>
                             </>
                           ) : !isUnlimited && remainingAfterGeneration < 0 ? (
                             <>
@@ -1519,7 +1449,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               className="mt-2 w-full py-1.5 rounded-md bg-red-600/80 hover:bg-red-500 text-[11px] text-white uppercase tracking-[0.12em] flex items-center justify-center gap-1"
                               onClick={runDiagnostics}
                             >
-                              <svg
+                             <svg
                                 className="w-3.5 h-3.5"
                                 fill="none"
                                 stroke="currentColor"
@@ -1570,73 +1500,37 @@ const MainSection = ({ setBackgroundSkybox }) => {
         onClose={() => setShowAssetPanel(false)}
       />
 
-      {/* Skybox + 3D Assets Environment */}
-      {generatedVariations.length > 0 && (
-        <div className="absolute inset-0 z-20">
-          <SkyboxEnvironmentViewer
-            skyboxImageUrl={generatedVariations[currentVariationIndex]?.image}
-            assets={generatedAssets.map((asset, index) => ({
-              id: asset.id || `asset-${index}`,
-              prompt: asset.prompt || prompt,
-              downloadUrl: asset.downloadUrl || asset.modelUrl,
-              modelUrl: asset.modelUrl || asset.downloadUrl,
-              thumbnailUrl: asset.thumbnailUrl,
-              format: asset.format || 'glb',
-              status: asset.status || 'completed',
-              position: assetPositions[asset.id]?.position || [(index - Math.floor(generatedAssets.length / 2)) * 3, 0, 0],
-              rotation: assetPositions[asset.id]?.rotation || [0, 0, 0],
-              scale: assetPositions[asset.id]?.scale || 1
-            }))}
-            onAssetSelect={(assetId) => {
-              console.log('Selected asset:', assetId);
-            }}
-            onAssetTransform={(assetId, position, rotation, scale) => {
-              setAssetPositions(prev => ({
-                ...prev,
-                [assetId]: { position, rotation, scale }
-              }));
-            }}
-            showGrid={false}
-            showGizmo={generatedAssets.length > 0}
-            enableInteraction={true}
-            className="w-full h-full"
-          />
-          
-          {/* Variation Navigation */}
-          {generatedVariations.length > 1 && (
-            <>
-              <button
-                onClick={() => handleVariationChange('prev')}
-                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 text-white transition-all z-40"
-                aria-label="Previous variation"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                onClick={() => handleVariationChange('next')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/50 hover:bg-black/70 border border-white/20 text-white transition-all z-40"
-                aria-label="Next variation"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-              <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-black/50 px-3 py-1 rounded text-[10px] text-white z-40">
-                {currentVariationIndex + 1} / {generatedVariations.length}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
       {/* Storage Status & Diagnostic overlays - ONLY in dev mode */}
       {isDevMode && (
         <>
           <StorageStatusIndicator />
           <ConfigurationDiagnostic />
         </>
+      )}
+
+      {/* 3D Asset Viewer with Skybox Background - Merged Create & 3D Asset Section */}
+      {generated3DAsset && 
+       generated3DAsset.status === 'completed' && 
+       (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && 
+       generatedVariations.length > 0 && (
+        <div className="fixed inset-0 w-full h-full z-[1]">
+          <AssetViewerWithSkybox
+            assetUrl={generated3DAsset.downloadUrl || generated3DAsset.previewUrl || ''}
+            skyboxImageUrl={generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image}
+            assetFormat={generated3DAsset.format || 'glb'}
+            className="w-full h-full"
+            onLoad={(model) => {
+              console.log('✅ 3D asset loaded in Create section:', model);
+              console.log('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
+              console.log('📦 Skybox URL:', generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image);
+            }}
+            onError={(error) => {
+              console.error('❌ 3D asset loading error:', error);
+              console.error('📦 Asset data:', generated3DAsset);
+              console.error('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
+            }}
+          />
+        </div>
       )}
     </div>
   );

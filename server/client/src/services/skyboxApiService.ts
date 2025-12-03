@@ -1,5 +1,5 @@
 import api from '../config/axios';
-import type { SkyboxStyle, SkyboxGenerationRequest, SkyboxGenerationResponse, SkyboxStatusResponse } from '../types/skybox';
+import type { SkyboxStatusResponse } from '../types/skybox';
 
 export const skyboxApiService = {
   // Get available skybox styles

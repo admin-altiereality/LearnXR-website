@@ -1,4 +1,4 @@
-import { getStorage } from 'firebase/storage';
+import { getStorage, ref } from 'firebase/storage';
 import app, { storage as preInitializedStorage } from '../config/firebase';
 
 let storageInstance: ReturnType<typeof getStorage> | null = null;
@@ -105,8 +105,8 @@ export async function isStorageAvailable(): Promise<boolean> {
 
     // Test storage access with a simple operation
     try {
-      // Create a test reference to verify storage is accessible
-      const testRef = storage.ref();
+      // Create a test reference to verify storage is accessible (Firebase v9+ API)
+      const testRef = ref(storage, 'test/availability-check');
       console.log('✅ Storage reference created successfully');
       
       // Check if we can access the storage bucket
