@@ -151,9 +151,14 @@ export class AssetStorageService {
       
       // Additional check to ensure storage is working
       if (this.storage) {
-        // Test storage access
-        const testRef = this.storage.ref();
-        return true;
+        // Test storage access (Firebase v9+ API)
+        try {
+          const testRef = ref(this.storage, 'test/availability-check');
+          return true;
+        } catch (error) {
+          console.error('❌ Storage reference test failed:', error);
+          return false;
+        }
       }
       
       return false;
@@ -418,12 +423,20 @@ export class AssetStorageService {
    * Get assets for a specific user
    */
   async getUserAssets(userId: string, limit?: number): Promise<StoredAsset[]> {
-    return this.queryAssets({ 
-      userId, 
-      orderBy: 'createdAt', 
-      orderDirection: 'desc',
-      limit: limit || 50
+    // Query without orderBy to avoid index requirement, then sort client-side
+    const assets = await this.queryAssets({ 
+      userId
     });
+    
+    // Sort by createdAt descending (most recent first)
+    const sorted = assets.sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA;
+    });
+    
+    // Apply limit after sorting
+    return limit ? sorted.slice(0, limit) : sorted;
   }
   
   /**

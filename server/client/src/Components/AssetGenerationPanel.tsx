@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { assetGenerationService, type AssetGenerationProgress, type AssetGenerationResult } from '../services/assetGenerationService';
 import { meshyApiService } from '../services/meshyApiService';
@@ -8,17 +8,21 @@ import type { StoredAsset } from '../services/assetStorageService';
 interface AssetGenerationPanelProps {
   prompt: string;
   skyboxId?: string;
+  skyboxImageUrl?: string;
   onAssetsGenerated?: (assets: StoredAsset[]) => void;
   onClose?: () => void;
   isVisible: boolean;
+  autoGenerate?: boolean;
 }
 
 const AssetGenerationPanel: React.FC<AssetGenerationPanelProps> = ({
   prompt,
   skyboxId,
+  skyboxImageUrl,
   onAssetsGenerated,
   onClose,
-  isVisible
+  isVisible,
+  autoGenerate = false
 }) => {
   const { user } = useAuth();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -30,17 +34,7 @@ const AssetGenerationPanel: React.FC<AssetGenerationPanelProps> = ({
   const [style, setStyle] = useState('realistic');
   const [maxAssets, setMaxAssets] = useState(3);
 
-  // Preview extraction when prompt changes
-  useEffect(() => {
-    if (prompt && prompt.trim().length > 0) {
-      const preview = assetGenerationService.previewExtraction(prompt);
-      setExtractionPreview(preview);
-    } else {
-      setExtractionPreview(null);
-    }
-  }, [prompt]);
-
-  const handleGenerateAssets = async () => {
+  const handleGenerateAssets = useCallback(async () => {
     if (!user?.uid) {
       setError('You must be logged in to generate assets');
       return;
@@ -91,7 +85,23 @@ const AssetGenerationPanel: React.FC<AssetGenerationPanelProps> = ({
       setIsGenerating(false);
       setProgress(null);
     }
-  };
+  }, [user?.uid, skyboxId, quality, style, maxAssets, onAssetsGenerated]);
+
+  // Preview extraction when prompt changes
+  useEffect(() => {
+    if (prompt && prompt.trim().length > 0) {
+      const preview = assetGenerationService.previewExtraction(prompt);
+      setExtractionPreview(preview);
+      
+      // Auto-trigger generation if objects are detected and autoGenerate is enabled
+      if (autoGenerate && preview.hasObjects && !isGenerating && user?.uid) {
+        console.log('🎯 Auto-triggering 3D asset generation for detected objects');
+        handleGenerateAssets();
+      }
+    } else {
+      setExtractionPreview(null);
+    }
+  }, [prompt, autoGenerate, isGenerating, user?.uid, handleGenerateAssets]);
 
   const handleDownloadAsset = async (asset: StoredAsset) => {
     try {

@@ -3,13 +3,25 @@
  * Handles skybox generation, status checking, and user management
  */
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - firebase-functions v2 subpath types can be missing in some tooling
 import {setGlobalOptions} from "firebase-functions/v2";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - firebase-functions v2 subpath types can be missing in some tooling
 import {onRequest} from "firebase-functions/v2/https";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - firebase-functions v2 subpath types can be missing in some tooling
+import {defineSecret} from "firebase-functions/v2/params";
 import * as admin from 'firebase-admin';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import Razorpay from 'razorpay';
+
+// Define secrets using Firebase Functions v2 params
+const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
+const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
+const blockadeApiKey = defineSecret('BLOCKADE_API_KEY');
 
 // Global options for cost control
 setGlobalOptions({ maxInstances: 10 });
@@ -101,39 +113,47 @@ const authenticateUser = async (req: Request, res: Response, next: NextFunction)
 
 app.use(authenticateUser);
 
-// Initialize services
+// Initialize services - these will be set when the function runs with secrets
 let BLOCKADE_API_KEY = '';
 let razorpay: Razorpay | null = null;
 
-try {
-  BLOCKADE_API_KEY = process.env.BLOCKADE_API_KEY || '';
-  if (BLOCKADE_API_KEY) {
-    // Clean the API key (remove any invalid characters)
-    BLOCKADE_API_KEY = BLOCKADE_API_KEY.replace(/[^\w\-]/g, '');
-    console.log('BlockadeLabs API key configured successfully');
-  } else {
-    console.warn('BLOCKADE_API_KEY not found in environment variables');
+// Function to initialize services with secrets
+const initializeServices = () => {
+  try {
+    // Get Blockade API key from secret
+    BLOCKADE_API_KEY = blockadeApiKey.value() || '';
+    if (BLOCKADE_API_KEY) {
+      // Clean the API key (remove any invalid characters)
+      BLOCKADE_API_KEY = BLOCKADE_API_KEY.replace(/[^\w\-]/g, '');
+      console.log('BlockadeLabs API key configured successfully');
+    } else {
+      console.warn('BLOCKADE_API_KEY not found in secrets');
+    }
+  } catch (error) {
+    console.error('Failed to configure BlockadeLabs API key:', error);
   }
-} catch (error) {
-  console.error('Failed to configure BlockadeLabs API key:', error);
-}
 
-try {
-  const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID;
-  const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET;
-  
-  if (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET) {
-    razorpay = new Razorpay({
-      key_id: RAZORPAY_KEY_ID,
-      key_secret: RAZORPAY_KEY_SECRET
-    });
-    console.log('Razorpay initialized successfully');
-  } else {
-    console.warn('Razorpay credentials not found in environment variables');
+  try {
+    // Get Razorpay credentials from secrets
+    const RAZORPAY_KEY_ID = razorpayKeyId.value();
+    const RAZORPAY_KEY_SECRET = razorpayKeySecret.value();
+    
+    if (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET) {
+      razorpay = new Razorpay({
+        key_id: RAZORPAY_KEY_ID,
+        key_secret: RAZORPAY_KEY_SECRET
+      });
+      console.log('Razorpay initialized successfully');
+    } else {
+      console.warn('Razorpay credentials not found in secrets');
+    }
+  } catch (error) {
+    console.error('Failed to initialize Razorpay:', error);
   }
-} catch (error) {
-  console.error('Failed to initialize Razorpay:', error);
-}
+};
+
+// Initialize services on app startup
+initializeServices();
 
 // Environment check endpoint
 app.get('/env-check', (req: Request, res: Response) => {
@@ -147,9 +167,9 @@ app.get('/env-check', (req: Request, res: Response) => {
       blockadelabs: !!BLOCKADE_API_KEY,
       razorpay: !!razorpay,
       env_debug: {
-        blockadelabs_key_length: process.env.BLOCKADE_API_KEY?.length || 0,
-        razorpay_key_length: process.env.RAZORPAY_KEY_ID?.length || 0,
-        razorpay_secret_length: process.env.RAZORPAY_KEY_SECRET?.length || 0
+        blockadelabs_key_length: BLOCKADE_API_KEY?.length || 0,
+        razorpay_key_length: razorpayKeyId.value()?.length || 0,
+        razorpay_secret_length: razorpayKeySecret.value()?.length || 0
       },
       timestamp: new Date().toISOString(),
       requestId
@@ -556,7 +576,7 @@ app.post('/payment/create-order', async (req: Request, res: Response) => {
         order_id: order.id,
         amount: order.amount,
         currency: order.currency,
-        key_id: process.env.RAZORPAY_KEY_ID
+        key_id: razorpayKeyId.value()
       },
       requestId
     });
@@ -578,7 +598,8 @@ app.post('/payment/verify', async (req: Request, res: Response) => {
   try {
     console.log(`[${requestId}] Verifying payment:`, { razorpay_order_id, razorpay_payment_id });
     
-    if (!process.env.RAZORPAY_KEY_SECRET) {
+    const secret = razorpayKeySecret.value();
+    if (!secret) {
       return res.status(500).json({
         success: false,
         error: 'Razorpay not configured',
@@ -589,7 +610,7 @@ app.post('/payment/verify', async (req: Request, res: Response) => {
     // Verify signature
     const crypto = require('crypto');
     const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .createHmac('sha256', secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest('hex');
     
@@ -676,7 +697,7 @@ app.post('/subscription/create', async (req: Request, res: Response) => {
       data: {
         subscription_id: subscription.id,
         status: subscription.status,
-        key_id: process.env.RAZORPAY_KEY_ID
+        key_id: razorpayKeyId.value()
       },
       requestId
     });
@@ -851,6 +872,7 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 // Export the Express app as a Firebase Function v2
+// Pass the secret references to the function configuration
 export const api = onRequest({
   memory: '512MiB',
   timeoutSeconds: 60,
@@ -858,5 +880,5 @@ export const api = onRequest({
   cors: true,
   region: 'us-central1',
   invoker: 'public',
-  secrets: ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'BLOCKADE_API_KEY']
+  secrets: [razorpayKeyId, razorpayKeySecret, blockadeApiKey]
 }, app);

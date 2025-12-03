@@ -161,9 +161,37 @@ export class UnifiedStorageService {
     try {
       const jobRef = doc(db, this.jobsCollection, jobId);
       
+      // Normalize errors field to always be an array
+      let normalizedErrors = updates.errors;
+      if (updates.errors !== undefined) {
+        if (Array.isArray(updates.errors)) {
+          normalizedErrors = updates.errors;
+        } else if (typeof updates.errors === 'object' && updates.errors !== null) {
+          // Handle legacy object format - convert to array
+          console.warn(`⚠️ UnifiedStorageService: Converting legacy errors object to array for job ${jobId}`);
+          const errorObj = updates.errors as any;
+          normalizedErrors = [];
+          if (errorObj.message) normalizedErrors.push(errorObj.message);
+          if (errorObj.status && errorObj.status !== 'completed') {
+            normalizedErrors.push(`Status: ${errorObj.status}`);
+          }
+          if (errorObj.prompt) {
+            normalizedErrors.push(`Prompt: ${errorObj.prompt}`);
+          }
+          if (normalizedErrors.length === 0) {
+            normalizedErrors = ['Unknown error'];
+          }
+        } else if (typeof updates.errors === 'string') {
+          normalizedErrors = [updates.errors];
+        } else {
+          normalizedErrors = [];
+        }
+      }
+      
       // Filter out undefined values to prevent Firestore errors
       const cleanUpdates = this.filterUndefinedValues({
         ...updates,
+        ...(normalizedErrors !== undefined && { errors: normalizedErrors }),
         updatedAt: new Date().toISOString()
       });
       
@@ -173,6 +201,34 @@ export class UnifiedStorageService {
       console.error('❌ Failed to update job:', error);
       throw new Error(`Failed to update job: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Normalize errors field to always be an array
+   */
+  private normalizeErrors(errors: any): string[] {
+    if (!errors) {
+      return [];
+    }
+    if (Array.isArray(errors)) {
+      return errors.filter(e => typeof e === 'string');
+    }
+    if (typeof errors === 'object') {
+      // Handle legacy object format - convert to array
+      const errorArray: string[] = [];
+      if (errors.message) errorArray.push(errors.message);
+      if (errors.status && errors.status !== 'completed') {
+        errorArray.push(`Status: ${errors.status}`);
+      }
+      if (errors.prompt) {
+        errorArray.push(`Prompt: ${errors.prompt}`);
+      }
+      return errorArray.length > 0 ? errorArray : ['Unknown error'];
+    }
+    if (typeof errors === 'string') {
+      return [errors];
+    }
+    return [];
   }
 
   /**
@@ -187,7 +243,20 @@ export class UnifiedStorageService {
         return null;
       }
 
-      return jobDoc.data() as Job;
+      const jobData = jobDoc.data();
+      
+      // Normalize errors field if it exists
+      if (jobData.errors !== undefined) {
+        const normalizedErrors = this.normalizeErrors(jobData.errors);
+        if (normalizedErrors.length > 0 && !Array.isArray(jobData.errors)) {
+          // If we had to normalize, update the document to fix the structure
+          console.warn(`⚠️ UnifiedStorageService: Normalizing errors field for job ${jobId} from object to array`);
+          await updateDoc(jobRef, { errors: normalizedErrors });
+        }
+        jobData.errors = normalizedErrors;
+      }
+
+      return jobData as Job;
     } catch (error) {
       console.error('❌ Failed to get job:', error);
       throw new Error(`Failed to get job: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -212,8 +281,15 @@ export class UnifiedStorageService {
       const querySnapshot = await getDocs(q);
       const jobs: Job[] = [];
 
-      querySnapshot.forEach((doc) => {
-        jobs.push(doc.data() as Job);
+      querySnapshot.forEach((docSnapshot) => {
+        const jobData = docSnapshot.data();
+        
+        // Normalize errors field if it exists
+        if (jobData.errors !== undefined) {
+          jobData.errors = this.normalizeErrors(jobData.errors);
+        }
+        
+        jobs.push(jobData as Job);
       });
 
       return jobs;
