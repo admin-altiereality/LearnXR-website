@@ -450,8 +450,25 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // -------------------------
   const generateSkybox = async () => {
 
-    if (!prompt || !selectedSkybox) {
-      setError("Please provide a prompt and select an In3D.Ai style");
+    if (!prompt || !prompt.trim()) {
+      setError("Please provide a prompt for your In3D.Ai environment");
+      return;
+    }
+    
+    if (!selectedSkybox) {
+      setError("Please select an In3D.Ai style");
+      return;
+    }
+    
+    if (!selectedSkybox.id || (typeof selectedSkybox.id === 'string' && !selectedSkybox.id.trim())) {
+      setError("Invalid style selection. Please select a valid In3D.Ai style.");
+      return;
+    }
+    
+    // Validate style_id is a valid number
+    const styleIdNumber = typeof selectedSkybox.id === 'string' ? parseInt(selectedSkybox.id, 10) : Number(selectedSkybox.id);
+    if (isNaN(styleIdNumber) || styleIdNumber <= 0) {
+      setError("Invalid style ID. Please select a different In3D.Ai style.");
       return;
     }
 
@@ -476,34 +493,89 @@ const MainSection = ({ setBackgroundSkybox }) => {
     try {
       const variations = [];
       for (let i = 0; i < numVariations; i++) {
+        // Ensure style_id is a valid number
+        const styleIdNumber = typeof selectedSkybox.id === 'string' ? parseInt(selectedSkybox.id, 10) : Number(selectedSkybox.id);
+        
+        console.log('🌅 Generating skybox variation:', {
+          variation: i + 1,
+          prompt: prompt.substring(0, 50) + '...',
+          style_id: styleIdNumber,
+          style_name: selectedSkybox.name,
+          has_negative_prompt: !!negativeText
+        });
+        
         const variationResponse = await skyboxApiService.generateSkybox({
-          prompt,
-          style_id: selectedSkybox.id,
-          negative_prompt: negativeText,
+          prompt: prompt.trim(),
+          style_id: styleIdNumber,
+          negative_prompt: negativeText?.trim() || undefined,
           userId: user?.uid,
         });
 
-        if (variationResponse && variationResponse.data && variationResponse.data.id) {
-          variations.push(variationResponse.data.id);
+        console.log('🌅 Generation response:', variationResponse);
+
+        // Check for generationId or id
+        const generationId = variationResponse?.data?.generationId || variationResponse?.data?.id;
+        
+        if (variationResponse && variationResponse.success && generationId) {
+          console.log(`✅ Generation created with ID: ${generationId}`);
+          variations.push(generationId.toString());
           const baseProgress = 30;
           const progressPerSkybox = 60 / numVariations;
           const currentProgress = baseProgress + (i * progressPerSkybox);
           setProgress(Math.min(currentProgress, 90));
+        } else {
+          console.error('❌ Invalid generation response:', variationResponse);
+          throw new Error('Failed to create skybox generation. Please try again.');
         }
       }
 
       const variationResults = await Promise.all(
         variations.map(async (variationId) => {
+          console.log(`🔄 Starting to poll status for generation: ${variationId}`);
           let variationStatus;
+          let attempts = 0;
+          const maxAttempts = 60; // 2 minutes max (60 * 2 seconds)
+          
           do {
-            const statusResponse = await skyboxApiService.getSkyboxStatus(variationId);
-            variationStatus = statusResponse.data;
-            console.log(`Status for ${variationId}:`, variationStatus);
-            
-            if (variationStatus.status !== "completed" && variationStatus.status !== "complete") {
+            try {
+              const statusResponse = await skyboxApiService.getSkyboxStatus(variationId);
+              
+              if (!statusResponse.success) {
+                throw new Error(statusResponse.error || 'Failed to get status');
+              }
+              
+              variationStatus = statusResponse.data;
+              console.log(`📊 Status for ${variationId} (attempt ${attempts + 1}):`, variationStatus?.status);
+              
+              if (variationStatus?.status === "completed" || variationStatus?.status === "complete") {
+                console.log(`✅ Generation ${variationId} completed!`);
+                break;
+              }
+              
+              if (variationStatus?.status === "failed" || variationStatus?.status === "error") {
+                throw new Error(variationStatus?.error_message || 'Generation failed');
+              }
+              
+              attempts++;
+              if (attempts >= maxAttempts) {
+                throw new Error('Generation timed out. Please try again.');
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } catch (error) {
+              console.error(`❌ Error checking status for ${variationId}:`, error);
+              // If it's a 404 or "not found" error, stop immediately
+              if (error.message?.includes('not found') || error.message?.includes('expired')) {
+                throw error;
+              }
+              // For other errors, retry a few times
+              if (attempts >= 5) {
+                throw error;
+              }
+              attempts++;
               await new Promise(resolve => setTimeout(resolve, 2000));
             }
-          } while (variationStatus.status !== "completed" && variationStatus.status !== "complete");
+          } while (variationStatus?.status !== "completed" && variationStatus?.status !== "complete" && attempts < maxAttempts);
 
           const imageUrl = variationStatus.file_url || variationStatus.image || variationStatus.thumb_url;
           if (!imageUrl) {

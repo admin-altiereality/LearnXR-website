@@ -34,12 +34,7 @@ interface PreviewSceneProps {
   className?: string;
 }
 
-// Get the correct API base URL
-const getApiBaseUrl = () => {
-  const region = 'us-central1';
-  const projectId = 'in3devoneuralai';
-  return `https://${region}-${projectId}.cloudfunctions.net/api`;
-};
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 // Enhanced model loading with fallback strategies
 class ModelLoader {

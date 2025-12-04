@@ -1,15 +1,21 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
-// API base URL - use local server in development, Firebase Functions in production
+// API base URL - use environment variable or fallback to defaults
 const getApiBaseUrl = () => {
+  // Check for explicit API base URL from environment
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  
   // Use local backend in development
   if (import.meta.env.DEV) {
-    return 'http://localhost:5002/api';
+    return 'http://localhost:5001/in3devoneuralai/us-central1/api';
   }
+  
   // Use Firebase Functions in production
   const region = 'us-central1';
-  const projectId = 'in3devoneuralai';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
   return `https://${region}-${projectId}.cloudfunctions.net/api`;
 };
 

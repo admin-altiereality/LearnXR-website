@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { skyboxApiService } from '../services/skyboxApiService';
 import { meshyApiService } from '../services/meshyApiService';
 import { unifiedStorageService } from '../services/unifiedStorageService';
+import { getApiBaseUrl } from '../utils/apiConfig';
 import type { 
   GenerationRequest, 
   GenerationResponse, 
@@ -120,14 +121,24 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         
         attempts++;
         await new Promise(resolve => setTimeout(resolve, pollInterval));
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error polling skybox status:', error);
+        
+        // If generation not found (404), stop immediately - don't keep polling
+        if (error.message?.includes('not found') || 
+            error.message?.includes('expired') ||
+            error.response?.status === 404) {
+          throw new Error('Skybox generation not found. It may have expired or was never created. Please try generating a new skybox.');
+        }
+        
         attempts++;
         
+        // If we've exhausted all attempts, throw the error
         if (attempts >= maxAttempts) {
           throw error;
         }
         
+        // For other errors, continue polling (might be temporary network issues)
         await new Promise(resolve => setTimeout(resolve, pollInterval));
       }
     }
@@ -578,11 +589,6 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         console.log('🔄 Downloading Meshy.ai asset via proxy:', downloadInfo.url);
         
         // Use proxy strategies for Meshy.ai URLs
-        const getApiBaseUrl = () => {
-          const region = 'us-central1';
-          const projectId = 'in3devoneuralai';
-          return `https://${region}-${projectId}.cloudfunctions.net/api`;
-        };
         
         try {
           // Try proxy first
