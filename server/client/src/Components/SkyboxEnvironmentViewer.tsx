@@ -15,6 +15,7 @@ import {
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 // ============================================
 // Types
@@ -118,9 +119,10 @@ function InteractiveAsset({ asset, isSelected, onSelect, transformMode, onTransf
 
     // Try loading strategies
     const tryLoad = async () => {
+      const apiBaseUrl = getApiBaseUrl();
       const strategies = [
         modelUrl,
-        `https://us-central1-in3devoneuralai.cloudfunctions.net/api/proxy-asset?url=${encodeURIComponent(modelUrl)}`,
+        `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(modelUrl)}`,
       ];
 
       for (const url of strategies) {

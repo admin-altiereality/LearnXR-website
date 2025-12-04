@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:firebase": "npm run build",
+    "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting",
+    "deploy:firebase:channel": "npm run build:firebase && firebase hosting:channel:deploy"
   },
   "dependencies": {
     "@firebase/auth": "^1.8.2",

@@ -426,12 +426,8 @@ export class UnifiedStorageService {
       throw new Error('Asset URL is required');
     }
 
-    // Get the correct API base URL
-    const getApiBaseUrl = () => {
-      const region = 'us-central1';
-      const projectId = 'in3devoneuralai';
-      return `https://${region}-${projectId}.cloudfunctions.net/api`;
-    };
+    // Import API config utility
+    const { getApiBaseUrl } = await import('../utils/apiConfig');
 
     // Try multiple download strategies (same as working components)
     const strategies = [

@@ -16,12 +16,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
-// Get the correct API base URL
-const getApiBaseUrl = () => {
-  const region = 'us-central1';
-  const projectId = 'in3devoneuralai';
-  return `https://${region}-${projectId}.cloudfunctions.net/api`;
-};
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface Meshy3DViewerProps {
   modelUrl: string;

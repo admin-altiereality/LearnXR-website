@@ -1,11 +1,7 @@
 // CORS Test Utilities
 // Utils for testing CORS-related asset loading with fallback strategies
 
-const getApiBaseUrl = () => {
-  const region = 'us-central1';
-  const projectId = 'in3devoneuralai';
-  return `https://${region}-${projectId}.cloudfunctions.net/api`;
-};
+import { getApiBaseUrl } from './apiConfig';
 
 /**
  * Test asset loading with fallback strategies

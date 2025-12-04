@@ -4,6 +4,7 @@ import { OrbitControls, useTexture, Html, useProgress, Sphere } from '@react-thr
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface AssetViewerWithSkyboxProps {
   assetUrl: string;
@@ -116,9 +117,10 @@ function AssetModel({
         }
 
         // Try multiple loading strategies
+        const apiBaseUrl = getApiBaseUrl();
         const strategies = [
           assetUrl,
-          `https://us-central1-in3devoneuralai.cloudfunctions.net/api/proxy-asset?url=${encodeURIComponent(assetUrl)}`,
+          `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(assetUrl)}`,
           `http://localhost:5002/proxy-asset?url=${encodeURIComponent(assetUrl)}`,
         ];
 
