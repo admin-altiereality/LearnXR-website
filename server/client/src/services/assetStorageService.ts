@@ -6,8 +6,7 @@ import {
   uploadBytes, 
   getDownloadURL, 
   deleteObject,
-  listAll,
-  StorageReference
+  listAll
 } from 'firebase/storage';
 import { 
   collection, 
@@ -51,6 +50,7 @@ export interface StoredAsset {
     quality: string;
     style: string;
     tags: string[];
+    storageProvider?: string;
   };
 }
 
@@ -153,7 +153,7 @@ export class AssetStorageService {
       if (this.storage) {
         // Test storage access (Firebase v9+ API)
         try {
-          const testRef = ref(this.storage, 'test/availability-check');
+          ref(this.storage, 'test/availability-check');
           return true;
         } catch (error) {
           console.error('❌ Storage reference test failed:', error);
@@ -213,14 +213,14 @@ export class AssetStorageService {
         originalPrompt: originalPrompt || asset.prompt,
         category: extractedObject.category,
         confidence: extractedObject.confidence,
-        status: asset.status,
+        status: asset.status === 'cancelled' ? 'failed' : asset.status,
         downloadUrl: asset.downloadUrl,
         previewUrl: asset.previewUrl,
         format: asset.format,
         size: asset.size,
         createdAt: now,
         updatedAt: now,
-        error: asset.error,
+        error: asset.error ? (typeof asset.error === 'string' ? asset.error : asset.error.message) : undefined,
         metadata: {
           meshyId: asset.id,
           generationTime: 0, // Will be updated when completed
@@ -363,7 +363,7 @@ export class AssetStorageService {
    */
   async queryAssets(options: AssetQueryOptions): Promise<StoredAsset[]> {
     try {
-      let q = collection(db, this.assetsCollection);
+      const baseCollection = collection(db, this.assetsCollection);
       const constraints: any[] = [];
       
       // Add filters
@@ -393,10 +393,10 @@ export class AssetStorageService {
         constraints.push(limit(options.limit));
       }
       
-      // Apply constraints
-      if (constraints.length > 0) {
-        q = query(q, ...constraints);
-      }
+      // Apply constraints - query() returns a Query type
+      const q = constraints.length > 0 
+        ? query(baseCollection, ...constraints)
+        : baseCollection;
       
       const querySnapshot = await getDocs(q);
       const assets: StoredAsset[] = [];

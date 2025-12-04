@@ -477,7 +477,7 @@ function App() {
                         <ProtectedRoute>
                           <MainSection 
                             setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full px-6"
+                            className="w-full absolute inset-0 min-h-screen"
                           />
                         </ProtectedRoute>
                       } />

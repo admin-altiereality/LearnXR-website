@@ -679,9 +679,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setProgress(100);
       setIsGenerating(false);
       
-      // Auto-generate 3D asset if objects are detected
-      if (has3DObjects && storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid) {
-        console.log('🎯 Auto-generating 3D asset after skybox completion...');
+      // Always generate 3D asset after skybox (unified generation)
+      const canGenerate3D = storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid;
+      
+      console.log('🔍 Unified Generation - 3D Asset Check:', {
+        storageAvailable,
+        meshyConfigured: assetGenerationService.isMeshyConfigured(),
+        hasUserId: !!user?.uid,
+        canGenerate3D,
+        prompt: prompt.substring(0, 50) + '...'
+      });
+      
+      if (canGenerate3D) {
+        console.log('🎯 Generating 3D asset with skybox background...');
         try {
           setIsGenerating3DAsset(true);
           setAssetGenerationProgress({
@@ -689,7 +699,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
             progress: 0,
             totalAssets: 0,
             completedAssets: 0,
-            message: 'Analyzing prompt for 3D objects...'
+            message: 'Generating 3D asset for your environment...'
           });
 
           const result = await assetGenerationService.generateAssetsFromPrompt({
@@ -711,16 +721,51 @@ const MainSection = ({ setBackgroundSkybox }) => {
             console.log('📦 Asset previewUrl:', asset.previewUrl);
             console.log('📦 Asset format:', asset.format);
             console.log('📦 Asset status:', asset.status);
+            console.log('📦 Skybox background:', variationResults[0]?.image);
           } else {
             console.warn('⚠️ 3D asset generation completed but no assets returned');
             console.warn('📦 Result:', result);
+            
+            // Show warning but don't fail - skybox was generated successfully
+            if (isDevMode) {
+              const warningMsg = document.createElement('div');
+              warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+              warningMsg.innerHTML = `
+                <div class="font-bold mb-2">⚠️ 3D Asset Generation Failed</div>
+                <div class="text-sm">${result.error || 'No assets were generated. Skybox is still available.'}</div>
+                ${result.errors && result.errors.length > 0 ? `<div class="text-xs mt-2">Errors: ${result.errors.join(', ')}</div>` : ''}
+              `;
+              document.body.appendChild(warningMsg);
+              setTimeout(() => document.body.removeChild(warningMsg), 8000);
+            }
           }
         } catch (error) {
-          console.error('❌ Failed to auto-generate 3D asset:', error);
-          // Don't show error to user, just log it
+          console.error('❌ Failed to generate 3D asset:', error);
+          // Don't show error to user - skybox was generated successfully
+          // They can still use the skybox even if 3D asset generation fails
         } finally {
           setIsGenerating3DAsset(false);
           setAssetGenerationProgress(null);
+        }
+      } else {
+        const reasons = [];
+        if (!storageAvailable) reasons.push('Storage not available');
+        if (!assetGenerationService.isMeshyConfigured()) reasons.push('Meshy API not configured');
+        if (!user?.uid) reasons.push('User not authenticated');
+        
+        console.warn('⚠️ 3D asset generation skipped (skybox still generated):', reasons.join(', '));
+        
+        // Only show notification if it's a configuration issue (not just missing objects)
+        if (isDevMode || (!storageAvailable || !assetGenerationService.isMeshyConfigured())) {
+          const warningMsg = document.createElement('div');
+          warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+          warningMsg.innerHTML = `
+            <div class="font-bold mb-2">⚠️ Skybox Generated</div>
+            <div class="text-sm">3D asset generation skipped: ${reasons.join(', ')}</div>
+            <div class="text-xs mt-2">Your skybox environment is ready to use.</div>
+          `;
+          document.body.appendChild(warningMsg);
+          setTimeout(() => document.body.removeChild(warningMsg), 5000);
         }
       }
       
@@ -884,7 +929,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // Render
   // -------------------------
   return (
-    <div className="relative w-full min-h-screen">
+    <div className="absolute inset-0 min-h-screen">
       {/* Bottom Dock Control Panel */}
       <div
         className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 ${
@@ -1039,19 +1084,13 @@ const MainSection = ({ setBackgroundSkybox }) => {
                     {/* Per-service loading indicators */}
                     <div className="flex flex-wrap gap-3 text-[10px] text-gray-400">
                       <span className="flex items-center gap-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${isGenerating ? 'bg-sky-500 animate-pulse' : 'bg-emerald-500'}`} />
-                        {isGenerating ? 'Generating skybox...' : 'Skybox ready'}
+                        <span className={`w-1.5 h-1.5 rounded-full ${isGenerating || isGenerating3DAsset ? 'bg-sky-500 animate-pulse' : 'bg-emerald-500'}`} />
+                        {isGenerating ? 'Generating environment...' : isGenerating3DAsset ? 'Generating 3D asset...' : generated3DAsset ? 'Environment & 3D asset ready' : generatedVariations.length > 0 ? 'Environment ready' : 'Ready to generate'}
                       </span>
-                      {isGenerating3DAsset && (
+                      {isGenerating3DAsset && assetGenerationProgress?.message && (
                         <span className="flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
-                          {assetGenerationProgress?.message || 'Generating 3D asset...'}
-                        </span>
-                      )}
-                      {generated3DAsset && !isGenerating3DAsset && (
-                        <span className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          3D asset ready
+                          {assetGenerationProgress.message}
                         </span>
                       )}
                     </div>
@@ -1087,6 +1126,18 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         <div className="flex items-center gap-2 text-[10px] text-emerald-400">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                           <span>{assetGenerationService.previewExtraction(prompt).count} 3D object{assetGenerationService.previewExtraction(prompt).count !== 1 ? 's' : ''} detected</span>
+                        </div>
+                      )}
+                      
+                      {/* 3D Asset Generation Available Indicator */}
+                      {!has3DObjects && 
+                       prompt.trim().length > 0 && 
+                       assetGenerationService?.isMeshyConfigured() && 
+                       storageAvailable && 
+                       !isTrialUser && (
+                        <div className="flex items-center gap-2 text-[10px] text-blue-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                          <span>3D asset generation available - use "Generate 3D Asset" button</span>
                         </div>
                       )}
                     </div>
@@ -1316,9 +1367,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               ? handleUpgrade
                               : generateSkybox
                           }
-                          disabled={isGenerating}
+                          disabled={isGenerating || isGenerating3DAsset}
                         >
-                          {isGenerating ? (
+                          {isGenerating || isGenerating3DAsset ? (
                             <>
                               <svg
                                 className="animate-spin h-4 w-4"
@@ -1340,7 +1391,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                 />
                               </svg>
-                              <span>Generating</span>
+                              <span>{isGenerating ? 'Generating Environment...' : 'Generating 3D Asset...'}</span>
                             </>
                           ) : !isUnlimited && remainingAfterGeneration < 0 ? (
                             <>
@@ -1378,7 +1429,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   d="M12 4v9m0 0l-3-3m3 3l3-3m-9 8h12"
                                 />
                               </svg>
-                              <span>Generate In3D.Ai</span>
+                              <span>Generate Environment & 3D Asset</span>
                             </>
                           )}
                         </button>
@@ -1410,6 +1461,208 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           </svg>
                           <span>Download</span>
                         </button>
+
+                        {/* Regenerate 3D Asset Button - Only show if skybox exists but 3D asset failed/missing */}
+                        {generatedVariations.length > 0 && 
+                         !generated3DAsset && 
+                         !isGenerating3DAsset && 
+                         !isGenerating &&
+                         assetGenerationService.isMeshyConfigured() && 
+                         storageAvailable && 
+                         user?.uid && (
+                          <button
+                            data-regenerate-3d
+                            className={`
+                              w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2
+                              bg-gradient-to-r from-emerald-500/80 to-teal-600/80 hover:from-emerald-500 hover:to-teal-500 text-white
+                            `}
+                            onClick={async () => {
+                              if (!user?.uid || !storageAvailable || !assetGenerationService.isMeshyConfigured()) {
+                                setError('3D asset generation is not available. Please check your configuration.');
+                                return;
+                              }
+
+                              try {
+                                setIsGenerating3DAsset(true);
+                                setAssetGenerationProgress({
+                                  stage: 'extracting',
+                                  progress: 0,
+                                  totalAssets: 0,
+                                  completedAssets: 0,
+                                  message: 'Analyzing prompt for 3D objects...'
+                                });
+
+                                // Get the skybox ID if available (optional - can generate without skybox)
+                                const skyboxId = generatedVariations.length > 0 
+                                  ? (generatedVariations[currentVariationIndex]?.generationId || 
+                                     generatedVariations[0]?.generationId ||
+                                     generatedVariations[currentVariationIndex]?.id?.toString() ||
+                                     generatedVariations[0]?.id?.toString() ||
+                                     null)
+                                  : null;
+
+                                console.log('🚀 Starting manual 3D asset generation...', {
+                                  prompt: prompt.substring(0, 50) + '...',
+                                  userId: user.uid,
+                                  skyboxId,
+                                  storageAvailable,
+                                  meshyConfigured: assetGenerationService.isMeshyConfigured()
+                                });
+
+                                const result = await assetGenerationService.generateAssetsFromPrompt({
+                                  originalPrompt: prompt,
+                                  userId: user.uid,
+                                  skyboxId: skyboxId,
+                                  quality: 'medium',
+                                  style: 'realistic',
+                                  maxAssets: 1
+                                }, (progressUpdate) => {
+                                  setAssetGenerationProgress(progressUpdate);
+                                  console.log('📊 Generation progress:', progressUpdate);
+                                });
+
+                                console.log('📦 Generation result:', {
+                                  success: result.success,
+                                  assetsCount: result.assets?.length || 0,
+                                  error: result.error,
+                                  errors: result.errors,
+                                  extractedObjects: result.extractedObjects?.length || 0
+                                });
+
+                                if (result.success && result.assets && result.assets.length > 0) {
+                                  const asset = result.assets[0];
+                                  setGenerated3DAsset(asset);
+                                  console.log('✅ 3D asset generated successfully:', asset);
+                                  
+                                  // Show success notification
+                                  const successMsg = document.createElement('div');
+                                  successMsg.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+                                  successMsg.innerHTML = `
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>3D asset generated successfully!</span>
+                                  `;
+                                  document.body.appendChild(successMsg);
+                                  setTimeout(() => document.body.removeChild(successMsg), 5000);
+                                } else {
+                                  // Build detailed error message
+                                  const errorMessages = [];
+                                  if (result.error) errorMessages.push(result.error);
+                                  if (result.errors && result.errors.length > 0) {
+                                    errorMessages.push(...result.errors);
+                                  }
+                                  if (result.extractedObjects && result.extractedObjects.length === 0) {
+                                    errorMessages.push('No 3D objects detected in prompt');
+                                  }
+                                  if (!result.assets || result.assets.length === 0) {
+                                    errorMessages.push('No assets were generated');
+                                  }
+                                  
+                                  const errorMessage = errorMessages.length > 0 
+                                    ? errorMessages.join('. ') 
+                                    : 'Failed to generate 3D asset. Check console for details.';
+                                  
+                                  console.error('❌ 3D asset generation failed:', {
+                                    result,
+                                    errorMessage,
+                                    extractedObjects: result.extractedObjects,
+                                    assets: result.assets
+                                  });
+                                  
+                                  setError(errorMessage);
+                                  
+                                  // Show error notification
+                                  const errorMsg = document.createElement('div');
+                                  errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+                                  errorMsg.innerHTML = `
+                                    <div class="font-bold mb-2">❌ 3D Asset Generation Failed</div>
+                                    <div class="text-sm">${errorMessage}</div>
+                                    <div class="text-xs mt-2 text-red-200">Check browser console for detailed logs</div>
+                                  `;
+                                  document.body.appendChild(errorMsg);
+                                  setTimeout(() => document.body.removeChild(errorMsg), 8000);
+                                }
+                              } catch (error) {
+                                console.error('❌ Exception during 3D asset generation:', error);
+                                console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+                                
+                                const errorMessage = error instanceof Error 
+                                  ? error.message 
+                                  : 'Failed to generate 3D asset. Unknown error occurred.';
+                                
+                                setError(errorMessage);
+                                
+                                // Show error notification
+                                const errorMsg = document.createElement('div');
+                                errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+                                errorMsg.innerHTML = `
+                                  <div class="font-bold mb-2">❌ 3D Asset Generation Error</div>
+                                  <div class="text-sm">${errorMessage}</div>
+                                  <div class="text-xs mt-2 text-red-200">Check browser console for details</div>
+                                `;
+                                document.body.appendChild(errorMsg);
+                                setTimeout(() => document.body.removeChild(errorMsg), 8000);
+                              } finally {
+                                setIsGenerating3DAsset(false);
+                                setAssetGenerationProgress(null);
+                              }
+                            }}
+                            disabled={isGenerating3DAsset}
+                          >
+                            {isGenerating3DAsset ? (
+                              <>
+                                <svg
+                                  className="animate-spin h-4 w-4"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  />
+                                </svg>
+                                <span>Generating 3D Asset...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  {generated3DAsset ? (
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={1.8}
+                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                    />
+                                  ) : (
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={1.8}
+                                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                                    />
+                                  )}
+                                </svg>
+                                <span>Generate 3D Asset Only</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
 
                       {/* Requirements / Service Status */}
@@ -1509,28 +1762,155 @@ const MainSection = ({ setBackgroundSkybox }) => {
       )}
 
       {/* 3D Asset Viewer with Skybox Background - Merged Create & 3D Asset Section */}
-      {generated3DAsset && 
-       generated3DAsset.status === 'completed' && 
-       (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && 
-       generatedVariations.length > 0 && (
-        <div className="fixed inset-0 w-full h-full z-[1]">
-          <AssetViewerWithSkybox
-            assetUrl={generated3DAsset.downloadUrl || generated3DAsset.previewUrl || ''}
-            skyboxImageUrl={generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image}
-            assetFormat={generated3DAsset.format || 'glb'}
-            className="w-full h-full"
-            onLoad={(model) => {
-              console.log('✅ 3D asset loaded in Create section:', model);
-              console.log('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
-              console.log('📦 Skybox URL:', generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image);
-            }}
-            onError={(error) => {
-              console.error('❌ 3D asset loading error:', error);
-              console.error('📦 Asset data:', generated3DAsset);
-              console.error('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
-            }}
-          />
-        </div>
+      {/* Can display 3D asset even without skybox (will use black background) */}
+      {generated3DAsset && (
+        <>
+          {/* Debug info in dev mode */}
+          {isDevMode && (
+            <div className="fixed top-20 left-4 bg-black/80 text-white p-3 rounded-lg text-xs z-[10000] max-w-xs">
+              <div className="font-bold mb-2">3D Asset Debug Info:</div>
+              <div>Status: {generated3DAsset.status || 'undefined'}</div>
+              <div>Has downloadUrl: {generated3DAsset.downloadUrl ? 'Yes' : 'No'}</div>
+              <div>Has previewUrl: {generated3DAsset.previewUrl ? 'Yes' : 'No'}</div>
+              <div>Format: {generated3DAsset.format || 'undefined'}</div>
+              <div>Skybox variations: {generatedVariations.length}</div>
+              <div className="mt-2 text-yellow-400">
+                {generated3DAsset.status !== 'completed' && '⚠️ Status not completed'}
+                {!generated3DAsset.downloadUrl && !generated3DAsset.previewUrl && '⚠️ No URL available'}
+              </div>
+            </div>
+          )}
+          
+          {/* Show viewer when asset is completed and has URL */}
+          {generated3DAsset.status === 'completed' && 
+           (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && (
+            <div className="fixed inset-0 w-full h-full z-[9999]">
+              {/* Control buttons overlay */}
+              <div className="absolute top-4 right-4 z-[10000] flex gap-2">
+                <button
+                  onClick={() => setGenerated3DAsset(null)}
+                  className="px-4 py-2 bg-black/80 hover:bg-black/90 text-white rounded-lg text-sm font-semibold border border-white/20 flex items-center gap-2"
+                  title="Clear 3D asset and generate a new one"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Clear
+                </button>
+                <button
+                  onClick={async () => {
+                    setGenerated3DAsset(null);
+                    // Wait a moment for state to update, then trigger generation
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    if (!user?.uid || !storageAvailable || !assetGenerationService.isMeshyConfigured()) {
+                      setError('3D asset generation is not available. Please check your configuration.');
+                      return;
+                    }
+
+                    try {
+                      setIsGenerating3DAsset(true);
+                      setAssetGenerationProgress({
+                        stage: 'extracting',
+                        progress: 0,
+                        totalAssets: 0,
+                        completedAssets: 0,
+                        message: 'Analyzing prompt for 3D objects...'
+                      });
+
+                      const skyboxId = generatedVariations.length > 0 
+                        ? (generatedVariations[currentVariationIndex]?.generationId || 
+                           generatedVariations[0]?.generationId ||
+                           generatedVariations[currentVariationIndex]?.id?.toString() ||
+                           generatedVariations[0]?.id?.toString() ||
+                           null)
+                        : null;
+
+                      const result = await assetGenerationService.generateAssetsFromPrompt({
+                        originalPrompt: prompt,
+                        userId: user.uid,
+                        skyboxId: skyboxId,
+                        quality: 'medium',
+                        style: 'realistic',
+                        maxAssets: 1
+                      }, (progressUpdate) => {
+                        setAssetGenerationProgress(progressUpdate);
+                      });
+
+                      if (result.success && result.assets && result.assets.length > 0) {
+                        const asset = result.assets[0];
+                        setGenerated3DAsset(asset);
+                      } else {
+                        setError(result.error || 'Failed to generate 3D asset');
+                      }
+                    } catch (error) {
+                      console.error('❌ Regeneration error:', error);
+                      setError(error instanceof Error ? error.message : 'Failed to regenerate 3D asset');
+                    } finally {
+                      setIsGenerating3DAsset(false);
+                      setAssetGenerationProgress(null);
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
+                  title="Generate a new 3D asset"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Regenerate
+                </button>
+              </div>
+              <AssetViewerWithSkybox
+                assetUrl={generated3DAsset.downloadUrl || generated3DAsset.previewUrl || ''}
+                skyboxImageUrl={generatedVariations.length > 0 
+                  ? (generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image)
+                  : undefined}
+                assetFormat={generated3DAsset.format || 'glb'}
+                className="w-full h-full"
+                autoRotate={false}
+                onLoad={(model) => {
+                  console.log('✅ 3D asset loaded in Create section:', model);
+                  console.log('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
+                  console.log('📦 Skybox URL:', generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image);
+                }}
+                onError={(error) => {
+                  console.error('❌ 3D asset loading error:', error);
+                  console.error('📦 Asset data:', generated3DAsset);
+                  console.error('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
+                }}
+              />
+            </div>
+          )}
+          
+          {/* Show loading state when asset is generating */}
+          {isGenerating3DAsset && (
+            <div className="fixed inset-0 w-full h-full z-[9998] bg-black/50 flex items-center justify-center">
+              <div className="bg-[#0a0a0a] border border-[#ffffff08] rounded-xl p-6 max-w-md">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                  <div>
+                    <div className="text-white font-semibold">Generating 3D Asset</div>
+                    <div className="text-gray-400 text-sm">{assetGenerationProgress?.message || 'Processing...'}</div>
+                  </div>
+                </div>
+                {assetGenerationProgress && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>{assetGenerationProgress.stage}</span>
+                      <span>{Math.round(assetGenerationProgress.progress)}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-[#1e1e1e] rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all"
+                        style={{ width: `${assetGenerationProgress.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

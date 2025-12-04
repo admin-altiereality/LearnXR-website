@@ -169,9 +169,15 @@ class SubscriptionService {
       }
       
       const currentUsage = subscription.usage?.[usageType] || 0;
-      const limit = currentPlan.limits[usageType];
       
-      return currentUsage < limit;
+      // Map usage types to limit keys - only skyboxGenerations is supported
+      if (usageType === 'skyboxGenerations') {
+        const limit = currentPlan.limits.skyboxGenerations;
+        return currentUsage < limit;
+      }
+      
+      // For other usage types (count, limit), return true (no limit check)
+      return true;
     } catch (error) {
       console.error('Error checking usage limit:', error);
       throw error;

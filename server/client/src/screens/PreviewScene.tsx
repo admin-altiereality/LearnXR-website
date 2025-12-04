@@ -1,16 +1,14 @@
 // PreviewScene - 3D Preview Route for Unified Generation Results
 // Shows skybox as environment with floating mesh
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { 
   OrbitControls, 
   Environment, 
   Float,
-  Text,
   Html,
-  PerspectiveCamera,
   ContactShadows
 } from '@react-three/drei';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,15 +18,13 @@ import {
   FaCog, 
   FaExpand,
   FaCompress,
-  FaPlay,
-  FaPause,
   FaRedo,
   FaInfoCircle,
   FaExclamationTriangle
 } from 'react-icons/fa';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { useAuth } from '../contexts/AuthContext';
 import { unifiedStorageService } from '../services/unifiedStorageService';
 import { useGenerate } from '../hooks/useGenerate';
@@ -100,11 +96,11 @@ class ModelLoader {
     return new Promise((resolve, reject) => {
       this.gltfLoader.load(
         url,
-        (gltf) => resolve(gltf),
-        (progress) => {
+        (gltf: any) => resolve(gltf),
+        (progress: any) => {
           console.log('Loading progress:', progress);
         },
-        (error) => {
+        (error: any) => {
           console.error('GLTF loading error:', error);
           reject(error);
         }
@@ -182,7 +178,7 @@ const FloatingMesh: React.FC<{
   }, []);
 
   // Auto-rotation animation
-  useFrame((state) => {
+  useFrame(() => {
     if (meshRef.current && autoRotate) {
       meshRef.current.rotation.y += 0.005;
     }
@@ -245,7 +241,6 @@ const SkyboxEnvironment: React.FC<{
   onError?: (error: Error) => void;
 }> = ({ skyboxUrl, onLoad, onError }) => {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -299,7 +294,6 @@ const SkyboxEnvironment: React.FC<{
 
         if (loadedTexture) {
           setTexture(loadedTexture);
-          setIsLoaded(true);
           onLoad?.();
         } else {
           throw lastError || new Error('All skybox loading strategies failed');
