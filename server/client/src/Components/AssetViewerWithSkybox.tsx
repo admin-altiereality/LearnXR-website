@@ -1,5 +1,5 @@
 import React, { Suspense, useRef } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, useTexture, Html, useProgress, Sphere } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -10,6 +10,8 @@ interface AssetViewerWithSkyboxProps {
   skyboxImageUrl?: string;
   assetFormat?: 'glb' | 'usdz' | 'obj' | 'fbx';
   className?: string;
+  autoRotate?: boolean;
+  autoRotateSpeed?: number;
   onLoad?: (model: any) => void;
   onError?: (error: Error) => void;
 }
@@ -46,12 +48,31 @@ function SkyboxSphere({ imageUrl }: { imageUrl: string }) {
 }
 
 // 3D Asset component
-function AssetModel({ assetUrl, onLoad, onError }: { assetUrl: string; onLoad?: (model: any) => void; onError?: (error: Error) => void }) {
+function AssetModel({ 
+  assetUrl, 
+  autoRotate = false, 
+  autoRotateSpeed = 1,
+  onLoad, 
+  onError 
+}: { 
+  assetUrl: string; 
+  autoRotate?: boolean;
+  autoRotateSpeed?: number;
+  onLoad?: (model: any) => void; 
+  onError?: (error: Error) => void;
+}) {
   const meshRef = useRef<THREE.Group>(null);
   const [gltf, setGltf] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const loaderRef = useRef<{ gltfLoader: GLTFLoader; dracoLoader: DRACOLoader } | null>(null);
+
+  // Auto-rotation animation
+  useFrame((_state, delta) => {
+    if (meshRef.current && autoRotate) {
+      meshRef.current.rotation.y += delta * autoRotateSpeed;
+    }
+  });
 
   React.useEffect(() => {
     if (!assetUrl) return;
@@ -193,11 +214,15 @@ function AssetModel({ assetUrl, onLoad, onError }: { assetUrl: string; onLoad?: 
 export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
   assetUrl,
   skyboxImageUrl,
-  assetFormat = 'glb',
+  assetFormat = 'glb', // Reserved for future format-specific handling
   className = '',
+  autoRotate = false,
+  autoRotateSpeed = 1,
   onLoad,
   onError
 }) => {
+  // Suppress unused warning - assetFormat is part of the API for future use
+  void assetFormat;
   return (
     <div className={`relative w-full h-full min-h-[400px] ${className}`}>
       <Canvas
@@ -239,7 +264,13 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
 
           {/* 3D Asset */}
           {assetUrl && (
-            <AssetModel assetUrl={assetUrl} onLoad={onLoad} onError={onError} />
+            <AssetModel 
+              assetUrl={assetUrl} 
+              autoRotate={autoRotate}
+              autoRotateSpeed={autoRotateSpeed}
+              onLoad={onLoad} 
+              onError={onError} 
+            />
           )}
 
           {/* Ground plane for shadows */}
@@ -270,8 +301,8 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
           enableRotate={true}
           minDistance={1}
           maxDistance={20}
-          autoRotate={false}
-          autoRotateSpeed={0.5}
+          autoRotate={autoRotate}
+          autoRotateSpeed={autoRotateSpeed * 0.5}
           dampingFactor={0.05}
           enableDamping={true}
         />
