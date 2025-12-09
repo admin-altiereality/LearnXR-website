@@ -6,8 +6,7 @@ import {
   uploadBytes, 
   getDownloadURL, 
   deleteObject,
-  listAll,
-  StorageReference
+  listAll
 } from 'firebase/storage';
 import { 
   collection, 
@@ -51,6 +50,7 @@ export interface StoredAsset {
     quality: string;
     style: string;
     tags: string[];
+    storageProvider?: string;
   };
 }
 
@@ -151,9 +151,14 @@ export class AssetStorageService {
       
       // Additional check to ensure storage is working
       if (this.storage) {
-        // Test storage access
-        const testRef = this.storage.ref();
-        return true;
+        // Test storage access (Firebase v9+ API)
+        try {
+          ref(this.storage, 'test/availability-check');
+          return true;
+        } catch (error) {
+          console.error('❌ Storage reference test failed:', error);
+          return false;
+        }
       }
       
       return false;
@@ -208,14 +213,14 @@ export class AssetStorageService {
         originalPrompt: originalPrompt || asset.prompt,
         category: extractedObject.category,
         confidence: extractedObject.confidence,
-        status: asset.status,
+        status: asset.status === 'cancelled' ? 'failed' : asset.status,
         downloadUrl: asset.downloadUrl,
         previewUrl: asset.previewUrl,
         format: asset.format,
         size: asset.size,
         createdAt: now,
         updatedAt: now,
-        error: asset.error,
+        error: asset.error ? (typeof asset.error === 'string' ? asset.error : asset.error.message) : undefined,
         metadata: {
           meshyId: asset.id,
           generationTime: 0, // Will be updated when completed
@@ -358,7 +363,7 @@ export class AssetStorageService {
    */
   async queryAssets(options: AssetQueryOptions): Promise<StoredAsset[]> {
     try {
-      let q = collection(db, this.assetsCollection);
+      const baseCollection = collection(db, this.assetsCollection);
       const constraints: any[] = [];
       
       // Add filters
@@ -388,10 +393,10 @@ export class AssetStorageService {
         constraints.push(limit(options.limit));
       }
       
-      // Apply constraints
-      if (constraints.length > 0) {
-        q = query(q, ...constraints);
-      }
+      // Apply constraints - query() returns a Query type
+      const q = constraints.length > 0 
+        ? query(baseCollection, ...constraints)
+        : baseCollection;
       
       const querySnapshot = await getDocs(q);
       const assets: StoredAsset[] = [];
@@ -418,12 +423,20 @@ export class AssetStorageService {
    * Get assets for a specific user
    */
   async getUserAssets(userId: string, limit?: number): Promise<StoredAsset[]> {
-    return this.queryAssets({ 
-      userId, 
-      orderBy: 'createdAt', 
-      orderDirection: 'desc',
-      limit: limit || 50
+    // Query without orderBy to avoid index requirement, then sort client-side
+    const assets = await this.queryAssets({ 
+      userId
     });
+    
+    // Sort by createdAt descending (most recent first)
+    const sorted = assets.sort((a, b) => {
+      const dateA = new Date(a.createdAt).getTime();
+      const dateB = new Date(b.createdAt).getTime();
+      return dateB - dateA;
+    });
+    
+    // Apply limit after sorting
+    return limit ? sorted.slice(0, limit) : sorted;
   }
   
   /**

@@ -21,7 +21,9 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
     const fetchStyles = async () => {
       try {
         const response = await skyboxApiService.getStyles(1, 100);
-        const stylesArr = response.data || [];
+        // Handle nested response structure: { success, data: { styles: [...] } }
+        const rawStyles = response?.data?.styles || response?.styles || response?.data || [];
+        const stylesArr = Array.isArray(rawStyles) ? rawStyles : [];
         setStyles(stylesArr);
         setLoading(false);
         setError(null);

@@ -32,6 +32,22 @@ import { MeshyDebugPanel } from './Components/MeshyDebugPanel';
 import { ServiceStatusPanel } from './Components/ServiceStatusPanel';
 import SystemStatus from './screens/SystemStatus';
 
+// Conditional Footer - hides on /main route
+const ConditionalFooter = () => {
+  const location = useLocation();
+  const hideFooterRoutes = ['/main'];
+  
+  if (hideFooterRoutes.includes(location.pathname)) {
+    return null;
+  }
+  
+  return (
+    <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
+      <Footer />
+    </footer>
+  );
+};
+
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
   const [error, setError] = useState(false);
@@ -391,10 +407,8 @@ function App() {
                   </div>
                 </main>
 
-                {/* Footer - fixed height */}
-                <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
-                  <Footer />
-                </footer>
+                {/* Footer - conditionally hidden on /main */}
+                <ConditionalFooter />
               </div>
             </div>
           </Router>
@@ -463,7 +477,7 @@ function App() {
                         <ProtectedRoute>
                           <MainSection 
                             setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full px-6"
+                            className="w-full absolute inset-0 min-h-screen"
                           />
                         </ProtectedRoute>
                       } />
@@ -573,10 +587,8 @@ function App() {
                   </div>
                 </main>
 
-                {/* Footer - fixed height */}
-                <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
-                  <Footer />
-                </footer>
+                {/* Footer - conditionally hidden on /main */}
+                <ConditionalFooter />
               </div>
             </ConditionalCanvas>
             <ToastContainer

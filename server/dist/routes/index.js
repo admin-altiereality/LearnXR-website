@@ -9,6 +9,7 @@ const stream_1 = require("stream");
 const payment_1 = __importDefault(require("./payment"));
 const skybox_1 = __importDefault(require("./skybox"));
 const linkedin_1 = __importDefault(require("./linkedin"));
+const subscription_1 = __importDefault(require("./subscription"));
 const router = express_1.default.Router();
 exports.router = router;
 console.log('Main router being initialized...');
@@ -62,6 +63,10 @@ router.get('/proxy-asset', async (req, res) => {
 console.log('Mounting payment routes...');
 router.use('/payment', payment_1.default);
 console.log('Payment routes mounted at /payment');
+// Mount subscription routes
+console.log('Mounting subscription routes...');
+router.use('/subscription', subscription_1.default);
+console.log('Subscription routes mounted at /subscription');
 // Mount skybox routes
 console.log('Mounting skybox routes...');
 router.use('/skybox', skybox_1.default);

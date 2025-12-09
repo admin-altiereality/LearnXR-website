@@ -10,6 +10,9 @@ export interface DefaultSubscription {
   usage: {
     skyboxGenerations: number;
   };
+  orderId?: string;
+  paymentId?: string;
+  amount?: number;
 }
 
 /**

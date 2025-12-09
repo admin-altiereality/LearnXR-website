@@ -257,7 +257,9 @@ export class RazorpayService {
       await api.post('/subscription/create', {
         userId,
         planId,
-        planName: SUBSCRIPTION_PLANS.find(p => p.id === planId)?.name || planId
+        planName: SUBSCRIPTION_PLANS.find(p => p.id === planId)?.name || planId,
+        orderId: response.razorpay_order_id,
+        paymentId: response.razorpay_payment_id
       });
     } catch (error) {
       console.error('Error verifying payment or creating subscription:', error);

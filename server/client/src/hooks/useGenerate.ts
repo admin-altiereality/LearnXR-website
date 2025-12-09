@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { skyboxApiService } from '../services/skyboxApiService';
 import { meshyApiService } from '../services/meshyApiService';
 import { unifiedStorageService } from '../services/unifiedStorageService';
+import { getApiBaseUrl } from '../utils/apiConfig';
 import type { 
   GenerationRequest, 
   GenerationResponse, 
@@ -81,58 +82,106 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
     jobId: string,
     onProgress: (progress: number) => void
   ): Promise<SkyboxResult> => {
-    const maxAttempts = 30; // 5 minutes max
-    const pollInterval = 10000; // 10 seconds
+    const maxAttempts = 120; // 20 minutes max (120 attempts with exponential backoff)
+    const baseInterval = 5000; // Start with 5 seconds
     let attempts = 0;
+    let currentInterval = baseInterval;
+    let lastStatus = 'pending';
 
     while (attempts < maxAttempts) {
       try {
         const response = await skyboxApiService.getSkyboxStatus(generationId);
         
         if (response.success && response.data) {
-          const status = response.data.status;
+          const status = response.data.status?.toLowerCase() || 'pending';
+          lastStatus = status;
           
+          // Handle all BlockadeLabs statuses: pending, dispatched, processing, complete, abort, error
           if (status === 'completed' || status === 'complete') {
-            return {
-              id: generationId,
-              status: 'completed',
-              fileUrl: response.data.file_url,
-              thumbnailUrl: response.data.thumbnail_url,
-              downloadUrl: response.data.file_url,
-              prompt: response.data.prompt || '',
-              styleId: response.data.style_id || '',
-              format: 'png',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              metadata: {
-                size: response.data.size,
-                style: response.data.style_name
-              }
-            };
-          } else if (status === 'failed' || status === 'error') {
-            throw new Error(`Skybox generation failed: ${response.data.error || 'Unknown error'}`);
+            // Generation completed successfully
+            const fileUrl = response.data.file_url || response.data.fileUrl;
+            if (!fileUrl) {
+              console.warn('Generation marked as complete but no file_url provided, waiting...');
+              // Continue polling if file_url is missing, but with longer intervals
+              currentInterval = Math.min(currentInterval * 1.5, 10000);
+            } else {
+              onProgress(100);
+              return {
+                id: generationId,
+                status: 'completed',
+                fileUrl: fileUrl,
+                thumbnailUrl: response.data.thumbnail_url || response.data.thumbnailUrl || fileUrl,
+                downloadUrl: fileUrl,
+                prompt: response.data.prompt || '',
+                styleId: (response.data.style_id || response.data.styleId)?.toString() || '',
+                format: 'png',
+                createdAt: response.data.createdAt || new Date().toISOString(),
+                updatedAt: response.data.updatedAt || new Date().toISOString(),
+                metadata: {
+                  size: response.data.size,
+                  style: response.data.style_name || response.data.styleName
+                }
+              };
+            }
+          } else if (status === 'failed' || status === 'error' || status === 'abort') {
+            // Generation failed
+            const errorMsg = response.data.error_message || response.data.error || 'Unknown error';
+            throw new Error(`Skybox generation failed: ${errorMsg}`);
+          } else if (status === 'dispatched' || status === 'processing') {
+            // Generation is in progress - use shorter interval
+            currentInterval = Math.min(baseInterval * 2, 10000); // 5-10 seconds
+            console.log(`Generation ${generationId} is ${status}, continuing to poll...`);
+          } else if (status === 'pending') {
+            // Still pending - use base interval
+            currentInterval = baseInterval;
           }
           
-          // Update progress
-          const progressPercent = Math.min((attempts / maxAttempts) * 100, 95);
-          onProgress(progressPercent);
+          // Update progress based on status (only if not already completed)
+          if (status !== 'completed' && status !== 'complete') {
+            let progressPercent = 0;
+            if (status === 'pending') progressPercent = 10;
+            else if (status === 'dispatched') progressPercent = 30;
+            else if (status === 'processing') progressPercent = 30 + Math.min((attempts / maxAttempts) * 50, 50);
+            else progressPercent = Math.min((attempts / maxAttempts) * 90, 90); // Cap at 90% until complete
+            
+            onProgress(progressPercent);
+          }
         }
         
         attempts++;
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
-      } catch (error) {
-        console.error('Error polling skybox status:', error);
+        
+        // Exponential backoff: increase interval gradually, but cap at 30 seconds
+        if (attempts > 1) {
+          currentInterval = Math.min(currentInterval * 1.2, 30000);
+        }
+        
+        console.log(`Polling skybox ${generationId} (attempt ${attempts}/${maxAttempts}, status: ${lastStatus}, next check in ${Math.round(currentInterval/1000)}s)`);
+        await new Promise(resolve => setTimeout(resolve, currentInterval));
+      } catch (error: any) {
+        console.error(`Error polling skybox status (attempt ${attempts + 1}):`, error);
+        
+        // If generation not found (404), stop immediately
+        if (error.message?.includes('not found') || 
+            error.message?.includes('expired') ||
+            error.response?.status === 404) {
+          throw new Error('Skybox generation not found. It may have expired or was never created. Please try generating a new skybox.');
+        }
+        
         attempts++;
         
+        // If we've exhausted all attempts, throw the error
         if (attempts >= maxAttempts) {
-          throw error;
+          throw new Error(`Skybox generation timed out after ${maxAttempts} attempts. Last status: ${lastStatus}. Please check the history section - the generation may still be processing.`);
         }
         
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        // For other errors, use exponential backoff and continue polling
+        currentInterval = Math.min(currentInterval * 2, 30000); // Double the interval on error, max 30s
+        console.log(`Error occurred, retrying in ${Math.round(currentInterval/1000)}s...`);
+        await new Promise(resolve => setTimeout(resolve, currentInterval));
       }
     }
     
-    throw new Error('Skybox generation timed out');
+    throw new Error(`Skybox generation timed out after ${maxAttempts} attempts. Last status: ${lastStatus}. Please check the history section.`);
   }, []);
 
   const pollMeshStatus = useCallback(async (
@@ -578,11 +627,6 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         console.log('🔄 Downloading Meshy.ai asset via proxy:', downloadInfo.url);
         
         // Use proxy strategies for Meshy.ai URLs
-        const getApiBaseUrl = () => {
-          const region = 'us-central1';
-          const projectId = 'in3devoneuralai';
-          return `https://${region}-${projectId}.cloudfunctions.net/api`;
-        };
         
         try {
           // Try proxy first

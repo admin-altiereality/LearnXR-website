@@ -1,11 +1,21 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate } from 'react-router-dom';
-import api from '../config/axios';
+import React, { useEffect, useState, useMemo } from "react";
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+
+// ============================================
+// TRIAL USER CONSTANTS
+// ============================================
+const TRIAL_ALLOWED_STYLES = [
+  { id: 2, name: 'Realistic', slug: 'realistic' },
+  { id: 5, name: 'Fantasy', slug: 'fantasy' },
+  { id: 15, name: 'Low Poly', slug: 'low-poly' },
+  { id: 8, name: 'Stylized', slug: 'stylized' },
+  { id: 12, name: 'Cyberpunk', slug: 'cyberpunk' },
+];
+const TRIAL_MAX_VARIATIONS = 1;
 import { subscriptionService } from '../services/subscriptionService';
 import DownloadPopup from './DownloadPopup';
 import UpgradeModal from './UpgradeModal';
-import LoadingPlaceholder from './LoadingPlaceholder';
 import { skyboxApiService } from '../services/skyboxApiService';
 import AssetGenerationPanel from './AssetGenerationPanel';
 import { MeshyTestPanel } from './MeshyTestPanel';
@@ -14,17 +24,29 @@ import { isStorageAvailable } from '../utils/firebaseStorage';
 import { StorageTestUtility } from '../utils/storageTest';
 import { StorageStatusIndicator } from './StorageStatusIndicator';
 import ConfigurationDiagnostic from './ConfigurationDiagnostic';
+import { AssetViewerWithSkybox } from './AssetViewerWithSkybox';
+import { db } from '../config/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 const MainSection = ({ setBackgroundSkybox }) => {
   console.log('MainSection component rendered');
-  const [showNegativeTextInput, setShowNegativeTextInput] = useState(false);
+
+  // -------------------------
+  // Dev Mode & URL Params
+  // -------------------------
+  const [searchParams] = useSearchParams();
+  const isDevMode = searchParams.get('dev') === 'true';
+
+  // -------------------------
+  // UI State
+  // -------------------------
+  const [showNegativeTextInput, setShowNegativeTextInput] = useState(true);
   const [skyboxStyles, setSkyboxStyles] = useState([]);
   const [selectedSkybox, setSelectedSkybox] = useState(null);
   const [prompt, setPrompt] = useState("");
   const [negativeText, setNegativeText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(null);
-  const [showStylePreview, setShowStylePreview] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [generatedImageId, setGeneratedImageId] = useState(null);
@@ -36,20 +58,23 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
-  const [currentSkyboxIndex, setCurrentSkyboxIndex] = useState(0);
   const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
   const [stylesLoading, setStylesLoading] = useState(true);
   const [stylesError, setStylesError] = useState(null);
   const [showAssetPanel, setShowAssetPanel] = useState(false);
   const [showTestPanel, setShowTestPanel] = useState(false);
-  const [generatedAssets, setGeneratedAssets] = useState([]);
   const [has3DObjects, setHas3DObjects] = useState(false);
   const [storageAvailable, setStorageAvailable] = useState(false);
   const [serviceStatus, setServiceStatus] = useState(null);
-  const [serviceStatusLoading, setServiceStatusLoading] = useState(true);
   const [serviceStatusError, setServiceStatusError] = useState(null);
+  // 3D Asset generation state
+  const [isGenerating3DAsset, setIsGenerating3DAsset] = useState(false);
+  const [generated3DAsset, setGenerated3DAsset] = useState(null);
+  const [assetGenerationProgress, setAssetGenerationProgress] = useState(null);
 
-  // Reactive object detection with error handling
+  // -------------------------
+  // Reactive object detection
+  // -------------------------
   useEffect(() => {
     if (prompt.trim()) {
       try {
@@ -70,24 +95,29 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   }, [prompt]);
 
+  // -------------------------
+  // Load Skybox styles
+  // -------------------------
   useEffect(() => {
     setStylesLoading(true);
     setStylesError(null);
     const fetchSkyboxStyles = async () => {
       try {
         const response = await skyboxApiService.getStyles(1, 100);
-        const styles = response.data || [];
-        setSkyboxStyles(styles);
+        // Handle nested response structure: { success, data: { styles: [...] } }
+        const styles = response?.data?.styles || response?.styles || response?.data || [];
+        const stylesArray = Array.isArray(styles) ? styles : [];
+        setSkyboxStyles(stylesArray);
         setStylesLoading(false);
         setStylesError(null);
-        console.log('Fetched In3D.Ai styles:', styles);
+        console.log('Fetched In3D.Ai styles:', stylesArray);
       } catch (error) {
         setStylesLoading(false);
         setStylesError("Failed to load In3D.Ai styles. Please check your API configuration.");
         setSkyboxStyles([]);
         console.error("Error fetching In3D.Ai styles:", error);
-        
-        // Show user-friendly error message
+
+        // Existing top-right DOM toast (kept for logic compatibility)
         const errorMessage = document.createElement('div');
         errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
         errorMessage.innerHTML = `
@@ -101,20 +131,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
     fetchSkyboxStyles();
   }, []);
 
+  // -------------------------
+  // Service availability checks
+  // -------------------------
   useEffect(() => {
-    // Check service availability with alternative storage support
     const checkAvailability = async () => {
       try {
-        setServiceStatusLoading(true);
         setServiceStatusError(null);
         
-        // Check if Meshy is configured first
         const meshyConfigured = assetGenerationService.isMeshyConfigured();
         console.log('🔧 Meshy configuration check:', meshyConfigured);
         
         if (!meshyConfigured) {
           setServiceStatusError('Meshy API key not configured. Please add VITE_MESHY_API_KEY to your environment variables.');
-          setServiceStatusLoading(false);
           setStorageAvailable(false);
           return;
         }
@@ -123,7 +152,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         setStorageAvailable(available);
         const status = await assetGenerationService.getServiceStatus();
         setServiceStatus(status);
-        setServiceStatusLoading(false);
         
         if (!available) {
           if (status.errors.length > 0) {
@@ -133,7 +161,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         
         console.log('🔧 Service availability check completed:', { available, status });
       } catch (error) {
-        setServiceStatusLoading(false);
         setStorageAvailable(false);
         setServiceStatusError(error.message || 'Unknown error');
         console.error('❌ Service availability check failed:', error);
@@ -142,22 +169,21 @@ const MainSection = ({ setBackgroundSkybox }) => {
     checkAvailability();
   }, []);
 
-  // Add recovery function for storage issues with alternative storage support
+  // -------------------------
+  // Storage recovery handler
+  // -------------------------
   const handleStorageRecovery = async () => {
     try {
       console.log('🔄 User requested storage recovery...');
       setError('Attempting to recover storage connection...');
       
-      // Check current service status
       const status = await assetGenerationService.getServiceStatus();
       
-      // If alternative storage is available, we can still work
       if (status.alternativeStorageAvailable) {
         setStorageAvailable(true);
         setError(null);
         console.log('✅ Alternative storage available - service can continue');
         
-        // Show success message about alternative storage
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
         successMessage.innerHTML = `
@@ -171,10 +197,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
         return;
       }
       
-      // Try to recover Firebase Storage
       const fixes = await StorageTestUtility.attemptAutoFix();
-      
-      // Check if recovery was successful
       const available = await isStorageAvailable();
       
       if (available) {
@@ -182,7 +205,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         setError(null);
         console.log('✅ Firebase Storage recovery successful');
         
-        // Show success message
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
         successMessage.innerHTML = `
@@ -197,7 +219,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         setError('Storage recovery failed. Alternative storage is also unavailable.');
         console.error('❌ All storage recovery failed');
         
-        // Show detailed error with fixes attempted
         const errorMessage = document.createElement('div');
         errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
         errorMessage.innerHTML = `
@@ -217,18 +238,16 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
-  // Add diagnostic function for debugging with alternative storage support
+  // -------------------------
+  // Diagnostics
+  // -------------------------
   const runDiagnostics = async () => {
     try {
       console.log('🔧 Running comprehensive diagnostics...');
       
-      // Get asset generation service status
       const serviceStatus = await assetGenerationService.getServiceStatus();
-      
-      // Run Firebase storage diagnostics
       const firebaseResults = await StorageTestUtility.runFullDiagnostics();
       
-      // Combine results
       const results = {
         ...firebaseResults,
         serviceStatus,
@@ -242,13 +261,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
         }
       };
       
-      // Display enhanced results
       const diagnosticMessage = document.createElement('div');
       diagnosticMessage.className = 'fixed top-4 right-4 bg-gray-800 text-white px-6 py-4 rounded-lg shadow-lg z-50 max-w-lg';
       
       let messageHtml = '<div class="font-bold mb-3">🔧 Diagnostic Results</div>';
       
-      // Service status
       messageHtml += '<div class="mb-3"><div class="font-semibold text-sm">Service Status:</div>';
       messageHtml += `<div class="text-xs">• Meshy API: ${serviceStatus.meshyConfigured ? '✅' : '❌'}</div>`;
       messageHtml += `<div class="text-xs">• Firebase Storage: ${serviceStatus.firebaseStorageAvailable ? '✅' : '❌'}</div>`;
@@ -256,7 +273,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       messageHtml += `<div class="text-xs">• User Auth: ${serviceStatus.userAuthenticated ? '✅' : '❌'}</div>`;
       messageHtml += '</div>';
       
-      // Alternative storage providers
       if (serviceStatus.alternativeStorageAvailable) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm">Alternative Storage Providers:</div>';
         results.alternativeStorage.providers.forEach(provider => {
@@ -265,7 +281,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         messageHtml += '</div>';
       }
       
-      // Errors
       if (serviceStatus.errors.length > 0) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm text-red-400">Errors:</div>';
         serviceStatus.errors.forEach(error => {
@@ -274,7 +289,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
         messageHtml += '</div>';
       }
       
-      // Firebase results
       if (firebaseResults.network) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm">Network Status:</div>';
         messageHtml += `<div class="text-xs">• Connectivity: ${firebaseResults.network.connectivity ? '✅' : '❌'}</div>`;
@@ -291,7 +305,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
     } catch (error) {
       console.error('❌ Diagnostics failed:', error);
       
-      // Show simple error message
       const errorMessage = document.createElement('div');
       errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
       errorMessage.innerHTML = `
@@ -303,7 +316,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
-  // Modify the effect to handle navigation source and style selection
+  // -------------------------
+  // Handle navigation source / style selection
+  // -------------------------
   useEffect(() => {
     const fromExplore = sessionStorage.getItem('fromExplore');
     const savedStyle = sessionStorage.getItem('selectedSkyboxStyle');
@@ -313,9 +328,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
       try {
         const parsedStyle = JSON.parse(savedStyle);
         setSelectedSkybox(parsedStyle);
-        setShowStylePreview(true);
         
-        // Show success message that style is now selected
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
         successMessage.innerHTML = `
@@ -326,14 +339,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
         `;
         document.body.appendChild(successMessage);
         
-        // Remove the message after 3 seconds
         setTimeout(() => {
           if (successMessage.parentNode) {
             successMessage.parentNode.removeChild(successMessage);
           }
         }, 3000);
         
-        // Clear the stored data after using it
         sessionStorage.removeItem('fromExplore');
         sessionStorage.removeItem('selectedSkyboxStyle');
         sessionStorage.removeItem('navigateToMain');
@@ -346,7 +357,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   }, [setBackgroundSkybox]);
 
-  // Load subscription data
+  // -------------------------
+  // Load subscription
+  // -------------------------
   useEffect(() => {
     const loadSubscription = async () => {
       if (user?.uid) {
@@ -358,7 +371,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     loadSubscription();
   }, [user?.uid]);
 
-  // Calculate subscription info from subscription data
+  // -------------------------
+  // Subscription info
+  // -------------------------
   const subscriptionInfo = {
     plan: subscription?.planId || 'Free',
     generationsLeft: subscription?.usage?.limit - subscription?.usage?.count || 0,
@@ -367,104 +382,227 @@ const MainSection = ({ setBackgroundSkybox }) => {
     maxGenerations: subscription?.planId === 'free' ? 5 : subscription?.planId === 'pro' ? 50 : 100
   };
 
-  // Get current plan details with proper type safety
+  // -------------------------
+  // Trial User Detection
+  // -------------------------
+  const isTrialUser = useMemo(() => {
+    return !subscription || subscription.planId === 'free';
+  }, [subscription]);
+
+  // Filter styles based on trial status
+  const availableStyles = useMemo(() => {
+    if (isTrialUser) {
+      // For trial users, filter skyboxStyles to only show allowed styles
+      // Match by ID or name (case-insensitive)
+      const allowedIds = TRIAL_ALLOWED_STYLES.map(s => s.id);
+      const allowedNames = TRIAL_ALLOWED_STYLES.map(s => s.name.toLowerCase());
+      
+      const filtered = skyboxStyles.filter(style => 
+        allowedIds.includes(style.id) || 
+        allowedNames.includes(style.name?.toLowerCase())
+      );
+      
+      // If no matches found in API styles, return the predefined trial styles
+      return filtered.length > 0 ? filtered : TRIAL_ALLOWED_STYLES;
+    }
+    return skyboxStyles;
+  }, [isTrialUser, skyboxStyles]);
+
+  // Lock variations for trial users
+  useEffect(() => {
+    if (isTrialUser && numVariations !== TRIAL_MAX_VARIATIONS) {
+      setNumVariations(TRIAL_MAX_VARIATIONS);
+    }
+  }, [isTrialUser, numVariations]);
+
   const currentPlan = subscriptionService.getPlanById(subscription?.planId || 'free');
   const currentUsage = parseInt(subscription?.usage?.skyboxGenerations || 0);
   const currentLimit = currentPlan?.limits.skyboxGenerations || 10;
   const isUnlimited = currentLimit === Infinity;
-  
-  // Calculate remaining generations (current)
+
   const remainingGenerations = isUnlimited 
     ? '∞' 
     : Math.max(0, currentLimit - currentUsage);
   
-  // Calculate remaining generations after current generation
   const remainingAfterGeneration = isUnlimited 
     ? '∞' 
     : Math.max(0, currentLimit - currentUsage - numVariations);
   
-  // Calculate usage percentage (current usage only)
   const usagePercentage = isUnlimited 
     ? 0 
     : Math.min((currentUsage / currentLimit) * 100, 100);
   
-  // Calculate projected usage percentage (for warning display)
   const projectedUsagePercentage = isUnlimited 
     ? 0 
     : Math.min(((currentUsage + numVariations) / currentLimit) * 100, 100);
 
-  // Update subscription after generation
   const updateSubscriptionCount = async () => {
     if (user?.uid) {
-      const updatedSubscription = await subscriptionService.getUserSubscription(user.uid);
+      const updatedSubscription = await subscriptionService.getUserSubscription(
+        user.uid
+      );
       setSubscription(updatedSubscription);
     }
   };
 
+  // -------------------------
+  // Skybox generation (entry point for Generate button)
+  // -------------------------
   const generateSkybox = async () => {
-    if (!prompt || !selectedSkybox) {
-              setError("Please provide a prompt and select an In3D.Ai style");
+
+    if (!prompt || !prompt.trim()) {
+      setError("Please provide a prompt for your In3D.Ai environment");
+      return;
+    }
+    
+    if (!selectedSkybox) {
+      setError("Please select an In3D.Ai style");
+      return;
+    }
+    
+    if (!selectedSkybox.id || (typeof selectedSkybox.id === 'string' && !selectedSkybox.id.trim())) {
+      setError("Invalid style selection. Please select a valid In3D.Ai style.");
+      return;
+    }
+    
+    // Validate style_id is a valid number
+    const styleIdNumber = typeof selectedSkybox.id === 'string' ? parseInt(selectedSkybox.id, 10) : Number(selectedSkybox.id);
+    if (isNaN(styleIdNumber) || styleIdNumber <= 0) {
+      setError("Invalid style ID. Please select a different In3D.Ai style.");
       return;
     }
 
-    // Check subscription limits before generating
     if (!isUnlimited && remainingGenerations < numVariations) {
       const canGenerate = Math.max(0, remainingGenerations);
       setError(
         subscription?.planId === 'free' 
-                  ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please upgrade to continue generating environments.`
-        : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please try again tomorrow.`
+          ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please upgrade to continue generating environments.`
+          : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please try again tomorrow.`
       );
       return;
     }
 
     setIsGenerating(true);
     setError(null);
-    setShowStylePreview(false);
     setProgress(0);
     setGeneratedVariations([]);
     setCurrentVariationIndex(0);
-    setCurrentSkyboxIndex(0);
 
     let pollInterval;
 
     try {
-      // Generate all skyboxes as variations
       const variations = [];
       for (let i = 0; i < numVariations; i++) {
-        setCurrentSkyboxIndex(i);
+        // Ensure style_id is a valid number
+        const styleIdNumber = typeof selectedSkybox.id === 'string' ? parseInt(selectedSkybox.id, 10) : Number(selectedSkybox.id);
+        
+        console.log('🌅 Generating skybox variation:', {
+          variation: i + 1,
+          prompt: prompt.substring(0, 50) + '...',
+          style_id: styleIdNumber,
+          style_name: selectedSkybox.name,
+          has_negative_prompt: !!negativeText
+        });
+        
         const variationResponse = await skyboxApiService.generateSkybox({
-          prompt,
-          style_id: selectedSkybox.id,
-          negative_prompt: negativeText,
+          prompt: prompt.trim(),
+          style_id: styleIdNumber,
+          negative_prompt: negativeText?.trim() || undefined,
           userId: user?.uid,
         });
 
-        if (variationResponse && variationResponse.data && variationResponse.data.id) {
-          variations.push(variationResponse.data.id);
-          // Update progress after each variation is queued
+        console.log('🌅 Generation response:', variationResponse);
+
+        // Check for generationId or id
+        const generationId = variationResponse?.data?.generationId || variationResponse?.data?.id;
+        
+        if (variationResponse && variationResponse.success && generationId) {
+          console.log(`✅ Generation created with ID: ${generationId}`);
+          variations.push(generationId.toString());
           const baseProgress = 30;
           const progressPerSkybox = 60 / numVariations;
           const currentProgress = baseProgress + (i * progressPerSkybox);
           setProgress(Math.min(currentProgress, 90));
+        } else {
+          console.error('❌ Invalid generation response:', variationResponse);
+          throw new Error('Failed to create skybox generation. Please try again.');
         }
       }
 
-      // Poll for variation statuses
       const variationResults = await Promise.all(
         variations.map(async (variationId) => {
+          console.log(`🔄 Starting to poll status for generation: ${variationId}`);
           let variationStatus;
+          let attempts = 0;
+          const maxAttempts = 180; // 6 minutes max (180 * 2 seconds)
+          const baseInterval = 2000; // 2 seconds
+          let currentInterval = baseInterval;
+          let lastStatus = 'pending';
+          
           do {
-            const statusResponse = await skyboxApiService.getSkyboxStatus(variationId);
-            variationStatus = statusResponse.data; // New API structure
-            console.log(`Status for ${variationId}:`, variationStatus);
-            
-            if (variationStatus.status !== "completed" && variationStatus.status !== "complete") {
-              await new Promise(resolve => setTimeout(resolve, 2000));
+            try {
+              const statusResponse = await skyboxApiService.getSkyboxStatus(variationId);
+              
+              if (!statusResponse.success) {
+                throw new Error(statusResponse.error || 'Failed to get status');
+              }
+              
+              variationStatus = statusResponse.data;
+              const normalizedStatus = variationStatus?.status?.toLowerCase() || 'pending';
+              lastStatus = normalizedStatus;
+              
+              console.log(`📊 Status for ${variationId} (attempt ${attempts + 1}/${maxAttempts}):`, normalizedStatus);
+              
+              // Handle all BlockadeLabs statuses: pending, dispatched, processing, complete, abort, error
+              if (normalizedStatus === "completed" || normalizedStatus === "complete") {
+                if (!variationStatus?.file_url) {
+                  console.warn(`Generation ${variationId} marked complete but no file_url, continuing to poll...`);
+                } else {
+                  console.log(`✅ Generation ${variationId} completed!`);
+                  break;
+                }
+              } else if (normalizedStatus === "failed" || normalizedStatus === "error" || normalizedStatus === "abort") {
+                const errorMsg = variationStatus?.error_message || variationStatus?.error || 'Generation failed';
+                throw new Error(errorMsg);
+              } else if (normalizedStatus === "dispatched" || normalizedStatus === "processing") {
+                // Generation is in progress - use shorter interval
+                currentInterval = Math.min(baseInterval * 2, 5000); // 2-5 seconds
+              } else if (normalizedStatus === "pending") {
+                currentInterval = baseInterval;
+              }
+              
+              attempts++;
+              if (attempts >= maxAttempts) {
+                throw new Error(`Generation timed out after ${maxAttempts} attempts. Last status: ${lastStatus}. Please check the history section - the generation may still be processing.`);
+              }
+              
+              // Exponential backoff: gradually increase interval, cap at 10 seconds
+              if (attempts > 1) {
+                currentInterval = Math.min(currentInterval * 1.1, 10000);
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, currentInterval));
+            } catch (error) {
+              console.error(`❌ Error checking status for ${variationId}:`, error);
+              // If it's a 404 or "not found" error, stop immediately
+              if (error.message?.includes('not found') || error.message?.includes('expired')) {
+                throw error;
+              }
+              // For other errors, use exponential backoff
+              attempts++;
+              if (attempts >= maxAttempts) {
+                throw new Error(`Generation timed out. Last status: ${lastStatus}. Please check the history section.`);
+              }
+              currentInterval = Math.min(currentInterval * 2, 10000); // Double interval on error, max 10s
+              await new Promise(resolve => setTimeout(resolve, currentInterval));
             }
-          } while (variationStatus.status !== "completed" && variationStatus.status !== "complete");
+          } while (attempts < maxAttempts && 
+                   variationStatus?.status?.toLowerCase() !== "completed" && 
+                   variationStatus?.status?.toLowerCase() !== "complete" &&
+                   variationStatus?.status?.toLowerCase() !== "failed" &&
+                   variationStatus?.status?.toLowerCase() !== "error" &&
+                   variationStatus?.status?.toLowerCase() !== "abort");
 
-          // Ensure we have a valid image URL
           const imageUrl = variationStatus.file_url || variationStatus.image || variationStatus.thumb_url;
           if (!imageUrl) {
             throw new Error(`No image URL found for variation ${variationId}`);
@@ -479,35 +617,256 @@ const MainSection = ({ setBackgroundSkybox }) => {
         })
       );
 
-      // Set all variations
       setGeneratedVariations(variationResults);
       setBackgroundSkybox(variationResults[0]);
-      
-      // Set the current image for download (first variation)
       setCurrentImageForDownload(variationResults[0]);
       
-      // Update subscription usage count
+      // CRITICAL: Save to Firestore skyboxes collection
       if (user?.uid) {
         try {
-          // Increment usage for each variation generated
+          console.log(`💾 Starting to save ${variationResults.length} skybox variation(s) to Firestore for user ${user.uid}`);
+          console.log(`   Collection: skyboxes`);
+          console.log(`   User ID: ${user.uid}`);
+          
+          // Prepare variations array matching History component's expected structure
+          const variationsArray = variationResults.map((variation, index) => ({
+            image: variation.image,
+            image_jpg: variation.image_jpg || variation.image,
+            prompt: variation.prompt || prompt,
+            title: variation.title || `${prompt} (Variation ${index + 1})`,
+            generationId: variations[index].toString(),
+            status: 'completed'
+          }));
+          
+          // Create the skybox document with all variations
+          const skyboxData = {
+            userId: user.uid, // CRITICAL: Required for History query
+            promptUsed: prompt,
+            title: variationResults[0].title || prompt,
+            imageUrl: variationResults[0].image, // Main image (first variation)
+            style_id: selectedSkybox.id,
+            negative_prompt: negativeText || '',
+            status: 'completed',
+            variations: variationsArray, // Array of all variations
+            generationIds: variations.map(id => id.toString()), // Store all generation IDs
+            createdAt: serverTimestamp(), // Always set createdAt for new documents
+            updatedAt: serverTimestamp()
+          };
+          
+          console.log(`📝 Skybox data to save:`, {
+            userId: skyboxData.userId,
+            title: skyboxData.title,
+            imageUrl: skyboxData.imageUrl ? 'Present' : 'Missing',
+            variationsCount: variationsArray.length,
+            hasCreatedAt: true
+          });
+          
+          // Use the first variation ID as the document ID
+          const generationId = variations[0].toString();
+          const skyboxRef = doc(db, 'skyboxes', generationId);
+          
+          console.log(`📤 Attempting to save to: skyboxes/${generationId}`);
+          console.log(`   Firestore instance:`, db ? 'Available' : 'Missing');
+          console.log(`   Collection path: skyboxes`);
+          console.log(`   Document ID: ${generationId}`);
+          
+          // Check if document exists first
+          const existingDoc = await getDoc(skyboxRef);
+          const isNewDocument = !existingDoc.exists();
+          
+          console.log(`   Document exists: ${existingDoc.exists()}`);
+          console.log(`   Is new document: ${isNewDocument}`);
+          
+          // Always set createdAt for new documents (merge won't overwrite if it exists)
+          if (isNewDocument) {
+            skyboxData.createdAt = serverTimestamp();
+            console.log(`   ✅ Set createdAt for new document`);
+          } else {
+            // For existing documents, preserve createdAt but ensure it exists
+            if (!existingDoc.data()?.createdAt) {
+              skyboxData.createdAt = serverTimestamp();
+              console.log(`   ✅ Set createdAt for existing document that was missing it`);
+            }
+          }
+          
+          // Save the document - use setDoc to create or update
+          // This will CREATE the collection if it doesn't exist (Firestore auto-creates collections)
+          try {
+            await setDoc(skyboxRef, skyboxData, { merge: true });
+            console.log(`   ✅ setDoc completed successfully`);
+          } catch (setDocError) {
+            console.error(`   ❌ setDoc failed:`, setDocError);
+            console.error(`   Error code:`, setDocError?.code);
+            console.error(`   Error message:`, setDocError?.message);
+            throw setDocError; // Re-throw to be caught by outer catch
+          }
+          
+          console.log(`✅ setDoc completed, verifying save...`);
+          
+          // Verify the save was successful
+          const verifyDoc = await getDoc(skyboxRef);
+          
+          if (!verifyDoc.exists()) {
+            throw new Error('Document does not exist after save attempt');
+          }
+          
+          const verifyData = verifyDoc.data();
+          
+          if (verifyData?.userId === user.uid && verifyData?.createdAt) {
+            console.log(`✅ Successfully saved skybox generation to Firestore`);
+            console.log(`   - Collection: skyboxes`);
+            console.log(`   - Document ID: ${generationId}`);
+            console.log(`   - User ID: ${verifyData.userId}`);
+            console.log(`   - Variations: ${variationsArray.length}`);
+            console.log(`   - Created At: ${verifyData.createdAt ? 'Set' : 'Missing'}`);
+            console.log(`   - Status: ${verifyData.status}`);
+            console.log(`   - Image URL: ${verifyData.imageUrl ? 'Present' : 'Missing'}`);
+            
+            // Show success notification
+            const successMsg = document.createElement('div');
+            successMsg.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            successMsg.innerHTML = `✅ Skybox saved to history! (ID: ${generationId})`;
+            document.body.appendChild(successMsg);
+            setTimeout(() => document.body.removeChild(successMsg), 3000);
+          } else {
+            console.error(`❌ Verification failed for skybox generation`);
+            console.error(`   Document exists: ${verifyDoc.exists()}`);
+            console.error(`   Expected userId: ${user.uid}, Got: ${verifyData?.userId}`);
+            console.error(`   CreatedAt present: ${!!verifyData?.createdAt}`);
+            console.error(`   Full document data:`, verifyData);
+            
+            // Show error notification
+            const errorMsg = document.createElement('div');
+            errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            errorMsg.innerHTML = `⚠️ Failed to verify save. Check console for details.`;
+            document.body.appendChild(errorMsg);
+            setTimeout(() => document.body.removeChild(errorMsg), 5000);
+          }
+          
+          // Update subscription usage
           for (let i = 0; i < numVariations; i++) {
             await subscriptionService.incrementUsage(user.uid, 'skyboxGenerations');
           }
-          
-          // Refresh subscription data
           await updateSubscriptionCount();
-          
-          console.log(`Updated subscription usage: ${numVariations} In3D.Ai generations added`);
+          console.log(`✅ Updated subscription usage: ${numVariations} In3D.Ai generations added`);
         } catch (error) {
-          console.error('Error updating subscription usage:', error);
-          // Don't fail the generation if usage tracking fails
+          console.error('❌ CRITICAL ERROR: Failed to save skybox to Firestore:', error);
+          console.error('   Error name:', error?.name);
+          console.error('   Error code:', error?.code);
+          console.error('   Error message:', error?.message);
+          console.error('   Full error object:', error);
+          
+          // Show critical error notification
+          const errorMsg = document.createElement('div');
+          errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+          errorMsg.innerHTML = `
+            <div class="font-bold mb-2">❌ Failed to Save to History</div>
+            <div class="text-sm">Error: ${error?.message || 'Unknown error'}</div>
+            <div class="text-xs mt-2">Check console for details. Collection: skyboxes</div>
+          `;
+          document.body.appendChild(errorMsg);
+          setTimeout(() => document.body.removeChild(errorMsg), 8000);
+          
+          // Don't fail the generation if Firestore save fails, but log it clearly
         }
+      } else {
+        console.warn('⚠️ Cannot save skybox: user.uid is missing');
+        console.warn('   User object:', user);
       }
 
       setProgress(100);
       setIsGenerating(false);
       
-      // Add minimized state after successful generation
+      // Always generate 3D asset after skybox (unified generation)
+      const canGenerate3D = storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid;
+      
+      console.log('🔍 Unified Generation - 3D Asset Check:', {
+        storageAvailable,
+        meshyConfigured: assetGenerationService.isMeshyConfigured(),
+        hasUserId: !!user?.uid,
+        canGenerate3D,
+        prompt: prompt.substring(0, 50) + '...'
+      });
+      
+      if (canGenerate3D) {
+        console.log('🎯 Generating 3D asset with skybox background...');
+        try {
+          setIsGenerating3DAsset(true);
+          setAssetGenerationProgress({
+            stage: 'extracting',
+            progress: 0,
+            totalAssets: 0,
+            completedAssets: 0,
+            message: 'Generating 3D asset for your environment...'
+          });
+
+          const result = await assetGenerationService.generateAssetsFromPrompt({
+            originalPrompt: prompt,
+            userId: user.uid,
+            skyboxId: variations[0].toString(),
+            quality: 'medium',
+            style: 'realistic',
+            maxAssets: 1 // Generate single asset for unified view
+          }, (progressUpdate) => {
+            setAssetGenerationProgress(progressUpdate);
+          });
+
+          if (result.success && result.assets.length > 0) {
+            const asset = result.assets[0];
+            setGenerated3DAsset(asset);
+            console.log('✅ 3D asset generated successfully:', asset);
+            console.log('📦 Asset downloadUrl:', asset.downloadUrl);
+            console.log('📦 Asset previewUrl:', asset.previewUrl);
+            console.log('📦 Asset format:', asset.format);
+            console.log('📦 Asset status:', asset.status);
+            console.log('📦 Skybox background:', variationResults[0]?.image);
+          } else {
+            console.warn('⚠️ 3D asset generation completed but no assets returned');
+            console.warn('📦 Result:', result);
+            
+            // Show warning but don't fail - skybox was generated successfully
+            if (isDevMode) {
+              const warningMsg = document.createElement('div');
+              warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+              warningMsg.innerHTML = `
+                <div class="font-bold mb-2">⚠️ 3D Asset Generation Failed</div>
+                <div class="text-sm">${result.error || 'No assets were generated. Skybox is still available.'}</div>
+                ${result.errors && result.errors.length > 0 ? `<div class="text-xs mt-2">Errors: ${result.errors.join(', ')}</div>` : ''}
+              `;
+              document.body.appendChild(warningMsg);
+              setTimeout(() => document.body.removeChild(warningMsg), 8000);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Failed to generate 3D asset:', error);
+          // Don't show error to user - skybox was generated successfully
+          // They can still use the skybox even if 3D asset generation fails
+        } finally {
+          setIsGenerating3DAsset(false);
+          setAssetGenerationProgress(null);
+        }
+      } else {
+        const reasons = [];
+        if (!storageAvailable) reasons.push('Storage not available');
+        if (!assetGenerationService.isMeshyConfigured()) reasons.push('Meshy API not configured');
+        if (!user?.uid) reasons.push('User not authenticated');
+        
+        console.warn('⚠️ 3D asset generation skipped (skybox still generated):', reasons.join(', '));
+        
+        // Only show notification if it's a configuration issue (not just missing objects)
+        if (isDevMode || (!storageAvailable || !assetGenerationService.isMeshyConfigured())) {
+          const warningMsg = document.createElement('div');
+          warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+          warningMsg.innerHTML = `
+            <div class="font-bold mb-2">⚠️ Skybox Generated</div>
+            <div class="text-sm">3D asset generation skipped: ${reasons.join(', ')}</div>
+            <div class="text-xs mt-2">Your skybox environment is ready to use.</div>
+          `;
+          document.body.appendChild(warningMsg);
+          setTimeout(() => document.body.removeChild(warningMsg), 5000);
+        }
+      }
+      
       setTimeout(() => {
         setIsMinimized(true);
       }, 1000);
@@ -516,7 +875,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
       
       let errorMessage = "Failed to generate In3D.Ai environment";
       
-      // Handle specific error types from Firebase Functions
       if (error.response && error.response.data) {
         const { error: apiError, code } = error.response.data;
         
@@ -543,6 +901,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
     };
   };
 
+  // -------------------------
+  // Variations navigation
+  // -------------------------
   const handleVariationChange = (direction) => {
     if (generatedVariations.length === 0) return;
 
@@ -558,26 +919,33 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setCurrentImageForDownload(generatedVariations[newIndex]);
   };
 
-  // Modify the skybox style selection handler
+  // -------------------------
+  // Skybox style change
+  // -------------------------
   const handleSkyboxStyleChange = (e) => {
-    const style = skyboxStyles.find(
+    // Search in availableStyles (filtered for trial users) first, then skyboxStyles
+    const style = availableStyles.find(
+      (style) => style.id === parseInt(e.target.value)
+    ) || skyboxStyles.find(
       (style) => style.id === parseInt(e.target.value)
     );
     setSelectedSkybox(style);
-    setShowStylePreview(true);
   };
 
-  // Modify the handleUpgrade function to show modal instead of direct navigation
+  // -------------------------
+  // Upgrade handler
+  // -------------------------
   const handleUpgrade = () => {
-    setShowUpgradeModal(true); // Show modal instead of navigating directly
+    setShowUpgradeModal(true);
   };
 
-  // Add function to toggle panel size
+  // -------------------------
+  // Panel size toggle
+  // -------------------------
   const togglePanelSize = () => {
     setIsMinimized(!isMinimized);
   };
 
-  // Helper for progress status text
   const getProgressStatusText = () => {
     if (progress < 30) return "Initializing generation...";
     if (progress < 60) return "Generating skybox variations...";
@@ -585,12 +953,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
     return "Finalizing...";
   };
 
-  // Handle 3D asset generation
+  // -------------------------
+  // 3D asset generation handler
+  // -------------------------
   const handleAssetGeneration = (assets) => {
-    setGeneratedAssets(assets);
     setShowAssetPanel(false);
     
-    // Show success notification
     const successMessage = document.createElement('div');
     successMessage.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
     successMessage.innerHTML = `
@@ -603,7 +971,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
     setTimeout(() => document.body.removeChild(successMessage), 5000);
   };
 
-  // Debug logging for button visibility
   console.log('🔍 Current state:', {
     prompt,
     has3DObjects,
@@ -611,24 +978,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
     shouldShowButton: has3DObjects && assetGenerationService.isMeshyConfigured()
   });
 
-  // Debug function to test Meshy integration
   const testMeshyIntegration = async () => {
     console.log('🧪 Testing Meshy integration...');
     
-    // Test 1: Check if Meshy is configured
     const isConfigured = assetGenerationService.isMeshyConfigured();
     console.log('✅ Meshy configured:', isConfigured);
     
-    // Test 2: Test keyword extraction
     const testPrompt = "A sci-fi jungle with alien structures and a crashed spaceship";
     const extraction = assetGenerationService.previewExtraction(testPrompt);
     console.log('✅ Keyword extraction test:', extraction);
     
-    // Test 3: Test cost estimation
     const costEstimate = assetGenerationService.estimateCost(testPrompt, 'medium');
     console.log('✅ Cost estimation test:', costEstimate);
     
-    // Test 4: Test single asset generation (if configured)
     if (isConfigured && user?.uid) {
       try {
         console.log('🚀 Testing single asset generation...');
@@ -645,15 +1007,13 @@ const MainSection = ({ setBackgroundSkybox }) => {
     }
   };
 
-  // Check Firebase services on component mount
   useEffect(() => {
     console.log('🔧 Checking Firebase services...');
     console.log('📦 Storage available:', isStorageAvailable());
     console.log('🔑 Auth available:', !!useAuth);
-    console.log('🗄️ Firestore available:', !!require('../config/firebase').db);
+    console.log('🗄️ Firestore available:', !!db);
   }, []);
 
-  // Helper: get missing requirements
   const getMissingRequirements = () => {
     if (!serviceStatus) return [];
     const missing = [];
@@ -663,365 +1023,454 @@ const MainSection = ({ setBackgroundSkybox }) => {
     return missing;
   };
 
-
+  // -------------------------
+  // Render
+  // -------------------------
   return (
-    <div className="relative w-full min-h-screen">
-      {/* Sidebar for Style Preview */}
-      {showStylePreview && selectedSkybox && (
-        <div className="fixed right-0 top-[64px] bottom-[64px] w-72 bg-gray-800/40 shadow-2xl backdrop-blur-sm border-l border-gray-700/50 transform transition-transform duration-300 ease-in-out z-20">
-          <div className="h-full flex flex-col">
-            <div className="flex justify-between items-center p-4 border-b border-gray-700/50">
-              <h3 className="text-lg font-semibold text-gray-100">Style Preview</h3>
-              <button
-                onClick={() => setShowStylePreview(false)}
-                className="text-gray-300 hover:text-white focus:outline-none"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-200 mb-2">{selectedSkybox.name}</h4>
-                  {selectedSkybox.description && (
-                    <p className="text-sm text-gray-300 mb-4">
-                      {selectedSkybox.description}
-                    </p>
+    <div className="absolute inset-0 min-h-screen">
+      {/* Bottom Dock Control Panel */}
+      <div
+        className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 ${
+          isMinimized ? 'pb-3' : 'pb-4'
+        }`}
+      >
+        <div
+          className={`w-full mx-auto px-4 transition-all ${
+            isMinimized ? 'max-w-2xl' : 'max-w-[1310px]'
+          }`}
+        >
+          <div
+            className={`
+              relative 
+              
+              bg-[#0a0a0a]/45
+              backdrop-blur-0
+              border border-[#ffffff08]
+              rounded-xl 
+              shadow-[0_-10px_40px_rgba(0,0,0,0.65)] 
+              overflow-hidden 
+              transition-all 
+               ${isMinimized ? 'py-0.5 px-2' : 'py-1 px-3'}
+            `}
+          >
+            {/* Top Bar / Header */}
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-green-500/80 shadow-[0_0_10px_rgba(34,197,94,0.7)]" />
+                  <span className="w-2 h-2 rounded-full bg-yellow-400/70" />
+                  <span className="w-2 h-2 rounded-full bg-red-500/70" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs tracking-[0.2em] text-gray-500 uppercase">
+                    IN3D ENVIRONMENT STUDIO
+                  </span>
+                  {!isMinimized && (
+                    <span className="text-[11px] text-gray-400 mt-0.5">
+                      Prompt-based skybox & asset generation
+                    </span>
                   )}
                 </div>
+              </div>
 
-                {selectedSkybox.image_jpg && (
-                  <div className="space-y-4">
-                    <div className="aspect-square w-full relative rounded-lg overflow-hidden">
-                      <img
-                        src={selectedSkybox.image_jpg}
-                        alt={selectedSkybox.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    
-                    <div className="bg-gray-700/50 backdrop-blur-sm rounded-lg p-4">
-                      <h5 className="text-sm font-medium text-gray-200 mb-2">Style Details</h5>
-                      <div className="space-y-2 text-sm text-gray-300">
-                        <p>Model: {selectedSkybox.model}</p>
-                        {selectedSkybox.dimensions && (
-                          <p>Dimensions: {selectedSkybox.dimensions}</p>
-                        )}
+              <div className="flex items-center gap-3">
+                {/* Plan / Usage pill */}
+                {!isMinimized && (
+                  <div className="hidden md:flex flex-col items-end text-[11px]">
+                    <span className="uppercase tracking-[0.2em] text-gray-500">
+                      {subscriptionInfo.planName}
+                    </span>
+                    {!isUnlimited && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="w-24 h-1.5 rounded-full bg-[#1e1e1e] overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-500 to-yellow-400"
+                            style={{ width: `${usagePercentage}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {currentUsage}/{currentLimit} used
+                        </span>
                       </div>
-                    </div>
+                    )}
                   </div>
+                )}
+
+                {/* Minimize / Expand button */}
+                {setBackgroundSkybox && (
+                  <button
+                    onClick={togglePanelSize}
+                    className="w-7 h-7 flex items-center justify-center rounded-md bg-[#1e1e1e] border border-[#333] hover:bg-[#262626] text-gray-300"
+                    aria-label={isMinimized ? "Expand panel" : "Minimize panel"}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.8}
+                        d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"}
+                      />
+                    </svg>
+                  </button>
                 )}
               </div>
             </div>
-            
-            <div className="p-4 border-t border-gray-700/50">
-              <button
-                onClick={() => setShowStylePreview(false)}
-                className="w-full py-2 px-4 bg-gray-700/50 hover:bg-gray-600/50 text-gray-200 rounded-md transition-colors duration-200 backdrop-blur-sm"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Main Control Panel with dynamic classes */}
-      <div 
-        className={`fixed inset-x-0 bottom-0 flex items-end justify-center transition-all duration-500 ease-in-out ${
-          isMinimized ? 'pb-4' : 'pb-16'
-        } ${showStylePreview ? 'mr-72' : ''}`}
-      >
-        <div className={`relative w-full max-w-4xl mx-auto px-4 transition-all duration-500 ease-in-out ${
-          isMinimized ? 'max-w-lg' : ''
-        }`}>
-          <div className={`relative z-10 bg-gray-800/30 rounded-xl shadow-2xl backdrop-blur-sm border border-gray-700/50 transition-all duration-500 ease-in-out ${
-            isMinimized ? 'bg-gray-800/20' : ''
-          }`}>
-            {/* Toggle button for panel size */}
-            {setBackgroundSkybox && (
-              <button
-                onClick={togglePanelSize}
-                className="absolute -top-3 right-3 w-6 h-6 rounded-full bg-gray-700/50 hover:bg-gray-600/50 flex items-center justify-center transition-all duration-200"
-                aria-label={isMinimized ? "Expand panel" : "Minimize panel"}
-              >
-                <svg
-                  className={`w-4 h-4 text-gray-300 transition-transform duration-300 ${
-                    isMinimized ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            {/* Minimized State */}
+            {isMinimized ? (
+              <div className="flex items-center justify-between text-xs text-gray-300">
+                <button
+                  onClick={() => setIsMinimized(false)}
+                  className="px-3 py-1.5 rounded-md bg-[#1f1f1f] border border-[#333333] hover:bg-[#262626] text-[11px] tracking-[0.16em] uppercase"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d={isMinimized ? "M5 15l7-7 7 7" : "M19 9l-7 7-7-7"}
-                  />
-                </svg>
-              </button>
-            )}
-
-            <div className={`transition-all duration-500 ease-in-out ${
-              isMinimized ? 'p-2' : 'p-4'
-            }`}>
-              {isMinimized ? (
-                // Minimized View
-                <div className="flex items-center justify-center">
-                  <button
-                    onClick={() => setIsMinimized(false)}
-                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors duration-200"
-                  >
-                    New Generation
-                  </button>
-                </div>
-              ) : (
-                // Full View - Show only progress during generation
-                <>
-                  {error && (
-                    <div className="mb-4 text-sm text-red-400">
-                      {error}
-                    </div>
+                  New Generation
+                </button>
+                <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                  {generatedVariations.length > 0 && (
+                    <span>
+                      {currentVariationIndex + 1}/{generatedVariations.length} variations
+                    </span>
                   )}
-
-                  {/* Prompt - Full Width */}
-                  <div>
-                    <label htmlFor="prompt" className="block text-xs font-medium mb-1 text-gray-200">
-                      Prompt
-                    </label>
-                    <textarea
-                      id="prompt"
-                      maxLength={600}
-                      rows={2}
-                      placeholder="Tell us what to bring to life..."
-                      className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      disabled={isGenerating}
-                    />
+                  {isGenerating && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                      Generating…
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // Expanded State
+              <div className="space-y-1.5">
+                {/* Error Banner */}
+                {error && (
+                  <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-2 text-xs text-red-300 flex items-start gap-2">
+                    <svg className="w-4 h-4 mt-[2px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                      />
+                    </svg>
+                    <span>{error}</span>
                   </div>
+                )}
 
-                  {/* Variations Input */}
-                  <div className="mt-4">
-                    <label htmlFor="variations" className="block text-xs font-medium mb-1 text-gray-200">
-                      Number of Variations
-                    </label>
-                    <input
-                      type="number"
-                      id="variations"
-                      min="1"
-                      max="10"
-                      placeholder="Enter number of variations (1-10)"
-                      className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                      value={numVariations}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value) || 1;
-                        setNumVariations(Math.min(10, Math.max(1, value)));
-                      }}
-                      disabled={isGenerating}
-                    />
-                  </div>
-
-                  {/* Negative Text Toggle */}
-                  <div className="flex items-center">
-                    <input
-                      type="checkbox"
-                      id="negativeTextToggle"
-                      className="mr-2 focus:ring-blue-400/50 h-3 w-3"
-                      checked={showNegativeTextInput}
-                      onChange={() => setShowNegativeTextInput(!showNegativeTextInput)}
-                    />
-                    <label htmlFor="negativeTextToggle" className="text-xs text-gray-200">
-                      Add Negative Text
-                    </label>
-                  </div>
-
-                  {/* Negative Text - Full Width */}
-                  {showNegativeTextInput && (
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-200">Negative Text</label>
-                      <input
-                        type="text"
-                        placeholder="Optional negative text..."
-                        className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                        value={negativeText}
-                        onChange={(e) => setNegativeText(e.target.value)}
+                {/* PROGRESS BAR (when generating) */}
+                {isGenerating && (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-gray-300 font-medium">
+                        {getProgressStatusText()}
+                      </span>
+                      <span className="text-emerald-400 font-semibold">
+                        {Math.round(progress)}%
+                      </span>
+                    </div>
+                    <div className="w-full h-1 rounded-full bg-[#1f1f1f] overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 transition-all"
+                        style={{ width: `${progress}%` }}
                       />
                     </div>
-                  )}
-
-                  {/* 3D Asset Generation Button */}
-                  {has3DObjects && assetGenerationService && storageAvailable && (
-                    <div className="mb-4">
-                      <button
-                        onClick={() => setShowAssetPanel(true)}
-                        className="w-full py-2 px-4 bg-gradient-to-r from-green-500/50 to-emerald-600/50 hover:from-green-600/60 hover:to-emerald-700/60 text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500/50 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm"
-                      >
-                        <div className="flex items-center justify-center space-x-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                          </svg>
-                          <span className="text-sm">Generate 3D Assets</span>
-                        </div>
-                      </button>
-                      <p className="text-xs text-gray-400 mt-1 text-center">
-                        Found objects in your prompt - generate 3D models
-                      </p>
+                    {/* Per-service loading indicators */}
+                    <div className="flex flex-wrap gap-3 text-[10px] text-gray-400">
+                      <span className="flex items-center gap-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${isGenerating || isGenerating3DAsset ? 'bg-sky-500 animate-pulse' : 'bg-emerald-500'}`} />
+                        {isGenerating ? 'Generating environment...' : isGenerating3DAsset ? 'Generating 3D asset...' : generated3DAsset ? 'Environment & 3D asset ready' : generatedVariations.length > 0 ? 'Environment ready' : 'Ready to generate'}
+                      </span>
+                      {isGenerating3DAsset && assetGenerationProgress?.message && (
+                        <span className="flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                          {assetGenerationProgress.message}
+                        </span>
+                      )}
                     </div>
-                  )}
-
-                  {/* Storage Error Message */}
-                  {!storageAvailable && (
-                    <div className="mt-4 p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
-                      <p className="text-red-400 text-sm">
-                        ⚠️ 3D Asset generation is temporarily unavailable due to storage configuration issues.
-                      </p>
-                      <button
-                        onClick={handleStorageRecovery}
-                        className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors duration-200"
-                      >
-                        Try Recovery
-                      </button>
-                      <button
-                        onClick={runDiagnostics}
-                        className="ml-2 px-4 py-2 bg-purple-600 text-white rounded-md text-sm hover:bg-purple-700 transition-colors duration-200"
-                      >
-                        Run Diagnostics
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Debug Test Button (only in development) */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <div className="mb-4">
-                      <button
-                        onClick={() => setShowTestPanel(!showTestPanel)}
-                        className="w-full py-2 px-4 bg-gradient-to-r from-yellow-500/50 to-orange-600/50 hover:from-yellow-600/60 hover:to-orange-700/60 text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500/50 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm"
-                      >
-                        <div className="flex items-center justify-center space-x-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span className="text-sm">{showTestPanel ? 'Hide' : 'Show'} Meshy Test Panel</span>
-                        </div>
-                      </button>
-                      <p className="text-xs text-gray-400 mt-1 text-center">
-                        Debug: Test Meshy.ai integration components
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Show error if requirements are missing */}
-                  {(!storageAvailable || serviceStatusError) && (
-                    <div className="mb-4">
-                      <div className="bg-red-500/80 text-white px-4 py-3 rounded-lg shadow flex flex-col items-center">
-                        <div className="font-bold flex items-center mb-1">
-                          <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                          </svg>
-                          Asset Generation Unavailable
-                        </div>
-                        <div className="text-sm mb-2">The following requirements are missing:</div>
-                        <ul className="list-disc list-inside text-sm mb-2">
-                          {getMissingRequirements().map(req => (
-                            <li key={req}>{req}</li>
-                          ))}
-                        </ul>
-                        {serviceStatusError && (
-                          <div className="text-xs text-gray-200 mb-2">{serviceStatusError}</div>
-                        )}
-                        <button
-                          className="w-full mt-2 py-2 px-4 rounded-md bg-red-600/90 hover:bg-red-700/90 text-white font-medium flex items-center justify-center transition-all duration-300"
-                          onClick={runDiagnostics}
-                        >
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                          </svg>
-                          Debug Services (Check Console)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Temporary Debug Button - Always Show */}
-                  <div className="mb-4">
-                    <button
-                      onClick={() => {
-                        console.log('🔧 Manual Debug Test');
-                        console.log('Prompt:', prompt);
-                        console.log('Has 3D Objects State:', has3DObjects);
-                        console.log('Meshy Configured:', assetGenerationService.isMeshyConfigured());
-                        console.log('Preview Extraction:', assetGenerationService.previewExtraction(prompt));
-                        console.log('Should Show Button:', has3DObjects && assetGenerationService.isMeshyConfigured());
-                      }}
-                      className="w-full py-2 px-4 bg-gradient-to-r from-red-500/50 to-pink-600/50 hover:from-red-600/60 hover:to-pink-700/60 text-white rounded-md font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500/50 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm"
-                    >
-                      <div className="flex items-center justify-center space-x-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        <span className="text-sm">Debug Services (Check Console)</span>
-                      </div>
-                    </button>
-                    <p className="text-xs text-gray-400 mt-1 text-center">
-                      Temporary: Test all services and show debug info
-                    </p>
                   </div>
+                )}
 
-                  {/* Meshy Test Panel */}
-                  {showTestPanel && (
-                    <div className="mb-4">
-                      <MeshyTestPanel />
-                    </div>
-                  )}
-
-                  {/* Skybox Style and Generate Button - Three Columns */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-200">In3D.Ai Style</label>
-                      {stylesLoading ? (
-                        <div className="text-gray-400 text-xs py-2">Loading styles...</div>
-                      ) : stylesError ? (
-                        <div className="text-red-400 text-xs py-2">{stylesError}</div>
-                      ) : (
-                        <select
-                          className="w-full p-2 bg-gray-700/30 border border-gray-600/50 rounded-md text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-sm backdrop-blur-sm"
-                          onChange={handleSkyboxStyleChange}
-                          value={selectedSkybox?.id || ""}
-                        >
-                          <option value="" disabled>
-                            -- Choose an In3D.Ai Style --
-                          </option>
-                          {skyboxStyles.map((style) => (
-                            <option key={style.id} value={style.id}>
-                              {style.name} {style.model ? `(Model: ${style.model})` : ""}
-                            </option>
-                          ))}
-                        </select>
+                {/* Main Grid (Editor style) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {/* Column 1: Prompt */}
+                  <div className="md:col-span-2 space-y-1.5">
+                    <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase">
+                          Prompt
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {prompt.length}/600
+                        </span>
+                      </div>
+                      <textarea
+                        id="prompt"
+                        maxLength={600}
+                        rows={2}
+                        placeholder="Describe the environment: lighting, mood, props, architecture..."
+                        className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none"
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        disabled={isGenerating}
+                      />
+                      
+                      {/* 3D Asset Detection - Simple indicator */}
+                      {has3DObjects && !isTrialUser && assetGenerationService?.isMeshyConfigured() && (
+                        <div className="flex items-center gap-2 text-[10px] text-emerald-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>{assetGenerationService.previewExtraction(prompt).count} 3D object{assetGenerationService.previewExtraction(prompt).count !== 1 ? 's' : ''} detected</span>
+                        </div>
+                      )}
+                      
+                      {/* 3D Asset Generation Available Indicator */}
+                      {!has3DObjects && 
+                       prompt.trim().length > 0 && 
+                       assetGenerationService?.isMeshyConfigured() && 
+                       storageAvailable && 
+                       !isTrialUser && (
+                        <div className="flex items-center gap-2 text-[10px] text-blue-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                          <span>3D asset generation available - use "Generate 3D Asset" button</span>
+                        </div>
                       )}
                     </div>
 
-                    <div className="flex items-end">
-                      <button
-                        className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500/50 ${
-                          isGenerating 
-                            ? 'bg-blue-500/50 cursor-not-allowed backdrop-blur-sm'
-                            : !isUnlimited && remainingAfterGeneration < 0
-                            ? 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
-                            : 'bg-gradient-to-r from-blue-500/50 to-indigo-600/50 hover:from-blue-600/60 hover:to-indigo-700/60 transform hover:-translate-y-0.5 active:translate-y-0 backdrop-blur-sm'
-                        }`}
-                        onClick={!isUnlimited && remainingAfterGeneration < 0 ? handleUpgrade : generateSkybox}
-                        disabled={isGenerating}
-                      >
-                        <div className="relative flex items-center justify-center">
-                          {isGenerating ? (
+                    {/* Advanced Prompt Controls - Hidden for trial users */}
+                    {!isTrialUser && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div className="md:col-span-1">
+                          <label
+                            htmlFor="variations"
+                            className="block text-[10px] tracking-[0.16em] text-gray-500 uppercase mb-0.5"
+                          >
+                            Variations
+                          </label>
+                          <input
+                            type="number"
+                            id="variations"
+                            min="1"
+                            max="10"
+                            placeholder="1–10"
+                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            value={numVariations}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 1;
+                              setNumVariations(Math.min(10, Math.max(1, value)));
+                            }}
+                            disabled={isGenerating}
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <label
+                            htmlFor="negativeText"
+                            className="block text-[10px] tracking-[0.16em] text-gray-500 uppercase mb-0.5"
+                          >
+                            Negative Prompt
+                          </label>
+                          <input
+                            type="text"
+                            id="negativeText"
+                            placeholder="Elements to avoid: low-res, blurry, washed out..."
+                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            value={negativeText}
+                            onChange={(e) => setNegativeText(e.target.value)}
+                            disabled={isGenerating}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Trial user info badge */}
+                    {isTrialUser && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-md">
+                        <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-[11px] text-amber-300">
+                          Trial: 1 variation, {TRIAL_ALLOWED_STYLES.length} styles available. <button onClick={handleUpgrade} className="underline hover:text-amber-200">Upgrade</button> for full access.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Storage warnings - only show to non-trial users or in dev mode */}
+                    {!storageAvailable && (!isTrialUser || isDevMode) && (
+                      <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-3 space-y-2">
+                        <p className="text-xs text-red-300">
+                          ⚠ 3D Asset generation is temporarily unavailable due to storage configuration issues.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={handleStorageRecovery}
+                            className="px-3 py-1.5 rounded-md bg-sky-600/80 hover:bg-sky-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
+                          >
+                            Try Recovery
+                          </button>
+                          {isDevMode && (
+                            <button
+                              onClick={runDiagnostics}
+                              className="px-3 py-1.5 rounded-md bg-purple-600/80 hover:bg-purple-500 text-[11px] font-semibold text-white tracking-[0.12em] uppercase"
+                            >
+                              Diagnostics
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Debug / Meshy Test - ONLY visible with ?dev=true */}
+                    {isDevMode && (
+                      <div className="border border-[#343434] bg-[#151515] rounded-md px-3 py-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] tracking-[0.16em] text-gray-500 uppercase flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            Dev Mode
+                          </span>
+                          <button
+                            onClick={() => setShowTestPanel(!showTestPanel)}
+                            className="px-3 py-1.5 rounded-md bg-[#262626] hover:bg-[#2f2f2f] text-[11px] text-gray-200 uppercase tracking-[0.12em]"
+                          >
+                            {showTestPanel ? 'Hide Panel' : 'Show Panel'}
+                          </button>
+                        </div>
+                        {/* Single unified Generate button – triggers skybox + Meshy 3D (when available) */}
+                        <button
+                          onClick={() => {
+                            console.log('🔧 Manual Debug Test');
+                            console.log('Prompt:', prompt);
+                            console.log('Has 3D Objects State:', has3DObjects);
+                            console.log('Meshy Configured:', assetGenerationService.isMeshyConfigured());
+                            console.log('Preview Extraction:', assetGenerationService.previewExtraction(prompt));
+                            console.log('Should Show Button:', has3DObjects && assetGenerationService.isMeshyConfigured());
+                            console.log('Is Trial User:', isTrialUser);
+                            console.log('Available Styles:', availableStyles);
+                          }}
+                          className="w-full mt-1 px-3 py-1.5 rounded-md bg-gradient-to-r from-red-500/70 to-pink-600/70 hover:from-red-500 hover:to-pink-500 text-[11px] text-white font-semibold tracking-[0.12em] uppercase"
+                        >
+                          Debug Services (Console)
+                        </button>
+                        {showTestPanel && (
+                          <div className="mt-2 border-t border-[#2a2a2a] pt-2">
+                            <MeshyTestPanel />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 2: Style & Actions */}
+                    <div className="space-y-1.5">
+                      {/* Style selector */}
+                     <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase">
+                          In3D.Ai Style
+                        </span>
+                        {selectedSkybox && (
+                          <span className="text-[9px] text-gray-400">
+                            {selectedSkybox.name}
+                          </span>
+                        )}
+                      </div>
+
+                       {/* Active style preview above style list – mimic Skybox panel */}
+                       {selectedSkybox && (
+                         <div className="rounded-md overflow-hidden border border-[#363636] bg-[#101010]">
+                           <div className="relative">
+                             {selectedSkybox.image_jpg && (
+                               <img
+                                 src={selectedSkybox.image_jpg}
+                                 alt={selectedSkybox.name}
+                                 className="w-full h-16 object-cover"
+                               />
+                             )}
+                             <div className="absolute inset-x-0 bottom-0 bg-black/75 px-2 py-1">
+                               <p className="text-[10px] font-medium text-gray-100 truncate">
+                                 {selectedSkybox.name}
+                               </p>
+                             </div>
+                           </div>
+                         </div>
+                       )}
+
+                      {stylesLoading ? (
+                        <div className="text-[10px] text-gray-500 py-0.5">Loading styles…</div>
+                      ) : stylesError ? (
+                        <div className="text-[10px] text-red-400 py-0.5">{stylesError}</div>
+                      ) : (
+                        <div className="relative">
+                          <select
+                            value={selectedSkybox?.id ?? ''}
+                            onChange={handleSkyboxStyleChange}
+                            className="w-full appearance-none rounded-md border border-emerald-500/70 bg-[#151515] px-2.5 py-1.5 pr-7 text-xs text-gray-100 shadow-[0_0_0_1px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-500/80 focus:border-emerald-500/80"
+                          >
+                            <option value="" disabled>
+                              Select a style
+                            </option>
+                            {/* Use availableStyles which is filtered for trial users */}
+                            {availableStyles.map((style) => (
+                              <option key={style.id} value={style.id}>
+                                {style.name}
+                                {style.model ? ` · ${style.model}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+                            <svg
+                              className="h-2.5 w-2.5 text-gray-300"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </div>
+                          {/* Trial style count indicator */}
+                          {isTrialUser && (
+                            <p className="text-[9px] text-gray-500 mt-0.5">
+                              {availableStyles.length} styles available in trial
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Generation / Download buttons */}
+                    <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
+                      <div className="space-y-1">
+                        <button
+                          className={`
+                            w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em]
+                            flex items-center justify-center gap-2
+                            ${
+                              isGenerating
+                                ? 'bg-sky-600/60 text-white cursor-not-allowed'
+                                : !isUnlimited && remainingAfterGeneration < 0
+                                ? 'bg-gradient-to-r from-purple-500/80 to-pink-600/80 text-white'
+                                : 'bg-gradient-to-r from-sky-500/80 to-indigo-600/80 hover:from-sky-500 hover:to-indigo-500 text-white'
+                            }
+                          `}
+                          onClick={
+                            !isUnlimited && remainingAfterGeneration < 0
+                              ? handleUpgrade
+                              : generateSkybox
+                          }
+                          disabled={isGenerating || isGenerating3DAsset}
+                        >
+                          {isGenerating || isGenerating3DAsset ? (
                             <>
                               <svg
-                                className="animate-spin -ml-1 mr-2 h-4 w-4"
+                                className="animate-spin h-4 w-4"
                                 xmlns="http://www.w3.org/2000/svg"
                                 fill="none"
                                 viewBox="0 0 24 24"
@@ -1040,72 +1489,345 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                                 />
                               </svg>
-                              <span className="text-sm">{progress < 100 ? 'Generating...' : 'Applying In3D.Ai...'}</span>
+                              <span>{isGenerating ? 'Generating Environment...' : 'Generating 3D Asset...'}</span>
                             </>
                           ) : !isUnlimited && remainingAfterGeneration < 0 ? (
-                            <div className="flex items-center space-x-2">
-                              <svg 
-                                className="w-4 h-4" 
-                                fill="none" 
-                                stroke="currentColor" 
+                            <>
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
                                 viewBox="0 0 24 24"
                               >
-                                <path 
-                                  strokeLinecap="round" 
-                                  strokeLinejoin="round" 
-                                  strokeWidth={2} 
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
                                   d="M5 10l7-7m0 0l7 7m-7-7v18"
                                 />
                               </svg>
-                              <span className="text-sm">
-                                {subscription?.planId === 'free' 
+                              <span>
+                                {subscription?.planId === 'free'
                                   ? 'Upgrade to Pro'
                                   : 'Upgrade Plan'}
                               </span>
-                            </div>
+                            </>
                           ) : (
-                            <span className="text-sm">Generate In3D.Ai</span>
+                            <>
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1.8}
+                                  d="M12 4v9m0 0l-3-3m3 3l3-3m-9 8h12"
+                                />
+                              </svg>
+                              <span>Generate Environment & 3D Asset</span>
+                            </>
                           )}
-                        </div>
-                      </button>
-                    </div>
+                        </button>
 
-                    <div className="flex items-end">
-                      <button
-                        className={`w-full py-2 px-4 rounded-md text-white font-medium transition-all duration-300 ease-in-out shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500/50 
-                          ${!currentImageForDownload 
-                            ? 'bg-gray-600/30 cursor-not-allowed' 
-                            : 'bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 transform hover:-translate-y-0.5 active:translate-y-0'} 
-                          backdrop-blur-sm`}
-                        onClick={() => setShowDownloadPopup(true)}
-                        disabled={!currentImageForDownload}
-                      >
-                        <div className="relative flex items-center justify-center">
-                          <svg 
-                            className="w-4 h-4 mr-2" 
-                            fill="none" 
-                            stroke="currentColor" 
+                        <button
+                          className={`
+                            w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2
+                            ${
+                              !currentImageForDownload
+                                ? 'bg-[#1f1f1f] text-gray-500 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-purple-500/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 text-white'
+                            }
+                          `}
+                          onClick={() => setShowDownloadPopup(true)}
+                          disabled={!currentImageForDownload}
+                        >
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
                             viewBox="0 0 24 24"
                           >
-                            <path 
-                              strokeLinecap="round" 
-                              strokeLinejoin="round" 
-                              strokeWidth={2} 
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={1.8}
                               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
                             />
                           </svg>
-                          <span className="text-sm">Download</span>
+                          <span>Download</span>
+                        </button>
+
+                        {/* Regenerate 3D Asset Button - Only show if skybox exists but 3D asset failed/missing */}
+                        {generatedVariations.length > 0 && 
+                         !generated3DAsset && 
+                         !isGenerating3DAsset && 
+                         !isGenerating &&
+                         assetGenerationService.isMeshyConfigured() && 
+                         storageAvailable && 
+                         user?.uid && (
+                          <button
+                            data-regenerate-3d
+                            className={`
+                              w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2
+                              bg-gradient-to-r from-emerald-500/80 to-teal-600/80 hover:from-emerald-500 hover:to-teal-500 text-white
+                            `}
+                            onClick={async () => {
+                              if (!user?.uid || !storageAvailable || !assetGenerationService.isMeshyConfigured()) {
+                                setError('3D asset generation is not available. Please check your configuration.');
+                                return;
+                              }
+
+                              try {
+                                setIsGenerating3DAsset(true);
+                                setAssetGenerationProgress({
+                                  stage: 'extracting',
+                                  progress: 0,
+                                  totalAssets: 0,
+                                  completedAssets: 0,
+                                  message: 'Analyzing prompt for 3D objects...'
+                                });
+
+                                // Get the skybox ID if available (optional - can generate without skybox)
+                                const skyboxId = generatedVariations.length > 0 
+                                  ? (generatedVariations[currentVariationIndex]?.generationId || 
+                                     generatedVariations[0]?.generationId ||
+                                     generatedVariations[currentVariationIndex]?.id?.toString() ||
+                                     generatedVariations[0]?.id?.toString() ||
+                                     null)
+                                  : null;
+
+                                console.log('🚀 Starting manual 3D asset generation...', {
+                                  prompt: prompt.substring(0, 50) + '...',
+                                  userId: user.uid,
+                                  skyboxId,
+                                  storageAvailable,
+                                  meshyConfigured: assetGenerationService.isMeshyConfigured()
+                                });
+
+                                const result = await assetGenerationService.generateAssetsFromPrompt({
+                                  originalPrompt: prompt,
+                                  userId: user.uid,
+                                  skyboxId: skyboxId,
+                                  quality: 'medium',
+                                  style: 'realistic',
+                                  maxAssets: 1
+                                }, (progressUpdate) => {
+                                  setAssetGenerationProgress(progressUpdate);
+                                  console.log('📊 Generation progress:', progressUpdate);
+                                });
+
+                                console.log('📦 Generation result:', {
+                                  success: result.success,
+                                  assetsCount: result.assets?.length || 0,
+                                  error: result.error,
+                                  errors: result.errors,
+                                  extractedObjects: result.extractedObjects?.length || 0
+                                });
+
+                                if (result.success && result.assets && result.assets.length > 0) {
+                                  const asset = result.assets[0];
+                                  setGenerated3DAsset(asset);
+                                  console.log('✅ 3D asset generated successfully:', asset);
+                                  
+                                  // Show success notification
+                                  const successMsg = document.createElement('div');
+                                  successMsg.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
+                                  successMsg.innerHTML = `
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>3D asset generated successfully!</span>
+                                  `;
+                                  document.body.appendChild(successMsg);
+                                  setTimeout(() => document.body.removeChild(successMsg), 5000);
+                                } else {
+                                  // Build detailed error message
+                                  const errorMessages = [];
+                                  if (result.error) errorMessages.push(result.error);
+                                  if (result.errors && result.errors.length > 0) {
+                                    errorMessages.push(...result.errors);
+                                  }
+                                  if (result.extractedObjects && result.extractedObjects.length === 0) {
+                                    errorMessages.push('No 3D objects detected in prompt');
+                                  }
+                                  if (!result.assets || result.assets.length === 0) {
+                                    errorMessages.push('No assets were generated');
+                                  }
+                                  
+                                  const errorMessage = errorMessages.length > 0 
+                                    ? errorMessages.join('. ') 
+                                    : 'Failed to generate 3D asset. Check console for details.';
+                                  
+                                  console.error('❌ 3D asset generation failed:', {
+                                    result,
+                                    errorMessage,
+                                    extractedObjects: result.extractedObjects,
+                                    assets: result.assets
+                                  });
+                                  
+                                  setError(errorMessage);
+                                  
+                                  // Show error notification
+                                  const errorMsg = document.createElement('div');
+                                  errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+                                  errorMsg.innerHTML = `
+                                    <div class="font-bold mb-2">❌ 3D Asset Generation Failed</div>
+                                    <div class="text-sm">${errorMessage}</div>
+                                    <div class="text-xs mt-2 text-red-200">Check browser console for detailed logs</div>
+                                  `;
+                                  document.body.appendChild(errorMsg);
+                                  setTimeout(() => document.body.removeChild(errorMsg), 8000);
+                                }
+                              } catch (error) {
+                                console.error('❌ Exception during 3D asset generation:', error);
+                                console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+                                
+                                const errorMessage = error instanceof Error 
+                                  ? error.message 
+                                  : 'Failed to generate 3D asset. Unknown error occurred.';
+                                
+                                setError(errorMessage);
+                                
+                                // Show error notification
+                                const errorMsg = document.createElement('div');
+                                errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+                                errorMsg.innerHTML = `
+                                  <div class="font-bold mb-2">❌ 3D Asset Generation Error</div>
+                                  <div class="text-sm">${errorMessage}</div>
+                                  <div class="text-xs mt-2 text-red-200">Check browser console for details</div>
+                                `;
+                                document.body.appendChild(errorMsg);
+                                setTimeout(() => document.body.removeChild(errorMsg), 8000);
+                              } finally {
+                                setIsGenerating3DAsset(false);
+                                setAssetGenerationProgress(null);
+                              }
+                            }}
+                            disabled={isGenerating3DAsset}
+                          >
+                            {isGenerating3DAsset ? (
+                              <>
+                                <svg
+                                  className="animate-spin h-4 w-4"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <circle
+                                    className="opacity-25"
+                                    cx="12"
+                                    cy="12"
+                                    r="10"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                  />
+                                  <path
+                                    className="opacity-75"
+                                    fill="currentColor"
+                                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                  />
+                                </svg>
+                                <span>Generating 3D Asset...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg
+                                  className="w-4 h-4"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  {generated3DAsset ? (
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={1.8}
+                                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                    />
+                                  ) : (
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={1.8}
+                                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
+                                    />
+                                  )}
+                                </svg>
+                                <span>Generate 3D Asset Only</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Requirements / Service Status */}
+                      {(!storageAvailable || serviceStatusError) && (
+                        <div className="mt-2 border border-red-500/30 bg-red-900/10 rounded-md px-2.5 py-2">
+                          <div className="flex items-center gap-1 mb-1">
+                            <svg
+                              className="w-3.5 h-3.5 text-red-400"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                              />
+                            </svg>
+                            <span className="text-[11px] text-red-300 font-medium">
+                              Asset Generation Unavailable
+                            </span>
+                          </div>
+                          <ul className="list-disc list-inside text-[11px] text-red-200/90">
+                            {getMissingRequirements().map(req => (
+                              <li key={req}>{req}</li>
+                            ))}
+                          </ul>
+                          {serviceStatusError && (
+                            <p className="text-[10px] text-red-200 mt-1">
+                              {serviceStatusError}
+                            </p>
+                          )}
+                          {/* Debug button only visible in dev mode */}
+                          {isDevMode && (
+                            <button
+                              className="mt-2 w-full py-1.5 rounded-md bg-red-600/80 hover:bg-red-500 text-[11px] text-white uppercase tracking-[0.12em] flex items-center justify-center gap-1"
+                              onClick={runDiagnostics}
+                            >
+                             <svg
+                                className="w-3.5 h-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
+                                />
+                              </svg>
+                              Debug Services
+                            </button>
+                          )}
                         </div>
-                      </button>
+                      )}
                     </div>
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
+      {/* Download Popup */}
       <DownloadPopup
         isOpen={showDownloadPopup}
         onClose={() => setShowDownloadPopup(false)}
@@ -1113,12 +1835,14 @@ const MainSection = ({ setBackgroundSkybox }) => {
         title={prompt || 'In3D.Ai environment'}
       />
 
+      {/* Upgrade Modal */}
       <UpgradeModal 
         isOpen={showUpgradeModal} 
         onClose={() => setShowUpgradeModal(false)}
         currentPlan={subscriptionInfo.plan}
       />
 
+      {/* Asset Panel */}
       <AssetGenerationPanel
         isVisible={showAssetPanel}
         prompt={prompt}
@@ -1127,47 +1851,167 @@ const MainSection = ({ setBackgroundSkybox }) => {
         onClose={() => setShowAssetPanel(false)}
       />
 
-      {/* Replace the bottom navigation with side arrows */}
-      {generatedVariations.length > 0 && (
+      {/* Storage Status & Diagnostic overlays - ONLY in dev mode */}
+      {isDevMode && (
         <>
-          {/* Left Arrow */}
-          <button
-            onClick={() => handleVariationChange('prev')}
-            className="fixed left-4 top-1/2 transform -translate-y-1/2 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm border border-gray-700/50 transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50 z-50"
-            aria-label="Previous variation"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-
-          {/* Right Arrow */}
-          <button
-            onClick={() => handleVariationChange('next')}
-            className="fixed right-4 top-1/2 transform -translate-y-1/2 p-3 rounded-full bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm border border-gray-700/50 transition-all duration-300 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-blue-500/50 z-50"
-            aria-label="Next variation"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          {/* Variation Counter */}
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-black/50 px-4 py-2 rounded-lg backdrop-blur-sm border border-gray-700/50 text-white text-sm z-50">
-            {currentVariationIndex + 1} / {generatedVariations.length}
-          </div>
+          <StorageStatusIndicator />
+          <ConfigurationDiagnostic />
         </>
       )}
 
-      {/* Storage Status Indicator */}
-      <StorageStatusIndicator />
-      
-      {/* Configuration Diagnostic - Show in development or when there are errors */}
-      {(process.env.NODE_ENV === 'development' || serviceStatusError || !storageAvailable) && (
-        <ConfigurationDiagnostic />
+      {/* 3D Asset Viewer with Skybox Background - Merged Create & 3D Asset Section */}
+      {/* Can display 3D asset even without skybox (will use black background) */}
+      {generated3DAsset && (
+        <>
+          {/* Debug info in dev mode */}
+          {isDevMode && (
+            <div className="fixed top-20 left-4 bg-black/80 text-white p-3 rounded-lg text-xs z-[10000] max-w-xs">
+              <div className="font-bold mb-2">3D Asset Debug Info:</div>
+              <div>Status: {generated3DAsset.status || 'undefined'}</div>
+              <div>Has downloadUrl: {generated3DAsset.downloadUrl ? 'Yes' : 'No'}</div>
+              <div>Has previewUrl: {generated3DAsset.previewUrl ? 'Yes' : 'No'}</div>
+              <div>Format: {generated3DAsset.format || 'undefined'}</div>
+              <div>Skybox variations: {generatedVariations.length}</div>
+              <div className="mt-2 text-yellow-400">
+                {generated3DAsset.status !== 'completed' && '⚠️ Status not completed'}
+                {!generated3DAsset.downloadUrl && !generated3DAsset.previewUrl && '⚠️ No URL available'}
+              </div>
+            </div>
+          )}
+          
+          {/* Show viewer when asset is completed and has URL */}
+          {generated3DAsset.status === 'completed' && 
+           (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && (
+            <div className="fixed inset-0 w-full h-full z-[9999]">
+              {/* Control buttons overlay */}
+              <div className="absolute top-4 right-4 z-[10000] flex gap-2">
+                <button
+                  onClick={() => setGenerated3DAsset(null)}
+                  className="px-4 py-2 bg-black/80 hover:bg-black/90 text-white rounded-lg text-sm font-semibold border border-white/20 flex items-center gap-2"
+                  title="Clear 3D asset and generate a new one"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Clear
+                </button>
+                <button
+                  onClick={async () => {
+                    setGenerated3DAsset(null);
+                    // Wait a moment for state to update, then trigger generation
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    if (!user?.uid || !storageAvailable || !assetGenerationService.isMeshyConfigured()) {
+                      setError('3D asset generation is not available. Please check your configuration.');
+                      return;
+                    }
+
+                    try {
+                      setIsGenerating3DAsset(true);
+                      setAssetGenerationProgress({
+                        stage: 'extracting',
+                        progress: 0,
+                        totalAssets: 0,
+                        completedAssets: 0,
+                        message: 'Analyzing prompt for 3D objects...'
+                      });
+
+                      const skyboxId = generatedVariations.length > 0 
+                        ? (generatedVariations[currentVariationIndex]?.generationId || 
+                           generatedVariations[0]?.generationId ||
+                           generatedVariations[currentVariationIndex]?.id?.toString() ||
+                           generatedVariations[0]?.id?.toString() ||
+                           null)
+                        : null;
+
+                      const result = await assetGenerationService.generateAssetsFromPrompt({
+                        originalPrompt: prompt,
+                        userId: user.uid,
+                        skyboxId: skyboxId,
+                        quality: 'medium',
+                        style: 'realistic',
+                        maxAssets: 1
+                      }, (progressUpdate) => {
+                        setAssetGenerationProgress(progressUpdate);
+                      });
+
+                      if (result.success && result.assets && result.assets.length > 0) {
+                        const asset = result.assets[0];
+                        setGenerated3DAsset(asset);
+                      } else {
+                        setError(result.error || 'Failed to generate 3D asset');
+                      }
+                    } catch (error) {
+                      console.error('❌ Regeneration error:', error);
+                      setError(error instanceof Error ? error.message : 'Failed to regenerate 3D asset');
+                    } finally {
+                      setIsGenerating3DAsset(false);
+                      setAssetGenerationProgress(null);
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
+                  title="Generate a new 3D asset"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Regenerate
+                </button>
+              </div>
+              <AssetViewerWithSkybox
+                assetUrl={generated3DAsset.downloadUrl || generated3DAsset.previewUrl || ''}
+                skyboxImageUrl={generatedVariations.length > 0 
+                  ? (generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image)
+                  : undefined}
+                assetFormat={generated3DAsset.format || 'glb'}
+                className="w-full h-full"
+                autoRotate={false}
+                onLoad={(model) => {
+                  console.log('✅ 3D asset loaded in Create section:', model);
+                  console.log('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
+                  console.log('📦 Skybox URL:', generatedVariations[currentVariationIndex]?.image || generatedVariations[0]?.image);
+                }}
+                onError={(error) => {
+                  console.error('❌ 3D asset loading error:', error);
+                  console.error('📦 Asset data:', generated3DAsset);
+                  console.error('📦 Asset URL:', generated3DAsset.downloadUrl || generated3DAsset.previewUrl);
+                }}
+              />
+            </div>
+          )}
+          
+          {/* Show loading state when asset is generating */}
+          {isGenerating3DAsset && (
+            <div className="fixed inset-0 w-full h-full z-[9998] bg-black/50 flex items-center justify-center">
+              <div className="bg-[#0a0a0a] border border-[#ffffff08] rounded-xl p-6 max-w-md">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                  <div>
+                    <div className="text-white font-semibold">Generating 3D Asset</div>
+                    <div className="text-gray-400 text-sm">{assetGenerationProgress?.message || 'Processing...'}</div>
+                  </div>
+                </div>
+                {assetGenerationProgress && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-gray-400">
+                      <span>{assetGenerationProgress.stage}</span>
+                      <span>{Math.round(assetGenerationProgress.progress)}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-[#1e1e1e] rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all"
+                        style={{ width: `${assetGenerationProgress.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
-}
+};
 
 export default MainSection;
