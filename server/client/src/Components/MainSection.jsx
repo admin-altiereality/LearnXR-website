@@ -534,7 +534,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
           console.log(`🔄 Starting to poll status for generation: ${variationId}`);
           let variationStatus;
           let attempts = 0;
-          const maxAttempts = 60; // 2 minutes max (60 * 2 seconds)
+          const maxAttempts = 180; // 6 minutes max (180 * 2 seconds)
+          const baseInterval = 2000; // 2 seconds
+          let currentInterval = baseInterval;
+          let lastStatus = 'pending';
           
           do {
             try {
@@ -545,37 +548,60 @@ const MainSection = ({ setBackgroundSkybox }) => {
               }
               
               variationStatus = statusResponse.data;
-              console.log(`📊 Status for ${variationId} (attempt ${attempts + 1}):`, variationStatus?.status);
+              const normalizedStatus = variationStatus?.status?.toLowerCase() || 'pending';
+              lastStatus = normalizedStatus;
               
-              if (variationStatus?.status === "completed" || variationStatus?.status === "complete") {
-                console.log(`✅ Generation ${variationId} completed!`);
-                break;
-              }
+              console.log(`📊 Status for ${variationId} (attempt ${attempts + 1}/${maxAttempts}):`, normalizedStatus);
               
-              if (variationStatus?.status === "failed" || variationStatus?.status === "error") {
-                throw new Error(variationStatus?.error_message || 'Generation failed');
+              // Handle all BlockadeLabs statuses: pending, dispatched, processing, complete, abort, error
+              if (normalizedStatus === "completed" || normalizedStatus === "complete") {
+                if (!variationStatus?.file_url) {
+                  console.warn(`Generation ${variationId} marked complete but no file_url, continuing to poll...`);
+                } else {
+                  console.log(`✅ Generation ${variationId} completed!`);
+                  break;
+                }
+              } else if (normalizedStatus === "failed" || normalizedStatus === "error" || normalizedStatus === "abort") {
+                const errorMsg = variationStatus?.error_message || variationStatus?.error || 'Generation failed';
+                throw new Error(errorMsg);
+              } else if (normalizedStatus === "dispatched" || normalizedStatus === "processing") {
+                // Generation is in progress - use shorter interval
+                currentInterval = Math.min(baseInterval * 2, 5000); // 2-5 seconds
+              } else if (normalizedStatus === "pending") {
+                currentInterval = baseInterval;
               }
               
               attempts++;
               if (attempts >= maxAttempts) {
-                throw new Error('Generation timed out. Please try again.');
+                throw new Error(`Generation timed out after ${maxAttempts} attempts. Last status: ${lastStatus}. Please check the history section - the generation may still be processing.`);
               }
               
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              // Exponential backoff: gradually increase interval, cap at 10 seconds
+              if (attempts > 1) {
+                currentInterval = Math.min(currentInterval * 1.1, 10000);
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, currentInterval));
             } catch (error) {
               console.error(`❌ Error checking status for ${variationId}:`, error);
               // If it's a 404 or "not found" error, stop immediately
               if (error.message?.includes('not found') || error.message?.includes('expired')) {
                 throw error;
               }
-              // For other errors, retry a few times
-              if (attempts >= 5) {
-                throw error;
-              }
+              // For other errors, use exponential backoff
               attempts++;
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              if (attempts >= maxAttempts) {
+                throw new Error(`Generation timed out. Last status: ${lastStatus}. Please check the history section.`);
+              }
+              currentInterval = Math.min(currentInterval * 2, 10000); // Double interval on error, max 10s
+              await new Promise(resolve => setTimeout(resolve, currentInterval));
             }
-          } while (variationStatus?.status !== "completed" && variationStatus?.status !== "complete" && attempts < maxAttempts);
+          } while (attempts < maxAttempts && 
+                   variationStatus?.status?.toLowerCase() !== "completed" && 
+                   variationStatus?.status?.toLowerCase() !== "complete" &&
+                   variationStatus?.status?.toLowerCase() !== "failed" &&
+                   variationStatus?.status?.toLowerCase() !== "error" &&
+                   variationStatus?.status?.toLowerCase() !== "abort");
 
           const imageUrl = variationStatus.file_url || variationStatus.image || variationStatus.thumb_url;
           if (!imageUrl) {
