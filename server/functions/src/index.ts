@@ -7,9 +7,11 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
-import * as cors from "cors";
+import cors from "cors";
 import * as dotenv from "dotenv";
-import * as express from "express";
+import express, { Request, Response } from "express";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore - firebase-functions v2 subpath types can be missing in some tooling
 import { onRequest } from "firebase-functions/v2/https";
 import { paymentRoutes } from "./routes";
 
@@ -38,7 +40,7 @@ app.use(express.json({
 app.use('/api/payment', paymentRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get("/health", (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 

@@ -92,11 +92,14 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
     try {
       setStylesLoading(true);
       const response = await skyboxApiService.getStyles();
-      if (response.success && response.data) {
-        setAvailableStyles(response.data);
+      // Handle nested response structure: { success, data: { styles: [...] } }
+      const rawStyles = response?.data?.styles || response?.styles || response?.data || [];
+      const stylesArr = Array.isArray(rawStyles) ? rawStyles : [];
+      if (stylesArr.length > 0) {
+        setAvailableStyles(stylesArr);
         // Auto-select first style if none selected
-        if (!selectedStyle && response.data.length > 0) {
-          setSelectedStyle(response.data[0]);
+        if (!selectedStyle && stylesArr.length > 0) {
+          setSelectedStyle(stylesArr[0]);
         }
       }
     } catch (error) {

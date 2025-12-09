@@ -72,15 +72,19 @@ export interface MeshyAsset {
     details?: any;
   };
   metadata?: {
-    category: string;
-    confidence: number;
-    originalPrompt: string;
-    userId: string;
+    category?: string;
+    confidence?: number;
+    originalPrompt?: string;
+    userId?: string;
     skyboxId?: string;
     vertices?: number;
     faces?: number;
     textures?: number;
     animations?: number;
+    // Meshy API specific fields
+    art_style?: string;
+    seed?: number;
+    texture_prompt?: string;
   };
 }
 
@@ -105,8 +109,19 @@ export interface MeshyUsage {
 
 // Get the correct API base URL
 const getApiBaseUrl = () => {
+  // Check for explicit API base URL from environment
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  
+  // Use local backend in development
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5001/in3devoneuralai/us-central1/api';
+  }
+  
+  // Use Firebase Functions in production
   const region = 'us-central1';
-  const projectId = 'in3devoneuralai';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
   return `https://${region}-${projectId}.cloudfunctions.net/api`;
 };
 
@@ -145,6 +160,10 @@ export class MeshyApiService {
   ): Promise<Response> {
     const url = `${this.baseUrl}${endpoint}`;
     
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    
     const defaultOptions: RequestInit = {
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -152,12 +171,13 @@ export class MeshyApiService {
         'User-Agent': 'In3D.ai-WebApp/1.0',
         ...options.headers,
       },
-      timeout: this.timeout,
+      signal: controller.signal, // Use AbortSignal for timeout
       ...options,
     };
 
     try {
       const response = await fetch(url, defaultOptions);
+      clearTimeout(timeoutId); // Clear timeout on successful fetch
       
       // Handle rate limiting
       if (response.status === 429) {
@@ -181,6 +201,13 @@ export class MeshyApiService {
       
       return response;
     } catch (error) {
+      clearTimeout(timeoutId); // Clear timeout on error
+      
+      // Handle AbortError (timeout)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${this.timeout}ms`);
+      }
+      
       if (retryCount < this.maxRetries) {
         const delay = this.retryDelay * Math.pow(2, retryCount);
         console.log(`🔄 Network error, retrying in ${delay}ms (attempt ${retryCount + 1}/${this.maxRetries})`);

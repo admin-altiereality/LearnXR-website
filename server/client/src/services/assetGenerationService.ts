@@ -2,9 +2,9 @@
 // This service orchestrates the complete pipeline: keyword extraction → Meshy.ai generation → Storage
 
 import { keywordExtractionService, type ExtractedObject } from './keywordExtractionService';
-import { meshyApiService, type MeshyGenerationRequest, type MeshyAsset } from './meshyApiService';
+import { meshyApiService, type MeshyGenerationRequest } from './meshyApiService';
 import { assetStorageService, type StoredAsset } from './assetStorageService';
-import { alternativeStorageService, type StorageResult } from './alternativeStorageService';
+import { alternativeStorageService } from './alternativeStorageService';
 
 export interface AssetGenerationRequest {
   originalPrompt: string;
@@ -66,7 +66,11 @@ class AssetGenerationService {
         return {
           success: false,
           error: 'No storage service is available. Please check your configuration.',
-          assets: []
+          assets: [],
+          extractedObjects: [],
+          totalCost: 0,
+          totalTime: 0,
+          errors: ['No storage service is available. Please check your configuration.']
         };
       }
 
@@ -84,14 +88,17 @@ class AssetGenerationService {
         // Directly generate a single asset with the original prompt
         const meshyRequest: MeshyGenerationRequest = {
           prompt: request.originalPrompt,
-          style: request.style || 'realistic',
-          quality: request.quality || 'medium',
-          output_format: request.outputFormat || 'glb'
+          art_style: (request.style === 'realistic' || request.style === 'sculpture') ? request.style : 'realistic',
+          ai_model: request.quality === 'high' ? 'meshy-5' : 'meshy-4',
+          topology: 'triangle',
+          target_polycount: request.quality === 'high' ? 50000 : request.quality === 'low' ? 15000 : 30000
         };
         // Validate request
         const validation = meshyApiService.validateRequest(meshyRequest);
         if (!validation.valid) {
-          result.errors.push(`Invalid request: ${validation.errors.join(', ')}`);
+          const errorMessage = `Invalid request: ${validation.errors.join(', ')}`;
+          result.errors.push(errorMessage);
+          result.error = errorMessage;
           onProgress?.({
             stage: 'failed',
             progress: 100,
@@ -99,6 +106,8 @@ class AssetGenerationService {
             completedAssets: 0,
             message: 'Invalid prompt or parameters.'
           });
+          result.success = false;
+          result.totalTime = Date.now() - startTime;
           return result;
         }
         // Generate asset
@@ -110,27 +119,63 @@ class AssetGenerationService {
           message: 'Generating 3D asset...'
         });
         try {
+          // Generate asset - returns { result: "task-id" }
           const generation = await meshyApiService.generateAsset(meshyRequest);
+          
+          // Validate that we got a task ID
+          if (!generation.result || generation.result === 'undefined') {
+            throw new Error('Invalid response from Meshy API: No task ID received');
+          }
+          
+          const taskId = generation.result;
+          console.log('✅ Meshy generation started with task ID:', taskId);
+          
+          // Update progress to show we're polling
+          onProgress?.({
+            stage: 'generating',
+            progress: 20,
+            totalAssets: 1,
+            completedAssets: 0,
+            message: 'Polling for generation completion...'
+          });
+          
+          // Poll for completion first to get the actual asset data
+          const completedAsset = await meshyApiService.pollForCompletion(taskId);
+          
+          console.log('✅ Asset generation completed:', {
+            taskId,
+            hasDownloadUrl: !!completedAsset.downloadUrl,
+            hasPreviewUrl: !!completedAsset.previewUrl,
+            format: completedAsset.format
+          });
+          
           // Store asset
           let storedAsset: StoredAsset | null = null;
           let alternativeStorageUsed = false;
+          
           if (firebaseStorageAvailable) {
             try {
+              // Store metadata with the completed asset data
               const assetId = await assetStorageService.storeAssetMetadata(
                 {
-                  id: generation.id,
-                  prompt: generation.prompt,
-                  status: generation.status,
-                  format: request.outputFormat || 'glb',
-                  createdAt: generation.created_at,
-                  updatedAt: generation.updated_at
+                  id: taskId,
+                  prompt: request.originalPrompt,
+                  status: 'completed',
+                  format: completedAsset.format || request.outputFormat || 'glb',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
                 },
-                { keyword: request.originalPrompt, category: 'custom', confidence: 1, suggestedPrompt: request.originalPrompt },
+                { 
+                  keyword: request.originalPrompt, 
+                  category: 'custom', 
+                  confidence: 1, 
+                  suggestedPrompt: request.originalPrompt,
+                  description: request.originalPrompt
+                },
                 request.userId,
                 request.skyboxId,
                 request.originalPrompt
               );
-              const completedAsset = await meshyApiService.pollForCompletion(generation.id);
               const generationTime = Date.now() - startTime;
               const cost = meshyApiService.getCostEstimate(request.quality || 'medium');
               await assetStorageService.updateAssetCompletion(assetId, completedAsset, generationTime, cost);
@@ -140,15 +185,15 @@ class AssetGenerationService {
               alternativeStorageUsed = true;
             }
           }
+          
           if (!storedAsset && alternativeStorageAvailable) {
             try {
-              const completedAsset = await meshyApiService.pollForCompletion(generation.id);
               const storageResult = await alternativeStorageService.storeMeshyAssetUrl(
                 completedAsset.downloadUrl || completedAsset.previewUrl || '',
-                `${request.originalPrompt}.${request.outputFormat || 'glb'}`,
+                `${request.originalPrompt}.${completedAsset.format || request.outputFormat || 'glb'}`,
                 request.userId,
                 {
-                  meshyId: generation.id,
+                  meshyId: taskId,
                   originalPrompt: request.originalPrompt,
                   skyboxId: request.skyboxId,
                   quality: request.quality || 'medium',
@@ -167,18 +212,17 @@ class AssetGenerationService {
                   status: 'completed',
                   downloadUrl: storageResult.url!,
                   previewUrl: storageResult.url!,
-                  format: request.outputFormat || 'glb',
+                  format: completedAsset.format || request.outputFormat || 'glb',
                   size: 0,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   metadata: {
-                    meshyId: generation.id,
+                    meshyId: taskId,
                     generationTime: Date.now() - startTime,
                     cost: meshyApiService.getCostEstimate(request.quality || 'medium'),
                     quality: request.quality || 'medium',
                     style: request.style || 'realistic',
-                    tags: ['custom', request.originalPrompt],
-                    storageProvider: storageResult.provider
+                    tags: ['custom', request.originalPrompt]
                   }
                 };
                 alternativeStorageUsed = true;
@@ -194,20 +238,36 @@ class AssetGenerationService {
             if (alternativeStorageUsed) {
               result.alternativeStorageUsed = true;
             }
+            onProgress?.({
+              stage: 'completed',
+              progress: 100,
+              totalAssets: 1,
+              completedAssets: 1,
+              message: 'Asset generated successfully.'
+            });
+            result.success = true;
+            result.totalTime = Date.now() - startTime;
+            return result;
+          } else {
+            // Asset was generated but storage failed
+            const errorMessage = 'Asset generated but failed to store. Please check storage configuration.';
+            result.errors.push(errorMessage);
+            result.error = errorMessage;
+            onProgress?.({
+              stage: 'failed',
+              progress: 100,
+              totalAssets: 1,
+              completedAssets: 0,
+              message: errorMessage
+            });
+            result.success = false;
+            result.totalTime = Date.now() - startTime;
+            return result;
           }
-          onProgress?.({
-            stage: 'completed',
-            progress: 100,
-            totalAssets: 1,
-            completedAssets: 1,
-            message: 'Asset generated successfully.'
-          });
-          result.success = result.assets.length > 0;
-          result.totalTime = Date.now() - startTime;
-          return result;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           result.errors.push(errorMessage);
+          result.error = errorMessage;
           onProgress?.({
             stage: 'failed',
             progress: 100,
@@ -215,6 +275,8 @@ class AssetGenerationService {
             completedAssets: 0,
             message: errorMessage
           });
+          result.success = false;
+          result.totalTime = Date.now() - startTime;
           return result;
         }
       }
@@ -223,7 +285,10 @@ class AssetGenerationService {
       const extractedObjects = keywordExtractionService.extractObjects(request.originalPrompt);
       
       if (extractedObjects.length === 0) {
-        result.errors.push('No 3D objects detected in the prompt');
+        const errorMessage = 'No 3D objects detected in the prompt';
+        result.errors.push(errorMessage);
+        result.error = errorMessage;
+        result.extractedObjects = [];
         onProgress?.({
           stage: 'failed',
           progress: 100,
@@ -231,6 +296,8 @@ class AssetGenerationService {
           completedAssets: 0,
           message: 'No 3D objects found in prompt'
         });
+        result.success = false;
+        result.totalTime = Date.now() - startTime;
         return result;
       }
 
@@ -262,9 +329,10 @@ class AssetGenerationService {
           // Create Meshy generation request
           const meshyRequest: MeshyGenerationRequest = {
             prompt: extractedObject.suggestedPrompt,
-            style: request.style || 'realistic',
-            quality: request.quality || 'medium',
-            output_format: request.outputFormat || 'glb'
+            art_style: (request.style === 'realistic' || request.style === 'sculpture') ? request.style : 'realistic',
+            ai_model: request.quality === 'high' ? 'meshy-5' : 'meshy-4',
+            topology: 'triangle',
+            target_polycount: request.quality === 'high' ? 50000 : request.quality === 'low' ? 15000 : 30000
           };
 
           // Validate request
@@ -283,13 +351,41 @@ class AssetGenerationService {
             message: `Generating ${extractedObject.keyword}...`
           });
 
-          // Generate asset
+          // Generate asset - returns { result: "task-id" }
           const generation = await meshyApiService.generateAsset(meshyRequest);
+          
+          // Validate that we got a task ID
+          if (!generation.result || generation.result === 'undefined') {
+            throw new Error('Invalid response from Meshy API: No task ID received');
+          }
+          
+          const taskId = generation.result;
+          console.log(`✅ Meshy generation started for ${extractedObject.keyword} with task ID:`, taskId);
+          
+          // Update progress to show we're polling
+          onProgress?.({
+            stage: 'generating',
+            progress: (index / objectsToGenerate.length) * 50 + 25,
+            currentAsset: extractedObject.keyword,
+            totalAssets: objectsToGenerate.length,
+            completedAssets: index,
+            message: `Polling for ${extractedObject.keyword} completion...`
+          });
+          
+          // Poll for completion first to get the actual asset data
+          const completedAsset = await meshyApiService.pollForCompletion(taskId);
+          
+          console.log(`✅ Asset generation completed for ${extractedObject.keyword}:`, {
+            taskId,
+            hasDownloadUrl: !!completedAsset.downloadUrl,
+            hasPreviewUrl: !!completedAsset.previewUrl,
+            format: completedAsset.format
+          });
           
           // Stage 3: Store asset using available storage
           onProgress?.({
             stage: 'storing',
-            progress: (index / objectsToGenerate.length) * 25,
+            progress: (index / objectsToGenerate.length) * 25 + 75,
             currentAsset: extractedObject.keyword,
             totalAssets: objectsToGenerate.length,
             completedAssets: index,
@@ -302,24 +398,21 @@ class AssetGenerationService {
           // Try Firebase Storage first
           if (firebaseStorageAvailable) {
             try {
-              // Store initial metadata
+              // Store initial metadata with the completed asset data
               const assetId = await assetStorageService.storeAssetMetadata(
                 {
-                  id: generation.id,
-                  prompt: generation.prompt,
-                  status: generation.status,
-                  format: request.outputFormat || 'glb',
-                  createdAt: generation.created_at,
-                  updatedAt: generation.updated_at
+                  id: taskId,
+                  prompt: extractedObject.suggestedPrompt,
+                  status: 'completed',
+                  format: completedAsset.format || request.outputFormat || 'glb',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
                 },
                 extractedObject,
                 request.userId,
                 request.skyboxId,
                 request.originalPrompt
               );
-
-              // Poll for completion
-              const completedAsset = await meshyApiService.pollForCompletion(generation.id);
               
               // Calculate generation time and cost
               const generationTime = Date.now() - startTime;
@@ -339,16 +432,13 @@ class AssetGenerationService {
           // If Firebase Storage failed or is not available, use alternative storage
           if (!storedAsset && alternativeStorageAvailable) {
             try {
-              // Poll for completion first
-              const completedAsset = await meshyApiService.pollForCompletion(generation.id);
-              
-              // Store the Meshy.ai URL directly
+              // Store the Meshy.ai URL directly (completedAsset already polled above)
               const storageResult = await alternativeStorageService.storeMeshyAssetUrl(
                 completedAsset.downloadUrl || completedAsset.previewUrl || '',
-                `${extractedObject.keyword}.${request.outputFormat || 'glb'}`,
+                `${extractedObject.keyword}.${completedAsset.format || request.outputFormat || 'glb'}`,
                 request.userId,
                 {
-                  meshyId: generation.id,
+                  meshyId: taskId,
                   originalPrompt: request.originalPrompt,
                   extractedObject,
                   skyboxId: request.skyboxId,
@@ -370,12 +460,12 @@ class AssetGenerationService {
                   status: 'completed',
                   downloadUrl: storageResult.url!,
                   previewUrl: storageResult.url!,
-                  format: request.outputFormat || 'glb',
+                  format: completedAsset.format || request.outputFormat || 'glb',
                   size: 0,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   metadata: {
-                    meshyId: generation.id,
+                    meshyId: taskId,
                     generationTime: Date.now() - startTime,
                     cost: meshyApiService.getCostEstimate(request.quality || 'medium'),
                     quality: request.quality || 'medium',
@@ -409,7 +499,7 @@ class AssetGenerationService {
       });
 
       // Wait for all generations to complete
-      const generationResults = await Promise.all(generationPromises);
+      await Promise.all(generationPromises);
       
       // Stage 4: Finalize and return results
       onProgress?.({
@@ -430,8 +520,9 @@ class AssetGenerationService {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         assets: [],
+        extractedObjects: [],
         totalCost: 0,
-        totalTime: 0,
+        totalTime: Date.now() - startTime,
         errors: [error instanceof Error ? error.message : 'Unknown error']
       };
     }
@@ -447,36 +538,21 @@ class AssetGenerationService {
     quality: 'low' | 'medium' | 'high' = 'medium'
   ): Promise<AssetGenerationResult> {
     console.log(`🧪 Testing single asset generation: ${keyword}`);
+    const startTime = Date.now();
     
     try {
-      // Generate the asset
-      const generationResult = await meshyApiService.generateAsset(keyword, quality);
-      
-      if (!generationResult.success) {
-        throw new Error(`Generation failed: ${generationResult.error}`);
-      }
-      
-      // Upload to Firebase Storage
-      const uploadResult = await assetStorageService.uploadAsset(
-        generationResult.assetUrl,
-        keyword,
+      // Generate the asset using the main generation method
+      const result = await this.generateAssetsFromPrompt({
+        originalPrompt: keyword,
         userId,
         skyboxId,
-        quality
-      );
+        quality,
+        maxAssets: 1
+      });
       
-      if (!uploadResult.success) {
-        throw new Error(`Upload failed: ${uploadResult.error}`);
-      }
+      console.log(`✅ Single asset test ${result.success ? 'successful' : 'failed'}`);
       
-      console.log(`✅ Single asset test successful: ${uploadResult.assetId}`);
-      
-      return {
-        success: true,
-        assets: [uploadResult.asset],
-        totalCost: meshyApiService.getCostPerAsset(quality),
-        totalTime: Date.now() - Date.now() // Will be calculated properly in real usage
-      };
+      return result;
       
     } catch (error) {
       console.error('❌ Single asset test failed:', error);
@@ -484,8 +560,10 @@ class AssetGenerationService {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         assets: [],
+        extractedObjects: [],
         totalCost: 0,
-        totalTime: 0
+        totalTime: Date.now() - startTime,
+        errors: [error instanceof Error ? error.message : 'Unknown error']
       };
     }
   }
@@ -660,7 +738,8 @@ class AssetGenerationService {
    * Get available styles
    */
   async getAvailableStyles(): Promise<string[]> {
-    return meshyApiService.getAvailableStyles();
+    const styles = await meshyApiService.getAvailableStyles();
+    return styles.map(style => style.id || style.name);
   }
 
   /**

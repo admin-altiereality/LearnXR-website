@@ -5,14 +5,16 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
+// Firebase configuration from environment variables
+// Falls back to hardcoded values if env vars are not set (for development)
 const firebaseConfig = {
-  apiKey: "AIzaSyBo9VsJMft4Qqap5oUmQowwbjiMQErloqU",
-  authDomain: "in3devoneuralai.firebaseapp.com",
-  projectId: "in3devoneuralai",
-  storageBucket: "in3devoneuralai.appspot.com",
-  messagingSenderId: "708037023303",
-  appId: "1:708037023303:web:f0d5b319b05aa119288362",
-  measurementId: "G-FNENMQ3BMF"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBo9VsJMft4Qqap5oUmQowwbjiMQErloqU",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "in3devoneuralai.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "in3devoneuralai",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "in3devoneuralai.appspot.com",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "708037023303",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:708037023303:web:f0d5b319b05aa119288362",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-FNENMQ3BMF"
 };
 
 // Initialize Firebase App FIRST
@@ -86,7 +88,7 @@ const initializeFunctions = () => {
       console.log('✅ Firebase Functions initialized');
       
       // Connect to emulator in development
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env.DEV || import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
         try {
           connectFunctionsEmulator(functions, 'localhost', 5001);
           console.log('🔧 Connected to Functions emulator');

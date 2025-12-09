@@ -185,11 +185,26 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
 
     } catch (error) {
       console.error('Generation failed:', error);
-      setError(error instanceof Error ? error.message : 'Generation failed');
+      
+      // Extract user-friendly error message
+      let errorMessage = 'Generation failed';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        // Check for specific error types
+        if (errorMessage.includes('402') || errorMessage.includes('Insufficient funds')) {
+          errorMessage = '⚠️ Insufficient funds in your Meshy.ai account. Please add credits to continue generating 3D assets.';
+        } else if (errorMessage.includes('401') || errorMessage.includes('Invalid')) {
+          errorMessage = '⚠️ Invalid Meshy API key. Please check your API configuration.';
+        } else if (errorMessage.includes('429') || errorMessage.includes('Rate limit')) {
+          errorMessage = '⚠️ Rate limit exceeded. Please wait a moment before trying again.';
+        }
+      }
+      
+      setError(errorMessage);
       setProgress({
         stage: 'failed',
         progress: 0,
-        message: 'Generation failed'
+        message: errorMessage
       });
     } finally {
       setIsGenerating(false);

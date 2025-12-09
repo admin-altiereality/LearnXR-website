@@ -1,23 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { EnhancedMeshyPanel } from '../Components/EnhancedMeshyPanel';
 import { MeshyTestPanel } from '../Components/MeshyTestPanel';
 import { MeshyDebugPanel } from '../Components/MeshyDebugPanel';
 import { Meshy3DViewer } from '../Components/Meshy3DViewer';
 import { StorageStatusIndicator } from '../Components/StorageStatusIndicator';
-import { useAuth } from '../contexts/AuthContext';
+import type { StoredAsset } from '../services/assetStorageService';
+
+type InteractionMode = 'rotate' | 'zoom' | 'pan';
+type LightingMode = 'studio' | 'outdoor' | 'indoor' | 'dramatic';
+
+interface ViewerSettings {
+  autoRotate: boolean;
+  showControls: boolean;
+  lighting: LightingMode;
+  backgroundColor: string;
+  enableInteraction: boolean;
+}
 
 const AssetGenerator = () => {
-  const { user } = useAuth();
   const [showTestPanel, setShowTestPanel] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
-  const [generatedAssets, setGeneratedAssets] = useState([]);
+  const [generatedAssets, setGeneratedAssets] = useState<StoredAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [currentAssetIndex, setCurrentAssetIndex] = useState(0);
-  const [backgroundAsset, setBackgroundAsset] = useState(null);
-  const [interactionMode, setInteractionMode] = useState('rotate'); // rotate, zoom, pan
-  const [viewerSettings, setViewerSettings] = useState({
+  const [backgroundAsset, setBackgroundAsset] = useState<StoredAsset | null>(null);
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('rotate');
+  const [viewerSettings, setViewerSettings] = useState<ViewerSettings>({
     autoRotate: true,
     showControls: true,
     lighting: 'dramatic',
@@ -25,7 +35,7 @@ const AssetGenerator = () => {
     enableInteraction: true
   });
 
-  const handleAssetGenerated = (asset) => {
+  const handleAssetGenerated = (asset: StoredAsset) => {
     setGeneratedAssets(prev => [asset, ...prev]);
     setBackgroundAsset(asset); // Set as background immediately
     setIsGenerating(false);
@@ -42,7 +52,7 @@ const AssetGenerator = () => {
     setIsMinimized(!isMinimized);
   };
 
-  const handleAssetChange = (direction) => {
+  const handleAssetChange = (direction: 'next' | 'prev') => {
     if (generatedAssets.length === 0) return;
     
     if (direction === 'next') {
@@ -61,7 +71,7 @@ const AssetGenerator = () => {
   }, [currentAssetIndex, generatedAssets]);
 
   const toggleInteractionMode = () => {
-    const modes = ['rotate', 'zoom', 'pan'];
+    const modes: InteractionMode[] = ['rotate', 'zoom', 'pan'];
     const currentIndex = modes.indexOf(interactionMode);
     const nextIndex = (currentIndex + 1) % modes.length;
     setInteractionMode(modes[nextIndex]);
@@ -82,7 +92,7 @@ const AssetGenerator = () => {
   };
 
   const changeLighting = () => {
-    const lightingOptions = ['studio', 'outdoor', 'indoor', 'dramatic'];
+    const lightingOptions: LightingMode[] = ['studio', 'outdoor', 'indoor', 'dramatic'];
     const currentIndex = lightingOptions.indexOf(viewerSettings.lighting);
     const nextIndex = (currentIndex + 1) % lightingOptions.length;
     setViewerSettings(prev => ({
@@ -98,7 +108,7 @@ const AssetGenerator = () => {
         <div className="fixed inset-0 w-full h-full z-0">
           <Meshy3DViewer
             modelUrl={backgroundAsset.downloadUrl}
-            modelFormat={backgroundAsset.format || 'glb'}
+            modelFormat={(backgroundAsset.format as 'glb' | 'usdz' | 'obj' | 'fbx') || 'glb'}
             autoRotate={viewerSettings.autoRotate}
             showControls={viewerSettings.showControls}
             lighting={viewerSettings.lighting}

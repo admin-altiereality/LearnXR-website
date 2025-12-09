@@ -3,6 +3,7 @@ import { Readable } from 'stream';
 import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
+import subscriptionRoutes from './subscription';
 
 const router = express.Router();
 
@@ -67,6 +68,11 @@ router.get('/proxy-asset', async (req, res) => {
 console.log('Mounting payment routes...');
 router.use('/payment', paymentRoutes);
 console.log('Payment routes mounted at /payment');
+
+// Mount subscription routes
+console.log('Mounting subscription routes...');
+router.use('/subscription', subscriptionRoutes);
+console.log('Subscription routes mounted at /subscription');
 
 // Mount skybox routes
 console.log('Mounting skybox routes...');

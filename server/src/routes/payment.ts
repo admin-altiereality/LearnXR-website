@@ -44,6 +44,7 @@ router.post('/create-order', async (req, res) => {
     // Check if Razorpay is configured
     if (!hasRazorpayCredentials || !razorpay) {
       return res.status(503).json({
+        success: false,
         status: 'error',
         message: 'Payment service is not configured. Please contact support.'
       });
@@ -54,6 +55,7 @@ router.post('/create-order', async (req, res) => {
     // Validate required fields
     if (!amount || !currency || !planId) {
       return res.status(400).json({
+        success: false,
         status: 'error',
         message: 'Amount, currency, and planId are required'
       });
@@ -63,6 +65,7 @@ router.post('/create-order', async (req, res) => {
     const amountInPaise = parseInt(amount);
     if (isNaN(amountInPaise) || amountInPaise <= 0) {
       return res.status(400).json({
+        success: false,
         status: 'error',
         message: 'Invalid amount'
       });
@@ -80,24 +83,27 @@ router.post('/create-order', async (req, res) => {
 
     // Return the order details
     res.json({
+      success: true,
       status: 'success',
       data: order
     });
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({
+      success: false,
       status: 'error',
       message: error instanceof Error ? error.message : 'Failed to create order'
     });
   }
 });
 
-// Verify payment endpoint
-router.post('/verify-payment', async (req, res) => {
+// Shared verify payment handler so we can support both /verify and /verify-payment
+const verifyPaymentHandler = async (req: express.Request, res: express.Response) => {
   try {
     // Check if Razorpay is configured
     if (!hasRazorpayCredentials) {
       return res.status(503).json({
+        success: false,
         status: 'error',
         message: 'Payment service is not configured. Please contact support.'
       });
@@ -107,6 +113,7 @@ router.post('/verify-payment', async (req, res) => {
     
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({
+        success: false,
         status: 'error',
         message: 'Missing required payment verification data'
       });
@@ -134,24 +141,31 @@ router.post('/verify-payment', async (req, res) => {
         console.warn('⚠️  Firebase not available - subscription update skipped');
       }
 
-      res.json({
+      return res.json({
+        success: true,
         status: 'success',
         message: 'Payment verified successfully'
       });
-    } else {
-      res.status(400).json({
-        status: 'error',
-        message: 'Invalid signature'
-      });
     }
+
+    return res.status(400).json({
+      success: false,
+      status: 'error',
+      message: 'Invalid signature'
+    });
   } catch (error) {
     console.error('Error verifying payment:', error);
-    res.status(500).json({
+    return res.status(500).json({
+      success: false,
       status: 'error',
       message: error instanceof Error ? error.message : 'Failed to verify payment'
     });
   }
-});
+};
+
+// Verify payment endpoints (both for compatibility)
+router.post('/verify-payment', verifyPaymentHandler);
+router.post('/verify', verifyPaymentHandler);
 
 console.log('Payment routes initialized with endpoints:');
 console.log('- POST /create-order');
