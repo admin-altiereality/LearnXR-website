@@ -1,950 +1,173 @@
 /**
- * Firebase Functions with Blockade Labs SDK Integration
- * Handles skybox generation, status checking, and user management
+ * Firebase Functions Entry Point
+ * Minimal main file to avoid deployment timeouts
+ * All routes are in separate modules loaded lazily
  */
 
-import {setGlobalOptions} from "firebase-functions";
-import {onRequest} from "firebase-functions/https";
+import {onRequest} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
-import * as admin from 'firebase-admin';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import axios from 'axios';
-import Razorpay from 'razorpay';
+import { initializeAdmin } from './utils/services';
+import { pathNormalization } from './middleware/pathNormalization';
+import { requestLogging } from './middleware/logging';
+import { authenticateUser } from './middleware/auth';
 
-// Define secrets using Firebase Functions v2 params
-const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
-const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
-const blockadeApiKey = defineSecret('BLOCKADE_API_KEY');
+// Define secrets for Firebase Functions v2
+// Note: These must match the secret names set via firebase functions:secrets:set
+const blockadelabsApiKey = defineSecret("BLOCKADE_API_KEY");
+const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
+const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 
-// Global options for cost control
-setGlobalOptions({ maxInstances: 10 });
+// Lazy Express app creation - only initialize when function is called
+// Note: app is reset on each request to ensure secrets are loaded
+let app: express.Application | null = null;
 
-// Initialize Firebase Admin
-admin.initializeApp();
-
-const app = express();
-
-// CORS middleware
-app.use(cors({ origin: true }));
-app.use(express.json());
-
-// Request logging middleware
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const requestId = Math.random().toString(36).substring(7);
-  console.log(`[${requestId}] ${req.method} ${req.path}`, {
-    query: req.query,
-    body: req.method === 'POST' ? req.body : undefined,
-    headers: {
-      'user-agent': req.headers['user-agent'],
-      'authorization': req.headers.authorization ? 'Bearer ***' : 'none'
-    }
-  });
+const getApp = (): express.Application => {
+  // Always reinitialize to ensure secrets are loaded from environment
+  // Initialize admin first
+  initializeAdmin();
   
-  (req as any).requestId = requestId;
-  next();
-});
-
-// Public endpoints that don't require authentication
-const PUBLIC_ENDPOINTS = [
-  { method: 'GET', path: '/skybox/styles' },
-  { method: 'GET', path: '/health' },
-  { method: 'GET', path: '/env-check' },
-  { method: 'POST', path: '/skybox/generate' },
-  { method: 'GET', path: '/skybox/status' },
-  { method: 'GET', path: '/skybox/history' },
-  { method: 'POST', path: '/payment/create-order' },
-  { method: 'POST', path: '/payment/verify' },
-  { method: 'POST', path: '/subscription/create' },
-  { method: 'GET', path: '/subscription' },
-  { method: 'POST', path: '/user/subscription-status' },
-  { method: 'GET', path: '/proxy-asset' },
-  { method: 'HEAD', path: '/proxy-asset' }
-];
-
-const isPublicEndpoint = (req: Request) => {
-  const isPublic = PUBLIC_ENDPOINTS.some(
-    ep => ep.method === req.method && req.path.startsWith(ep.path)
-  );
-  console.log(`[${(req as any).requestId}] Checking public endpoint: ${req.method} ${req.path} -> ${isPublic}`);
-  return isPublic;
-};
-
-// Authentication middleware
-const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
-  const requestId = (req as any).requestId;
-  console.log(`[${requestId}] Auth check for ${req.method} ${req.path}`);
-  
-  if (isPublicEndpoint(req)) {
-    console.log(`[${requestId}] Public endpoint, skipping auth`);
-    return next();
-  }
-
-  console.log(`[${requestId}] Private endpoint, checking auth`);
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ 
-      error: 'AUTH_REQUIRED', 
-      message: 'No token provided',
-      requestId: (req as any).requestId 
-    });
-  }
-  
-  const token = authHeader.split('Bearer ')[1];
-  try {
-    const decoded = await admin.auth().verifyIdToken(token);
-    (req as any).user = decoded;
-    next();
-  } catch (err) {
-    console.error('Token verification failed:', err);
-    return res.status(401).json({ 
-      error: 'INVALID_TOKEN', 
-      message: 'Invalid or expired token',
-      requestId: (req as any).requestId 
-    });
-  }
-};
-
-app.use(authenticateUser);
-
-// Initialize services - these will be set when the function runs with secrets
-let BLOCKADE_API_KEY = '';
-let razorpay: Razorpay | null = null;
-let servicesInitialized = false;
-
-// Function to initialize services with secrets (lazy initialization at runtime)
-// IMPORTANT: This must be called within route handlers, not middleware,
-// because Firebase Functions v2 secrets are only available in the function handler scope
-const initializeServices = () => {
-  if (servicesInitialized) return;
-  
-  try {
-    // Get Blockade API key from secret
-    // This will only work when called from within a route handler after secrets are injected
-    BLOCKADE_API_KEY = blockadeApiKey.value() || '';
-    if (BLOCKADE_API_KEY) {
-      // Clean the API key (remove any invalid characters)
-      BLOCKADE_API_KEY = BLOCKADE_API_KEY.replace(/[^\w\-]/g, '');
-      console.log('BlockadeLabs API key configured successfully');
-    } else {
-      console.warn('BLOCKADE_API_KEY not found in secrets');
-    }
-  } catch (error) {
-    console.error('Failed to configure BlockadeLabs API key:', error);
-  }
-
-  try {
-    // Get Razorpay credentials from secrets
-    const RAZORPAY_KEY_ID = razorpayKeyId.value();
-    const RAZORPAY_KEY_SECRET = razorpayKeySecret.value();
+  // Create Express app (always create new to ensure fresh initialization)
+  app = express();
     
-    if (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET) {
-      razorpay = new Razorpay({
-        key_id: RAZORPAY_KEY_ID,
-        key_secret: RAZORPAY_KEY_SECRET
-      });
-      console.log('Razorpay initialized successfully');
-    } else {
-      console.warn('Razorpay credentials not found in secrets');
-    }
-  } catch (error) {
-    console.error('Failed to initialize Razorpay:', error);
-  }
-  
-  servicesInitialized = true;
-};
-
-// Environment check endpoint
-app.get('/env-check', (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  
-  console.log(`[${requestId}] Environment check requested`);
-  
-  // Ensure services are initialized
-  initializeServices();
-  
-  let razorpayKeyLength = 0;
-  let razorpaySecretLength = 0;
-  try {
-    razorpayKeyLength = razorpayKeyId.value()?.length || 0;
-    razorpaySecretLength = razorpayKeySecret.value()?.length || 0;
-  } catch (error) {
-    // Secrets not accessible at this time
-  }
-  
-  res.json({
-    environment: 'production',
-    firebase: true,
-    blockadelabs: !!BLOCKADE_API_KEY,
-    razorpay: !!razorpay,
-    env_debug: {
-      blockadelabs_key_length: BLOCKADE_API_KEY?.length || 0,
-      razorpay_key_length: razorpayKeyLength,
-      razorpay_secret_length: razorpaySecretLength
-    },
-    timestamp: new Date().toISOString(),
-    requestId
-  });
-});
-
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: {
-      firebase: true,
-      blockadelabs: !!BLOCKADE_API_KEY,
-      razorpay: !!razorpay
-    },
-    requestId
-  });
-});
-
-// Skybox Styles API
-app.get('/skybox/styles', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 20;
-  
-  try {
-    console.log(`[${requestId}] Fetching skybox styles, page: ${page}, limit: ${limit}`);
-    
-    if (BLOCKADE_API_KEY) {
-      try {
-        const response = await axios.get('https://backend.blockadelabs.com/api/v1/skybox/styles', {
-          headers: {
-            'x-api-key': BLOCKADE_API_KEY,
-            'Content-Type': 'application/json'
-          },
-          params: { page, limit }
-        });
+    // CORS configuration - allow all origins including preview channels
+    app.use(cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
         
-        console.log(`[${requestId}] Successfully fetched ${response.data.length} styles from BlockadeLabs`);
+        // Allow all Firebase Hosting origins (production and preview channels)
+        if (origin.includes('.web.app') || origin.includes('.firebaseapp.com')) {
+          return callback(null, true);
+        }
         
-        return res.json({
-          success: true,
-          data: response.data,
-          pagination: {
-            page,
-            limit,
-            total: response.data.length
-          },
-          requestId
-        });
-      } catch (error: any) {
-        console.error(`[${requestId}] BlockadeLabs API error:`, error);
-        console.error(`[${requestId}] BlockadeLabs error details:`, {
-          status: error.response?.status,
-          message: error.message,
-          data: error.response?.data
-        });
-        // Fallback to Firebase data
-      }
-    }
-    
-    // Fallback: Get styles from Firebase
-    try {
-      const db = admin.firestore();
-      const stylesRef = db.collection('skyboxStyles');
-      const snapshot = await stylesRef
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .offset((page - 1) * limit)
-        .get();
-      
-      const styles = snapshot.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      console.log(`[${requestId}] Successfully fetched ${styles.length} styles from Firebase`);
-      
-      if (styles.length > 0) {
-        return res.json({
-          success: true,
-          data: styles,
-          pagination: {
-            page,
-            limit,
-            total: styles.length
-          },
-          requestId
-        });
-      }
-      
-      // If no styles in Firestore, return empty array with success
-      console.log(`[${requestId}] No styles found in Firestore, returning empty array`);
-      return res.json({
-        success: true,
-        data: [],
-        pagination: {
-          page,
-          limit,
-          total: 0
-        },
-        requestId
-      });
-    } catch (firestoreError: any) {
-      console.error(`[${requestId}] Firestore error:`, firestoreError);
-      // Return empty array instead of error to allow UI to load
-      return res.json({
-        success: true,
-        data: [],
-        pagination: {
-          page,
-          limit,
-          total: 0
-        },
-        requestId,
-        warning: 'Styles could not be loaded from database'
-      });
-    }
-      } catch (error: any) {
-      console.error(`[${requestId}] Error fetching skybox styles:`, error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch skybox styles',
-        details: error.message,
-        requestId
-      });
-    }
-});
-
-// Skybox Generation API
-app.post('/skybox/generate', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { prompt, style_id, negative_prompt, userId } = req.body;
-  
-  try {
-    console.log(`[${requestId}] Skybox generation requested:`, { prompt, style_id, userId });
-    
-    if (!BLOCKADE_API_KEY) {
-      console.error(`[${requestId}] BLOCKADE_API_KEY is not configured`);
-      return res.status(503).json({
-        success: false,
-        error: 'BlockadeLabs API key is not configured. Please set the BLOCKADE_API_KEY secret in Firebase Functions.',
-        code: 'API_KEY_NOT_CONFIGURED',
-        requestId
-      });
-    }
-    
-    if (!prompt || !style_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: prompt and style_id',
-        requestId
-      });
-    }
-    
-    // Create generation using BlockadeLabs API
-    const response = await axios.post('https://backend.blockadelabs.com/api/v1/skybox', {
-      prompt,
-      style_id,
-      negative_prompt: negative_prompt || '',
-      webhook_url: null
-    }, {
-      headers: {
-        'x-api-key': BLOCKADE_API_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const generation = response.data;
-    console.log(`[${requestId}] Generation created:`, generation.id);
-    
-    // Validate generation ID
-    if (!generation.id) {
-      console.error(`[${requestId}] No generation ID returned from BlockadeLabs API`);
-      return res.status(500).json({
-        success: false,
-        error: 'No generation ID returned from API',
-        requestId
-      });
-    }
-    
-    // Store generation in Firestore
-    const db = admin.firestore();
-    const skyboxData: any = {
-      generationId: generation.id,
-      prompt,
-      style_id,
-      negative_prompt: negative_prompt || '',
-      status: 'pending',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    const resolvedUserId = userId || (req as any).user?.uid;
-    if (resolvedUserId) {
-      skyboxData.userId = resolvedUserId;
-    }
-    await db.collection('skyboxes').doc(generation.id.toString()).set(skyboxData);
-    
-    console.log(`[${requestId}] Skybox data stored in Firestore`);
-    
-    return res.json({
-      success: true,
-      data: {
-        generationId: generation.id,
-        status: 'pending',
-        ...generation
+        // Allow localhost for development
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+          return callback(null, true);
+        }
+        
+        // Allow all origins (fallback)
+        callback(null, true);
       },
-      requestId
-    });
-      } catch (error: any) {
-      console.error(`[${requestId}] Error generating skybox:`, error);
-      
-      // Handle specific Blockade Labs API errors
-      if (error.response) {
-        const { status, data } = error.response;
-        
-        if (status === 403) {
-          // Handle quota exceeded or API disabled
-          let errorMessage = 'Generation quota exceeded';
-          if (data && data.error) {
-            if (data.error.includes('used every generation')) {
-              errorMessage = 'API quota has been exhausted. Please contact support or try again later.';
-            } else if (data.error.includes('generations are disabled')) {
-              errorMessage = 'Skybox generation is temporarily disabled. Please try again later.';
-            } else {
-              errorMessage = data.error;
-            }
-          }
-          
-          return res.status(403).json({
-            success: false,
-            error: errorMessage,
-            code: 'QUOTA_EXCEEDED',
-            requestId
-          });
-        }
-        
-        if (status === 400) {
-          return res.status(400).json({
-            success: false,
-            error: data?.error || 'Invalid request parameters',
-            code: 'INVALID_REQUEST',
-            requestId
-          });
-        }
-        
-        if (status === 401) {
-          return res.status(401).json({
-            success: false,
-            error: 'Invalid API key or authentication failed',
-            code: 'AUTH_ERROR',
-            requestId
-          });
-        }
-      }
-      
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to generate skybox',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      });
-    }
-});
-
-// Skybox Status API
-app.get('/skybox/status/:generationId', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { generationId } = req.params;
-  
-  try {
-    console.log(`[${requestId}] Checking status for generation: ${generationId}`);
-    
-    if (!BLOCKADE_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: 'BlockadeLabs API not configured',
-        requestId
-      });
-    }
-    
-    if (!generationId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing generation ID',
-        requestId
-      });
-    }
-    
-    // Get generation status from BlockadeLabs API
-    const response = await axios.get(`https://backend.blockadelabs.com/api/v1/skybox/generations/${generationId}`, {
-      headers: {
-        'x-api-key': BLOCKADE_API_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const generation = response.data;
-    console.log(`[${requestId}] Generation status:`, generation.status);
-    
-    // Update Firestore with latest status
-    const db = admin.firestore();
-    const updateData: any = {
-      status: generation.status,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-    
-    if (generation.status === 'complete' && generation.file_url) {
-      updateData.fileUrl = generation.file_url;
-      updateData.thumbnailUrl = generation.thumbnail_url;
-    }
-    
-    await db.collection('skyboxes').doc(generationId).update(updateData);
-    
-    return res.json({
-      success: true,
-      data: generation,
-      requestId
-    });
-  } catch (error: any) {
-    console.error(`[${requestId}] Error checking skybox status:`, error);
-    
-    // Check if it's a 404 error (generation not found)
-    if (error.response?.status === 404) {
-      console.log(`[${requestId}] Generation ${generationId} not found in BlockadeLabs API`);
-      return res.status(404).json({
-        success: false,
-        error: 'Generation not found',
-        code: 'GENERATION_NOT_FOUND',
-        message: 'The skybox generation does not exist. It may have expired or was never created. Please try generating a new skybox.',
-        requestId
-      });
-    }
-    
-    // Handle other axios errors
-    if (error.response) {
-      const { status, data } = error.response;
-      return res.status(status).json({
-        success: false,
-        error: data?.error || `BlockadeLabs API error (${status})`,
-        code: `BLOCKADE_API_ERROR_${status}`,
-        details: data?.message || error.message,
-        requestId
-      });
-    }
-    
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to check skybox status',
-      code: 'INTERNAL_ERROR',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      requestId
-    });
-  }
-});
-
-// Skybox History API
-app.get('/skybox/history', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const userId = (req as any).user?.uid;
-  const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 10;
-  
-  try {
-    console.log(`[${requestId}] Fetching skybox history for user: ${userId}`);
-    
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'User authentication required',
-        requestId
-      });
-    }
-    
-    const db = admin.firestore();
-    const skyboxesRef = db.collection('skyboxes');
-    const snapshot = await skyboxesRef
-      .where('userId', '==', userId)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
-      .offset((page - 1) * limit)
-      .get();
-    
-    const skyboxes = snapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate?.() || doc.data().createdAt
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: ['Content-Type', 'Authorization'],
+      maxAge: 86400 // 24 hours
     }));
     
-    console.log(`[${requestId}] Found ${skyboxes.length} skyboxes for user`);
+    // Handle preflight requests explicitly
+    app.options('*', cors());
     
-    return res.json({
-      success: true,
-      data: skyboxes,
-      pagination: {
-        page,
-        limit,
-        total: skyboxes.length
-      },
-      requestId
-    });
-      } catch (error) {
-      console.error(`[${requestId}] Error fetching skybox history:`, error);
-      return res.status(500).json({
+    app.use(express.json());
+    
+    // Custom middleware
+    app.use(pathNormalization);
+    app.use(requestLogging);
+    app.use(authenticateUser);
+    
+    // Routes (loaded lazily to avoid deployment timeout)
+    // Import routes only when app is created, not at module load time
+    const healthRoutes = require('./routes/health').default;
+    const skyboxRoutes = require('./routes/skybox').default;
+    const paymentRoutes = require('./routes/payment').default;
+    const subscriptionRoutes = require('./routes/subscription').default;
+    const userRoutes = require('./routes/user').default;
+    const proxyRoutes = require('./routes/proxy').default;
+    
+    app.use('/', healthRoutes);
+    app.use('/skybox', skyboxRoutes);
+    app.use('/payment', paymentRoutes);
+    app.use('/subscription', subscriptionRoutes);
+    app.use('/user', userRoutes);
+    app.use('/', proxyRoutes);
+    
+    // Error handling middleware
+    app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+      const requestId = (req as any).requestId;
+      console.error(`[${requestId}] Unhandled error:`, error);
+      
+      res.status(500).json({
         success: false,
-        error: 'Failed to fetch skybox history',
-        details: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Internal server error',
         requestId
       });
-    }
-});
-
-// Payment APIs
-app.post('/payment/create-order', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { amount, currency = 'INR', receipt, notes, userId } = req.body;
+    });
   
-  try {
-    console.log(`[${requestId}] Creating payment order:`, { amount, currency, userId });
-    
-    if (!razorpay) {
-      return res.status(500).json({
-        success: false,
-        error: 'Razorpay not configured',
-        requestId
-      });
-    }
-    
-    const options = {
-      amount: amount, // Client already sends amount in paise
-      currency,
-      receipt,
-      notes: { ...notes, userId }
-    };
-    
-    const order = await razorpay.orders.create(options);
-
-    // Store order in Firebase
-    const db = admin.firestore();
-    await db.collection('orders').doc(order.id).set({
-      ...order,
-      userId: userId || (req as any).user?.uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'created'
-    });
-
-    console.log(`[${requestId}] Order created:`, order.id);
-
-    // NOTE: The frontend expects `data.id` for Razorpay order_id.
-    // We also keep `order_id` for backward compatibility with any
-    // older clients or test tools that relied on that field.
-    return res.json({
-      success: true,
-      data: {
-        id: order.id,
-        order_id: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        key_id: razorpayKeyId.value()
-      },
-      requestId
-    });
-      } catch (error) {
-      console.error(`[${requestId}] Error creating payment order:`, error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to create payment order',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      });
-    }
-});
-
-app.post('/payment/verify', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-  
-  try {
-    console.log(`[${requestId}] Verifying payment:`, { razorpay_order_id, razorpay_payment_id });
-    
-    const secret = razorpayKeySecret.value();
-    if (!secret) {
-      return res.status(500).json({
-        success: false,
-        error: 'Razorpay not configured',
-        requestId
-      });
-    }
-    
-    // Verify signature
-    const crypto = require('crypto');
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-    
-    if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid payment signature',
-        requestId
-      });
-    }
-    
-    // Update order status in Firebase
-    const db = admin.firestore();
-    await db.collection('orders').doc(razorpay_order_id).update({
-      status: 'paid',
-      payment_id: razorpay_payment_id,
-      signature: razorpay_signature,
-      paidAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    
-    console.log(`[${requestId}] Payment verified successfully`);
-    
-    return res.json({
-      success: true,
-      data: {
-        order_id: razorpay_order_id,
-        payment_id: razorpay_payment_id,
-        status: 'verified'
-      },
-      requestId
-    });
-      } catch (error) {
-      console.error(`[${requestId}] Error verifying payment:`, error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to verify payment',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      });
-    }
-});
-
-// Subscription Management APIs
-app.post('/subscription/create', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { userId, planId, planName } = req.body;
-  
-  try {
-    console.log(`[${requestId}] Creating subscription:`, { userId, planId, planName });
-    
-    if (!razorpay) {
-      return res.status(500).json({
-        success: false,
-        error: 'Razorpay not configured',
-        requestId
-      });
-    }
-    
-    // Create subscription
-    const subscription = await razorpay.subscriptions.create({
-      plan_id: planId,
-      customer_notify: 1,
-      total_count: 12, // 12 months
-      notes: {
-        userId,
-        planName
-      }
-    });
-    
-    // Store subscription in Firebase
-    const db = admin.firestore();
-    await db.collection('subscriptions').doc(subscription.id).set({
-      ...subscription,
-      userId,
-      planName,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: subscription.status
-    });
-    
-    console.log(`[${requestId}] Subscription created:`, subscription.id);
-    
-    return res.json({
-      success: true,
-      data: {
-        subscription_id: subscription.id,
-        status: subscription.status,
-        key_id: razorpayKeyId.value()
-      },
-      requestId
-    });
-      } catch (error) {
-      console.error(`[${requestId}] Error creating subscription:`, error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to create subscription',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      });
-    }
-});
-
-app.get('/subscription/:subscriptionId', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { subscriptionId } = req.params;
-  
-  try {
-    console.log(`[${requestId}] Fetching subscription:`, subscriptionId);
-    
-    if (!razorpay) {
-      return res.status(500).json({
-        success: false,
-        error: 'Razorpay not configured',
-        requestId
-      });
-    }
-    
-    const subscription = await razorpay.subscriptions.fetch(subscriptionId);
-    
-    return res.json({
-      success: true,
-      data: subscription,
-      requestId
-    });
-      } catch (error) {
-      console.error(`[${requestId}] Error fetching subscription:`, error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to fetch subscription',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      });
-    }
-});
-
-// User Management APIs
-app.post('/user/subscription-status', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { userId } = req.body;
-  
-  try {
-    console.log(`[${requestId}] Checking subscription status for user:`, userId);
-    
-    const db = admin.firestore();
-    const subscriptionsRef = db.collection('subscriptions');
-    const snapshot = await subscriptionsRef
-      .where('userId', '==', userId)
-      .where('status', 'in', ['active', 'authenticated'])
-      .orderBy('createdAt', 'desc')
-      .limit(1)
-      .get();
-    
-    if (snapshot.empty) {
-      return res.json({
-      success: true,
-      data: {
-        hasActiveSubscription: false,
-        subscription: null
-      },
-      requestId
-    });
-    }
-    
-    const subscription = snapshot.docs[0].data();
-    
-    return res.json({
-      success: true,
-      data: {
-        hasActiveSubscription: true,
-        subscription
-      },
-      requestId
-    });
-      } catch (error) {
-      console.error(`[${requestId}] Error checking subscription status:`, error);
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to check subscription status',
-        details: error instanceof Error ? error.message : 'Unknown error',
-        requestId
-      });
-    }
-});
-
-// Proxy route for Meshy assets to handle CORS
-app.get('/proxy-asset', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
-  const { url } = req.query;
-  
-  try {
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ 
-        error: 'URL parameter is required',
-        requestId 
-      });
-    }
-
-    console.log(`[${requestId}] Proxying asset request:`, url);
-
-    const response = await axios.get(url, {
-      responseType: 'stream',
-      headers: {
-        'User-Agent': 'In3D.ai-WebApp/1.0',
-      },
-      timeout: 30000, // 30 second timeout
-    });
-
-    if (!response.data) {
-      console.error(`[${requestId}] Asset proxy failed: No data received`);
-      return res.status(500).json({ 
-        error: 'Failed to fetch asset: No data received',
-        requestId 
-      });
-    }
-
-    // Get the content type
-    const contentType = response.headers['content-type'] || 'application/octet-stream';
-    
-    // Set appropriate headers
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-    
-    // Stream the response
-    response.data.pipe(res);
-    
-    console.log(`[${requestId}] Asset proxy successful`);
-    return; // Explicit return for TypeScript
-  } catch (error: any) {
-    console.error(`[${requestId}] Asset proxy error:`, error);
-    
-    if (error.response) {
-      // Forward the error status from the target server
-      return res.status(error.response.status).json({ 
-        error: `Failed to fetch asset: ${error.response.status} ${error.response.statusText}`,
-        requestId 
-      });
-    }
-    
-    return res.status(500).json({ 
-      error: 'Internal server error during asset proxy',
-      details: error.message,
-      requestId 
-    });
-  }
-});
-
-// Error handling middleware
-app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
-  const requestId = (req as any).requestId;
-  console.error(`[${requestId}] Unhandled error:`, error);
-  
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    requestId
-  });
-});
+  return app;
+};
 
 // Export the Express app as a Firebase Function v2
-// Pass the secret references to the function configuration
-export const api = onRequest({
-  memory: '512MiB',
-  timeoutSeconds: 60,
-  maxInstances: 10,
-  cors: true,
-  region: 'us-central1',
-  invoker: 'public',
-  secrets: [razorpayKeyId, razorpayKeySecret, blockadeApiKey]
-}, app);
+// Secrets must be included in the options object
+export const api = onRequest(
+  {
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    maxInstances: 10,
+    cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
+    region: 'us-central1',
+    invoker: 'public',
+    secrets: [blockadelabsApiKey, razorpayKeyId, razorpayKeySecret] // Reference secrets - must match defineSecret names
+  },
+  (req, res) => {
+  // Load secrets and set as environment variables
+  // Also pass directly to initializeServices for immediate use
+  try {
+    let blockadeKey: string | undefined;
+    let razorpayId: string | undefined;
+    let razorpaySecret: string | undefined;
+    
+    try {
+      blockadeKey = blockadelabsApiKey.value();
+    } catch (err: any) {
+      console.error('Error accessing BLOCKADE_API_KEY:', err?.message || err);
+    }
+    
+    try {
+      razorpayId = razorpayKeyId.value();
+    } catch (err: any) {
+      console.error('Error accessing RAZORPAY_KEY_ID:', err?.message || err);
+    }
+    
+    try {
+      razorpaySecret = razorpayKeySecret.value();
+    } catch (err: any) {
+      console.error('Error accessing RAZORPAY_KEY_SECRET:', err?.message || err);
+    }
+    
+    // Set in process.env for routes that use getSecret()
+    if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
+    if (razorpayId) process.env.RAZORPAY_KEY_ID = razorpayId;
+    if (razorpaySecret) process.env.RAZORPAY_KEY_SECRET = razorpaySecret;
+    
+    console.log('Secrets loaded:', {
+      hasBlockade: !!blockadeKey,
+      blockadeLength: blockadeKey?.length || 0,
+      hasRazorpayId: !!razorpayId,
+      razorpayIdLength: razorpayId?.length || 0,
+      hasRazorpaySecret: !!razorpaySecret,
+      razorpaySecretLength: razorpaySecret?.length || 0
+    });
+    
+    // Initialize services with secrets directly
+    const { initializeServices } = require('./utils/services');
+    initializeServices({
+      blockadelabsApiKey: blockadeKey,
+      razorpayKeyId: razorpayId,
+      razorpayKeySecret: razorpaySecret
+    });
+  } catch (error: any) {
+    console.error('Error loading secrets:', error?.message || error, error?.stack);
+    // Still try to initialize with environment variables as fallback
+    const { initializeServices } = require('./utils/services');
+    initializeServices();
+  }
+  
+  // Reset app to force re-initialization with new secrets
+  app = null;
+  
+  // Lazy initialization - only create app when function is called
+  const expressApp = getApp();
+  expressApp(req, res);
+});

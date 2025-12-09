@@ -1,0 +1,13 @@
+node_modules
+.git
+.env
+*.local
+*.log
+*.minimal.ts
+*.full.ts
+index.full.ts
+index.minimal.ts
+tsconfig.json
+.eslintrc.js
+*.map
+

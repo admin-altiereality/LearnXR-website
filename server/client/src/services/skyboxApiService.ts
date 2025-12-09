@@ -63,7 +63,11 @@ export const skyboxApiService = {
       } else if (error.response?.status === 503) {
         throw new Error('Skybox service is temporarily unavailable. Please try again later.');
       } else if (!error.response) {
-        // Network error
+        // Network error - check if it's a localhost connection issue
+        const baseURL = error.config?.baseURL || '';
+        if (baseURL.includes('localhost') || baseURL.includes('127.0.0.1')) {
+          throw new Error('Cannot connect to local Firebase emulator. The app is trying to use production Firebase Functions instead. If you need to use the emulator, make sure it\'s running with "firebase emulators:start".');
+        }
         throw new Error('Network error. Please check your internet connection and API configuration.');
       }
       
@@ -165,7 +169,19 @@ export const skyboxApiService = {
   // Get skybox generation status
   async getSkyboxStatus(generationId: string): Promise<SkyboxStatusResponse> {
     try {
-      const response = await api.get(`/skybox/status/${generationId}`);
+      const response = await api.get(`/skybox/status/${generationId}`, {
+        timeout: 30000 // 30 second timeout
+      });
+      
+      // Normalize response structure
+      if (response.data?.success && response.data?.data) {
+        return {
+          success: true,
+          data: response.data.data,
+          requestId: response.data.requestId
+        };
+      }
+      
       return response.data;
     } catch (error: any) {
       console.error('Skybox status fetch failed:', error);
@@ -174,10 +190,16 @@ export const skyboxApiService = {
         status: error.response?.status,
         statusText: error.response?.statusText,
         data: error.response?.data,
-        message: error.message
+        message: error.message,
+        code: error.code
       });
       
-      // Handle specific errors
+      // Handle network/timeout errors
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        throw new Error('Request timed out. The skybox may still be processing. Please try again.');
+      }
+      
+      // Handle specific HTTP errors
       if (error.response?.status === 403) {
         throw new Error('Skybox service is not configured properly. Please contact support.');
       } else if (error.response?.status === 404) {
@@ -193,9 +215,20 @@ export const skyboxApiService = {
           throw new Error('Skybox service is not configured. Please contact support.');
         }
         throw new Error('Skybox service is temporarily unavailable. Please try again later.');
+      } else if (error.response?.status === 503) {
+        throw new Error('Skybox service is temporarily unavailable. Please try again later.');
       }
       
-      throw new Error(`Failed to get skybox status: ${error.message}`);
+      // Handle network errors
+      if (!error.response) {
+        // Check if it's a localhost connection error (emulator not running)
+        if (error.config?.baseURL?.includes('localhost')) {
+          throw new Error('Local Firebase emulator is not running. Please start it with "firebase emulators:start" or use the production API.');
+        }
+        throw new Error('Network error. Please check your internet connection and try again.');
+      }
+      
+      throw new Error(`Failed to get skybox status: ${error.message || 'Unknown error'}`);
     }
   },
 

@@ -1,0 +1,28 @@
+steps:
+  # Extract the ZIP file
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args: ['cp', 'gs://${PROJECT_ID}-functions-source/function-deploy.zip', '/workspace/function-deploy.zip']
+  
+  # Unzip the file
+  - name: 'gcr.io/cloud-builders/unzip'
+    args: ['-q', '/workspace/function-deploy.zip', '-d', '/workspace/functions']
+  
+  # Install dependencies
+  - name: 'node:22'
+    entrypoint: 'npm'
+    args: ['install', '--production']
+    dir: 'functions'
+  
+  # Build the function
+  - name: 'node:22'
+    entrypoint: 'npm'
+    args: ['run', 'build']
+    dir: 'functions'
+  
+  # Create container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/${PROJECT_ID}/api-function:latest', '-f', 'Dockerfile', '.']
+    dir: 'functions'
+
+images:
+  - 'gcr.io/${PROJECT_ID}/api-function:latest'
