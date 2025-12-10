@@ -85,27 +85,11 @@ class ModelLoader {
   }
 
   async loadModel(url: string): Promise<any> {
-    const strategies = [
-      // Strategy 1: Use proxy URL (primary method to avoid CORS)
-      async () => {
-        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
-        console.log('🔄 Loading via proxy:', proxyUrl);
-        return this.loadGLTF(proxyUrl);
-      },
-      
-      // Strategy 2: Direct URL (fallback if proxy fails)
-      async () => {
-        console.log('🔄 Loading direct URL:', url);
-        return this.loadGLTF(url);
-      },
-      
-      // Strategy 3: Local development server proxy
-      async () => {
-        const localProxy = `http://localhost:5002/proxy-asset?url=${encodeURIComponent(url)}`;
-        console.log('🔄 Loading via local proxy:', localProxy);
-        return this.loadGLTF(localProxy);
-      }
-    ];
+    // Always use proxy URL to avoid CORS issues
+    // Direct URL will always fail due to CORS policy
+    const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+    console.log('🔄 Loading via proxy:', proxyUrl);
+    return this.loadGLTF(proxyUrl);
 
     let lastError: Error | null = null;
 
