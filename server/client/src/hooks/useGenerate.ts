@@ -253,6 +253,7 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
               style: 'realistic',
               createdAt: completedAsset.createdAt,
               updatedAt: completedAsset.updatedAt,
+              model_urls: status.model_urls, // Include model_urls from Meshy API response
               metadata: {
                 polycount: completedAsset.metadata?.polycount,
                 size: completedAsset.metadata?.size,

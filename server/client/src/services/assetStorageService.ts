@@ -254,6 +254,17 @@ export class AssetStorageService {
     try {
       const assetRef = doc(db, this.assetsCollection, assetId);
       
+      // Prepare metadata update - include model_urls if available
+      const metadataUpdate: any = {
+        'metadata.generationTime': generationTime,
+        'metadata.cost': cost
+      };
+      
+      // Include model_urls from asset metadata if available
+      if (asset.metadata?.model_urls) {
+        metadataUpdate['metadata.model_urls'] = asset.metadata.model_urls;
+      }
+      
       await updateDoc(assetRef, {
         status: asset.status,
         downloadUrl: asset.downloadUrl,
@@ -261,11 +272,13 @@ export class AssetStorageService {
         size: asset.size,
         updatedAt: new Date().toISOString(),
         error: asset.error,
-        'metadata.generationTime': generationTime,
-        'metadata.cost': cost
+        ...metadataUpdate
       });
       
-      console.log(`Asset ${assetId} updated with completion data`);
+      console.log(`Asset ${assetId} updated with completion data`, {
+        hasDownloadUrl: !!asset.downloadUrl,
+        hasModelUrls: !!asset.metadata?.model_urls
+      });
     } catch (error) {
       console.error('Error updating asset completion:', error);
       throw new Error(`Failed to update asset completion: ${error instanceof Error ? error.message : 'Unknown error'}`);

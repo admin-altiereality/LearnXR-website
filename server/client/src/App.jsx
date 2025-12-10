@@ -21,6 +21,7 @@ import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
 import Careers from './screens/Careers';
 import Blog from './screens/Blog';
+import Pricing from './screens/Pricing';
 import PrivacyPolicy from './screens/PrivacyPolicy';
 import TermsConditions from './screens/TermsConditions';
 import ThreeDGenerate from './screens/MeshyGenerate';
@@ -270,7 +271,7 @@ function App() {
                 </div>
 
                 {/* Main content - scrollable */}
-                <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
+                <main className="flex-grow w-full mx-auto max-w-[1920px] ">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -282,6 +283,7 @@ function App() {
                       <Route path="/" element={<Landing />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
+                      <Route path="/pricing" element={<Pricing />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/3d-generate" element={
@@ -447,9 +449,7 @@ function App() {
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
                 {/* Header - fixed height */}
-                <div className="sticky top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
                   <Header />
-                </div>
 
                 {/* Main content - scrollable */}
                 <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
@@ -464,6 +464,7 @@ function App() {
                       <Route path="/" element={<Landing />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
+                      <Route path="/pricing" element={<Pricing />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/3d-generate" element={

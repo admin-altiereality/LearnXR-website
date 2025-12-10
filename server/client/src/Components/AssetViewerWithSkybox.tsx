@@ -116,32 +116,15 @@ function AssetModel({
           loaderRef.current = { gltfLoader, dracoLoader };
         }
 
-        // Try multiple loading strategies
+        // Always use proxy URL to avoid CORS issues
+        // Direct URL will always fail due to CORS policy
         const apiBaseUrl = getApiBaseUrl();
-        const strategies = [
-          assetUrl,
-          `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(assetUrl)}`,
-          `http://localhost:5002/proxy-asset?url=${encodeURIComponent(assetUrl)}`,
-        ];
-
-        let loadedGltf = null;
-        let lastError = null;
-
-        for (const url of strategies) {
-          try {
-            loadedGltf = await new Promise<any>((resolve, reject) => {
-              loaderRef.current!.gltfLoader.load(url, resolve, undefined, reject);
-            });
-            break;
-          } catch (err) {
-            lastError = err;
-            console.warn('Load strategy failed:', url);
-          }
-        }
-
-        if (!loadedGltf) {
-          throw lastError || new Error('All loading strategies failed');
-        }
+        const proxyUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+        console.log('🔄 Loading 3D asset via proxy:', proxyUrl);
+        
+        const loadedGltf = await new Promise<any>((resolve, reject) => {
+          loaderRef.current!.gltfLoader.load(proxyUrl, resolve, undefined, reject);
+        });
 
         // Optimize the model
         loadedGltf.scene.traverse((child: THREE.Object3D) => {
