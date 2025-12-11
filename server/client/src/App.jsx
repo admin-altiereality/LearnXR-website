@@ -14,6 +14,9 @@ import Footer from './Components/Footer';
 import Header from './Components/Header';
 import MainSection from './Components/MainSection';
 import { AuthProvider } from './contexts/AuthContext';
+import { LoadingProvider, useLoading } from './contexts/LoadingContext';
+import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
+import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
 import History from './screens/History';
 import Landing from './screens/Landing';
@@ -177,6 +180,21 @@ const BackgroundSphere = ({ textureUrl }) => {
   );
 };
 
+// Global Loading Indicator Component
+const GlobalLoadingIndicator = () => {
+  const { loadingState } = useLoading();
+  
+  return (
+    <BackgroundLoadingIndicator
+      isVisible={loadingState.isVisible}
+      type={loadingState.type}
+      progress={loadingState.progress}
+      message={loadingState.message}
+      stage={loadingState.stage}
+    />
+  );
+};
+
 // Component to conditionally render Canvas based on route
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
@@ -261,8 +279,10 @@ function App() {
     if (threeJsError) {
       return (
         <AuthProvider>
-          <Router>
-            <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
+          <AssetGenerationProvider>
+            <LoadingProvider>
+              <Router>
+              <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
                 {/* Header - fixed height */}
@@ -413,27 +433,33 @@ function App() {
                 <ConditionalFooter />
               </div>
             </div>
+            <ToastContainer
+              position="top-right"
+              autoClose={3000}
+              hideProgressBar={false}
+              newestOnTop
+              closeOnClick
+              rtl={false}
+              pauseOnFocusLoss
+              draggable
+              pauseOnHover
+            />
+            {/* Global Background Loading Indicator */}
+            <GlobalLoadingIndicator />
           </Router>
-          <ToastContainer
-            position="top-right"
-            autoClose={3000}
-            hideProgressBar={false}
-            newestOnTop
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-          />
-        </AuthProvider>
+        </LoadingProvider>
+          </AssetGenerationProvider>
+      </AuthProvider>
       );
     }
 
     return (
       <ErrorBoundary>
         <AuthProvider>
-          <Router>
-            <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
+          <AssetGenerationProvider>
+            <LoadingProvider>
+              <Router>
+              <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer */}
               {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
               {backgroundSkybox && (
@@ -603,9 +629,13 @@ function App() {
               draggable
               pauseOnHover
             />
+            {/* Global Background Loading Indicator */}
+            <GlobalLoadingIndicator />
           </Router>
-        </AuthProvider>
-      </ErrorBoundary>
+        </LoadingProvider>
+          </AssetGenerationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
     );
   } catch (err) {
     console.error('Error during App render:', err);

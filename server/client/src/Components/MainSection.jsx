@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useLoading } from '../contexts/LoadingContext';
+import OnboardCard from './ui/onboard-card';
 
 // ============================================
 // TRIAL USER CONSTANTS
@@ -76,6 +78,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [show3DAssetViewer, setShow3DAssetViewer] = useState(false);
   // Intelligent prompt parsing state
   const [parsedPrompt, setParsedPrompt] = useState(null);
+  
+  // Loading indicator context
+  const { showLoading, hideLoading, updateProgress } = useLoading();
 
   // -------------------------
   // Intelligent prompt parsing
@@ -931,6 +936,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
         } finally {
           setIsGenerating3DAsset(false);
           setAssetGenerationProgress(null);
+          // Don't hide loading here if skybox is still generating
+          if (!isGenerating) {
+            hideLoading();
+          }
         }
       } else {
         const reasons = [];
@@ -982,6 +991,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setIsGenerating(false);
       setProgress(0);
       setSkyboxProgress(0);
+      hideLoading(); // Hide loading indicator on error
     }
 
     return () => {
@@ -1102,6 +1112,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
     console.log('🗄️ Firestore available:', !!db);
   }, []);
 
+  // -------------------------
+  // Background Loading Indicator Integration
+  // -------------------------
+  // Note: We're using OnboardCard as background loading indicator instead of BackgroundLoadingIndicator
+  // So we don't call showLoading() here - the OnboardCard handles the visual feedback
+
   const getMissingRequirements = () => {
     if (!serviceStatus) return [];
     const missing = [];
@@ -1116,9 +1132,32 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // -------------------------
   return (
     <div className="absolute inset-0 min-h-screen">
+      {/* OnboardCard - Background Loading Indicator (behind panel) */}
+      {(isGenerating || isGenerating3DAsset) && (
+        <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
+          {/* OnboardCard Component - Background layer */}
+          <OnboardCard
+            duration={3000}
+            step1={isGenerating3DAsset ? "Skybox Generation" : "Skybox Generation"}
+            step2={isGenerating3DAsset 
+              ? assetGenerationProgress?.message || "3D Model Generation" 
+              : skyboxProgress < 30 
+                ? "Initializing Generation" 
+                : skyboxProgress < 80 
+                ? "Generating Skybox Variations" 
+                : "Processing Results"}
+            step3={isGenerating3DAsset ? "Assets Merging" : "Assets Merging"}
+            progress={isGenerating3DAsset 
+              ? assetGenerationProgress?.progress || 0 
+              : skyboxProgress}
+            isVisible={isGenerating || isGenerating3DAsset}
+          />
+        </div>
+      )}
+      
       {/* Bottom Dock Control Panel */}
       <div
-        className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 ${
+        className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 z-20 ${
           isMinimized ? 'pb-3' : 'pb-4'
         }`}
       >
@@ -1129,8 +1168,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
         >
           <div
             className={`
-              relative 
-              
+              relative z-[999]
               bg-[#0a0a0a]/45
               backdrop-blur-0
               border border-[#ffffff08]
@@ -1322,6 +1360,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
                         disabled={isGenerating}
+                        
                       />
                       
                       {/* Intelligent Prompt Parsing Indicator */}
@@ -1884,6 +1923,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               } finally {
                                 setIsGenerating3DAsset(false);
                                 setAssetGenerationProgress(null);
+                                // Don't hide loading here if skybox is still generating
+                                if (!isGenerating) {
+                                  hideLoading();
+                                }
                               }
                             }}
                             disabled={isGenerating3DAsset}
@@ -2145,6 +2188,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
                     } finally {
                       setIsGenerating3DAsset(false);
                       setAssetGenerationProgress(null);
+                      // Don't hide loading here if skybox is still generating
+                      if (!isGenerating) {
+                        hideLoading();
+                      }
                     }
                   }}
                   className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
