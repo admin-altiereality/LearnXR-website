@@ -134,21 +134,31 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-                  <div className="text-white text-lg">Loading In3D.Ai styles...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500 mx-auto mb-4"></div>
+          <div className="text-white/60 text-lg">Loading In3D.Ai styles...</div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="text-center text-red-400">
-        <p>{error}</p>
-        <button 
+      <div className="text-center py-12">
+        <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto mb-6 border border-red-500/30">
+          <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <p className="text-red-300 mb-4">{error}</p>
+        <motion.button 
           onClick={() => window.location.reload()} 
-          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="px-6 py-3 bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-400 hover:to-rose-400 text-white rounded-xl font-medium transition-all duration-300"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
           Retry
-        </button>
+        </motion.button>
       </div>
     );
   }
@@ -156,25 +166,25 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="text-center">
+      <div className="text-center mb-8">
         <h2 className="text-3xl font-bold text-white mb-4">Skybox Gallery</h2>
-        <p className="text-gray-400 max-w-2xl mx-auto">
+        <p className="text-white/50 max-w-2xl mx-auto">
           Browse and apply stunning In3D.Ai styles to your 3D scenes
         </p>
       </div>
 
       {/* Categories Filter */}
-      <div className="flex flex-wrap gap-2 justify-center">
+      <div className="flex flex-wrap gap-3 justify-center">
         {categories.map((category) => (
           <motion.button
             key={category}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setSelectedCategory(category)}
-            className={`px-4 py-2 rounded-lg backdrop-blur-md border transition-all duration-200 ${
+            className={`px-4 py-2 rounded-xl border transition-all duration-300 ${
               selectedCategory === category
-                ? 'bg-white/20 border-white/30 text-white'
-                : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                ? 'bg-gradient-to-r from-sky-500 to-violet-500 border-transparent text-white shadow-lg shadow-violet-500/25'
+                : 'bg-white/[0.03] border-white/10 text-white/60 hover:bg-white/[0.08] hover:text-white hover:border-white/20'
             }`}
           >
             {category.charAt(0).toUpperCase() + category.slice(1)}
@@ -184,21 +194,26 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
 
                 {/* In3D.Ai Styles Grid */}
       {filteredStyles.length === 0 ? (
-        <div className="text-center text-gray-400 py-12">
-                      <p>No In3D.Ai styles found for "{selectedCategory}" category.</p>
+        <div className="text-center py-12">
+          <div className="w-16 h-16 rounded-2xl bg-white/[0.03] flex items-center justify-center mx-auto mb-6 border border-white/10">
+            <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-white/50">No In3D.Ai styles found for "{selectedCategory}" category.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredStyles.map((style, index) => (
             <motion.div
               key={style.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
-              className={`relative group rounded-xl overflow-hidden border transition-all duration-200 ${
+              transition={{ duration: 0.4, delay: index * 0.05, ease: [0.25, 0.4, 0.25, 1] }}
+              className={`relative group rounded-2xl overflow-hidden border transition-all duration-300 ${
                 selectedStyle?.id === style.id
-                  ? 'bg-white/10 border-green-500/50 shadow-lg shadow-green-500/20'
-                  : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg shadow-emerald-500/20'
+                  : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05] hover:border-white/20'
               }`}
             >
               {/* Preview Image */}
@@ -228,7 +243,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
                 
                 {/* Selected indicator */}
                 {selectedStyle?.id === style.id && (
-                  <div className="absolute top-4 right-4 bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center">
+                  <div className="absolute top-4 right-4 bg-emerald-500 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg shadow-emerald-500/50">
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
@@ -237,14 +252,14 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
               </div>
 
               {/* Content */}
-              <div className="p-4">
+              <div className="p-5">
                 <h3 className="text-lg font-semibold text-white mb-2">{style.name}</h3>
                 {style.description && (
-                  <p className="text-sm text-gray-300 mb-3 line-clamp-2">{style.description}</p>
+                  <p className="text-sm text-white/60 mb-3 line-clamp-2">{style.description}</p>
                 )}
                 
                 {/* Style Info */}
-                <div className="flex items-center justify-between text-xs text-gray-400 mb-3">
+                <div className="flex items-center justify-between text-xs text-white/40 mb-4">
                   <span>ID: {style.id}</span>
                   {style.created_at && (
                     <span>{new Date(style.created_at).toLocaleDateString()}</span>
@@ -253,26 +268,42 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
 
                 {/* Action Buttons */}
                 <div className="flex gap-2">
-                  <button
+                  <motion.button
                     onClick={() => handleUseSkybox(style)}
-                    className={`flex-1 px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                    className={`group/btn relative flex-1 px-4 py-2.5 rounded-xl transition-all duration-300 font-medium overflow-hidden ${
                       selectedStyle?.id === style.id
-                        ? 'bg-green-600 hover:bg-green-700 text-white'
-                        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white'
+                        ? 'text-white'
+                        : 'text-white'
                     }`}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                   >
-                    {selectedStyle?.id === style.id ? '✓ Applied' : 'Use Style'}
-                  </button>
+                    {selectedStyle?.id === style.id ? (
+                      <>
+                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-500" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-teal-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                        <span className="relative">✓ Applied</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="absolute inset-0 bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500" />
+                        <div className="absolute inset-0 bg-gradient-to-r from-sky-400 via-violet-400 to-fuchsia-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                        <span className="relative">Use Style</span>
+                      </>
+                    )}
+                  </motion.button>
                   
-                  <button
+                  <motion.button
                     onClick={() => handleDownload(style)}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all duration-200"
+                    className="px-4 py-2.5 bg-white/[0.05] hover:bg-white/[0.10] border border-white/10 hover:border-white/20 text-white rounded-xl transition-all duration-300"
                     title="Download preview"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
@@ -281,7 +312,7 @@ const GallerySection = ({ onSelect, setBackgroundSkybox }) => {
       )}
 
       {/* Stats */}
-      <div className="text-center text-gray-400 text-sm">
+      <div className="text-center text-white/50 text-sm mt-8">
         <p>Showing {filteredStyles.length} of {styles.length} total styles</p>
       </div>
 
