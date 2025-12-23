@@ -16,6 +16,7 @@ import MainSection from './Components/MainSection';
 import { AuthProvider } from './contexts/AuthContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
+import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
 import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
 import History from './screens/History';
@@ -46,9 +47,9 @@ const ConditionalFooter = () => {
   }
   
   return (
-    <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
+    <div className="relative z-50">
       <Footer />
-    </footer>
+    </div>
   );
 };
 
@@ -199,11 +200,15 @@ const GlobalLoadingIndicator = () => {
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
   const isLandingPage = location.pathname === '/';
+  const isMainPage = location.pathname === '/main';
   
   // Don't render global Canvas on Landing page since it has its own Canvas components
   if (isLandingPage) {
     return children;
   }
+  
+  // On /main page without a generated skybox, show transparent background for DottedSurface
+  const showDefaultBackground = !isMainPage || backgroundSkybox;
   
   // Use background skybox image if available, otherwise use default futuristic background
   const textureUrl = backgroundSkybox?.preview_url || backgroundSkybox?.image || 
@@ -211,26 +216,28 @@ const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   
   return (
     <div className="relative w-full min-h-screen bg-black">
-      {/* Three.js Background */}
-      <div className="fixed inset-0 w-full h-full">
-        <Canvas 
-          camera={{ position: [0, 0, 0.1], fov: 75 }}
-          onError={(error) => {
-            console.error('Three.js Canvas error:', error);
-          }}
-          onCreated={({ gl }) => {
-            gl.setClearColor('#000000');
-          }}
-        >
-          <BackgroundSphere textureUrl={textureUrl} />
-          <OrbitControls 
-            enableZoom={false} 
-            enablePan={false} 
-            autoRotate 
-            autoRotateSpeed={0.5} 
-          />
-        </Canvas>
-      </div>
+      {/* Three.js Background - Only show if not on /main without skybox */}
+      {showDefaultBackground && (
+        <div className="fixed inset-0 w-full h-full z-0">
+          <Canvas 
+            camera={{ position: [0, 0, 0.1], fov: 75 }}
+            onError={(error) => {
+              console.error('Three.js Canvas error:', error);
+            }}
+            onCreated={({ gl }) => {
+              gl.setClearColor('#000000');
+            }}
+          >
+            <BackgroundSphere textureUrl={textureUrl} />
+            <OrbitControls 
+              enableZoom={false} 
+              enablePan={false} 
+              autoRotate 
+              autoRotateSpeed={0.5} 
+            />
+          </Canvas>
+        </div>
+      )}
       {children}
     </div>
   );
@@ -280,8 +287,9 @@ function App() {
       return (
         <AuthProvider>
           <AssetGenerationProvider>
-            <LoadingProvider>
-              <Router>
+            <CreateGenerationProvider>
+              <LoadingProvider>
+                <Router>
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
@@ -291,7 +299,7 @@ function App() {
                 </div>
 
                 {/* Main content - scrollable */}
-                <main className="flex-grow w-full mx-auto max-w-[1920px] ">
+                <main className="">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -448,6 +456,7 @@ function App() {
             <GlobalLoadingIndicator />
           </Router>
         </LoadingProvider>
+            </CreateGenerationProvider>
           </AssetGenerationProvider>
       </AuthProvider>
       );
@@ -457,13 +466,14 @@ function App() {
       <ErrorBoundary>
         <AuthProvider>
           <AssetGenerationProvider>
-            <LoadingProvider>
-              <Router>
+            <CreateGenerationProvider>
+              <LoadingProvider>
+                <Router>
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer */}
               {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
               {backgroundSkybox && (
-                <div className="fixed inset-0 w-full h-full">
+                <div className="fixed inset-0 w-full h-full z-[1]">
                   <SkyboxFullScreen 
                     key={key}
                     isBackground={true} 
@@ -478,7 +488,7 @@ function App() {
                   <Header />
 
                 {/* Main content - scrollable */}
-                <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
+                <main className="">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -633,6 +643,7 @@ function App() {
             <GlobalLoadingIndicator />
           </Router>
         </LoadingProvider>
+            </CreateGenerationProvider>
           </AssetGenerationProvider>
       </AuthProvider>
     </ErrorBoundary>

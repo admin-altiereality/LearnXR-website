@@ -29,3 +29,62 @@
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;
 }
+
+/* Pricing Page Custom Styles */
+@layer utilities {
+  .text-grain {
+    background-image: 
+      repeating-linear-gradient(
+        0deg,
+        rgba(255, 255, 255, 0.03) 0px,
+        transparent 1px,
+        transparent 2px,
+        rgba(255, 255, 255, 0.03) 3px
+      );
+    background-size: 100% 4px;
+  }
+
+  .bg-texture {
+    background-image: 
+      radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.08) 1px, transparent 0);
+    background-size: 20px 20px;
+  }
+
+  .bg-layered {
+    background: 
+      radial-gradient(ellipse at top, rgba(251, 146, 60, 0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+      linear-gradient(180deg, #0a0a0a 0%, #000000 100%);
+  }
+
+  .card-glow {
+    box-shadow: 
+      0 0 0 1px rgba(251, 146, 60, 0.1),
+      0 4px 24px rgba(0, 0, 0, 0.4),
+      0 0 40px rgba(251, 146, 60, 0.05);
+  }
+
+  .card-glow-hover {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-glow-hover:hover {
+    box-shadow: 
+      0 0 0 1px rgba(251, 146, 60, 0.3),
+      0 8px 32px rgba(0, 0, 0, 0.6),
+      0 0 60px rgba(251, 146, 60, 0.15);
+    transform: translateY(-4px);
+  }
+
+  .font-display {
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .font-body {
+    font-family: 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+  }
+}

@@ -27,56 +27,86 @@ const Pricing = () => {
   const features = [
     {
       icon: FaRocket,
-      title: 'Fast Generation',
-      description: 'Generate high-quality skyboxes in seconds, not hours'
+      title: 'Lightning Fast',
+      description: 'Transform ideas into immersive 3D environments in seconds, not hours'
     },
     {
       icon: FaShieldAlt,
-      title: 'Secure & Private',
-      description: 'Your creations are stored securely and remain private'
+      title: 'Enterprise Security',
+      description: 'Your creative work is encrypted, private, and always under your control'
     },
     {
       icon: FaInfinity,
-      title: 'Scalable Plans',
-      description: 'Choose the plan that fits your needs, upgrade anytime'
+      title: 'Unlimited Potential',
+      description: 'Scale from prototype to production with plans that grow with your vision'
     }
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white">
+    <div className="min-h-screen bg-layered bg-texture relative overflow-hidden">
+      {/* Animated background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-amber-500/8 rounded-full blur-3xl animate-blob"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-orange-500/8 rounded-full blur-3xl animate-blob" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-1/2 right-1/3 w-96 h-96 bg-amber-500/6 rounded-full blur-3xl animate-blob" style={{ animationDelay: '4s' }}></div>
+        <div className="absolute bottom-1/3 left-1/3 w-80 h-80 bg-orange-500/6 rounded-full blur-3xl animate-blob" style={{ animationDelay: '1s' }}></div>
+        
+        {/* Grid pattern overlay */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: `linear-gradient(rgba(251, 146, 60, 0.1) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(251, 146, 60, 0.1) 1px, transparent 1px)`,
+          backgroundSize: '50px 50px'
+        }}></div>
+      </div>
+
       {/* Header Section */}
-      <section className="relative pt-20 pb-16 px-4 sm:px-6 lg:px-8">
+      <section className="relative pt-24 sm:pt-32 pb-12 sm:pb-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
+            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
             className="text-center"
           >
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-violet-500/20 to-purple-500/20 border border-violet-500/30 mb-6">
-              <FaRocket className="text-violet-400 mr-2" />
-              <span className="text-violet-400 text-sm font-medium">Choose Your Plan</span>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="inline-flex items-center px-5 sm:px-6 py-2.5 sm:py-3 rounded-full bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 backdrop-blur-md border border-amber-500/30 shadow-lg shadow-amber-500/10 mb-6 sm:mb-8 font-mono text-xs tracking-wider"
+            >
+              <span className="text-amber-300 font-semibold drop-shadow-sm">PRICING</span>
+            </motion.div>
             
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-white via-violet-400 to-purple-400 bg-clip-text text-transparent">
-              Simple, Transparent Pricing
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-display font-bold mb-4 sm:mb-6 leading-tight">
+              <span className="bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent drop-shadow-sm">
+                Simple, Transparent
+              </span>
+              <br />
+              <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-400 bg-clip-text text-transparent drop-shadow-lg">
+                Pricing
+              </span>
             </h1>
             
-            <p className="text-xl text-gray-300 mb-8 max-w-3xl mx-auto leading-relaxed">
-              Choose the perfect plan for your needs. All plans include access to our powerful 
-              AI-powered skybox generation tools with no hidden fees.
-            </p>
+            <motion.p 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
+              className="text-base sm:text-lg lg:text-xl text-gray-400 mb-8 sm:mb-12 max-w-3xl mx-auto leading-relaxed font-body px-4"
+            >
+              Choose the perfect plan for your 3D creation needs. Start free, scale as you grow. No hidden fees, cancel anytime.
+            </motion.p>
           </motion.div>
         </div>
       </section>
 
       {/* Pricing Tiers Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8">
+      <section className="relative py-12 sm:py-16 lg:py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
           >
             <PricingTiers currentSubscription={subscription} />
           </motion.div>
@@ -84,38 +114,48 @@ const Pricing = () => {
       </section>
 
       {/* Features Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-gray-800/30">
-        <div className="max-w-7xl mx-auto">
+      <section className="relative py-16 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-black/10 to-transparent"></div>
+        <div className="relative max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="text-center mb-12 sm:mb-16"
           >
-            <h2 className="text-3xl sm:text-4xl font-bold mb-6 bg-gradient-to-r from-white to-violet-400 bg-clip-text text-transparent">
-              Why Choose In3D.ai?
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold mb-4 sm:mb-6">
+              <span className="text-white">Built for </span>
+              <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">Creators</span>
             </h2>
-            <p className="text-lg text-gray-400 max-w-3xl mx-auto">
-              Everything you need to create stunning 3D environments
+            <p className="text-base sm:text-lg text-gray-400 max-w-2xl mx-auto font-body">
+              Every feature designed to amplify your creative process
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
             {features.map((feature, index) => (
               <motion.div
                 key={index}
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                viewport={{ once: true }}
-                className="text-center p-6 rounded-xl border border-gray-700 bg-gray-800/50 hover:border-violet-500/50 transition-all duration-300"
+                transition={{ 
+                  duration: 0.7, 
+                  delay: index * 0.15,
+                  ease: [0.16, 1, 0.3, 1]
+                }}
+                viewport={{ once: true, margin: "-50px" }}
+                className="group relative p-6 sm:p-8 rounded-2xl border border-amber-500/20 bg-gradient-to-br from-black/50 via-black/30 to-black/20 backdrop-blur-md card-glow card-glow-hover overflow-hidden"
               >
-                <div className="w-16 h-16 rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 flex items-center justify-center mx-auto mb-4">
-                  <feature.icon className="text-2xl text-white" />
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/0 via-amber-500/8 to-orange-500/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-2xl blur opacity-0 group-hover:opacity-100 transition-opacity duration-500 -z-10"></div>
+                <div className="relative z-10">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-gradient-to-br from-amber-500/25 to-orange-500/25 border border-amber-500/40 flex items-center justify-center mb-4 sm:mb-6 group-hover:border-amber-500/60 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-amber-500/30 transition-all duration-300">
+                    <feature.icon className="text-xl sm:text-2xl text-amber-300 drop-shadow-sm" />
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-display font-semibold text-white mb-2 sm:mb-3 group-hover:text-amber-50 transition-colors">{feature.title}</h3>
+                  <p className="text-sm sm:text-base text-gray-300 leading-relaxed font-body group-hover:text-gray-200 transition-colors">{feature.description}</p>
                 </div>
-                <h3 className="text-xl font-semibold text-white mb-3">{feature.title}</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">{feature.description}</p>
               </motion.div>
             ))}
           </div>
@@ -123,21 +163,22 @@ const Pricing = () => {
       </section>
 
       {/* FAQ Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8">
+      <section className="relative py-16 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            viewport={{ once: true, margin: "-100px" }}
+            className="text-center mb-12 sm:mb-16"
           >
-            <h2 className="text-3xl sm:text-4xl font-bold mb-6 bg-gradient-to-r from-white to-violet-400 bg-clip-text text-transparent">
-              Frequently Asked Questions
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-display font-bold mb-4 sm:mb-6">
+              <span className="text-white">Questions? </span>
+              <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">Answers.</span>
             </h2>
           </motion.div>
 
-          <div className="space-y-6">
+          <div className="space-y-3 sm:space-y-4">
             {[
               {
                 question: 'Can I change my plan later?',
@@ -153,22 +194,26 @@ const Pricing = () => {
               },
               {
                 question: 'Are there any usage limits?',
-                answer: 'Each plan has specific generation limits per month. Free plans have 5 generations, Pro has 50, and Enterprise has 100. Check your plan details for more information.'
+                answer: 'Each plan has specific generation limits per month. Free plan includes 5 generations, Pro plan includes 60 generations, Team plan includes 120 generations, and Enterprise offers custom quotas. Each plan also has different asset limits per generation. Check your plan details for more information.'
               }
             ].map((faq, index) => (
               <motion.div
                 key={index}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: index * 0.1 }}
-                viewport={{ once: true }}
-                className="p-6 rounded-xl border border-gray-700 bg-gray-800/50 hover:border-violet-500/30 transition-all duration-300"
+                transition={{ 
+                  duration: 0.6, 
+                  delay: index * 0.1,
+                  ease: [0.16, 1, 0.3, 1]
+                }}
+                viewport={{ once: true, margin: "-50px" }}
+                className="group p-5 sm:p-6 lg:p-8 rounded-xl border border-amber-500/20 bg-gradient-to-br from-black/40 via-black/30 to-black/20 backdrop-blur-md hover:border-amber-500/40 hover:bg-gradient-to-br hover:from-black/50 hover:via-black/40 hover:to-black/30 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/10"
               >
-                <h3 className="text-lg font-semibold text-white mb-2 flex items-center">
-                  <FaCheckCircle className="text-violet-400 mr-2" />
-                  {faq.question}
+                <h3 className="text-base sm:text-lg font-display font-semibold text-white mb-2 sm:mb-3 flex items-start">
+                  <span className="text-amber-400 mr-2 sm:mr-3 mt-0.5 sm:mt-1 font-mono text-xs sm:text-sm">→</span>
+                  <span>{faq.question}</span>
                 </h3>
-                <p className="text-gray-400 leading-relaxed">{faq.answer}</p>
+                <p className="text-sm sm:text-base text-gray-400 leading-relaxed font-body pl-5 sm:pl-6">{faq.answer}</p>
               </motion.div>
             ))}
           </div>

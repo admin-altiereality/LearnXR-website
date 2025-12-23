@@ -8,58 +8,112 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     id: 'free',
     name: 'Free',
     price: 0,
+    yearlyPrice: 0,
     billingCycle: 'monthly',
     features: [
-      'Generate up to 5 skyboxes',
-      'Basic styles available',
-      'Standard quality output',
+      '5 generations per month',
+      '1 asset per generation',
+      'Maximum 5 assets per month',
       'Community support'
     ],
     limits: {
       skyboxGenerations: 5,
+      assetsPerGeneration: 1,
+      maxAssetsPerMonth: 5,
       maxQuality: 'standard',
       customStyles: false,
-      apiAccess: false
+      apiAccess: false,
+      commercialRights: false,
+      teamCollaboration: false,
+      unityUnrealIntegration: false,
+      supportLevel: 'community'
     }
   },
   {
     id: 'pro',
     name: 'Pro',
-    price: 999, // ₹999/month
+    price: 12000, // ₹12,000/month
+    yearlyPrice: 120000, // ₹1,20,000/year
     billingCycle: 'monthly',
     features: [
-      'Generate up to 50 skyboxes',
-      'All styles available',
-      'High quality output',
-      'Priority support',
+      '60 generations per month',
+      '3 assets per generation',
+      'Maximum 180 assets per month',
+      'Commercial rights included',
       'API access',
-      'Custom style creation'
+      'Unity / Unreal integration',
+      'Standard support'
     ],
     limits: {
-      skyboxGenerations: 50,
+      skyboxGenerations: 60,
+      assetsPerGeneration: 3,
+      maxAssetsPerMonth: 180,
       maxQuality: 'high',
       customStyles: true,
-      apiAccess: true
+      apiAccess: true,
+      commercialRights: true,
+      teamCollaboration: false,
+      unityUnrealIntegration: true,
+      supportLevel: 'standard'
+    }
+  },
+  {
+    id: 'team',
+    name: 'Team',
+    price: 25000, // ₹25,000/month
+    yearlyPrice: 250000, // ₹2,50,000/year
+    billingCycle: 'monthly',
+    features: [
+      '120 generations per month',
+      '4 assets per generation',
+      'Maximum 480 assets per month',
+      'Commercial rights included',
+      'Team collaboration',
+      'API access',
+      'Unity / Unreal integration',
+      'Priority support'
+    ],
+    limits: {
+      skyboxGenerations: 120,
+      assetsPerGeneration: 4,
+      maxAssetsPerMonth: 480,
+      maxQuality: 'high',
+      customStyles: true,
+      apiAccess: true,
+      commercialRights: true,
+      teamCollaboration: true,
+      unityUnrealIntegration: true,
+      supportLevel: 'priority'
     }
   },
   {
     id: 'enterprise',
     name: 'Enterprise',
-    price: 4999, // ₹4999/month
+    price: 0, // Custom pricing
+    yearlyPrice: 0, // Custom pricing
     billingCycle: 'monthly',
+    isCustomPricing: true,
     features: [
-      'Generate up to 100 skyboxes',
-      'Everything in Pro',
-      'Dedicated support',
-      'Custom integration',
-      'SLA guarantees',
-      'Team management'
+      'Custom generation quota',
+      'Up to 5 assets per generation',
+      'Custom maximum assets per month',
+      'Commercial rights included',
+      'Team collaboration',
+      'API access',
+      'Unity / Unreal integration',
+      'Dedicated support'
     ],
     limits: {
-      skyboxGenerations: 100,
+      skyboxGenerations: Infinity, // Custom
+      assetsPerGeneration: 5,
+      maxAssetsPerMonth: Infinity, // Custom
       maxQuality: 'ultra',
       customStyles: true,
-      apiAccess: true
+      apiAccess: true,
+      commercialRights: true,
+      teamCollaboration: true,
+      unityUnrealIntegration: true,
+      supportLevel: 'dedicated'
     }
   }
 ];

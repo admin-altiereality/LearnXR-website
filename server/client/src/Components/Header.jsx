@@ -13,6 +13,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
 import { db } from '../config/firebase';
 import { useAuth, useModal } from '../contexts/AuthContext';
+import { useCreateGeneration } from '../contexts/CreateGenerationContext';
 import { SUBSCRIPTION_PLANS, subscriptionService } from '../services/subscriptionService';
 import Logo from "./Logo";
 import SubscriptionModal from './SubscriptionModal';
@@ -23,6 +24,7 @@ const Header = () => {
   const { openModal } = useModal();
   const navigate = useNavigate();
   const location = useLocation();
+  const { state: generationState } = useCreateGeneration();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const dropdownRef = useRef(null);
@@ -256,6 +258,35 @@ const Header = () => {
               <div className="hidden md:flex items-center gap-3">
                 {user ? (
                   <>
+                    {/* Persistent Generation Indicator - Show while generating */}
+                    {(generationState.isGenerating || generationState.isGenerating3DAsset) && (
+                      <Link
+                        to="/main"
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500/10 border border-sky-500/30 hover:bg-sky-500/20 transition-all duration-300 group"
+                      >
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-sky-300 font-medium">
+                            {generationState.isGenerating3DAsset ? 'Generating 3D Asset' : 'Generating Skybox'}
+                          </span>
+                          {(generationState.assetGenerationProgress || generationState.skyboxProgress > 0) && (
+                            <span className="text-[10px] text-sky-400">
+                              {generationState.assetGenerationProgress 
+                                ? `${Math.round(generationState.assetGenerationProgress.progress)}%`
+                                : `${Math.round(generationState.skyboxProgress)}%`}
+                            </span>
+                          )}
+                        </div>
+                        <svg className="w-4 h-4 text-sky-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    )}
+                    
                     {/* Usage Stats Pill */}
                     <div className="flex items-center gap-3 px-4 py-2 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a]">
                       <div className="flex flex-col items-end">
@@ -558,6 +589,36 @@ const Header = () => {
               >
                 {user ? (
                   <>
+                    {/* Mobile Generation Indicator - Show while generating */}
+                    {(generationState.isGenerating || generationState.isGenerating3DAsset) && (
+                      <Link
+                        to="/main"
+                        className="flex items-center gap-3 px-4 py-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sm font-medium text-sky-300 hover:bg-sky-500/20 transition-all"
+                        onClick={() => setShowMobileMenu(false)}
+                      >
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span>
+                            {generationState.isGenerating3DAsset ? 'Generating 3D Asset' : 'Generating Skybox'}
+                          </span>
+                          {(generationState.assetGenerationProgress || generationState.skyboxProgress > 0) && (
+                            <span className="text-[10px] text-sky-400">
+                              {generationState.assetGenerationProgress 
+                                ? `${Math.round(generationState.assetGenerationProgress.progress)}%`
+                                : `${Math.round(generationState.skyboxProgress)}%`}
+                            </span>
+                          )}
+                        </div>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    )}
+                    
                     {/* Mobile Nav Links */}
                     <Link
                       to="/main"
@@ -748,7 +809,7 @@ const Header = () => {
       </header>
 
       {/* Spacer for fixed header */}
-      <div className="h-20" />
+      <div className="" />
 
       {/* Modals */}
       <SubscriptionModal
