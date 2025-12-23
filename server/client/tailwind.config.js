@@ -6,6 +6,7 @@ export default {
   ],
   theme: {
     extend: {
+      scrollBehavior: ['smooth'],
       fontFamily: {
         'display': ['Space Grotesk', 'sans-serif'],
         'body': ['Bricolage Grotesque', 'sans-serif'],
@@ -45,8 +46,19 @@ export default {
         'gradient-x': 'gradient-x 15s ease infinite',
         'pulse': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'shimmer': 'shimmer 2s linear infinite',
+        'soundwave': 'soundwave 0.8s ease-in-out infinite',
       },
       keyframes: {
+        soundwave: {
+          '0%, 100%': {
+            transform: 'scaleY(0.5)',
+            opacity: '0.6',
+          },
+          '50%': {
+            transform: 'scaleY(1)',
+            opacity: '1',
+          },
+        },
         gradient: {
           '0%, 100%': {
             'background-size': '200% 200%',

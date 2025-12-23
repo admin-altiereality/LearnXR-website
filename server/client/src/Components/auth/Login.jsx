@@ -1,105 +1,203 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { doc, getDoc } from 'firebase/firestore';
+import { FaCube, FaArrowRight } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSubscription } from '../../contexts/SubscriptionContext';
+import { db } from '../../config/firebase';
 import FuturisticBackground from '../FuturisticBackground';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const { login, loginWithGoogle, user } = useAuth();
+  const { loading: subscriptionLoading } = useSubscription();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user) {
-      navigate('/main');
-    }
-  }, [user, navigate]);
+    const checkOnboardingStatus = async () => {
+      if (!user || subscriptionLoading || checkingOnboarding) return;
+
+      setCheckingOnboarding(true);
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          if (userData.onboardingCompleted) {
+            navigate('/main');
+          } else {
+            navigate('/onboarding');
+          }
+        } else {
+          navigate('/onboarding');
+        }
+      } catch (error) {
+        console.error('Error checking onboarding status:', error);
+        navigate('/onboarding');
+      }
+    };
+
+    checkOnboardingStatus();
+  }, [user, subscriptionLoading, navigate, checkingOnboarding]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       setError('');
       await login(email, password);
-      // Navigation will happen in useEffect
     } catch (error) {
       setError('Failed to login. ' + error.message);
     }
   };
 
+  const fadeUpVariants = {
+    hidden: { opacity: 0, y: 30 },
+    visible: (i) => ({
+      opacity: 1,
+      y: 0,
+      transition: {
+        duration: 0.8,
+        delay: 0.2 + i * 0.1,
+        ease: [0.25, 0.4, 0.25, 1],
+      },
+    }),
+  };
+
   return (
-    <FuturisticBackground variant="auth">
-      <div className="min-h-screen flex items-center justify-center">
-        {/* Login Form */}
-        <div className="bg-gray-800/80 backdrop-blur-xl p-8 rounded-2xl shadow-2xl w-96 border border-gray-700/50">
-          <div className="text-center mb-6">
-            <h2 className="text-3xl font-bold text-white mb-2">Welcome Back</h2>
-            <p className="text-gray-400">Sign in to continue to In3D.ai</p>
-          </div>
-          
-          {error && (
-            <div className="bg-red-500/20 border border-red-500/50 text-red-300 p-3 rounded-lg mb-4">
-              {error}
-            </div>
-          )}
-          
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Email</label>
-              <input
-                type="email"
-                className="w-full p-3 rounded-lg bg-gray-700/50 border border-gray-600 text-white placeholder-gray-400 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                required
-              />
-            </div>
+    <FuturisticBackground>
+      <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+          {/* Logo */}
+          <motion.div
+            custom={0}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="flex items-center justify-center gap-3 mb-8"
+          >
             
-            <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">Password</label>
-              <input
-                type="password"
-                className="w-full p-3 rounded-lg bg-gray-700/50 border border-gray-600 text-white placeholder-gray-400 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 transition-colors"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-              />
+          </motion.div>
+
+          {/* Login Card */}
+          <motion.div
+            custom={1}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="relative rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-[0_20px_60px_-15px_rgba(139,92,246,0.3)] p-8 overflow-hidden"
+          >
+            {/* Card glow effect */}
+            <div className="absolute inset-0 bg-gradient-to-br from-sky-500/10 via-transparent to-fuchsia-500/10 pointer-events-none" />
+
+            <div className="relative z-10">
+              {/* Header */}
+              <div className="text-center mb-8">
+                <h2 className="text-3xl font-bold tracking-tight text-white mb-2">
+                  Welcome Back
+                </h2>
+                <p className="text-white/60">
+                  Sign in to continue creating
+                </p>
+              </div>
+
+              {/* Error */}
+              {error && (
+                <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  {error}
+                </div>
+              )}
+
+              {/* Form */}
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div>
+                  <label className="block mb-2 text-xs font-medium tracking-wide text-white/60 uppercase">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="w-full rounded-xl bg-white/[0.03] px-4 py-3.5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-500/20 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-2 text-xs font-medium tracking-wide text-white/60 uppercase">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="w-full rounded-xl bg-white/[0.03] px-4 py-3.5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-500/20 transition-all"
+                  />
+                </div>
+
+                <motion.button
+                  type="submit"
+                  className="group relative w-full rounded-xl py-3.5 font-semibold text-white overflow-hidden"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-sky-400 via-violet-400 to-fuchsia-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                  <span className="relative flex items-center justify-center gap-2">
+                    Sign In
+                    <FaArrowRight className="text-sm group-hover:translate-x-1 transition-transform" />
+                  </span>
+                </motion.button>
+              </form>
+
+              {/* Divider */}
+              <div className="my-6 flex items-center gap-4">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-xs text-white/40 uppercase tracking-wider">or</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              {/* Google Login */}
+              <motion.button
+                onClick={loginWithGoogle}
+                className="w-full rounded-xl py-3.5 font-medium text-white bg-white/[0.03] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 transition-all duration-300"
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+              >
+                Continue with Google
+              </motion.button>
+
+              {/* Footer Links */}
+              <div className="mt-8 text-center space-y-3 text-sm">
+                <p className="text-white/50">
+                  Don't have an account?{' '}
+                  <Link
+                    to="/signup"
+                    className="text-sky-400 hover:text-sky-300 font-medium transition-colors"
+                  >
+                    Sign Up
+                  </Link>
+                </p>
+                <p>
+                  <Link
+                    to="/forgot-password"
+                    className="text-white/40 hover:text-white/60 transition-colors"
+                  >
+                    Forgot Password?
+                  </Link>
+                </p>
+              </div>
             </div>
-            
-            <button
-              type="submit"
-              className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-white p-3 rounded-lg font-semibold hover:from-cyan-400 hover:to-blue-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-cyan-500/25"
-            >
-              Sign In
-            </button>
-          </form>
-          
-          <div className="mt-6">
-            <button
-              onClick={loginWithGoogle}
-              className="w-full bg-white/10 border border-gray-600 text-white p-3 rounded-lg font-semibold hover:bg-white/20 transition-all duration-300"
-            >
-              Continue with Google
-            </button>
-          </div>
-          
-          <div className="mt-6 text-center space-y-2">
-            <p className="text-gray-400 text-sm">
-              Don't have an account?{' '}
-              <Link to="/signup" className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors">
-                Sign Up
-              </Link>
-            </p>
-            <p className="text-gray-400 text-sm">
-              <Link to="/forgot-password" className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors">
-                Forgot Password?
-              </Link>
-            </p>
-          </div>
+          </motion.div>
         </div>
       </div>
     </FuturisticBackground>
   );
-}; 
+};

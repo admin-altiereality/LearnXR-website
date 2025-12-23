@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -15,6 +15,17 @@
       onerror="console.error('Failed to load Razorpay script')"
       defer
     ></script>
+    <style>
+      /* Critical CSS for smooth scrolling - loaded before JS */
+      html {
+        scroll-behavior: smooth;
+      }
+      
+      /* Prevent layout shift during page load */
+      body {
+        overflow-x: hidden;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

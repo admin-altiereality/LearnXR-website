@@ -1,46 +1,142 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import { FaCrown, FaRocket } from 'react-icons/fa';
+import { useSubscription } from '../contexts/SubscriptionContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { subscriptionService } from '../services/subscriptionService';
+// @ts-ignore - UpgradeModal is a JSX file
+import UpgradeModal from './UpgradeModal';
 
 interface UpgradeButtonProps {
-  onClick: () => void;
-  variant?: 'header' | 'main' | 'default';
+  variant?: 'default' | 'compact' | 'navbar';
+  className?: string;
 }
 
-export const UpgradeButton: React.FC<UpgradeButtonProps> = ({ 
-  onClick, 
-  variant = 'default'
-}) => {
-  const baseStyles = "relative z-10 px-4 py-2 bg-gradient-to-r from-purple-500/50 to-pink-600/50 hover:from-purple-600/60 hover:to-pink-700/60 text-white rounded-lg transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 border border-purple-500/30";
+const UpgradeButton: React.FC<UpgradeButtonProps> = ({ variant = 'default', className = '' }) => {
+  const { subscription, isFreePlan, refreshSubscription } = useSubscription();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // Don't show if user is on the highest tier (enterprise) or not on free plan (for navbar)
+  const isOnHighestTier = subscriptionService.isOnHighestTier(subscription?.planId || 'free');
   
-  const variantStyles = {
-    header: `${baseStyles} text-sm flex items-center space-x-2`,
-    main: `${baseStyles} w-full`,
-    default: baseStyles
+  // For navbar variant, only show if on free plan
+  if (variant === 'navbar' && !isFreePlan) {
+    return null;
+  }
+
+  // Don't show for enterprise users
+  if (isOnHighestTier) {
+    return null;
+  }
+
+  const handleClick = () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setShowUpgradeModal(true);
   };
 
+  const handleSubscriptionUpdate = async () => {
+    await refreshSubscription();
+  };
+
+  if (variant === 'navbar') {
+    return (
+      <>
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={handleClick}
+          className={`
+            flex items-center gap-2 px-4 py-2 rounded-full
+            bg-gradient-to-r from-amber-500 to-orange-500
+            hover:from-amber-400 hover:to-orange-400
+            text-white font-semibold text-sm
+            shadow-lg shadow-amber-500/25
+            transition-all duration-300
+            ${className}
+          `}
+        >
+          <FaCrown className="w-4 h-4" />
+          <span>Upgrade</span>
+        </motion.button>
+
+        <UpgradeModal
+          isOpen={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          currentPlan={subscription?.planId || 'free'}
+          onSubscriptionUpdate={handleSubscriptionUpdate}
+        />
+      </>
+    );
+  }
+
+  if (variant === 'compact') {
+    return (
+      <>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleClick}
+          className={`
+            flex items-center gap-2 px-3 py-1.5 rounded-lg
+            bg-gradient-to-r from-amber-500/20 to-orange-500/20
+            hover:from-amber-500/30 hover:to-orange-500/30
+            text-amber-300 font-medium text-sm
+            border border-amber-500/30
+            transition-all duration-300
+            ${className}
+          `}
+        >
+          <FaRocket className="w-3 h-3" />
+          <span>Upgrade</span>
+        </motion.button>
+
+        <UpgradeModal
+          isOpen={showUpgradeModal}
+          onClose={() => setShowUpgradeModal(false)}
+          currentPlan={subscription?.planId || 'free'}
+          onSubscriptionUpdate={handleSubscriptionUpdate}
+        />
+      </>
+    );
+  }
+
+  // Default variant
   return (
-    <div className="fixed inset-0 isolate z-50 overflow-hidden">
-      <div className="absolute inset-0 bg-gray-900/90 backdrop-blur-sm" />
-      <div className="relative min-h-screen flex flex-col">
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="w-full max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="relative">
-                <button
-                  onClick={onClick}
-                  className={variantStyles[variant]}
-                >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                    </svg>
-                    <span>Upgrade</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <>
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={handleClick}
+        className={`
+          w-full flex items-center justify-center gap-3 
+          px-6 py-4 rounded-xl
+          bg-gradient-to-r from-amber-500 to-orange-500
+          hover:from-amber-400 hover:to-orange-400
+          text-white font-bold text-lg
+          shadow-lg shadow-amber-500/25
+          transition-all duration-300
+          ${className}
+        `}
+      >
+        <FaRocket className="w-5 h-5" />
+        <span>Upgrade Plan</span>
+        <FaCrown className="w-5 h-5" />
+      </motion.button>
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        currentPlan={subscription?.planId || 'free'}
+        onSubscriptionUpdate={handleSubscriptionUpdate}
+      />
+    </>
   );
-}; 
+};
+
+export default UpgradeButton;

@@ -1,5 +1,14 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
 import { motion } from 'framer-motion';
+
+interface ElegantShapeProps {
+  className?: string;
+  delay?: number;
+  width?: number;
+  height?: number;
+  rotate?: number;
+  gradient?: string;
+}
 
 // Elegant floating shape component matching the Landing page style
 const ElegantShape = ({
@@ -9,7 +18,7 @@ const ElegantShape = ({
   height = 100,
   rotate = 0,
   gradient = 'from-white/[0.08]',
-}) => {
+}: ElegantShapeProps) => {
   return (
     <motion.div
       initial={{
@@ -61,11 +70,15 @@ const ElegantShape = ({
   );
 };
 
+interface FuturisticBackgroundProps {
+  children: ReactNode;
+  className?: string;
+}
+
 const FuturisticBackground = ({ 
   children, 
-  variant = 'default',
   className = ''
-}) => {
+}: FuturisticBackgroundProps) => {
   return (
     <div className={`min-h-screen relative overflow-hidden bg-[#030303] ${className}`}>
       {/* Gradient overlay - matching landing page */}

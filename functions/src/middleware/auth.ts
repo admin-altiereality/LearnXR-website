@@ -16,7 +16,6 @@ const PUBLIC_ENDPOINTS = [
   { method: 'POST', path: '/skybox/webhook' }, // Webhook endpoint - no auth required
   { method: 'POST', path: '/payment/create-order' },
   { method: 'POST', path: '/payment/verify' },
-  { method: 'POST', path: '/subscription/create' },
   { method: 'GET', path: '/subscription' },
   { method: 'POST', path: '/user/subscription-status' },
   { method: 'GET', path: '/proxy-asset' },
