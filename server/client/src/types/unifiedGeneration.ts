@@ -33,6 +33,13 @@ export interface MeshResult {
   error?: string;
   createdAt: string;
   updatedAt: string;
+  model_urls?: {
+    glb?: string;
+    fbx?: string;
+    usdz?: string;
+    obj?: string;
+    mtl?: string;
+  };
   metadata?: {
     polycount?: number;
     size?: number;

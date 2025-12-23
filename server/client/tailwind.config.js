@@ -6,6 +6,11 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        'display': ['Space Grotesk', 'sans-serif'],
+        'body': ['Bricolage Grotesque', 'sans-serif'],
+        'mono': ['JetBrains Mono', 'monospace'],
+      },
       colors: {
         primary: {
           50: '#f0f9ff',
@@ -39,6 +44,7 @@ export default {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
         'gradient-x': 'gradient-x 15s ease infinite',
         'pulse': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'shimmer': 'shimmer 2s linear infinite',
       },
       keyframes: {
         gradient: {
@@ -83,6 +89,14 @@ export default {
           '50%': {
             'background-size': '200% 200%',
             'background-position': 'right center'
+          },
+        },
+        shimmer: {
+          '0%': {
+            transform: 'translateX(-100%)',
+          },
+          '100%': {
+            transform: 'translateX(100%)',
           },
         },
       },

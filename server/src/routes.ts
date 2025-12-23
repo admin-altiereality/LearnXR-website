@@ -1,6 +1,7 @@
 import * as express from "express";
 import multer from "multer";
 import skyboxRouter from "./routes/skybox";
+import coordinatedPromptRouter from "./routes/coordinatedPrompt";
 
 import {
     cancelAllPedingImagines,
@@ -19,6 +20,9 @@ const router = express.Router();
 
 // Mount skybox routes
 router.use("/skybox", skyboxRouter);
+
+// Mount coordinated prompt routes
+router.use("/coordinated-prompt", coordinatedPromptRouter);
 
 
 // Imagine routes

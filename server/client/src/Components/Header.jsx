@@ -13,6 +13,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
 import { db } from '../config/firebase';
 import { useAuth, useModal } from '../contexts/AuthContext';
+import { useCreateGeneration } from '../contexts/CreateGenerationContext';
 import { SUBSCRIPTION_PLANS, subscriptionService } from '../services/subscriptionService';
 import Logo from "./Logo";
 import SubscriptionModal from './SubscriptionModal';
@@ -23,6 +24,7 @@ const Header = () => {
   const { openModal } = useModal();
   const navigate = useNavigate();
   const location = useLocation();
+  const { state: generationState } = useCreateGeneration();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const dropdownRef = useRef(null);
@@ -149,6 +151,7 @@ const Header = () => {
       orange: 'bg-orange-500/20 text-orange-300 border-orange-500/30 shadow-orange-500/10',
       emerald: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 shadow-emerald-500/10',
       purple: 'bg-purple-500/20 text-purple-300 border-purple-500/30 shadow-purple-500/10',
+      violet: 'bg-violet-500/20 text-violet-300 border-violet-500/30 shadow-violet-500/10',
     };
 
     return (
@@ -213,17 +216,7 @@ const Header = () => {
                         </svg>
                       }
                     />
-                    <NavLink
-                      to="/3d-generate"
-                      label="3D Assets"
-                      isActive={isActivePath('/3d-generate')}
-                      activeColor="orange"
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                        </svg>
-                      }
-                    />
+                    
                     <NavLink
                       to="/explore"
                       label="Explore"
@@ -246,6 +239,17 @@ const Header = () => {
                         </svg>
                       }
                     />
+                    <NavLink
+                      to="/pricing"
+                      label="Pricing"
+                      isActive={isActivePath('/pricing')}
+                      activeColor="violet"
+                      icon={
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      }
+                    />
                   </div>
                 )}
               </div>
@@ -254,6 +258,35 @@ const Header = () => {
               <div className="hidden md:flex items-center gap-3">
                 {user ? (
                   <>
+                    {/* Persistent Generation Indicator - Show while generating */}
+                    {(generationState.isGenerating || generationState.isGenerating3DAsset) && (
+                      <Link
+                        to="/main"
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500/10 border border-sky-500/30 hover:bg-sky-500/20 transition-all duration-300 group"
+                      >
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-sky-300 font-medium">
+                            {generationState.isGenerating3DAsset ? 'Generating 3D Asset' : 'Generating Skybox'}
+                          </span>
+                          {(generationState.assetGenerationProgress || generationState.skyboxProgress > 0) && (
+                            <span className="text-[10px] text-sky-400">
+                              {generationState.assetGenerationProgress 
+                                ? `${Math.round(generationState.assetGenerationProgress.progress)}%`
+                                : `${Math.round(generationState.skyboxProgress)}%`}
+                            </span>
+                          )}
+                        </div>
+                        <svg className="w-4 h-4 text-sky-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    )}
+                    
                     {/* Usage Stats Pill */}
                     <div className="flex items-center gap-3 px-4 py-2 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a]">
                       <div className="flex flex-col items-end">
@@ -492,6 +525,17 @@ const Header = () => {
                         </svg>
                       }
                     />
+                    <NavLink
+                      to="/pricing"
+                      label="Pricing"
+                      isActive={isActivePath('/pricing')}
+                      activeColor="violet"
+                      icon={
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      }
+                    />
                     <Link
                       to="/login"
                       className="
@@ -545,6 +589,36 @@ const Header = () => {
               >
                 {user ? (
                   <>
+                    {/* Mobile Generation Indicator - Show while generating */}
+                    {(generationState.isGenerating || generationState.isGenerating3DAsset) && (
+                      <Link
+                        to="/main"
+                        className="flex items-center gap-3 px-4 py-3 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sm font-medium text-sky-300 hover:bg-sky-500/20 transition-all"
+                        onClick={() => setShowMobileMenu(false)}
+                      >
+                        <div className="flex gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <div className="flex flex-col flex-1">
+                          <span>
+                            {generationState.isGenerating3DAsset ? 'Generating 3D Asset' : 'Generating Skybox'}
+                          </span>
+                          {(generationState.assetGenerationProgress || generationState.skyboxProgress > 0) && (
+                            <span className="text-[10px] text-sky-400">
+                              {generationState.assetGenerationProgress 
+                                ? `${Math.round(generationState.assetGenerationProgress.progress)}%`
+                                : `${Math.round(generationState.skyboxProgress)}%`}
+                            </span>
+                          )}
+                        </div>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    )}
+                    
                     {/* Mobile Nav Links */}
                     <Link
                       to="/main"
@@ -599,7 +673,7 @@ const Header = () => {
 
                     <Link
                       to="/history"
-                      className={`
+                      className={` 
                         flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
                         ${isActivePath('/history') 
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
@@ -612,6 +686,23 @@ const Header = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       History
+                    </Link>
+
+                    <Link
+                      to="/pricing"
+                      className={` 
+                        flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
+                        ${isActivePath('/pricing') 
+                          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' 
+                          : 'text-gray-300 hover:bg-white/[0.05]'
+                        }
+                      `}
+                      onClick={() => setShowMobileMenu(false)}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Pricing
                     </Link>
 
                     {/* Mobile User Info */}
@@ -690,6 +781,16 @@ const Header = () => {
                       Blog
                     </Link>
                     <Link
+                      to="/pricing"
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-white/[0.05] transition-all"
+                      onClick={() => setShowMobileMenu(false)}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Pricing
+                    </Link>
+                    <Link
                       to="/login"
                       className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-sky-500 to-indigo-600 text-white text-sm font-semibold rounded-xl mt-2"
                       onClick={() => setShowMobileMenu(false)}
@@ -708,7 +809,7 @@ const Header = () => {
       </header>
 
       {/* Spacer for fixed header */}
-      <div className="h-20" />
+      <div className="" />
 
       {/* Modals */}
       <SubscriptionModal

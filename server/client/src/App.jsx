@@ -14,6 +14,10 @@ import Footer from './Components/Footer';
 import Header from './Components/Header';
 import MainSection from './Components/MainSection';
 import { AuthProvider } from './contexts/AuthContext';
+import { LoadingProvider, useLoading } from './contexts/LoadingContext';
+import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
+import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
+import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
 import History from './screens/History';
 import Landing from './screens/Landing';
@@ -21,6 +25,7 @@ import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
 import Careers from './screens/Careers';
 import Blog from './screens/Blog';
+import Pricing from './screens/Pricing';
 import PrivacyPolicy from './screens/PrivacyPolicy';
 import TermsConditions from './screens/TermsConditions';
 import ThreeDGenerate from './screens/MeshyGenerate';
@@ -42,9 +47,9 @@ const ConditionalFooter = () => {
   }
   
   return (
-    <footer className="relative z-50 backdrop-blur-md bg-gray-900/80 border-t border-gray-800">
+    <div className="relative z-50">
       <Footer />
-    </footer>
+    </div>
   );
 };
 
@@ -176,15 +181,34 @@ const BackgroundSphere = ({ textureUrl }) => {
   );
 };
 
+// Global Loading Indicator Component
+const GlobalLoadingIndicator = () => {
+  const { loadingState } = useLoading();
+  
+  return (
+    <BackgroundLoadingIndicator
+      isVisible={loadingState.isVisible}
+      type={loadingState.type}
+      progress={loadingState.progress}
+      message={loadingState.message}
+      stage={loadingState.stage}
+    />
+  );
+};
+
 // Component to conditionally render Canvas based on route
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
   const isLandingPage = location.pathname === '/';
+  const isMainPage = location.pathname === '/main';
   
   // Don't render global Canvas on Landing page since it has its own Canvas components
   if (isLandingPage) {
     return children;
   }
+  
+  // On /main page without a generated skybox, show transparent background for DottedSurface
+  const showDefaultBackground = !isMainPage || backgroundSkybox;
   
   // Use background skybox image if available, otherwise use default futuristic background
   const textureUrl = backgroundSkybox?.preview_url || backgroundSkybox?.image || 
@@ -192,26 +216,28 @@ const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   
   return (
     <div className="relative w-full min-h-screen bg-black">
-      {/* Three.js Background */}
-      <div className="fixed inset-0 w-full h-full">
-        <Canvas 
-          camera={{ position: [0, 0, 0.1], fov: 75 }}
-          onError={(error) => {
-            console.error('Three.js Canvas error:', error);
-          }}
-          onCreated={({ gl }) => {
-            gl.setClearColor('#000000');
-          }}
-        >
-          <BackgroundSphere textureUrl={textureUrl} />
-          <OrbitControls 
-            enableZoom={false} 
-            enablePan={false} 
-            autoRotate 
-            autoRotateSpeed={0.5} 
-          />
-        </Canvas>
-      </div>
+      {/* Three.js Background - Only show if not on /main without skybox */}
+      {showDefaultBackground && (
+        <div className="fixed inset-0 w-full h-full z-0">
+          <Canvas 
+            camera={{ position: [0, 0, 0.1], fov: 75 }}
+            onError={(error) => {
+              console.error('Three.js Canvas error:', error);
+            }}
+            onCreated={({ gl }) => {
+              gl.setClearColor('#000000');
+            }}
+          >
+            <BackgroundSphere textureUrl={textureUrl} />
+            <OrbitControls 
+              enableZoom={false} 
+              enablePan={false} 
+              autoRotate 
+              autoRotateSpeed={0.5} 
+            />
+          </Canvas>
+        </div>
+      )}
       {children}
     </div>
   );
@@ -260,8 +286,11 @@ function App() {
     if (threeJsError) {
       return (
         <AuthProvider>
-          <Router>
-            <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
+          <AssetGenerationProvider>
+            <CreateGenerationProvider>
+              <LoadingProvider>
+                <Router>
+              <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
                 {/* Header - fixed height */}
@@ -270,7 +299,7 @@ function App() {
                 </div>
 
                 {/* Main content - scrollable */}
-                <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
+                <main className="">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -282,6 +311,7 @@ function App() {
                       <Route path="/" element={<Landing />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
+                      <Route path="/pricing" element={<Pricing />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/3d-generate" element={
@@ -411,31 +441,39 @@ function App() {
                 <ConditionalFooter />
               </div>
             </div>
+            <ToastContainer
+              position="top-right"
+              autoClose={3000}
+              hideProgressBar={false}
+              newestOnTop
+              closeOnClick
+              rtl={false}
+              pauseOnFocusLoss
+              draggable
+              pauseOnHover
+            />
+            {/* Global Background Loading Indicator */}
+            <GlobalLoadingIndicator />
           </Router>
-          <ToastContainer
-            position="top-right"
-            autoClose={3000}
-            hideProgressBar={false}
-            newestOnTop
-            closeOnClick
-            rtl={false}
-            pauseOnFocusLoss
-            draggable
-            pauseOnHover
-          />
-        </AuthProvider>
+        </LoadingProvider>
+            </CreateGenerationProvider>
+          </AssetGenerationProvider>
+      </AuthProvider>
       );
     }
 
     return (
       <ErrorBoundary>
         <AuthProvider>
-          <Router>
-            <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
+          <AssetGenerationProvider>
+            <CreateGenerationProvider>
+              <LoadingProvider>
+                <Router>
+              <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer */}
               {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
               {backgroundSkybox && (
-                <div className="fixed inset-0 w-full h-full">
+                <div className="fixed inset-0 w-full h-full z-[1]">
                   <SkyboxFullScreen 
                     key={key}
                     isBackground={true} 
@@ -447,12 +485,10 @@ function App() {
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
                 {/* Header - fixed height */}
-                <div className="sticky top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
                   <Header />
-                </div>
 
                 {/* Main content - scrollable */}
-                <main className="flex-grow w-full mx-auto max-w-[1920px] px-4 sm:px-6 lg:px-8">
+                <main className="">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -464,6 +500,7 @@ function App() {
                       <Route path="/" element={<Landing />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
+                      <Route path="/pricing" element={<Pricing />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/3d-generate" element={
@@ -602,9 +639,14 @@ function App() {
               draggable
               pauseOnHover
             />
+            {/* Global Background Loading Indicator */}
+            <GlobalLoadingIndicator />
           </Router>
-        </AuthProvider>
-      </ErrorBoundary>
+        </LoadingProvider>
+            </CreateGenerationProvider>
+          </AssetGenerationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
     );
   } catch (err) {
     console.error('Error during App render:', err);

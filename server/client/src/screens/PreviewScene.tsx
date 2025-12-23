@@ -49,42 +49,11 @@ class ModelLoader {
   }
 
   async loadModel(url: string): Promise<any> {
-    const strategies = [
-      // Strategy 1: Use proxy URL (primary method to avoid CORS)
-      async () => {
-        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
-        console.log('🔄 Loading via proxy:', proxyUrl);
-        return this.loadGLTF(proxyUrl);
-      },
-      
-      // Strategy 2: Direct URL (fallback if proxy fails)
-      async () => {
-        console.log('🔄 Loading direct URL:', url);
-        return this.loadGLTF(url);
-      },
-      
-      // Strategy 3: Local development server proxy
-      async () => {
-        const localProxy = `http://localhost:5002/proxy-asset?url=${encodeURIComponent(url)}`;
-        console.log('🔄 Loading via local proxy:', localProxy);
-        return this.loadGLTF(localProxy);
-      }
-    ];
-
-    let lastError: Error | null = null;
-
-    for (const strategy of strategies) {
-      try {
-        const result = await strategy();
-        console.log('✅ Model loaded successfully');
-        return result;
-      } catch (error) {
-        console.warn('⚠️ Strategy failed:', error);
-        lastError = error instanceof Error ? error : new Error('Unknown error');
-      }
-    }
-
-    throw lastError || new Error('All loading strategies failed');
+    // Always use proxy URL to avoid CORS issues
+    // Direct URL will always fail due to CORS policy
+    const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+    console.log('🔄 Loading via proxy:', proxyUrl);
+    return this.loadGLTF(proxyUrl);
   }
 
   private loadGLTF(url: string): Promise<any> {
@@ -245,54 +214,30 @@ const SkyboxEnvironment: React.FC<{
       try {
         const loader = new THREE.TextureLoader();
         
-        // Try different loading strategies for skybox textures
-        const strategies = [
-          // Strategy 1: Direct loading (skyboxes usually work fine)
-          () => skyboxUrl,
-          // Strategy 2: Proxy if direct fails
-          () => `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`,
-          // Strategy 3: Local proxy
-          () => `http://localhost:5002/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`
-        ];
+        // Use proxy URL to avoid CORS issues
+        // Skyboxes from external sources may also have CORS restrictions
+        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
+        console.log('🔄 Loading skybox texture via proxy:', proxyUrl);
+        
+        const loadedTexture = await new Promise<THREE.Texture>((resolve, reject) => {
+          loader.load(
+            proxyUrl,
+            (texture) => {
+              // Configure texture
+              texture.mapping = THREE.EquirectangularReflectionMapping;
+              texture.minFilter = THREE.LinearFilter;
+              texture.magFilter = THREE.LinearFilter;
+              texture.generateMipmaps = false;
+              resolve(texture);
+            },
+            undefined,
+            (error) => reject(error)
+          );
+        });
 
-        let loadedTexture: THREE.Texture | null = null;
-        let lastError: Error | null = null;
-
-        for (const strategy of strategies) {
-          try {
-            const url = strategy();
-            console.log('🔄 Loading skybox texture via:', url);
-            
-            loadedTexture = await new Promise<THREE.Texture>((resolve, reject) => {
-              loader.load(
-                url,
-                (texture) => {
-                  // Configure texture
-                  texture.mapping = THREE.EquirectangularReflectionMapping;
-                  texture.minFilter = THREE.LinearFilter;
-                  texture.magFilter = THREE.LinearFilter;
-                  texture.generateMipmaps = false;
-                  resolve(texture);
-                },
-                undefined,
-                (error) => reject(error)
-              );
-            });
-
-            console.log('✅ Skybox texture loaded successfully');
-            break;
-          } catch (error) {
-            console.warn('⚠️ Skybox loading strategy failed:', error);
-            lastError = error instanceof Error ? error : new Error('Unknown error');
-          }
-        }
-
-        if (loadedTexture) {
-          setTexture(loadedTexture);
-          onLoad?.();
-        } else {
-          throw lastError || new Error('All skybox loading strategies failed');
-        }
+        console.log('✅ Skybox texture loaded successfully');
+        setTexture(loadedTexture);
+        onLoad?.();
       } catch (error) {
         console.error('Failed to load skybox texture:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

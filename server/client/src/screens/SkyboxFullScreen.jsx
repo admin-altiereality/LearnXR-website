@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { getApiBaseUrl } from "../utils/apiConfig";
 
-// API URL for backend calls
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5002';
+// API URL for backend calls - use production Firebase Functions
+const apiUrl = getApiBaseUrl();
 
 // Default skybox data for when no image is available
 const DEFAULT_SKYBOX = {
