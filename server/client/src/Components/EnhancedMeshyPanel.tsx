@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { meshyApiService, type MeshyGenerationRequest, type MeshyStyle } from '../services/meshyApiService';
 import { Meshy3DViewer, MeshyAssetCard } from './Meshy3DViewer';
 import { useAuth } from '../contexts/AuthContext';
+import { backgroundGenerationService } from '../services/backgroundGenerationService';
+import { useLoading } from '../contexts/LoadingContext';
 
 interface EnhancedMeshyPanelProps {
   onAssetGenerated?: (asset: any) => void;
@@ -25,33 +27,471 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
   className = ''
 }) => {
   const { user } = useAuth();
-  const [prompt, setPrompt] = useState('');
-  const [negativePrompt, setNegativePrompt] = useState('');
-  const [selectedArtStyle, setSelectedArtStyle] = useState<'realistic' | 'sculpture'>('realistic');
-  const [selectedAiModel, setSelectedAiModel] = useState<'meshy-4' | 'meshy-5'>('meshy-4');
-  const [selectedTopology, setSelectedTopology] = useState<'quad' | 'triangle'>('triangle');
-  const [targetPolycount, setTargetPolycount] = useState(30000);
-  const [shouldRemesh, setShouldRemesh] = useState(true);
-  const [symmetryMode, setSymmetryMode] = useState<'off' | 'auto' | 'on'>('auto');
-  const [moderation, setModeration] = useState(false);
-  const [seed, setSeed] = useState<number | undefined>(undefined);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [progress, setProgress] = useState<GenerationProgress>({
+  const { showLoading, hideLoading, updateProgress: updateGlobalProgress } = useLoading();
+  
+  // Helper to get localStorage key
+  const getStorageKey = useCallback(() => {
+    return user?.uid ? `meshy_ui_state_${user.uid}` : null;
+  }, [user?.uid]);
+
+  // Initialize state from localStorage using lazy initializers
+  // This function is called once during component initialization
+  const getInitialStateFromStorage = (): any => {
+    // Try to get user ID from auth context or from any stored state
+    // We'll check all possible user IDs in localStorage as a fallback
+    if (!user?.uid) {
+      // Try to find any meshy_ui_state_* key as fallback
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('meshy_ui_state_')) {
+            const stored = localStorage.getItem(key);
+            if (stored) {
+              const uiState = JSON.parse(stored);
+              const oneHourAgo = Date.now() - 60 * 60 * 1000;
+              if (uiState.timestamp && uiState.timestamp >= oneHourAgo) {
+                return uiState;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        // Ignore errors during fallback search
+      }
+      return null;
+    }
+    
+    const key = `meshy_ui_state_${user.uid}`;
+    
+    try {
+      const stored = localStorage.getItem(key);
+      if (!stored) return null;
+      
+      const uiState = JSON.parse(stored);
+      
+      // Only restore if stored state is recent (within last hour)
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      if (uiState.timestamp && uiState.timestamp < oneHourAgo) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      
+      return uiState;
+    } catch (error) {
+      console.error('Failed to read from localStorage:', error);
+      return null;
+    }
+  };
+
+  // Get cached state once (lazy initialization)
+  const cachedStateRef = useRef<any>(null);
+  if (cachedStateRef.current === null) {
+    cachedStateRef.current = getInitialStateFromStorage();
+  }
+  const cachedState = cachedStateRef.current;
+
+  // Initialize state with localStorage values (lazy initialization - only called once on mount)
+  const [prompt, setPrompt] = useState(cachedState?.prompt || '');
+  const [negativePrompt, setNegativePrompt] = useState(cachedState?.negativePrompt || '');
+  const [selectedArtStyle, setSelectedArtStyle] = useState<'realistic' | 'sculpture'>(cachedState?.selectedArtStyle || 'realistic');
+  const [selectedAiModel, setSelectedAiModel] = useState<'meshy-4' | 'meshy-5'>(cachedState?.selectedAiModel || 'meshy-4');
+  const [selectedTopology, setSelectedTopology] = useState<'quad' | 'triangle'>(cachedState?.selectedTopology || 'triangle');
+  const [targetPolycount, setTargetPolycount] = useState(cachedState?.targetPolycount ?? 30000);
+  const [shouldRemesh, setShouldRemesh] = useState(cachedState?.shouldRemesh ?? true);
+  const [symmetryMode, setSymmetryMode] = useState<'off' | 'auto' | 'on'>(cachedState?.symmetryMode || 'auto');
+  const [moderation, setModeration] = useState(cachedState?.moderation ?? false);
+  const [seed, setSeed] = useState<number | undefined>(cachedState?.seed);
+  const [isGenerating, setIsGenerating] = useState(cachedState?.isGenerating ?? false);
+  const [progress, setProgress] = useState<GenerationProgress>(cachedState?.progress || {
     stage: 'idle',
     progress: 0,
     message: 'Ready to generate'
   });
-  const [generatedAssets, setGeneratedAssets] = useState<any[]>([]);
+  const [generatedAssets, setGeneratedAssets] = useState<any[]>(cachedState?.generatedAssets || []);
   const [availableStyles, setAvailableStyles] = useState<MeshyStyle[]>([]);
   const [usage, setUsage] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  
+  const [isRestoring, setIsRestoring] = useState(!cachedState);
+  const currentTaskIdRef = useRef<string | null>(null);
+  const hasRestoredRef = useRef(false);
+  const restorationInProgressRef = useRef(false);
+  const skipNextSaveRef = useRef(false); // Skip saving during restoration
+
+  // Save UI state to localStorage whenever it changes (but skip during restoration)
+  const saveUIStateToStorage = useCallback(() => {
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    
+    const key = getStorageKey();
+    if (!key || !hasRestoredRef.current) return; // Don't save until initial restoration is done
+    
+    const uiState = {
+      prompt,
+      negativePrompt,
+      selectedArtStyle,
+      selectedAiModel,
+      selectedTopology,
+      targetPolycount,
+      shouldRemesh,
+      symmetryMode,
+      moderation,
+      seed,
+      isGenerating,
+      progress,
+      generatedAssets,
+      timestamp: Date.now()
+    };
+    
+    try {
+      localStorage.setItem(key, JSON.stringify(uiState));
+      console.log('💾 Saved UI state to localStorage');
+    } catch (error) {
+      console.error('Failed to save UI state to localStorage:', error);
+    }
+  }, [
+    getStorageKey,
+    prompt,
+    negativePrompt,
+    selectedArtStyle,
+    selectedAiModel,
+    selectedTopology,
+    targetPolycount,
+    shouldRemesh,
+    symmetryMode,
+    moderation,
+    seed,
+    isGenerating,
+    progress,
+    generatedAssets
+  ]);
+
+  // Debounced save to localStorage - saves after 500ms of no changes
+  // This prevents excessive localStorage writes while ensuring state is saved during generation
+  const debouncedSaveRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    if (!hasRestoredRef.current) return; // Don't save until initial restoration is done
+    
+    // Clear previous timeout
+    if (debouncedSaveRef.current) {
+      clearTimeout(debouncedSaveRef.current);
+    }
+    
+    // Save after 500ms of no changes
+    debouncedSaveRef.current = setTimeout(() => {
+      saveUIStateToStorage();
+    }, 500);
+    
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      if (debouncedSaveRef.current) {
+        clearTimeout(debouncedSaveRef.current);
+      }
+    };
+  }, [
+    prompt,
+    negativePrompt,
+    selectedArtStyle,
+    selectedAiModel,
+    selectedTopology,
+    targetPolycount,
+    shouldRemesh,
+    symmetryMode,
+    moderation,
+    seed,
+    isGenerating,
+    progress.stage,
+    progress.progress,
+    progress.message,
+    progress.taskId,
+    generatedAssets.length, // Watch length to detect changes
+    hasRestoredRef.current
+  ]);
+
+  // Re-read localStorage when user changes
+  useEffect(() => {
+    if (user?.uid && cachedStateRef.current === null) {
+      const newCachedState = getInitialStateFromStorage();
+      if (newCachedState) {
+        cachedStateRef.current = newCachedState;
+        // Update state from cached values
+        if (newCachedState.prompt) setPrompt(newCachedState.prompt);
+        if (newCachedState.negativePrompt !== undefined) setNegativePrompt(newCachedState.negativePrompt);
+        if (newCachedState.selectedArtStyle) setSelectedArtStyle(newCachedState.selectedArtStyle);
+        if (newCachedState.selectedAiModel) setSelectedAiModel(newCachedState.selectedAiModel);
+        if (newCachedState.selectedTopology) setSelectedTopology(newCachedState.selectedTopology);
+        if (newCachedState.targetPolycount !== undefined) setTargetPolycount(newCachedState.targetPolycount);
+        if (newCachedState.shouldRemesh !== undefined) setShouldRemesh(newCachedState.shouldRemesh);
+        if (newCachedState.symmetryMode) setSymmetryMode(newCachedState.symmetryMode);
+        if (newCachedState.moderation !== undefined) setModeration(newCachedState.moderation);
+        if (newCachedState.seed !== undefined) setSeed(newCachedState.seed);
+        if (newCachedState.isGenerating !== undefined) setIsGenerating(newCachedState.isGenerating);
+        if (newCachedState.progress) setProgress(newCachedState.progress);
+        if (newCachedState.generatedAssets) setGeneratedAssets(newCachedState.generatedAssets);
+        setIsRestoring(false);
+      }
+    }
+  }, [user?.uid]);
 
   // Load available styles and usage on component mount
   useEffect(() => {
     loadStyles();
     loadUsage();
+    
+    // If we restored from localStorage, mark as restored and skip saving during Firestore restoration
+    if (cachedState) {
+      console.log('✅ Instant UI restoration from localStorage complete');
+      skipNextSaveRef.current = true; // Skip saving during Firestore restoration
+    }
+    
+    // Restore active generation from Firestore (asynchronous, updates if different)
+    if (!hasRestoredRef.current && !restorationInProgressRef.current) {
+      hasRestoredRef.current = true;
+      restorationInProgressRef.current = true;
+      restoreActiveGeneration().finally(() => {
+        restorationInProgressRef.current = false;
+        // After Firestore restoration, allow saving again
+        skipNextSaveRef.current = false;
+      });
+    }
+    
+    // Cleanup on unmount
+    // Note: We only unregister the callback - polling continues in the background
+    return () => {
+      if (currentTaskIdRef.current) {
+        // Unregister callback but DON'T stop polling
+        // Polling continues independently and updates Firestore
+        backgroundGenerationService.unregisterProgressCallback(currentTaskIdRef.current);
+        console.log(`📝 Component unmounting, unregistered callback for ${currentTaskIdRef.current}, but polling continues`);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Restore active generation if one exists
+  const restoreActiveGeneration = useCallback(async () => {
+    if (!user?.uid) {
+      setIsRestoring(false);
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting UI restoration for user:', user.uid);
+      setIsRestoring(true);
+      
+      // Initialize service for user (fetches active jobs from Firestore)
+      await backgroundGenerationService.initializeForUser(user.uid);
+      
+      // Get ALL tasks for this user (including recently completed)
+      const allTasks = backgroundGenerationService.getAllTasks();
+      const meshyTasks = allTasks
+        .filter(task => task.type === 'meshy' && task.userId === user.uid)
+        .sort((a, b) => b.startedAt - a.startedAt); // Most recent first
+      
+      console.log(`📊 Found ${meshyTasks.length} Meshy tasks for user`);
+      
+      if (meshyTasks.length > 0) {
+        const latestTask = meshyTasks[meshyTasks.length - 1];
+        console.log('✅ Restoring task:', latestTask.id, 'Status:', latestTask.status, 'Progress:', latestTask.progress);
+        
+        currentTaskIdRef.current = latestTask.id;
+        
+        // FIRST: Restore UI state BEFORE setting generating state
+        // This ensures the form fields are populated before the UI renders
+        if (latestTask.uiState) {
+          console.log('📝 Restoring UI state:', latestTask.uiState);
+          setPrompt(latestTask.uiState.prompt || latestTask.prompt);
+          setNegativePrompt(latestTask.uiState.negativePrompt || '');
+          if (latestTask.uiState.artStyle) setSelectedArtStyle(latestTask.uiState.artStyle as 'realistic' | 'sculpture');
+          if (latestTask.uiState.aiModel) setSelectedAiModel(latestTask.uiState.aiModel as 'meshy-4' | 'meshy-5');
+          if (latestTask.uiState.topology) setSelectedTopology(latestTask.uiState.topology as 'quad' | 'triangle');
+          if (latestTask.uiState.targetPolycount) setTargetPolycount(latestTask.uiState.targetPolycount);
+          if (latestTask.uiState.shouldRemesh !== undefined) setShouldRemesh(latestTask.uiState.shouldRemesh);
+          if (latestTask.uiState.symmetryMode) setSymmetryMode(latestTask.uiState.symmetryMode as 'off' | 'auto' | 'on');
+          if (latestTask.uiState.moderation !== undefined) setModeration(latestTask.uiState.moderation);
+          if (latestTask.uiState.seed !== undefined) setSeed(latestTask.uiState.seed);
+        } else {
+          // Fallback: restore prompt at least
+          console.log('⚠️ No UI state found, using prompt only');
+          setPrompt(latestTask.prompt);
+        }
+        
+        // THEN: Set generating state and progress
+        setIsGenerating(latestTask.status !== 'completed' && latestTask.status !== 'failed');
+        setProgress({
+          stage: latestTask.status === 'polling' ? 'polling' : 
+                 latestTask.status === 'completed' ? 'completed' :
+                 latestTask.status === 'failed' ? 'failed' : 'generating',
+          progress: latestTask.progress,
+          message: latestTask.message,
+          taskId: latestTask.taskId
+        });
+        
+        // Restore generated assets if task is completed
+        if (latestTask.status === 'completed' && latestTask.result) {
+          console.log('✅ Task already completed, restoring assets and UI');
+          if (!Array.isArray(latestTask.result)) {
+            // Single asset - ensure it has proper metadata
+            const assetWithMetadata = {
+              ...latestTask.result,
+              metadata: {
+                ...latestTask.result.metadata,
+                category: 'custom',
+                confidence: 1,
+                originalPrompt: latestTask.prompt,
+                userId: user.uid,
+                generationTime: latestTask.completedAt || Date.now(),
+                cost: estimateCost(),
+                art_style: latestTask.metadata?.artStyle || latestTask.uiState?.artStyle,
+                ai_model: latestTask.metadata?.aiModel || latestTask.uiState?.aiModel,
+                topology: latestTask.metadata?.topology || latestTask.uiState?.topology,
+                target_polycount: latestTask.metadata?.targetPolycount || latestTask.uiState?.targetPolycount
+              }
+            };
+            setGeneratedAssets([assetWithMetadata]);
+            onAssetGenerated?.(assetWithMetadata);
+            console.log('✅ Restored completed asset:', assetWithMetadata.id);
+          } else {
+            // Multiple assets
+            setGeneratedAssets(latestTask.result);
+            console.log(`✅ Restored ${latestTask.result.length} completed assets`);
+          }
+          setIsGenerating(false);
+          setProgress({
+            stage: 'completed',
+            progress: 100,
+            message: 'Generation completed successfully!',
+            taskId: latestTask.taskId
+          });
+          hideLoading();
+        } else if (latestTask.status === 'failed') {
+          setError(latestTask.error || 'Generation failed');
+          setIsGenerating(false);
+          hideLoading();
+        } else {
+          // Task is still in progress - show loading
+          showLoading({
+            type: '3d-asset',
+            progress: latestTask.progress,
+            message: latestTask.message,
+            stage: latestTask.stage || latestTask.status
+          });
+        }
+        
+        // Register callback to receive updates
+        backgroundGenerationService.registerProgressCallback(latestTask.id, (progressUpdate) => {
+          console.log('📊 Progress update:', progressUpdate);
+          setProgress({
+            stage: progressUpdate.stage as any,
+            progress: progressUpdate.progress,
+            message: progressUpdate.message,
+            taskId: progressUpdate.taskId
+          });
+          
+          // Immediately save progress to localStorage (bypass debounce for critical updates)
+          if (hasRestoredRef.current) {
+            const key = getStorageKey();
+            if (key) {
+              try {
+                const currentState = {
+                  prompt,
+                  negativePrompt,
+                  selectedArtStyle,
+                  selectedAiModel,
+                  selectedTopology,
+                  targetPolycount,
+                  shouldRemesh,
+                  symmetryMode,
+                  moderation,
+                  seed,
+                  isGenerating: latestTask.status !== 'completed' && latestTask.status !== 'failed',
+                  progress: {
+                    stage: progressUpdate.stage as any,
+                    progress: progressUpdate.progress,
+                    message: progressUpdate.message,
+                    taskId: progressUpdate.taskId
+                  },
+                  generatedAssets,
+                  timestamp: Date.now()
+                };
+                localStorage.setItem(key, JSON.stringify(currentState));
+                console.log('💾 Saved progress update to localStorage (restoration)');
+              } catch (error) {
+                console.error('Failed to save progress to localStorage:', error);
+              }
+            }
+          }
+          
+          updateGlobalProgress(progressUpdate.progress, progressUpdate.message, progressUpdate.stage);
+          
+          // Update global loading indicator
+          if (progressUpdate.progress < 100) {
+            showLoading({
+              type: '3d-asset',
+              progress: progressUpdate.progress,
+              message: progressUpdate.message,
+              stage: progressUpdate.stage
+            });
+          } else {
+            hideLoading();
+            // Check if task completed
+            const task = backgroundGenerationService.getTask(latestTask.id);
+            if (task && task.status === 'completed' && task.result) {
+              handleTaskCompleted(task);
+            }
+          }
+        });
+      } else {
+        console.log('ℹ️ No active tasks found');
+      }
+    } catch (error) {
+      console.error('❌ Failed to restore active generation:', error);
+      setError('Failed to restore generation state');
+    } finally {
+      setIsRestoring(false);
+      restorationInProgressRef.current = false;
+      console.log('✅ UI restoration complete');
+    }
+  }, [user?.uid, showLoading, hideLoading, updateGlobalProgress, onAssetGenerated, estimateCost]);
+
+  const handleTaskCompleted = useCallback((task: any) => {
+    setIsGenerating(false);
+    setProgress({
+      stage: 'completed',
+      progress: 100,
+      message: 'Generation completed successfully!'
+    });
+    hideLoading();
+    
+    if (task.result && !Array.isArray(task.result)) {
+      const assetWithMetadata = {
+        ...task.result,
+        metadata: {
+          ...task.result.metadata,
+          category: 'custom',
+          confidence: 1,
+          originalPrompt: task.prompt,
+          userId: user?.uid,
+          generationTime: task.completedAt || Date.now(),
+          cost: estimateCost(),
+          art_style: task.metadata?.artStyle,
+          ai_model: task.metadata?.aiModel,
+          topology: task.metadata?.topology,
+          target_polycount: task.metadata?.targetPolycount
+        }
+      };
+      
+      setGeneratedAssets(prev => [assetWithMetadata, ...prev]);
+      onAssetGenerated?.(assetWithMetadata);
+    }
+    
+    currentTaskIdRef.current = null;
+    loadUsage();
+  }, [user, onAssetGenerated, hideLoading]);
 
   const loadStyles = async () => {
     try {
@@ -111,7 +551,30 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
       progress: 0,
       message: 'Initiating generation...'
     });
+    
+    // Save UI state immediately when generation starts
+    const uiState = {
+      prompt,
+      negativePrompt,
+      artStyle: selectedArtStyle,
+      aiModel: selectedAiModel,
+      topology: selectedTopology,
+      targetPolycount,
+      shouldRemesh,
+      symmetryMode,
+      moderation,
+      seed
+    };
+    
     onGenerationStart?.(); // Call the new prop
+
+    // Show global loading indicator
+    showLoading({
+      type: '3d-asset',
+      progress: 0,
+      message: 'Initiating generation...',
+      stage: 'generating'
+    });
 
     try {
       const request: MeshyGenerationRequest = {
@@ -133,55 +596,95 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
         throw new Error(`Invalid request: ${validation.errors.join(', ')}`);
       }
 
-      setProgress({
-        stage: 'generating',
-        progress: 10,
-        message: 'Creating generation request...'
-      });
-
-      // Generate asset
-      const generation = await meshyApiService.generateAsset(request);
-
-      setProgress({
-        stage: 'polling',
-        progress: 20,
-        message: 'Generation started, polling for completion...',
-        taskId: generation.result,
-        estimatedTime: estimateTime()
-      });
-
-      // Poll for completion
-      const completedAsset = await meshyApiService.pollForCompletion(generation.result);
-
-      setProgress({
-        stage: 'completed',
-        progress: 100,
-        message: 'Generation completed successfully!'
-      });
-
-      // Add to generated assets
-      const assetWithMetadata = {
-        ...completedAsset,
-        metadata: {
-          ...completedAsset.metadata,
-          category: 'custom',
-          confidence: 1,
-          originalPrompt: prompt,
-          userId: user.uid,
-          generationTime: Date.now(),
-          cost: estimateCost(),
-          art_style: selectedArtStyle,
-          ai_model: selectedAiModel,
-          topology: selectedTopology,
-          target_polycount: targetPolycount
-        }
+      // Save UI state
+      const uiState = {
+        prompt: prompt.trim(),
+        negativePrompt: negativePrompt.trim(),
+        artStyle: selectedArtStyle,
+        aiModel: selectedAiModel,
+        topology: selectedTopology,
+        targetPolycount: targetPolycount,
+        shouldRemesh: shouldRemesh,
+        symmetryMode: symmetryMode,
+        moderation: moderation,
+        seed: seed
       };
 
-      setGeneratedAssets(prev => [assetWithMetadata, ...prev]);
-      onAssetGenerated?.(assetWithMetadata);
+      // Start background generation with UI state
+      const taskId = await backgroundGenerationService.startMeshyGeneration(
+        user.uid,
+        request,
+        uiState,
+        (progressUpdate) => {
+          setProgress({
+            stage: progressUpdate.stage as any,
+            progress: progressUpdate.progress,
+            message: progressUpdate.message,
+            taskId: progressUpdate.taskId
+          });
+          
+          // Immediately save progress to localStorage (bypass debounce for critical updates)
+          if (hasRestoredRef.current) {
+            const key = getStorageKey();
+            if (key) {
+              try {
+                const currentState = {
+                  prompt,
+                  negativePrompt,
+                  selectedArtStyle,
+                  selectedAiModel,
+                  selectedTopology,
+                  targetPolycount,
+                  shouldRemesh,
+                  symmetryMode,
+                  moderation,
+                  seed,
+                  isGenerating: true,
+                  progress: {
+                    stage: progressUpdate.stage as any,
+                    progress: progressUpdate.progress,
+                    message: progressUpdate.message,
+                    taskId: progressUpdate.taskId
+                  },
+                  generatedAssets,
+                  timestamp: Date.now()
+                };
+                localStorage.setItem(key, JSON.stringify(currentState));
+                console.log('💾 Saved progress update to localStorage');
+              } catch (error) {
+                console.error('Failed to save progress to localStorage:', error);
+              }
+            }
+          }
+          
+          updateGlobalProgress(progressUpdate.progress, progressUpdate.message, progressUpdate.stage);
+          
+          // Update global loading indicator
+          showLoading({
+            type: '3d-asset',
+            progress: progressUpdate.progress,
+            message: progressUpdate.message,
+            stage: progressUpdate.stage
+          });
+        }
+      );
 
-      // Reload usage
-      await loadUsage();
+      currentTaskIdRef.current = taskId;
+
+      // Register callback to handle completion - will be called by the service
+      backgroundGenerationService.registerProgressCallback(taskId, (progressUpdate) => {
+        // Progress updates are already handled above
+        // Check for completion
+        if (progressUpdate.progress >= 100 || progressUpdate.stage === 'completed') {
+          // Small delay to ensure task is updated
+          setTimeout(() => {
+            const task = backgroundGenerationService.getTask(taskId);
+            if (task && task.status === 'completed') {
+              handleTaskCompleted(task);
+            }
+          }, 500);
+        }
+      });
 
     } catch (error) {
       console.error('Generation failed:', error);
@@ -206,7 +709,7 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
         progress: 0,
         message: errorMessage
       });
-    } finally {
+      hideLoading();
       setIsGenerating(false);
     }
   };
@@ -247,6 +750,20 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
     // This could open a modal or navigate to a full-screen viewer
     console.log('View asset:', assetId);
   };
+
+  // Show loading state while restoring
+  if (isRestoring) {
+    return (
+      <div className={`bg-black/20 backdrop-blur-sm rounded-lg border border-gray-700/50 p-2 sm:p-3 lg:p-4 w-full ${className}`}>
+        <div className="flex items-center justify-center py-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-400">Restoring generation state...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`bg-black/20 backdrop-blur-sm rounded-lg border border-gray-700/50 p-2 sm:p-3 lg:p-4 w-full ${className}`}>
@@ -297,9 +814,10 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="e.g., A futuristic spaceship with glowing engines and metallic wings"
-            className="w-full px-2 py-1.5 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-xs sm:text-sm"
+            className="w-full px-2 py-1.5 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-xs sm:text-sm disabled:opacity-60 disabled:cursor-not-allowed"
             rows={2}
             maxLength={600}
+            disabled={isGenerating}
           />
           <div className="flex justify-between text-xs text-gray-400 mt-1">
             <span>{prompt.length}/600</span>
@@ -317,8 +835,9 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
             value={negativePrompt}
             onChange={(e) => setNegativePrompt(e.target.value)}
             placeholder="e.g., blurry, low quality, distorted"
-            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
             maxLength={1000}
+            disabled={isGenerating}
           />
         </div>
 
@@ -466,22 +985,65 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
           </div>
         )}
 
-        {/* Progress Display */}
-        {isGenerating && (
-          <div className="p-2 sm:p-3 lg:p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg">
+        {/* Progress Display - Always visible when generating, completed, or when progress exists */}
+        {(isGenerating || progress.stage === 'completed' || (progress.stage !== 'idle' && progress.progress > 0)) && (
+          <div className={`p-2 sm:p-3 lg:p-4 rounded-lg mb-2 sm:mb-3 border ${
+            progress.stage === 'completed' 
+              ? 'bg-emerald-900/20 border-emerald-700/30' 
+              : progress.stage === 'failed'
+              ? 'bg-red-900/20 border-red-700/30'
+              : 'bg-blue-900/20 border-blue-700/30'
+          }`}>
             <div className="flex items-center justify-between mb-1 sm:mb-2">
-              <span className="text-blue-300 text-xs sm:text-sm">{progress.message}</span>
-              <span className="text-white text-xs sm:text-sm">{progress.progress}%</span>
+              <span className={`text-xs sm:text-sm font-medium ${
+                progress.stage === 'completed' 
+                  ? 'text-emerald-300' 
+                  : progress.stage === 'failed'
+                  ? 'text-red-300'
+                  : 'text-blue-300'
+              }`}>
+                {progress.message}
+              </span>
+              {progress.progress > 0 && (
+                <span className={`text-xs sm:text-sm font-semibold ${
+                  progress.stage === 'completed' 
+                    ? 'text-emerald-400' 
+                    : progress.stage === 'failed'
+                    ? 'text-red-400'
+                    : 'text-blue-400'
+                }`}>
+                  {Math.round(progress.progress)}%
+                </span>
+              )}
             </div>
             <div className="w-full bg-gray-700 rounded-full h-1.5 sm:h-2">
               <div 
-                className="bg-blue-500 h-1.5 sm:h-2 rounded-full transition-all duration-300"
-                style={{ width: `${progress.progress}%` }}
+                className={`h-1.5 sm:h-2 rounded-full transition-all duration-300 ${
+                  progress.stage === 'completed' 
+                    ? 'bg-gradient-to-r from-emerald-500 to-green-500' 
+                    : progress.stage === 'failed'
+                    ? 'bg-gradient-to-r from-red-500 to-red-600'
+                    : 'bg-gradient-to-r from-blue-500 to-purple-500'
+                }`}
+                style={{ width: `${Math.min(progress.progress, 100)}%` }}
               ></div>
             </div>
-            {progress.estimatedTime && (
+            {progress.estimatedTime && progress.stage !== 'completed' && (
               <div className="text-xs text-gray-400 mt-1">
                 ~{Math.ceil(progress.estimatedTime / 60)} minutes remaining
+              </div>
+            )}
+            {progress.stage && progress.stage !== 'idle' && (
+              <div className={`text-xs mt-1 capitalize ${
+                progress.stage === 'completed' 
+                  ? 'text-emerald-400' 
+                  : progress.stage === 'failed'
+                  ? 'text-red-400'
+                  : 'text-blue-400'
+              }`}>
+                {progress.stage === 'completed' ? '✅ Completed' : 
+                 progress.stage === 'failed' ? '❌ Failed' :
+                 `Stage: ${progress.stage}`}
               </div>
             )}
           </div>

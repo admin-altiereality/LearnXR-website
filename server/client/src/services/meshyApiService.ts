@@ -85,6 +85,13 @@ export interface MeshyAsset {
     art_style?: string;
     seed?: number;
     texture_prompt?: string;
+    model_urls?: {
+      glb?: string;
+      fbx?: string;
+      usdz?: string;
+      obj?: string;
+      mtl?: string;
+    };
   };
 }
 
@@ -274,14 +281,28 @@ export class MeshyApiService {
 
       const data = await response.json();
       console.log('📥 Meshy API response:', data);
+      console.log('📥 Meshy API response (stringified):', JSON.stringify(data, null, 2));
       
-      if (!data.result) {
-        console.error('❌ No task ID in response:', data);
-        throw new Error('Invalid response from Meshy API: No task ID received');
+      // Handle different response formats
+      let taskId: string | undefined;
+      
+      if (data.result) {
+        taskId = data.result;
+      } else if (data.id) {
+        taskId = data.id;
+      } else if (data.task_id) {
+        taskId = data.task_id;
+      } else if (typeof data === 'string') {
+        taskId = data;
       }
       
-      console.log('✅ Meshy generation initiated:', data.result);
-      return data;
+      if (!taskId || taskId === 'undefined' || taskId.trim() === '') {
+        console.error('❌ No task ID in response:', data);
+        throw new Error(`Invalid response from Meshy API: No task ID received. Response: ${JSON.stringify(data)}`);
+      }
+      
+      console.log('✅ Meshy generation initiated with task ID:', taskId);
+      return { result: taskId };
     } catch (error) {
       console.error('❌ Error generating 3D asset with Meshy:', error);
       throw error;
@@ -316,6 +337,26 @@ export class MeshyApiService {
       
       const data = await response.json();
       console.log('📊 Task status:', data.status, 'Progress:', data.progress + '%');
+      console.log('📦 Full status response:', JSON.stringify(data, null, 2));
+      
+      // Ensure model_urls is properly structured
+      if (data.status === 'SUCCEEDED' && !data.model_urls) {
+        console.warn('⚠️ Task succeeded but no model_urls found. Response:', data);
+        // Try to extract model URLs from alternative fields
+        if (data.model_url || data.download_url || data.url) {
+          console.log('🔄 Found alternative URL fields, constructing model_urls object');
+          data.model_urls = {
+            glb: data.model_url || data.download_url || data.url
+          };
+        }
+      }
+      
+      // Validate required fields
+      if (!data.id && !data.task_id) {
+        console.warn('⚠️ No task ID in status response, using provided taskId parameter');
+        data.id = taskId; // Use the taskId parameter passed to the function
+      }
+      
       return data;
     } catch (error) {
       console.error('❌ Error getting generation status from Meshy:', error);
@@ -390,18 +431,44 @@ export class MeshyApiService {
   /**
    * Map Meshy API response to our asset format
    */
-  private mapToAsset(status: MeshyTaskStatus): MeshyAsset {
+  mapToAsset(status: MeshyTaskStatus): MeshyAsset {
+    // Log the status to help debug
+    console.log('🔄 Mapping Meshy status to asset:', {
+      id: status.id,
+      status: status.status,
+      hasModelUrls: !!status.model_urls,
+      modelUrls: status.model_urls
+    });
+    
+    // Extract download URL - prioritize GLB, fallback to other formats
+    let downloadUrl = status.model_urls?.glb;
+    let format = 'glb';
+    
+    if (!downloadUrl && status.model_urls) {
+      // Fallback to other formats if GLB is not available
+      downloadUrl = status.model_urls.fbx || status.model_urls.obj || status.model_urls.usdz;
+      if (status.model_urls.fbx) format = 'fbx';
+      else if (status.model_urls.obj) format = 'obj';
+      else if (status.model_urls.usdz) format = 'usdz';
+    }
+    
+    if (!downloadUrl && status.status === 'SUCCEEDED') {
+      console.warn('⚠️ Task succeeded but no download URL found in model_urls:', status.model_urls);
+    }
+    
     return {
       id: status.id,
       prompt: status.prompt,
       status: this.mapStatus(status.status),
-      downloadUrl: status.model_urls?.glb,
+      downloadUrl: downloadUrl,
       previewUrl: status.video_url,
       thumbnailUrl: status.thumbnail_url,
-      format: 'glb',
+      format: format,
       size: undefined, // Not provided by Meshy API
-      createdAt: new Date(status.created_at).toISOString(),
-      updatedAt: new Date(status.finished_at || status.started_at || status.created_at).toISOString(),
+      createdAt: new Date(status.created_at > 1000000000000 ? status.created_at : status.created_at * 1000).toISOString(), // Handle both ms and seconds
+      updatedAt: new Date(((status.finished_at || status.started_at || status.created_at) > 1000000000000 ? 
+        (status.finished_at || status.started_at || status.created_at) : 
+        (status.finished_at || status.started_at || status.created_at) * 1000)).toISOString(),
       estimatedCompletion: undefined, // Not provided by Meshy API
       progress: status.progress,
       error: status.task_error?.message ? {
@@ -413,6 +480,7 @@ export class MeshyApiService {
         art_style: status.art_style,
         seed: status.seed,
         texture_prompt: status.texture_prompt,
+        model_urls: status.model_urls // Include full model_urls for reference
       }
     };
   }

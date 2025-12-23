@@ -4,22 +4,194 @@ import { EnhancedMeshyPanel } from '../Components/EnhancedMeshyPanel';
 import { Meshy3DViewer } from '../Components/Meshy3DViewer';
 import { StorageStatusIndicator } from '../Components/StorageStatusIndicator';
 import { useAuth } from '../contexts/AuthContext';
+import { backgroundGenerationService } from '../services/backgroundGenerationService';
 
 const ThreeDGenerate = () => {
   const { user } = useAuth();
-  const [generatedAssets, setGeneratedAssets] = useState([]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [currentAssetIndex, setCurrentAssetIndex] = useState(0);
-  const [backgroundAsset, setBackgroundAsset] = useState(null);
-  const [interactionMode, setInteractionMode] = useState('rotate');
-  const [viewerSettings, setViewerSettings] = useState({
+  
+  // Helper to get localStorage key for panel state
+  const getPanelStorageKey = () => {
+    return user?.uid ? `meshy_panel_state_${user.uid}` : null;
+  };
+  
+  // Initialize state from localStorage
+  const getInitialPanelState = () => {
+    const key = getPanelStorageKey();
+    if (!key) return null;
+    
+    try {
+      const stored = localStorage.getItem(key);
+      if (!stored) return null;
+      
+      const panelState = JSON.parse(stored);
+      
+      // Only restore if stored state is recent (within last hour)
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      if (panelState.timestamp && panelState.timestamp < oneHourAgo) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      
+      return panelState;
+    } catch (error) {
+      console.error('Failed to read panel state from localStorage:', error);
+      return null;
+    }
+  };
+  
+  const cachedPanelState = getInitialPanelState();
+  const [generatedAssets, setGeneratedAssets] = useState(cachedPanelState?.generatedAssets || []);
+  const [isGenerating, setIsGenerating] = useState(cachedPanelState?.isGenerating ?? false);
+  const [isMinimized, setIsMinimized] = useState(cachedPanelState?.isMinimized ?? false);
+  const [currentAssetIndex, setCurrentAssetIndex] = useState(cachedPanelState?.currentAssetIndex ?? 0);
+  const [backgroundAsset, setBackgroundAsset] = useState(cachedPanelState?.backgroundAsset || null);
+  const [interactionMode, setInteractionMode] = useState(cachedPanelState?.interactionMode || 'rotate');
+  const [viewerSettings, setViewerSettings] = useState(cachedPanelState?.viewerSettings || {
     autoRotate: true,
     showControls: true,
     lighting: 'dramatic',
     backgroundColor: '#000000',
     enableInteraction: true
   });
+  
+  // Save panel state to localStorage whenever it changes
+  const savePanelState = React.useCallback(() => {
+    const key = getPanelStorageKey();
+    if (!key) return;
+    
+    const panelState = {
+      generatedAssets,
+      isGenerating,
+      isMinimized,
+      currentAssetIndex,
+      backgroundAsset,
+      interactionMode,
+      viewerSettings,
+      timestamp: Date.now()
+    };
+    
+    try {
+      localStorage.setItem(key, JSON.stringify(panelState));
+      console.log('💾 Saved panel state to localStorage');
+    } catch (error) {
+      console.error('Failed to save panel state to localStorage:', error);
+    }
+  }, [generatedAssets, isGenerating, isMinimized, currentAssetIndex, backgroundAsset, interactionMode, viewerSettings, getPanelStorageKey]);
+  
+  // Debounced save for panel state
+  const debouncedPanelSaveRef = React.useRef(null);
+  
+  React.useEffect(() => {
+    // Clear previous timeout
+    if (debouncedPanelSaveRef.current) {
+      clearTimeout(debouncedPanelSaveRef.current);
+    }
+    
+    // Save after 500ms of no changes
+    debouncedPanelSaveRef.current = setTimeout(() => {
+      savePanelState();
+    }, 500);
+    
+    return () => {
+      if (debouncedPanelSaveRef.current) {
+        clearTimeout(debouncedPanelSaveRef.current);
+      }
+    };
+  }, [savePanelState]);
+
+  // Restore active generation on mount
+  useEffect(() => {
+    const restoreGeneration = async () => {
+      if (!user?.uid) return;
+
+      try {
+        console.log('🔄 MeshyGenerate: Starting restoration for user:', user.uid);
+        
+        // Initialize service for user (fetches active jobs from Firestore)
+        await backgroundGenerationService.initializeForUser(user.uid);
+        
+        // Get ALL tasks for this user (including recently completed)
+        const allTasks = backgroundGenerationService.getAllTasks();
+        const meshyTasks = allTasks
+          .filter(task => task.type === 'meshy' && task.userId === user.uid)
+          .sort((a, b) => b.startedAt - a.startedAt); // Most recent first
+        
+        console.log(`📊 MeshyGenerate: Found ${meshyTasks.length} Meshy tasks`);
+        
+        if (meshyTasks.length > 0) {
+          const latestTask = meshyTasks[0]; // Most recent task
+          console.log('✅ MeshyGenerate: Restoring task:', latestTask.id, 'Status:', latestTask.status);
+          
+          // If task is completed, restore the asset immediately
+          if (latestTask.status === 'completed' && latestTask.result) {
+            console.log('✅ Task already completed, restoring asset to viewer');
+            if (!Array.isArray(latestTask.result)) {
+              handleAssetGenerated(latestTask.result);
+            } else if (latestTask.result.length > 0) {
+              handleAssetGenerated(latestTask.result[0]);
+            }
+            setIsGenerating(false);
+            setIsMinimized(true);
+          } else if (latestTask.status === 'failed') {
+            setIsGenerating(false);
+            setIsMinimized(false);
+          } else {
+            // Task is still in progress
+            setIsGenerating(true);
+            setIsMinimized(true);
+            
+            // Register callback to receive updates
+            backgroundGenerationService.registerProgressCallback(latestTask.id, (progress) => {
+              console.log('📊 MeshyGenerate: Progress update:', progress);
+              // Update generating state based on progress
+              if (progress.progress >= 100 || progress.stage === 'completed') {
+                setIsGenerating(false);
+                
+                // Check if task completed and add asset
+                const task = backgroundGenerationService.getTask(latestTask.id);
+                if (task && task.status === 'completed' && task.result) {
+                  if (!Array.isArray(task.result)) {
+                    handleAssetGenerated(task.result);
+                  } else if (task.result.length > 0) {
+                    handleAssetGenerated(task.result[0]);
+                  }
+                }
+              }
+            });
+          }
+        } else {
+          console.log('ℹ️ MeshyGenerate: No tasks found');
+        }
+        
+        // Restore panel state from localStorage if available
+        if (cachedPanelState) {
+          console.log('✅ Restored panel state from localStorage');
+          if (cachedPanelState.generatedAssets && cachedPanelState.generatedAssets.length > 0) {
+            setGeneratedAssets(cachedPanelState.generatedAssets);
+          }
+          if (cachedPanelState.backgroundAsset) {
+            setBackgroundAsset(cachedPanelState.backgroundAsset);
+          }
+          if (cachedPanelState.isMinimized !== undefined) {
+            setIsMinimized(cachedPanelState.isMinimized);
+          }
+          if (cachedPanelState.currentAssetIndex !== undefined) {
+            setCurrentAssetIndex(cachedPanelState.currentAssetIndex);
+          }
+          if (cachedPanelState.interactionMode) {
+            setInteractionMode(cachedPanelState.interactionMode);
+          }
+          if (cachedPanelState.viewerSettings) {
+            setViewerSettings(cachedPanelState.viewerSettings);
+          }
+        }
+      } catch (error) {
+        console.error('❌ MeshyGenerate: Failed to restore active generation:', error);
+      }
+    };
+
+    restoreGeneration();
+  }, [user?.uid, cachedPanelState]);
 
   const handleAssetGenerated = (asset) => {
     setGeneratedAssets(prev => [asset, ...prev]);
@@ -27,6 +199,27 @@ const ThreeDGenerate = () => {
     setIsGenerating(false);
     setIsMinimized(true);
     console.log('New asset generated:', asset);
+    
+    // Immediately save panel state when asset is generated
+    const key = getPanelStorageKey();
+    if (key) {
+      try {
+        const panelState = {
+          generatedAssets: [asset, ...generatedAssets],
+          isGenerating: false,
+          isMinimized: true,
+          currentAssetIndex: 0,
+          backgroundAsset: asset,
+          interactionMode,
+          viewerSettings,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(key, JSON.stringify(panelState));
+        console.log('💾 Saved panel state after asset generation');
+      } catch (error) {
+        console.error('Failed to save panel state:', error);
+      }
+    }
   };
 
   const handleGenerationStart = () => {

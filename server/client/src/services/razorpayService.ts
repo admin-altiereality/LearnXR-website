@@ -72,20 +72,26 @@ export class RazorpayService {
     }
   }
 
-  private async createOrder(planId: string, userId: string): Promise<{ id: string; amount: number }> {
+  private async createOrder(planId: string, userId: string, billingCycle: 'monthly' | 'yearly' = 'monthly'): Promise<{ id: string; amount: number }> {
     try {
       if (!this.isInitialized) {
         throw new Error('Razorpay is not properly initialized');
       }
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) throw new Error('Invalid plan selected');
+      if (plan.isCustomPricing) {
+        throw new Error('Enterprise plan requires custom pricing. Please contact sales.');
+      }
+      // Use yearly price if billing cycle is yearly, otherwise use monthly price
+      const price = billingCycle === 'yearly' ? plan.yearlyPrice : plan.price;
       // Razorpay expects amount in paise, so multiply by 100
-      const amountInPaise = Math.round(plan.price * 100);
+      const amountInPaise = Math.round(price * 100);
       const response = await api.post('/payment/create-order', {
         amount: amountInPaise,
         currency: 'INR',
         planId,
-        userId
+        userId,
+        billingCycle
       });
       return response.data.data;
     } catch (error) {
@@ -94,7 +100,7 @@ export class RazorpayService {
     }
   }
 
-  public async initializePayment(planId: string, userEmail: string, userId: string): Promise<void> {
+  public async initializePayment(planId: string, userEmail: string, userId: string, billingCycle: 'monthly' | 'yearly' = 'monthly'): Promise<void> {
     try {
       if (!this.isInitialized) {
         throw new Error('Payment is not available. Please check your configuration.');
@@ -103,23 +109,27 @@ export class RazorpayService {
       if (typeof window === 'undefined' || !window.Razorpay) {
         throw new Error('Razorpay SDK not loaded');
       }
-      const order = await this.createOrder(planId, userId);
+      const order = await this.createOrder(planId, userId, billingCycle);
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) {
         throw new Error('Invalid plan selected');
       }
+      if (plan.isCustomPricing) {
+        throw new Error('Enterprise plan requires custom pricing. Please contact sales.');
+      }
+      const billingText = billingCycle === 'yearly' ? ' (Yearly)' : ' (Monthly)';
       return new Promise<void>((resolve, reject) => {
         const options = {
           key: this.razorpayKeyId,
           amount: order.amount,
           currency: 'INR',
           name: 'In3D.Ai',
-          description: `Upgrade to ${plan.name} Plan`,
+          description: `Upgrade to ${plan.name} Plan${billingText}`,
           order_id: order.id,
           prefill: { email: userEmail },
           handler: async (response: any) => {
             try {
-              await this.verifyPayment(response, userId, planId);
+              await this.verifyPayment(response, userId, planId, billingCycle);
               resolve();
             } catch (error) {
               reject(error);
@@ -243,7 +253,7 @@ export class RazorpayService {
     }
   }
 
-  private async verifyPayment(response: any, userId: string, planId: string): Promise<void> {
+  private async verifyPayment(response: any, userId: string, planId: string, billingCycle: 'monthly' | 'yearly' = 'monthly'): Promise<void> {
     try {
       const verifyRes = await api.post('/payment/verify', {
         razorpay_order_id: response.razorpay_order_id,
@@ -254,12 +264,14 @@ export class RazorpayService {
         throw new Error('Payment verification failed');
       }
       // Create subscription after payment verification
+      const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       await api.post('/subscription/create', {
         userId,
         planId,
-        planName: SUBSCRIPTION_PLANS.find(p => p.id === planId)?.name || planId,
+        planName: plan?.name || planId,
         orderId: response.razorpay_order_id,
-        paymentId: response.razorpay_payment_id
+        paymentId: response.razorpay_payment_id,
+        billingCycle
       });
     } catch (error) {
       console.error('Error verifying payment or creating subscription:', error);
