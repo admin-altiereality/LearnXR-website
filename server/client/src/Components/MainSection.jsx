@@ -2,7 +2,9 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
+import { useCreateGeneration } from '../contexts/CreateGenerationContext';
 import OnboardCard from './ui/onboard-card';
+import { DottedSurface } from './ui/dotted-surface';
 
 // ============================================
 // TRIAL USER CONSTANTS
@@ -23,6 +25,7 @@ import AssetGenerationPanel from './AssetGenerationPanel';
 import { MeshyTestPanel } from './MeshyTestPanel';
 import { assetGenerationService } from '../services/assetGenerationService';
 import { promptParserService } from '../services/promptParserService';
+import { coordinatedPromptGeneratorService } from '../services/coordinatedPromptGeneratorService';
 import { isStorageAvailable } from '../utils/firebaseStorage';
 import { StorageTestUtility } from '../utils/storageTest';
 import { StorageStatusIndicator } from './StorageStatusIndicator';
@@ -45,18 +48,52 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // -------------------------
   const [showNegativeTextInput, setShowNegativeTextInput] = useState(true);
   const [skyboxStyles, setSkyboxStyles] = useState([]);
-  const [selectedSkybox, setSelectedSkybox] = useState(null);
-  const [prompt, setPrompt] = useState("");
-  const [negativeText, setNegativeText] = useState("");
-  const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Use global generation context FIRST (before using it in useState initializers)
+  const {
+    state: generationState,
+    setGenerating,
+    setGenerating3DAsset,
+    setSkyboxProgress,
+    setAssetGenerationProgress,
+    setGenerationProgress,
+    setCurrentJobId,
+    setPrompt: setGlobalPrompt,
+    setNegativeText: setGlobalNegativeText,
+    setSelectedSkybox: setGlobalSelectedSkybox,
+    setNumVariations: setGlobalNumVariations,
+    setGenerated3DAsset: setGlobalGenerated3DAsset,
+    startGeneration,
+    resetGeneration
+  } = useCreateGeneration();
+  
+  // Initialize from context if available, otherwise use defaults
+  const [selectedSkybox, setSelectedSkybox] = useState(() => {
+    return generationState?.selectedSkybox || null;
+  });
+  const [prompt, setPrompt] = useState(() => {
+    return generationState?.prompt || "";
+  });
+  const [negativeText, setNegativeText] = useState(() => {
+    return generationState?.negativeText || "";
+  });
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(0);
-  const [skyboxProgress, setSkyboxProgress] = useState(0);
+  
+  // Sync local state with global state
+  const isGenerating = generationState?.isGenerating || false;
+  const isGenerating3DAsset = generationState?.isGenerating3DAsset || false;
+  const skyboxProgress = generationState?.skyboxProgress || 0;
+  const assetGenerationProgress = generationState?.assetGenerationProgress || null;
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [generatedImageId, setGeneratedImageId] = useState(null);
   const [generatedVariations, setGeneratedVariations] = useState([]);
   const [currentVariationIndex, setCurrentVariationIndex] = useState(0);
-  const [numVariations, setNumVariations] = useState(5);
+  
+  // Initialize from context if available, otherwise use defaults
+  const [numVariations, setNumVariations] = useState(() => {
+    return generationState?.numVariations || 5;
+  });
   const { user } = useAuth();
   const [subscription, setSubscription] = useState(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -71,13 +108,16 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [storageAvailable, setStorageAvailable] = useState(false);
   const [serviceStatus, setServiceStatus] = useState(null);
   const [serviceStatusError, setServiceStatusError] = useState(null);
-  // 3D Asset generation state
-  const [isGenerating3DAsset, setIsGenerating3DAsset] = useState(false);
-  const [generated3DAsset, setGenerated3DAsset] = useState(null);
-  const [assetGenerationProgress, setAssetGenerationProgress] = useState(null);
+  // 3D Asset generation state - initialize from context
+  const [generated3DAsset, setGenerated3DAsset] = useState(() => {
+    return generationState?.generated3DAsset || null;
+  });
   const [show3DAssetViewer, setShow3DAssetViewer] = useState(false);
   // Intelligent prompt parsing state
   const [parsedPrompt, setParsedPrompt] = useState(null);
+  // Coordinated prompt generation state (for 3D asset integration)
+  const [coordinatedPrompts, setCoordinatedPrompts] = useState(null);
+  const [groundingMetadata, setGroundingMetadata] = useState(null);
   
   // Loading indicator context
   const { showLoading, hideLoading, updateProgress } = useLoading();
@@ -97,14 +137,39 @@ const MainSection = ({ setBackgroundSkybox }) => {
           confidence: parsed.confidence,
           method: parsed.method
         });
+
+        // Generate coordinated prompts if 3D objects are detected
+        if (has3DObjects && assetGenerationService.isMeshyConfigured()) {
+          try {
+            const coordinated = coordinatedPromptGeneratorService.generate(prompt.trim());
+            setCoordinatedPrompts(coordinated);
+            setGroundingMetadata(coordinated.grounding_metadata);
+            console.log('🎯 Coordinated prompts generated:', {
+              skybox_prompt: coordinated.skybox_prompt.substring(0, 80) + '...',
+              asset_prompt: coordinated.asset_prompt.substring(0, 80) + '...',
+              grounding_metadata: coordinated.grounding_metadata
+            });
+          } catch (error) {
+            console.warn('⚠️ Failed to generate coordinated prompts, using fallback:', error);
+            setCoordinatedPrompts(null);
+            setGroundingMetadata(null);
+          }
+        } else {
+          setCoordinatedPrompts(null);
+          setGroundingMetadata(null);
+        }
       } catch (error) {
         console.error('Error parsing prompt:', error);
         setParsedPrompt(null);
+        setCoordinatedPrompts(null);
+        setGroundingMetadata(null);
       }
     } else {
       setParsedPrompt(null);
+      setCoordinatedPrompts(null);
+      setGroundingMetadata(null);
     }
-  }, [prompt]);
+  }, [prompt, has3DObjects]);
 
   // -------------------------
   // Reactive object detection
@@ -351,6 +416,71 @@ const MainSection = ({ setBackgroundSkybox }) => {
   };
 
   // -------------------------
+  // Restore UI state from context on mount (if available)
+  // -------------------------
+  useEffect(() => {
+    // Restore prompt if available (only if local state is empty)
+    if (generationState.prompt && !prompt) {
+      setPrompt(generationState.prompt);
+    }
+    // Restore negative text if available (only if local state is empty)
+    if (generationState.negativeText !== null && generationState.negativeText !== undefined && !negativeText) {
+      setNegativeText(generationState.negativeText);
+    }
+    // Restore selected skybox if available (only if local state is empty)
+    if (generationState.selectedSkybox && !selectedSkybox) {
+      setSelectedSkybox(generationState.selectedSkybox);
+    }
+    // Restore num variations if available
+    if (generationState.numVariations && generationState.numVariations !== numVariations) {
+      setNumVariations(generationState.numVariations);
+    }
+    // Restore 3D asset if available (only if local state is empty)
+    if (generationState.generated3DAsset && !generated3DAsset) {
+      setGenerated3DAsset(generationState.generated3DAsset);
+    }
+  }, []); // Only run on mount
+
+  // -------------------------
+  // Sync local state to context during generation (debounced to avoid excessive updates)
+  // -------------------------
+  useEffect(() => {
+    if (isGenerating || isGenerating3DAsset) {
+      const timeoutId = setTimeout(() => {
+        // Save prompt to context
+        if (prompt && prompt !== generationState.prompt) {
+          setGlobalPrompt(prompt);
+        }
+        // Save negative text to context
+        if (negativeText !== generationState.negativeText) {
+          setGlobalNegativeText(negativeText || null);
+        }
+        // Save selected skybox to context (compare by ID to avoid object reference issues)
+        if (selectedSkybox && (!generationState.selectedSkybox || selectedSkybox.id !== generationState.selectedSkybox.id)) {
+          setGlobalSelectedSkybox(selectedSkybox);
+        }
+        // Save num variations to context
+        if (numVariations !== generationState.numVariations) {
+          setGlobalNumVariations(numVariations);
+        }
+        // Save 3D asset to context (compare by ID or URL to avoid object reference issues)
+        if (generated3DAsset) {
+          const currentAsset = generationState.generated3DAsset;
+          const hasChanged = !currentAsset || 
+            (generated3DAsset.id && generated3DAsset.id !== currentAsset.id) ||
+            (generated3DAsset.downloadUrl && generated3DAsset.downloadUrl !== currentAsset.downloadUrl) ||
+            (generated3DAsset.previewUrl && generated3DAsset.previewUrl !== currentAsset.previewUrl);
+          if (hasChanged) {
+            setGlobalGenerated3DAsset(generated3DAsset);
+          }
+        }
+      }, 500); // Debounce to avoid excessive localStorage writes
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [prompt, negativeText, selectedSkybox, numVariations, generated3DAsset, isGenerating, isGenerating3DAsset]);
+
+  // -------------------------
   // Handle navigation source / style selection
   // -------------------------
   useEffect(() => {
@@ -362,6 +492,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
       try {
         const parsedStyle = JSON.parse(savedStyle);
         setSelectedSkybox(parsedStyle);
+        // Also save to context if generation is active
+        if (isGenerating || isGenerating3DAsset) {
+          setGlobalSelectedSkybox(parsedStyle);
+        }
         
         const successMessage = document.createElement('div');
         successMessage.className = 'fixed top-4 right-4 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 flex items-center space-x-2';
@@ -516,7 +650,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
       return;
     }
 
-    setIsGenerating(true);
+    setGenerating(true);
+    setGlobalPrompt(prompt.trim());
+    // Save all UI state to context when generation starts
+    setGlobalNegativeText(negativeText || null);
+    setGlobalSelectedSkybox(selectedSkybox);
+    setGlobalNumVariations(numVariations);
     setError(null);
     setProgress(0);
     setSkyboxProgress(0);
@@ -531,15 +670,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
         // Ensure style_id is a valid number
         const styleIdNumber = typeof selectedSkybox.id === 'string' ? parseInt(selectedSkybox.id, 10) : Number(selectedSkybox.id);
         
-        // Use intelligent parsing: use background for skybox, fallback to full prompt
-        const skyboxPrompt = parsedPrompt && parsedPrompt.background 
-          ? parsedPrompt.background 
-          : prompt.trim();
+        // Use coordinated prompt if available (for 3D asset integration), otherwise use intelligent parsing
+        const skyboxPrompt = coordinatedPrompts?.skybox_prompt 
+          ? coordinatedPrompts.skybox_prompt
+          : (parsedPrompt && parsedPrompt.background 
+            ? parsedPrompt.background 
+            : prompt.trim());
         
         console.log('🌅 Generating skybox variation:', {
           variation: i + 1,
           originalPrompt: prompt.substring(0, 50) + '...',
-          skyboxPrompt: skyboxPrompt.substring(0, 50) + '...',
+          skyboxPrompt: skyboxPrompt.substring(0, 80) + '...',
+          usingCoordinated: !!coordinatedPrompts?.skybox_prompt,
+          usingParsed: !coordinatedPrompts?.skybox_prompt && !!parsedPrompt?.background,
           parsedAsset: parsedPrompt?.asset?.substring(0, 30) || 'N/A',
           parsedBackground: parsedPrompt?.background?.substring(0, 30) || 'N/A',
           confidence: parsedPrompt?.confidence || 0,
@@ -574,7 +717,22 @@ const MainSection = ({ setBackgroundSkybox }) => {
         }
       }
 
-      const variationResults = await Promise.all(
+      // Check if 3D asset generation should run in parallel
+      const canGenerate3D = storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid;
+      
+      console.log('🔍 Parallel Generation - 3D Asset Check:', {
+        storageAvailable,
+        meshyConfigured: assetGenerationService.isMeshyConfigured(),
+        hasUserId: !!user?.uid,
+        canGenerate3D,
+        prompt: prompt.substring(0, 50) + '...'
+      });
+
+      // Start both skybox polling and 3D asset generation in parallel
+      const generationPromises = [];
+
+      // Skybox polling promise
+      const skyboxPromise = Promise.all(
         variations.map(async (variationId) => {
           console.log(`🔄 Starting to poll status for generation: ${variationId}`);
           let variationStatus;
@@ -665,15 +823,107 @@ const MainSection = ({ setBackgroundSkybox }) => {
             prompt: variationStatus.prompt || prompt
           };
         })
-      );
+      ).then((variationResults) => {
+        // Save skybox to Firestore after polling completes
+        return { type: 'skybox', data: variationResults };
+      });
 
-      setGeneratedVariations(variationResults);
-      // Don't set skybox background yet - wait until 3D asset is also completed
-      setCurrentImageForDownload(variationResults[0]);
-      setSkyboxProgress(100);
-      
+      generationPromises.push({ promise: skyboxPromise, type: 'skybox' });
+
+      // 3D asset generation promise (if enabled)
+      if (canGenerate3D) {
+        console.log('🎯 Starting 3D asset generation in parallel with skybox...');
+        setGenerating3DAsset(true);
+        setAssetGenerationProgress({
+          stage: 'extracting',
+          progress: 0,
+          message: 'Generating 3D asset for your environment...'
+        });
+
+        // Use coordinated prompt if available (ensures proper grounding), otherwise use intelligent parsing
+        const assetPrompt = coordinatedPrompts?.asset_prompt 
+          ? coordinatedPrompts.asset_prompt
+          : (parsedPrompt && parsedPrompt.asset 
+            ? parsedPrompt.asset 
+            : prompt);
+        
+        console.log('🎯 Generating 3D asset with coordinated prompts:', {
+          originalPrompt: prompt.substring(0, 50) + '...',
+          assetPrompt: assetPrompt.substring(0, 80) + '...',
+          usingCoordinated: !!coordinatedPrompts?.asset_prompt,
+          usingParsed: !coordinatedPrompts?.asset_prompt && !!parsedPrompt?.asset,
+          groundingMetadata: groundingMetadata,
+          parsedBackground: parsedPrompt?.background?.substring(0, 30) || 'N/A',
+          confidence: parsedPrompt?.confidence || 0
+        });
+
+        const assetPromise = assetGenerationService.generateAssetsFromPrompt({
+          originalPrompt: assetPrompt,
+          userId: user.uid,
+          skyboxId: variations[0].toString(),
+          quality: 'medium',
+          style: 'realistic',
+          maxAssets: 1 // Generate single asset for unified view
+        }, (progressUpdate) => {
+          setAssetGenerationProgress({
+            stage: progressUpdate.stage || 'generating',
+            progress: progressUpdate.progress || 0,
+            message: progressUpdate.message || 'Processing...'
+          });
+        }).then((result) => {
+          return { type: 'asset', data: result };
+        }).catch((error) => {
+          console.error('❌ 3D asset generation failed:', error);
+          return { type: 'asset', data: null, error };
+        });
+
+        generationPromises.push({ promise: assetPromise, type: 'asset' });
+      }
+
+      // Execute both generations in parallel
+      console.log('🚀 Executing parallel generation:', {
+        skybox: true,
+        asset: canGenerate3D,
+        totalPromises: generationPromises.length
+      });
+
+      const results = await Promise.allSettled(generationPromises.map(p => p.promise));
+
+      // Process results
+      let variationResults = null;
+      let assetResult = null;
+      let assetError = null;
+
+      results.forEach((result, index) => {
+        const { type } = generationPromises[index];
+        
+        if (result.status === 'fulfilled') {
+          const value = result.value;
+          if (type === 'skybox') {
+            variationResults = value.data;
+          } else if (type === 'asset') {
+            assetResult = value.data;
+            assetError = value.error;
+          }
+        } else {
+          console.error(`❌ ${type} generation failed:`, result.reason);
+          if (type === 'skybox') {
+            throw result.reason; // Skybox failure is critical
+          } else if (type === 'asset') {
+            assetError = result.reason;
+          }
+        }
+      });
+
+      // Set skybox results
+      if (variationResults) {
+        setGeneratedVariations(variationResults);
+        setCurrentImageForDownload(variationResults[0]);
+        setSkyboxProgress(100);
+      }
+
       // CRITICAL: Save to Firestore skyboxes collection
-      if (user?.uid) {
+      if (user?.uid && variationResults) {
         try {
           console.log(`💾 Starting to save ${variationResults.length} skybox variation(s) to Firestore for user ${user.uid}`);
           console.log(`   Collection: skyboxes`);
@@ -826,119 +1076,132 @@ const MainSection = ({ setBackgroundSkybox }) => {
       }
 
       setProgress(100);
-      setIsGenerating(false);
+      setSkyboxProgress(100);
       
-      // Always generate 3D asset after skybox (unified generation)
-      const canGenerate3D = storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid;
-      
-      console.log('🔍 Unified Generation - 3D Asset Check:', {
-        storageAvailable,
-        meshyConfigured: assetGenerationService.isMeshyConfigured(),
-        hasUserId: !!user?.uid,
-        canGenerate3D,
-        prompt: prompt.substring(0, 50) + '...'
-      });
-      
+      // Process 3D asset result (if generated)
       if (canGenerate3D) {
-        console.log('🎯 Generating 3D asset with skybox background...');
-        try {
-          setIsGenerating3DAsset(true);
-          setAssetGenerationProgress({
-            stage: 'extracting',
-            progress: 0,
-            totalAssets: 0,
-            completedAssets: 0,
-            message: 'Generating 3D asset for your environment...'
-          });
-
-          // Use intelligent parsing: use asset description for 3D generation, fallback to full prompt
-          const assetPrompt = parsedPrompt && parsedPrompt.asset 
-            ? parsedPrompt.asset 
-            : prompt;
+        if (assetResult && assetResult.success && assetResult.assets.length > 0) {
+          const asset = assetResult.assets[0];
           
-          console.log('🎯 Generating 3D asset with parsed prompt:', {
-            originalPrompt: prompt.substring(0, 50) + '...',
-            assetPrompt: assetPrompt.substring(0, 50) + '...',
-            parsedBackground: parsedPrompt?.background?.substring(0, 30) || 'N/A',
-            confidence: parsedPrompt?.confidence || 0
-          });
+          // Ensure we have a download URL - extract from model_urls if needed
+          let assetUrl = asset.downloadUrl || asset.previewUrl;
+          
+          // If no URL, try to extract from metadata.model_urls (if available)
+          if (!assetUrl && asset.metadata?.model_urls) {
+            assetUrl = asset.metadata.model_urls.glb || 
+                       asset.metadata.model_urls.fbx || 
+                       asset.metadata.model_urls.obj ||
+                       asset.metadata.model_urls.usdz;
+            console.log('📦 Extracted URL from model_urls:', assetUrl);
+          }
+          
+          // Update asset with the URL if we found one
+          if (assetUrl && !asset.downloadUrl) {
+            asset.downloadUrl = assetUrl;
+          }
+          
+          // Store grounding metadata with the asset for 3D viewer integration
+          if (groundingMetadata) {
+            asset.groundingMetadata = groundingMetadata;
+            console.log('📐 Grounding metadata attached to asset:', groundingMetadata);
+          }
+          
+          setGenerated3DAsset(asset);
+          setGlobalGenerated3DAsset(asset); // Save to context
+          // Ensure skybox background is set when both complete
+          if (variationResults && variationResults.length > 0 && setBackgroundSkybox) {
+            setBackgroundSkybox(variationResults[0]);
+          }
+          // Automatically show viewer when both complete
+          setShow3DAssetViewer(true);
+          console.log('✅ 3D asset generated successfully:', asset);
+          console.log('📦 Asset downloadUrl:', asset.downloadUrl);
+          console.log('📦 Asset previewUrl:', asset.previewUrl);
+          console.log('📦 Asset format:', asset.format);
+          console.log('📦 Asset status:', asset.status);
+          console.log('📦 Asset metadata:', asset.metadata);
+          console.log('📦 Skybox background:', variationResults?.[0]?.image);
+          
+          if (!asset.downloadUrl && !asset.previewUrl) {
+            console.warn('⚠️ 3D asset generated but no URL available. Asset:', asset);
+          }
 
-          const result = await assetGenerationService.generateAssetsFromPrompt({
-            originalPrompt: assetPrompt,
-            userId: user.uid,
-            skyboxId: variations[0].toString(),
-            quality: 'medium',
-            style: 'realistic',
-            maxAssets: 1 // Generate single asset for unified view
-          }, (progressUpdate) => {
-            setAssetGenerationProgress(progressUpdate);
-          });
-
-          if (result.success && result.assets.length > 0) {
-            const asset = result.assets[0];
-            
-            // Ensure we have a download URL - extract from model_urls if needed
-            let assetUrl = asset.downloadUrl || asset.previewUrl;
-            
-            // If no URL, try to extract from metadata.model_urls (if available)
-            if (!assetUrl && asset.metadata?.model_urls) {
-              assetUrl = asset.metadata.model_urls.glb || 
-                         asset.metadata.model_urls.fbx || 
-                         asset.metadata.model_urls.obj ||
-                         asset.metadata.model_urls.usdz;
-              console.log('📦 Extracted URL from model_urls:', assetUrl);
-            }
-            
-            // Update asset with the URL if we found one
-            if (assetUrl && !asset.downloadUrl) {
-              asset.downloadUrl = assetUrl;
-            }
-            
-            setGenerated3DAsset(asset);
-            // Ensure skybox background is set when 3D asset completes
-            if (variationResults.length > 0 && setBackgroundSkybox) {
-              setBackgroundSkybox(variationResults[0]);
-            }
-            // Automatically show viewer when 3D asset completes
-            setShow3DAssetViewer(true);
-            console.log('✅ 3D asset generated successfully:', asset);
-            console.log('📦 Asset downloadUrl:', asset.downloadUrl);
-            console.log('📦 Asset previewUrl:', asset.previewUrl);
-            console.log('📦 Asset format:', asset.format);
-            console.log('📦 Asset status:', asset.status);
-            console.log('📦 Asset metadata:', asset.metadata);
-            console.log('📦 Skybox background:', variationResults[0]?.image);
-            
-            if (!asset.downloadUrl && !asset.previewUrl) {
-              console.warn('⚠️ 3D asset generated but no URL available. Asset:', asset);
+          // CRITICAL: Save Meshy 3D asset to the same skybox document in Firestore
+          if (user?.uid && variations.length > 0) {
+            try {
+              const generationId = variations[0].toString();
+              const skyboxRef = doc(db, 'skyboxes', generationId);
+              
+              console.log(`💾 Starting to save Meshy 3D asset to skybox document: ${generationId}`);
+              
+              // Prepare Meshy asset data to be stored with skybox
+              const meshyAssetData = {
+                meshUrl: assetUrl || asset.downloadUrl || asset.previewUrl,
+                meshResult: {
+                  status: asset.status || 'completed',
+                  downloadUrl: asset.downloadUrl,
+                  previewUrl: asset.previewUrl,
+                  format: asset.format,
+                  size: asset.size,
+                  model_urls: asset.metadata?.model_urls || null
+                },
+                meshyAsset: {
+                  id: asset.id,
+                  prompt: asset.prompt,
+                  downloadUrl: asset.downloadUrl,
+                  previewUrl: asset.previewUrl,
+                  format: asset.format,
+                  status: asset.status,
+                  size: asset.size,
+                  metadata: asset.metadata,
+                  groundingMetadata: asset.groundingMetadata
+                },
+                updatedAt: serverTimestamp()
+              };
+              
+              // Update the skybox document with Meshy asset data
+              await setDoc(skyboxRef, meshyAssetData, { merge: true });
+              
+              console.log(`✅ Successfully saved Meshy 3D asset to skybox document: ${generationId}`);
+              console.log(`   - Mesh URL: ${meshyAssetData.meshUrl ? 'Present' : 'Missing'}`);
+              console.log(`   - Mesh Status: ${meshyAssetData.meshResult.status}`);
+              console.log(`   - Format: ${meshyAssetData.meshResult.format || 'N/A'}`);
+              
+              // Verify the save
+              const verifyDoc = await getDoc(skyboxRef);
+              if (verifyDoc.exists() && verifyDoc.data()?.meshUrl) {
+                console.log(`✅ Verified: Meshy asset is now synced with skybox in Firestore`);
+              } else {
+                console.warn(`⚠️ Verification: Meshy asset data may not be present in document`);
+              }
+            } catch (error) {
+              console.error('❌ Failed to save Meshy 3D asset to skybox document:', error);
+              console.error('   Error name:', error?.name);
+              console.error('   Error code:', error?.code);
+              console.error('   Error message:', error?.message);
+              // Don't fail the generation if Firestore save fails, but log it clearly
             }
           } else {
-            console.warn('⚠️ 3D asset generation completed but no assets returned');
-            console.warn('📦 Result:', result);
-            
-            // Show warning but don't fail - skybox was generated successfully
-            if (isDevMode) {
-              const warningMsg = document.createElement('div');
-              warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
-              warningMsg.innerHTML = `
-                <div class="font-bold mb-2">⚠️ 3D Asset Generation Failed</div>
-                <div class="text-sm">${result.error || 'No assets were generated. Skybox is still available.'}</div>
-                ${result.errors && result.errors.length > 0 ? `<div class="text-xs mt-2">Errors: ${result.errors.join(', ')}</div>` : ''}
-              `;
-              document.body.appendChild(warningMsg);
-              setTimeout(() => document.body.removeChild(warningMsg), 8000);
-            }
+            console.warn('⚠️ Cannot save Meshy asset: user.uid or variations missing');
+            console.warn('   User:', user?.uid ? 'Present' : 'Missing');
+            console.warn('   Variations:', variations.length);
           }
-        } catch (error) {
-          console.error('❌ Failed to generate 3D asset:', error);
-          // Don't show error to user - skybox was generated successfully
-          // They can still use the skybox even if 3D asset generation fails
-        } finally {
-          setIsGenerating3DAsset(false);
-          setAssetGenerationProgress(null);
-          // Don't hide loading here if skybox is still generating
-          if (!isGenerating) {
-            hideLoading();
+        } else {
+          console.warn('⚠️ 3D asset generation completed but no assets returned');
+          console.warn('📦 Result:', assetResult);
+          console.warn('📦 Error:', assetError);
+          
+          // Show warning but don't fail - skybox was generated successfully
+          if (isDevMode || assetError) {
+            const warningMsg = document.createElement('div');
+            warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
+            warningMsg.innerHTML = `
+              <div class="font-bold mb-2">⚠️ 3D Asset Generation Failed</div>
+              <div class="text-sm">${assetResult?.error || assetError?.message || 'No assets were generated. Skybox is still available.'}</div>
+              ${assetResult?.errors && assetResult.errors.length > 0 ? `<div class="text-xs mt-2">Errors: ${assetResult.errors.join(', ')}</div>` : ''}
+            `;
+            document.body.appendChild(warningMsg);
+            setTimeout(() => document.body.removeChild(warningMsg), 8000);
           }
         }
       } else {
@@ -962,6 +1225,18 @@ const MainSection = ({ setBackgroundSkybox }) => {
           setTimeout(() => document.body.removeChild(warningMsg), 5000);
         }
       }
+
+      // Both generations complete
+      setGenerating(false);
+      setGenerating3DAsset(false);
+      setAssetGenerationProgress(null);
+      
+      // Reset generation state when both are complete
+      setTimeout(() => {
+        // Small delay to show completion state
+        resetGeneration();
+      }, 2000);
+      hideLoading();
       
       setTimeout(() => {
         setIsMinimized(true);
@@ -988,7 +1263,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
       }
       
       setError(errorMessage);
-      setIsGenerating(false);
+      setGenerating(false);
       setProgress(0);
       setSkyboxProgress(0);
       hideLoading(); // Hide loading indicator on error
@@ -1028,6 +1303,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
       (style) => style.id === parseInt(e.target.value)
     );
     setSelectedSkybox(style);
+    // Save to context if generation is active
+    if (isGenerating || isGenerating3DAsset) {
+      setGlobalSelectedSkybox(style);
+    }
   };
 
   // -------------------------
@@ -1130,35 +1409,51 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // -------------------------
   // Render
   // -------------------------
+  
+  // Determine if we should show the dotted surface background
+  // Show during: empty state OR during loading
+  const showDottedSurface = 
+    (generatedVariations.length === 0 && !generated3DAsset) ||
+    isGenerating || 
+    isGenerating3DAsset;
+  
+  // Check if loading is active
+  const isLoadingActive = isGenerating || isGenerating3DAsset;
+  
   return (
     <div className="absolute inset-0 min-h-screen">
+      {/* Dotted Surface Background - Show when nothing is generated OR during loading */}
+      {showDottedSurface && (
+        <div className="fixed inset-0 z-[2]">
+          <DottedSurface 
+            className="size-full" 
+            isLoading={isLoadingActive}
+            variant="aurora"
+            interactionStrength={isLoadingActive ? 0.3 : 0.8}
+          />
+        </div>
+      )}
+      
       {/* OnboardCard - Background Loading Indicator (behind panel) */}
       {(isGenerating || isGenerating3DAsset) && (
-        <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-          {/* OnboardCard Component - Background layer */}
-          <OnboardCard
-            duration={3000}
-            step1={isGenerating3DAsset ? "Skybox Generation" : "Skybox Generation"}
-            step2={isGenerating3DAsset 
-              ? assetGenerationProgress?.message || "3D Model Generation" 
-              : skyboxProgress < 30 
-                ? "Initializing Generation" 
-                : skyboxProgress < 80 
-                ? "Generating Skybox Variations" 
-                : "Processing Results"}
-            step3={isGenerating3DAsset ? "Assets Merging" : "Assets Merging"}
-            progress={isGenerating3DAsset 
-              ? assetGenerationProgress?.progress || 0 
-              : skyboxProgress}
-            isVisible={isGenerating || isGenerating3DAsset}
-          />
+        <div className="absolute inset-0 z-[3] flex items-center justify-center pointer-events-none">
+          {/* OnboardCard Component - Background layer - Uses global context automatically */}
+          <div className="w-full max-w-[520px] px-4 scale-90 -translate-y-16">
+            <OnboardCard
+              duration={3000}
+              step1="Skybox Generation"
+              step2={assetGenerationProgress?.message || "3D Model Generation"}
+              step3="Assets Merging"
+              // Context will handle visibility and progress automatically
+            />
+          </div>
         </div>
       )}
       
       {/* Bottom Dock Control Panel */}
       <div
         className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 z-20 ${
-          isMinimized ? 'pb-3' : 'pb-4'
+          isMinimized ? 'pb-3' : (isGenerating || isGenerating3DAsset) ? 'pb-2' : 'pb-4'
         }`}
       >
         <div
@@ -1177,6 +1472,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
               overflow-hidden 
               transition-all 
                ${isMinimized ? 'py-0.5 px-2' : 'py-1 px-3'}
+               ${(isGenerating || isGenerating3DAsset) && !isMinimized ? 'max-h-[40vh] overflow-y-auto' : ''}
             `}
           >
             {/* Top Bar / Header */}
@@ -1272,7 +1568,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
               </div>
             ) : (
               // Expanded State
-              <div className="space-y-1.5">
+              <div className={`${(isGenerating || isGenerating3DAsset) ? 'space-y-1' : 'space-y-1.5'}`}>
                 {/* Error Banner */}
                 {error && (
                   <div className="border border-red-500/40 bg-red-900/20 rounded-md px-3 py-2 text-xs text-red-300 flex items-start gap-2">
@@ -1302,7 +1598,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             {Math.round(skyboxProgress)}%
                           </span>
                         </div>
-                        <div className="w-full h-1.5 rounded-full bg-[#1f1f1f] overflow-hidden">
+                        <div className="w-full h-1 rounded-full bg-[#1f1f1f] overflow-hidden">
                           <div
                             className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 transition-all duration-300"
                             style={{ width: `${skyboxProgress}%` }}
@@ -1322,7 +1618,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             {assetGenerationProgress ? Math.round(assetGenerationProgress.progress) : 0}%
                           </span>
                         </div>
-                        <div className="w-full h-1.5 rounded-full bg-[#1f1f1f] overflow-hidden">
+                        <div className="w-full h-1 rounded-full bg-[#1f1f1f] overflow-hidden">
                           <div
                             className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-rose-400 transition-all duration-300"
                             style={{ width: `${assetGenerationProgress?.progress || 0}%` }}
@@ -1342,10 +1638,15 @@ const MainSection = ({ setBackgroundSkybox }) => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {/* Column 1: Prompt */}
                   <div className="md:col-span-2 space-y-1.5">
-                    <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1 space-y-0.5">
+                    <div className={`border border-[#262626] bg-[#121212] rounded-md px-2 py-1 space-y-0.5 ${
+                      (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-sky-500/30' : ''
+                    }`}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase">
+                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase flex items-center gap-1.5">
                           Prompt
+                          {(isGenerating || isGenerating3DAsset) && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" title="Currently generating with this prompt" />
+                          )}
                         </span>
                         <span className="text-[10px] text-gray-500">
                           {prompt.length}/600
@@ -1356,11 +1657,20 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         maxLength={600}
                         rows={2}
                         placeholder="Describe the environment: lighting, mood, props, architecture..."
-                        className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none"
+                        className={`w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none ${
+                          isGenerating || isGenerating3DAsset 
+                            ? 'opacity-90 cursor-default' 
+                            : ''
+                        }`}
                         value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        disabled={isGenerating}
-                        
+                        onChange={(e) => {
+                          setPrompt(e.target.value);
+                          // Save to context if generation is active
+                          if (isGenerating || isGenerating3DAsset) {
+                            setGlobalPrompt(e.target.value);
+                          }
+                        }}
+                        readOnly={isGenerating || isGenerating3DAsset}
                       />
                       
                       {/* Intelligent Prompt Parsing Indicator */}
@@ -1427,13 +1737,22 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             min="1"
                             max="10"
                             placeholder="1–10"
-                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            className={`w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 ${
+                              isGenerating || isGenerating3DAsset 
+                                ? 'opacity-90 cursor-default' 
+                                : ''
+                            }`}
                             value={numVariations}
                             onChange={(e) => {
                               const value = parseInt(e.target.value) || 1;
-                              setNumVariations(Math.min(10, Math.max(1, value)));
+                              const newValue = Math.min(10, Math.max(1, value));
+                              setNumVariations(newValue);
+                              // Save to context if generation is active
+                              if (isGenerating || isGenerating3DAsset) {
+                                setGlobalNumVariations(newValue);
+                              }
                             }}
-                            disabled={isGenerating}
+                            readOnly={isGenerating || isGenerating3DAsset}
                           />
                         </div>
 
@@ -1448,18 +1767,28 @@ const MainSection = ({ setBackgroundSkybox }) => {
                             type="text"
                             id="negativeText"
                             placeholder="Elements to avoid: low-res, blurry, washed out..."
-                            className="w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60"
+                            className={`w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 ${
+                              isGenerating || isGenerating3DAsset 
+                                ? 'opacity-90 cursor-default' 
+                                : ''
+                            }`}
                             value={negativeText}
-                            onChange={(e) => setNegativeText(e.target.value)}
-                            disabled={isGenerating}
+                            onChange={(e) => {
+                              setNegativeText(e.target.value);
+                              // Save to context if generation is active
+                              if (isGenerating || isGenerating3DAsset) {
+                                setGlobalNegativeText(e.target.value);
+                              }
+                            }}
+                            readOnly={isGenerating || isGenerating3DAsset}
                           />
                         </div>
                       </div>
                     )}
 
-                    {/* 3D Asset Viewer Button - Show when 3D asset is available */}
+                    {/* 3D Asset Viewer Button - Show when 3D asset is available (persistent during generation) */}
                     {generated3DAsset && 
-                     generated3DAsset.status === 'completed' && 
+                     (generated3DAsset.status === 'completed' || generated3DAsset.status === 'processing') && 
                      (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) &&
                      generatedVariations.length > 0 && (
                       <div className="mt-1">
@@ -1471,7 +1800,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               setBackgroundSkybox(generatedVariations[currentVariationIndex] || generatedVariations[0]);
                             }
                           }}
-                          className="w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 text-white transition-all"
+                          className={`w-full py-1.5 rounded-md text-xs font-semibold uppercase tracking-[0.16em] flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500/80 to-pink-600/80 hover:from-purple-500 hover:to-pink-500 text-white transition-all ${
+                            (isGenerating || isGenerating3DAsset) && generated3DAsset.status === 'processing'
+                              ? 'opacity-90' 
+                              : ''
+                          }`}
+                          disabled={generated3DAsset.status === 'processing' && !generated3DAsset.downloadUrl && !generated3DAsset.previewUrl}
                         >
                           <svg
                             className="w-4 h-4"
@@ -1571,10 +1905,15 @@ const MainSection = ({ setBackgroundSkybox }) => {
                   {/* Column 2: Style & Actions */}
                     <div className="space-y-1.5">
                       {/* Style selector */}
-                     <div className="border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1">
+                     <div className={`border border-[#262626] bg-[#121212] rounded-md px-2 py-1.5 space-y-1 ${
+                      (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-emerald-500/30' : ''
+                    }`}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase">
+                        <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase flex items-center gap-1.5">
                           In3D.Ai Style
+                          {(isGenerating || isGenerating3DAsset) && selectedSkybox && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="Currently generating with this style" />
+                          )}
                         </span>
                         {selectedSkybox && (
                           <span className="text-[9px] text-gray-400">
@@ -1612,7 +1951,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           <select
                             value={selectedSkybox?.id ?? ''}
                             onChange={handleSkyboxStyleChange}
-                            className="w-full appearance-none rounded-md border border-emerald-500/70 bg-[#151515] px-2.5 py-1.5 pr-7 text-xs text-gray-100 shadow-[0_0_0_1px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-500/80 focus:border-emerald-500/80"
+                            className={`w-full appearance-none rounded-md border border-emerald-500/70 bg-[#151515] px-2.5 py-1.5 pr-7 text-xs text-gray-100 shadow-[0_0_0_1px_rgba(16,185,129,0.4)] focus:outline-none focus:ring-2 focus:ring-emerald-500/80 focus:border-emerald-500/80 ${
+                              isGenerating || isGenerating3DAsset 
+                                ? 'opacity-90 cursor-default' 
+                                : ''
+                            }`}
+                            disabled={isGenerating || isGenerating3DAsset}
                           >
                             <option value="" disabled>
                               Select a style
@@ -1786,12 +2130,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
                               }
 
                               try {
-                                setIsGenerating3DAsset(true);
+                                setGenerating3DAsset(true);
                                 setAssetGenerationProgress({
                                   stage: 'extracting',
                                   progress: 0,
-                                  totalAssets: 0,
-                                  completedAssets: 0,
                                   message: 'Analyzing prompt for 3D objects...'
                                 });
 
@@ -1804,14 +2146,19 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                      null)
                                   : null;
 
-                                // Use intelligent parsing: use asset description for 3D generation
-                                const assetPrompt = parsedPrompt && parsedPrompt.asset 
-                                  ? parsedPrompt.asset 
-                                  : prompt;
+                                // Use coordinated prompt if available (ensures proper grounding), otherwise use intelligent parsing
+                                const assetPrompt = coordinatedPrompts?.asset_prompt 
+                                  ? coordinatedPrompts.asset_prompt
+                                  : (parsedPrompt && parsedPrompt.asset 
+                                    ? parsedPrompt.asset 
+                                    : prompt);
 
                                 console.log('🚀 Starting manual 3D asset generation...', {
                                   originalPrompt: prompt.substring(0, 50) + '...',
-                                  assetPrompt: assetPrompt.substring(0, 50) + '...',
+                                  assetPrompt: assetPrompt.substring(0, 80) + '...',
+                                  usingCoordinated: !!coordinatedPrompts?.asset_prompt,
+                                  usingParsed: !coordinatedPrompts?.asset_prompt && !!parsedPrompt?.asset,
+                                  groundingMetadata: groundingMetadata,
                                   parsedBackground: parsedPrompt?.background?.substring(0, 30) || 'N/A',
                                   confidence: parsedPrompt?.confidence || 0,
                                   userId: user.uid,
@@ -1828,7 +2175,11 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                   style: 'realistic',
                                   maxAssets: 1
                                 }, (progressUpdate) => {
-                                  setAssetGenerationProgress(progressUpdate);
+                                  setAssetGenerationProgress({
+                                    stage: progressUpdate.stage || 'generating',
+                                    progress: progressUpdate.progress || 0,
+                                    message: progressUpdate.message || 'Processing...'
+                                  });
                                   console.log('📊 Generation progress:', progressUpdate);
                                 });
 
@@ -1842,7 +2193,13 @@ const MainSection = ({ setBackgroundSkybox }) => {
 
                                 if (result.success && result.assets && result.assets.length > 0) {
                                   const asset = result.assets[0];
+                                  // Store grounding metadata with the asset for 3D viewer integration
+                                  if (groundingMetadata) {
+                                    asset.groundingMetadata = groundingMetadata;
+                                    console.log('📐 Grounding metadata attached to asset:', groundingMetadata);
+                                  }
                                   setGenerated3DAsset(asset);
+                                  setGlobalGenerated3DAsset(asset); // Save to context
                                   // Set skybox background when 3D asset completes
                                   if (generatedVariations.length > 0 && setBackgroundSkybox) {
                                     setBackgroundSkybox(generatedVariations[currentVariationIndex] || generatedVariations[0]);
@@ -1921,7 +2278,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                                 document.body.appendChild(errorMsg);
                                 setTimeout(() => document.body.removeChild(errorMsg), 8000);
                               } finally {
-                                setIsGenerating3DAsset(false);
+                                setGenerating3DAsset(false);
                                 setAssetGenerationProgress(null);
                                 // Don't hide loading here if skybox is still generating
                                 if (!isGenerating) {
@@ -2128,6 +2485,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                   onClick={async () => {
                     setShow3DAssetViewer(false);
                     setGenerated3DAsset(null);
+                    setGlobalGenerated3DAsset(null); // Clear from context
                     // Wait a moment for state to update, then trigger generation
                     await new Promise(resolve => setTimeout(resolve, 100));
                     
@@ -2137,12 +2495,10 @@ const MainSection = ({ setBackgroundSkybox }) => {
                     }
 
                     try {
-                      setIsGenerating3DAsset(true);
+                      setGenerating3DAsset(true);
                       setAssetGenerationProgress({
                         stage: 'extracting',
                         progress: 0,
-                        totalAssets: 0,
-                        completedAssets: 0,
                         message: 'Analyzing prompt for 3D objects...'
                       });
 
@@ -2154,10 +2510,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
                            null)
                         : null;
 
-                      // Use intelligent parsing: use asset description for 3D generation
-                      const assetPrompt = parsedPrompt && parsedPrompt.asset 
-                        ? parsedPrompt.asset 
-                        : prompt;
+                      // Use coordinated prompt if available (ensures proper grounding), otherwise use intelligent parsing
+                      const assetPrompt = coordinatedPrompts?.asset_prompt 
+                        ? coordinatedPrompts.asset_prompt
+                        : (parsedPrompt && parsedPrompt.asset 
+                          ? parsedPrompt.asset 
+                          : prompt);
 
                       const result = await assetGenerationService.generateAssetsFromPrompt({
                         originalPrompt: assetPrompt,
@@ -2167,12 +2525,22 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         style: 'realistic',
                         maxAssets: 1
                       }, (progressUpdate) => {
-                        setAssetGenerationProgress(progressUpdate);
+                        setAssetGenerationProgress({
+                          stage: progressUpdate.stage || 'generating',
+                          progress: progressUpdate.progress || 0,
+                          message: progressUpdate.message || 'Processing...'
+                        });
                       });
 
                       if (result.success && result.assets && result.assets.length > 0) {
                         const asset = result.assets[0];
+                        // Store grounding metadata with the asset for 3D viewer integration
+                        if (groundingMetadata) {
+                          asset.groundingMetadata = groundingMetadata;
+                          console.log('📐 Grounding metadata attached to asset:', groundingMetadata);
+                        }
                         setGenerated3DAsset(asset);
+                        setGlobalGenerated3DAsset(asset); // Save to context
                         // Set skybox background when 3D asset completes
                         if (generatedVariations.length > 0 && setBackgroundSkybox) {
                           setBackgroundSkybox(generatedVariations[currentVariationIndex] || generatedVariations[0]);
@@ -2186,7 +2554,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
                       console.error('❌ Regeneration error:', error);
                       setError(error instanceof Error ? error.message : 'Failed to regenerate 3D asset');
                     } finally {
-                      setIsGenerating3DAsset(false);
+                      setGenerating3DAsset(false);
                       setAssetGenerationProgress(null);
                       // Don't hide loading here if skybox is still generating
                       if (!isGenerating) {
