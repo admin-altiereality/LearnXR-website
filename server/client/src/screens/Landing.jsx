@@ -1,155 +1,151 @@
-import React, { useState, useEffect, Suspense, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+﻿import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FaRocket, 
-  FaBrain, 
-  FaCube, 
-  FaPlay, 
-  FaArrowRight, 
+import {
+  FaBrain,
+  FaCube,
+  FaPalette,
+  FaPlay,
+  FaArrowRight,
   FaStar,
   FaUsers,
   FaShieldAlt,
-  FaPalette,
-  FaCode,
-  FaGlobe
+  FaGlobe,
+  FaDownload,
+  FaBolt,
+  FaCode
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Float, Sphere } from '@react-three/drei';
+import { useSubscription } from '../contexts/SubscriptionContext';
+import { HeroGeometric } from '@/components/ui/shape-landing-hero';
+
+const features = [
+  {
+    icon: FaBrain,
+    title: "AI-Powered Generation",
+    description: "Transform text prompts into cinematic 3D assets with state-of-the-art neural networks",
+    gradient: "from-amber-500 to-orange-600"
+  },
+  {
+    icon: FaCube,
+    title: "Multiple Formats",
+    description: "Export to FBX, OBJ, GLTF and more for seamless workflow integration",
+    gradient: "from-emerald-500 to-teal-600"
+  },
+  {
+    icon: FaPalette,
+    title: "Style Variety",
+    description: "Choose from animation, gaming, comics, and VFX artistic styles",
+    gradient: "from-violet-500 to-purple-600"
+  },
+  {
+    icon: FaCode,
+    title: "Developer Ready",
+    description: "Perfect for game development, AR/VR, and immersive experiences",
+    gradient: "from-sky-500 to-blue-600"
+  }
+];
+
+const stats = [
+  { number: "10K+", label: "Assets Generated", icon: FaCube },
+  { number: "500+", label: "Happy Creators", icon: FaUsers },
+  { number: "50+", label: "Export Formats", icon: FaDownload },
+  { number: "24/7", label: "AI Processing", icon: FaBolt }
+];
 
 const Landing = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const [isVisible, setIsVisible] = useState(false);
+  const { user, loading: authLoading } = useAuth();
+  const { subscription, loading: subscriptionLoading, isFreePlan } = useSubscription();
   const [activeFeature, setActiveFeature] = useState(0);
 
   useEffect(() => {
-    setIsVisible(true);
+    setActiveFeature(0);
     const interval = setInterval(() => {
-      setActiveFeature((prev) => (prev + 1) % 4);
-    }, 3000);
+      setActiveFeature((prev) => (prev + 1) % features.length);
+    }, 4000);
+
     return () => clearInterval(interval);
   }, []);
 
-  const features = [
-    {
-      icon: FaBrain,
-      title: "AI-Powered Generation",
-      description: "Transform text prompts into stunning 3D assets with advanced AI technology"
-    },
-    {
-      icon: FaCube,
-      title: "Multiple Formats",
-      description: "Export to FBX, OBJ, GLTF and more for seamless integration"
-    },
-    {
-      icon: FaPalette,
-      title: "Style Variety",
-      description: "Choose from animation, gaming, comics, and VFX styles"
-    },
-    {
-      icon: FaCode,
-      title: "Developer Ready",
-      description: "Perfect for game development, AR/VR, and 3D applications"
-    }
-  ];
-
-  const stats = [
-    { number: "10K+", label: "Assets Generated" },
-    { number: "500+", label: "Happy Developers" },
-    { number: "50+", label: "Export Formats" },
-    { number: "24/7", label: "AI Processing" }
-  ];
-
   const handleGetStarted = () => {
+    if (authLoading || subscriptionLoading) {
+      return;
+    }
+
     if (user) {
-      navigate('/explore');
+      if (isFreePlan && !subscription) {
+        navigate('/onboarding');
+      } else {
+        navigate('/main');
+      }
     } else {
       navigate('/login');
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 text-white overflow-x-hidden">
-      {/* Animated 3D Background for Hero */}
-      <div className="absolute top-0 left-0 w-full h-[60vh] md:h-[70vh] z-0 pointer-events-none select-none">
-        <Suspense fallback={null}>
-          <HeroBackground3D />
-        </Suspense>
-      </div>
-      {/* Animated Background Particles */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-purple-900/20 to-pink-900/20"></div>
-        <div className="absolute top-0 left-0 w-full h-full">
-          {[...Array(50)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-1 h-1 bg-cyan-400 rounded-full animate-pulse"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 3}s`,
-                animationDuration: `${2 + Math.random() * 3}s`
-              }}
-            />
-          ))}
-        </div>
-      </div>
-      {/* Hero Section */}
-      <section className="relative z-10 min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 pt-24">
-        <div className="max-w-7xl mx-auto text-center">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : 30 }}
-            transition={{ duration: 0.8 }}
-            className="mb-8"
+    <div className="min-h-screen bg-[#030303] text-white overflow-x-hidden font-body selection:bg-sky-500/30 selection:text-white">
+      <HeroGeometric
+        badge="Powered by Evoneural AI"
+        title1="In3D.ai crafts worlds"
+        title2="AI-powered 3D stories"
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="mt-20 flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center items-center"
+        >
+          <motion.button
+            onClick={handleGetStarted}
+            className="group relative px-10 py-4 rounded-2xl font-semibold text-lg overflow-hidden"
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
           >
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 mb-6">
-              <FaRocket className="text-cyan-400 mr-2" />
-              <span className="text-cyan-400 text-sm font-medium">Powered by Evoneural AI</span>
+            <div className="absolute inset-0 bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500" />
+            <div className="absolute inset-0 bg-gradient-to-r from-sky-400 via-violet-400 to-fuchsia-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="absolute inset-0 rounded-2xl shadow-[0_0_45px_rgba(139,92,246,0.4)] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <span className="relative flex items-center gap-2 text-white">
+              Get Started Free
+              <FaArrowRight className="text-sm" />
+            </span>
+          </motion.button>
+
+          <motion.button
+            className="group px-10 py-4 rounded-2xl font-semibold text-lg border border-white/20 hover:border-sky-400/60 transition-all duration-300 flex items-center gap-3 bg-white/5 backdrop-blur-2xl"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+          >
+            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+              <FaPlay className="text-sky-400" />
             </div>
-            
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold mb-6 bg-gradient-to-r from-white via-cyan-400 to-blue-400 bg-clip-text text-transparent">
-              In3D.ai
-            </h1>
-            
-            <p className="text-xl sm:text-2xl lg:text-3xl text-gray-300 mb-8 max-w-4xl mx-auto leading-relaxed">
-              Transform your ideas into stunning 3D assets with AI-powered generation
-            </p>
-            
-            <p className="text-lg text-gray-400 mb-12 max-w-3xl mx-auto">
-              Create professional 3D models, characters, and environments from simple text prompts. 
-              Perfect for game developers, designers, and creators.
-            </p>
-          </motion.div>
+            <span className="text-white/70">Watch Demo</span>
+          </motion.button>
+        </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : 30 }}
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-          >
-            <button
-              onClick={handleGetStarted}
-              className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full font-semibold text-lg hover:from-cyan-400 hover:to-blue-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-cyan-500/25"
-            >
-              <span className="flex items-center">
-                Get Started Free
-                <FaArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
-              </span>
-            </button>
-            
-            <button className="group px-8 py-4 border border-gray-600 rounded-full font-semibold text-lg hover:border-cyan-400 hover:text-cyan-400 transition-all duration-300 flex items-center">
-              <FaPlay className="mr-2" />
-              Watch Demo
-            </button>
-          </motion.div>
-        </div>
-      </section>
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.15 }}
+          className="mt-8 flex flex-wrap justify-center items-center gap-6 text-xs text-white/60 tracking-[0.3em]"
+        >
+          <div className="flex items-center gap-2">
+            <FaShieldAlt className="text-emerald-400" />
+            <span>Secure by design</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <FaGlobe className="text-sky-400" />
+            <span>Global CDN</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <FaStar className="text-amber-400" />
+            <span>99.9% uptime</span>
+          </div>
+        </motion.div>
+      </HeroGeometric>
 
-      {/* Features Section */}
-      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
+      <section className="relative z-10 py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -158,70 +154,41 @@ const Landing = () => {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 bg-gradient-to-r from-white to-cyan-400 bg-clip-text text-transparent">
-              Why Choose In3D.ai?
+            <span className="inline-flex items-center justify-center px-4 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-sm font-medium mb-4">
+              Powering 3D narratives
+            </span>
+            <h2 className="text-4xl sm:text-5xl font-display font-bold mb-4 text-white">
+              Why developers trust In3D.ai
             </h2>
-            <p className="text-xl text-gray-400 max-w-3xl mx-auto">
-              Experience the future of 3D asset creation with cutting-edge AI technology
+            <p className="text-lg text-white/60 max-w-3xl mx-auto">
+              Intelligent generation, expressive style control, and production-ready exports baked into one AI assistant.
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
             {features.map((feature, index) => (
               <motion.div
                 key={index}
-                initial={{ opacity: 0, y: 30 }}
+                initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.1 }}
                 viewport={{ once: true }}
-                className={`group relative p-6 rounded-2xl border transition-all duration-300 hover:scale-105 ${
-                  activeFeature === index
-                    ? 'border-cyan-500 bg-gradient-to-br from-cyan-500/10 to-blue-500/10'
-                    : 'border-gray-700 hover:border-cyan-500/50 bg-gray-800/50'
-                }`}
+                className="group relative rounded-3xl border bg-white/5 border-white/10 p-8 shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-500"
                 onMouseEnter={() => setActiveFeature(index)}
               >
-                <div className={`w-16 h-16 rounded-xl flex items-center justify-center mb-4 transition-all duration-300 ${
-                  activeFeature === index
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500'
-                    : 'bg-gray-700 group-hover:bg-gray-600'
-                }`}>
-                  <feature.icon className={`text-2xl ${
-                    activeFeature === index ? 'text-white' : 'text-cyan-400'
-                  }`} />
+                <div className={`absolute inset-0 rounded-3xl pointer-events-none transition-opacity duration-500 ${activeFeature === index ? 'opacity-100' : 'opacity-0'}`}>
+                  <div className="absolute inset-0 bg-gradient-to-br from-sky-500/20 to-fuchsia-500/20 blur-3xl" />
                 </div>
-                
-                <h3 className="text-xl font-semibold mb-3 text-white">
-                  {feature.title}
-                </h3>
-                
-                <p className="text-gray-400 leading-relaxed">
-                  {feature.description}
-                </p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Stats Section */}
-      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-gray-800/50 to-gray-900/50">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
-            {stats.map((stat, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, scale: 0.8 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                viewport={{ once: true }}
-                className="text-center"
-              >
-                <div className="text-3xl sm:text-4xl lg:text-5xl font-bold text-cyan-400 mb-2">
-                  {stat.number}
-                </div>
-                <div className="text-gray-400 font-medium">
-                  {stat.label}
+                <div className="relative z-10 flex flex-col gap-4">
+                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${feature.gradient} flex items-center justify-center text-white shadow-lg`}>
+                    <feature.icon className="text-2xl" />
+                  </div>
+                  <h3 className="text-2xl font-semibold">{feature.title}</h3>
+                  <p className="text-white/70 leading-relaxed">{feature.description}</p>
+                  <div className="flex items-center gap-2 text-sky-400 text-sm font-semibold">
+                    <span>Learn more</span>
+                    <FaArrowRight className="text-[0.7rem]" />
+                  </div>
                 </div>
               </motion.div>
             ))}
@@ -229,109 +196,96 @@ const Landing = () => {
         </div>
       </section>
 
-      {/* CTA Section */}
       <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
+        <div className="max-w-6xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
             viewport={{ once: true }}
+            className="rounded-[2.25rem] border border-white/10 bg-gradient-to-br from-white/5 via-white/0 to-white/5 backdrop-blur-3xl p-12 relative overflow-hidden shadow-[0_50px_120px_rgba(13,110,253,0.25)]"
           >
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6 bg-gradient-to-r from-white to-cyan-400 bg-clip-text text-transparent">
-              Ready to Create Amazing 3D Assets?
-            </h2>
-            
-            <p className="text-xl text-gray-400 mb-8 max-w-2xl mx-auto">
-              Join thousands of developers and creators who are already using In3D.ai to bring their ideas to life
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <button
-                onClick={handleGetStarted}
-                className="group relative px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full font-semibold text-lg hover:from-cyan-400 hover:to-blue-400 transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-cyan-500/25"
-              >
-                <span className="flex items-center">
-                  Start Creating Now
-                  <FaArrowRight className="ml-2 group-hover:translate-x-1 transition-transform" />
-                </span>
-              </button>
-              
-              <div className="flex items-center text-gray-400">
-                <div className="flex -space-x-2 mr-4">
-                  {[...Array(5)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-8 h-8 rounded-full bg-gradient-to-r from-cyan-400 to-blue-400 border-2 border-gray-900"
-                    />
-                  ))}
-                </div>
-                <span className="text-sm">Join 500+ creators</span>
-              </div>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.2),_transparent_55%)] pointer-events-none" />
+            <div className="relative grid grid-cols-2 lg:grid-cols-4 gap-8">
+              {stats.map((stat, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: index * 0.1 }}
+                  viewport={{ once: true }}
+                  className="text-center relative z-10"
+                >
+                  <div className="mx-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 mb-3 flex items-center justify-center">
+                    <stat.icon className="text-sky-400" />
+                  </div>
+                  <div className="text-4xl font-display font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-sky-300 mb-2">
+                    {stat.number}
+                  </div>
+                  <div className="text-white/60 uppercase tracking-[0.3em] text-xs">
+                    {stat.label}
+                  </div>
+                </motion.div>
+              ))}
             </div>
           </motion.div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="relative z-10 py-12 px-4 sm:px-6 lg:px-8 border-t border-gray-800">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="flex items-center mb-4 md:mb-0">
-              <FaCube className="text-cyan-400 text-2xl mr-2" />
-              <span className="text-xl font-bold text-white">In3D.ai</span>
+      <section className="relative z-10 py-24 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+            viewport={{ once: true }}
+            className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur-3xl p-12 text-center overflow-hidden shadow-[0_40px_80px_rgba(15,118,255,0.25)]"
+          >
+            <div className="absolute inset-0 bg-gradient-to-tr from-sky-500/20 via-transparent to-fuchsia-500/10 pointer-events-none" />
+            <h2 className="font-display text-4xl font-bold mb-6 text-white relative z-10">
+              Ready to create the worlds you imagine?
+            </h2>
+            <p className="relative z-10 text-white/70 mb-10">
+              Join thousands of creators debugging less and designing more with In3D.ai.
+            </p>
+            <div className="relative z-10 flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={handleGetStarted}
+                className="px-10 py-3 rounded-full bg-gradient-to-r from-sky-500 to-violet-500 font-semibold text-white shadow-[0_20px_60px_rgba(14,165,233,0.45)] transition-transform duration-300 hover:-translate-y-0.5"
+              >
+                Start creating now
+              </button>
+              <button
+                className="px-10 py-3 rounded-full border border-white/30 text-white/80 hover:text-white transition-colors"
+              >
+                Schedule a call
+              </button>
             </div>
-            
-            <div className="flex items-center space-x-6 text-gray-400">
-              <span className="text-sm">© 2024 Evoneural AI. All rights reserved.</span>
-              <div className="flex items-center space-x-2">
-                <FaStar className="text-yellow-400" />
-                <span className="text-sm">Powered by Advanced AI</span>
-              </div>
+          </motion.div>
+        </div>
+      </section>
+
+      <footer className="relative z-10 py-12 px-4 sm:px-6 lg:px-8 border-t border-white/10">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-sky-500 to-fuchsia-500 flex items-center justify-center shadow-[0_0_20px_rgba(14,165,233,0.3)]">
+              <FaCube className="text-white text-xl" />
             </div>
+            <div>
+              <p className="text-xl font-display font-semibold">In3D.ai</p>
+              <p className="text-sm text-white/60">Â© 2024 Evoneural AI. All rights reserved.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-sm text-white/60">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>All systems go</span>
+            </div>
+            <span className="text-xs tracking-[0.3em] uppercase">Crafted for creators</span>
           </div>
         </div>
       </footer>
     </div>
-  );
-};
-
-// Subtle 3D background for hero section
-const HeroBackground3D = () => {
-  // Animate a few floating, glowing spheres
-  return (
-    <Canvas
-      camera={{ position: [0, 0, 8], fov: 50 }}
-      style={{ width: '100%', height: '100%' }}
-      gl={{ alpha: true }}
-    >
-      <ambientLight intensity={0.5} />
-      <pointLight position={[0, 5, 10]} intensity={0.7} color="#06b6d4" />
-      {[...Array(5)].map((_, i) => (
-        <Float
-          key={i}
-          speed={1 + i * 0.2}
-          rotationIntensity={0.2}
-          floatIntensity={0.8}
-        >
-          <Sphere args={[0.6 + i * 0.15, 32, 32]} position={[
-            Math.sin(i) * 2.5,
-            Math.cos(i) * 1.5 + (i % 2 === 0 ? 0.5 : -0.5),
-            -1.5 + i * 0.5
-          ]}>
-            <meshStandardMaterial
-              color={["#06b6d4", "#818cf8", "#f472b6", "#facc15", "#38bdf8"][i]}
-              emissive={["#06b6d4", "#818cf8", "#f472b6", "#facc15", "#38bdf8"][i]}
-              emissiveIntensity={0.5}
-              transparent
-              opacity={0.7}
-              metalness={0.7}
-              roughness={0.2}
-            />
-          </Sphere>
-        </Float>
-      ))}
-    </Canvas>
   );
 };
 
