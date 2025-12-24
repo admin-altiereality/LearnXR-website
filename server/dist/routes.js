@@ -30,11 +30,14 @@ exports.router = void 0;
 const express = __importStar(require("express"));
 const multer_1 = __importDefault(require("multer"));
 const skybox_1 = __importDefault(require("./routes/skybox"));
+const coordinatedPrompt_1 = __importDefault(require("./routes/coordinatedPrompt"));
 const imagine_controller_1 = require("./controllers/imagine.controller");
 const router = express.Router();
 exports.router = router;
 // Mount skybox routes
 router.use("/skybox", skybox_1.default);
+// Mount coordinated prompt routes
+router.use("/coordinated-prompt", coordinatedPrompt_1.default);
 // Imagine routes
 router.get("/imagine/getGenerators", imagine_controller_1.getGenerators);
 router.post("/imagine/generateImagine", (0, multer_1.default)().any(), imagine_controller_1.generateImagine);

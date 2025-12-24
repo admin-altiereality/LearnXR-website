@@ -4,6 +4,7 @@ import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
 import subscriptionRoutes from './subscription';
+import userRoutes from './user';
 
 const router = express.Router();
 
@@ -83,6 +84,11 @@ console.log('Skybox routes mounted at /skybox');
 console.log('Mounting LinkedIn routes...');
 router.use('/api', linkedinRoutes);
 console.log('LinkedIn routes mounted at /api');
+
+// Mount user routes
+console.log('Mounting user routes...');
+router.use('/user', userRoutes);
+console.log('User routes mounted at /user');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

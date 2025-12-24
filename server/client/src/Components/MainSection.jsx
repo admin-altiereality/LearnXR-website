@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
@@ -119,6 +119,12 @@ const MainSection = ({ setBackgroundSkybox }) => {
   const [coordinatedPrompts, setCoordinatedPrompts] = useState(null);
   const [groundingMetadata, setGroundingMetadata] = useState(null);
   
+  // Voice input state
+  const [isListening, setIsListening] = useState(false);
+  const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const [voiceError, setVoiceError] = useState(null);
+  const recognitionRef = useRef(null);
+  
   // Loading indicator context
   const { showLoading, hideLoading, updateProgress } = useLoading();
 
@@ -193,6 +199,117 @@ const MainSection = ({ setBackgroundSkybox }) => {
       setHas3DObjects(false);
     }
   }, [prompt]);
+
+  // -------------------------
+  // Voice Recognition Setup
+  // -------------------------
+  useEffect(() => {
+    // Check for browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+      setIsVoiceSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceError(null);
+        console.log('🎤 Voice recognition started');
+      };
+      
+      recognition.onresult = (event) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+        
+        // Append final transcript to prompt
+        if (finalTranscript) {
+          setPrompt(prev => {
+            const newPrompt = prev ? `${prev} ${finalTranscript}`.trim() : finalTranscript.trim();
+            // Respect max length
+            return newPrompt.substring(0, 600);
+          });
+          console.log('🎤 Voice transcript added:', finalTranscript);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('🎤 Voice recognition error:', event.error);
+        setIsListening(false);
+        
+        switch (event.error) {
+          case 'no-speech':
+            setVoiceError('No speech detected. Please try again.');
+            break;
+          case 'audio-capture':
+            setVoiceError('No microphone found. Please check your device.');
+            break;
+          case 'not-allowed':
+            setVoiceError('Microphone access denied. Please allow microphone access.');
+            break;
+          case 'network':
+            setVoiceError('Network error. Please check your connection.');
+            break;
+          default:
+            setVoiceError(`Voice error: ${event.error}`);
+        }
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+        console.log('🎤 Voice recognition ended');
+      };
+      
+      recognitionRef.current = recognition;
+    } else {
+      setIsVoiceSupported(false);
+      console.log('🎤 Speech recognition not supported in this browser');
+    }
+    
+    // Cleanup
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
+
+  // Voice input toggle handler
+  const toggleVoiceInput = useCallback(() => {
+    if (!recognitionRef.current) return;
+    
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      setVoiceError(null);
+      try {
+        recognitionRef.current.start();
+      } catch (error) {
+        // Handle the case where recognition is already started
+        if (error.name === 'InvalidStateError') {
+          recognitionRef.current.stop();
+          setTimeout(() => {
+            recognitionRef.current.start();
+          }, 100);
+        } else {
+          console.error('🎤 Failed to start voice recognition:', error);
+          setVoiceError('Failed to start voice input. Please try again.');
+        }
+      }
+    }
+  }, [isListening]);
 
   // -------------------------
   // Load Skybox styles
@@ -1647,31 +1764,128 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           {(isGenerating || isGenerating3DAsset) && (
                             <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" title="Currently generating with this prompt" />
                           )}
+                          {isListening && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400 text-[9px] animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                              Listening...
+                            </span>
+                          )}
                         </span>
-                        <span className="text-[10px] text-gray-500">
-                          {prompt.length}/600
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gray-500">
+                            {prompt.length}/600
+                          </span>
+                          {/* Voice Input Button */}
+                          {isVoiceSupported && (
+                            <button
+                              type="button"
+                              onClick={toggleVoiceInput}
+                              disabled={isGenerating || isGenerating3DAsset}
+                              className={`p-1 rounded-md transition-all duration-200 ${
+                                isListening
+                                  ? 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse hover:bg-red-500/30'
+                                  : 'bg-[#1a1a1a] text-gray-400 border border-[#303030] hover:bg-[#252525] hover:text-gray-200 hover:border-sky-500/40'
+                              } ${
+                                (isGenerating || isGenerating3DAsset) ? 'opacity-50 cursor-not-allowed' : ''
+                              }`}
+                              title={isListening ? 'Stop listening' : 'Voice input - Click to speak your prompt'}
+                            >
+                              <svg 
+                                className="w-3.5 h-3.5" 
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                              >
+                                {isListening ? (
+                                  // Stop/Square icon when listening
+                                  <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none" />
+                                ) : (
+                                  // Microphone icon
+                                  <>
+                                    <path 
+                                      strokeLinecap="round" 
+                                      strokeLinejoin="round" 
+                                      strokeWidth={2} 
+                                      d="M19 10v2a7 7 0 01-14 0v-2" 
+                                    />
+                                    <path 
+                                      strokeLinecap="round" 
+                                      strokeLinejoin="round" 
+                                      strokeWidth={2} 
+                                      d="M12 19v3m0 0h-3m3 0h3" 
+                                    />
+                                    <rect 
+                                      x="9" 
+                                      y="2" 
+                                      width="6" 
+                                      height="11" 
+                                      rx="3" 
+                                      strokeWidth={2}
+                                    />
+                                  </>
+                                )}
+                              </svg>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <textarea
-                        id="prompt"
-                        maxLength={600}
-                        rows={2}
-                        placeholder="Describe the environment: lighting, mood, props, architecture..."
-                        className={`w-full text-xs rounded-md bg-[#151515] border border-[#303030] px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-sky-500/60 focus:border-sky-500/60 resize-none ${
-                          isGenerating || isGenerating3DAsset 
-                            ? 'opacity-90 cursor-default' 
-                            : ''
-                        }`}
-                        value={prompt}
-                        onChange={(e) => {
-                          setPrompt(e.target.value);
-                          // Save to context if generation is active
-                          if (isGenerating || isGenerating3DAsset) {
-                            setGlobalPrompt(e.target.value);
-                          }
-                        }}
-                        readOnly={isGenerating || isGenerating3DAsset}
-                      />
+                      
+                      {/* Voice Error Message */}
+                      {voiceError && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px]">
+                          <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span>{voiceError}</span>
+                          <button 
+                            onClick={() => setVoiceError(null)}
+                            className="ml-auto text-red-400/60 hover:text-red-400"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                      
+                      <div className="relative">
+                        <textarea
+                          id="prompt"
+                          maxLength={600}
+                          rows={2}
+                          placeholder={isListening ? "Listening... Speak your prompt now" : "Describe the environment: lighting, mood, props, architecture... (or click to speak)"}
+                          className={`w-full text-xs rounded-md bg-[#151515] border px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 resize-none transition-colors duration-200 ${
+                            isListening
+                              ? 'border-red-500/50 ring-1 ring-red-500/30 focus:ring-red-500/50 focus:border-red-500/50'
+                              : 'border-[#303030] focus:ring-sky-500/60 focus:border-sky-500/60'
+                          } ${
+                            isGenerating || isGenerating3DAsset 
+                              ? 'opacity-90 cursor-default' 
+                              : ''
+                          }`}
+                          value={prompt}
+                          onChange={(e) => {
+                            setPrompt(e.target.value);
+                            // Save to context if generation is active
+                            if (isGenerating || isGenerating3DAsset) {
+                              setGlobalPrompt(e.target.value);
+                            }
+                          }}
+                          readOnly={isGenerating || isGenerating3DAsset}
+                        />
+                        {/* Listening indicator overlay */}
+                        {isListening && (
+                          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+                            <span className="flex space-x-0.5">
+                              <span className="w-1 h-3 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1 h-4 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '100ms' }} />
+                              <span className="w-1 h-2 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '200ms' }} />
+                              <span className="w-1 h-5 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '300ms' }} />
+                              <span className="w-1 h-3 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '400ms' }} />
+                            </span>
+                          </div>
+                        )}
+                      </div>
                       
                       {/* Intelligent Prompt Parsing Indicator */}
                       {parsedPrompt && parsedPrompt.confidence > 0.3 && (

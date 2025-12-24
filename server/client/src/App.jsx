@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
+import { OnboardingGuard } from './Components/auth/OnboardingGuard';
 import { Signup } from './Components/auth/Signup';
 import ErrorBoundary from './Components/ErrorBoundary';
 import Footer from './Components/Footer';
@@ -17,6 +18,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
+import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
 import History from './screens/History';
@@ -37,6 +39,10 @@ import { MeshyTestPanel } from './Components/MeshyTestPanel';
 import { MeshyDebugPanel } from './Components/MeshyDebugPanel';
 import { ServiceStatusPanel } from './Components/ServiceStatusPanel';
 import SystemStatus from './screens/SystemStatus';
+import Onboarding from './screens/Onboarding';
+import HelpChat from './screens/HelpChat';
+import FloatingHelpButton from './Components/FloatingHelpButton';
+import SmoothScroll from './Components/SmoothScroll';
 
 // Conditional Footer - hides on /main route
 const ConditionalFooter = () => {
@@ -287,10 +293,12 @@ function App() {
     if (threeJsError) {
       return (
         <AuthProvider>
-          <AssetGenerationProvider>
-            <CreateGenerationProvider>
-              <LoadingProvider>
-                <Router>
+          <SubscriptionProvider>
+            <AssetGenerationProvider>
+              <CreateGenerationProvider>
+                <LoadingProvider>
+                  <Router>
+              <SmoothScroll>
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
@@ -316,117 +324,154 @@ function App() {
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
+                      <Route path="/help" element={<HelpChat />} />
+                      
+                      {/* Onboarding for new authenticated users */}
+                      <Route path="/onboarding" element={
+                        <ProtectedRoute>
+                          <Onboarding />
+                        </ProtectedRoute>
+                      } />
+                      
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
-                          <ThreeDGenerate />
+                          <OnboardingGuard>
+                            <ThreeDGenerate />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
 
-                      {/* Protected routes - require authentication */}
+                      {/* Protected routes - require authentication and onboarding */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <MainSection 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full px-6"
-                          />
+                          <OnboardingGuard>
+                            <MainSection 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full px-6"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/gallery" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="gallery"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="gallery"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/styles" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="styles"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="styles"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/tutorials" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="tutorials"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="tutorials"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/community" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="community"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="community"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/trending" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="trending"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="trending"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/skybox/:id" element={
                         <ProtectedRoute>
-                          <SkyboxFullScreen 
-                            className="w-full h-full"
-                          />
+                          <OnboardingGuard>
+                            <SkyboxFullScreen 
+                              className="w-full h-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/history" element={
                         <ProtectedRoute>
-                          <History 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <History 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/profile" element={
                         <ProtectedRoute>
-                          <Profile />
+                          <OnboardingGuard>
+                            <Profile />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/asset-generator" element={
                         <ProtectedRoute>
-                          <AssetGenerator />
+                          <OnboardingGuard>
+                            <AssetGenerator />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/unified-prompt" element={
                         <ProtectedRoute>
-                          <div className="min-h-screen bg-gray-900 p-4">
-                            <div className="max-w-4xl mx-auto">
-                              <PromptPanel 
-                                onAssetsGenerated={(jobId) => {
-                                  // Navigate to preview after successful generation
-                                  window.location.href = `/preview/${jobId}`;
-                                }}
-                                className="w-full"
-                              />
+                          <OnboardingGuard>
+                            <div className="min-h-screen bg-gray-900 p-4">
+                              <div className="max-w-4xl mx-auto">
+                                <PromptPanel 
+                                  onAssetsGenerated={(jobId) => {
+                                    // Navigate to preview after successful generation
+                                    window.location.href = `/preview/${jobId}`;
+                                  }}
+                                  className="w-full"
+                                />
+                              </div>
                             </div>
-                          </div>
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/preview/:jobId" element={
                         <ProtectedRoute>
-                          <PreviewScene />
+                          <OnboardingGuard>
+                            <PreviewScene />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/service-status" element={<ServiceStatusPanel />} />
@@ -454,12 +499,16 @@ function App() {
               draggable
               pauseOnHover
             />
+            {/* Floating Help Button */}
+            <FloatingHelpButton />
             {/* Global Background Loading Indicator */}
             <GlobalLoadingIndicator />
+          </SmoothScroll>
           </Router>
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
+        </SubscriptionProvider>
       </AuthProvider>
       );
     }
@@ -467,10 +516,12 @@ function App() {
     return (
       <ErrorBoundary>
         <AuthProvider>
-          <AssetGenerationProvider>
-            <CreateGenerationProvider>
-              <LoadingProvider>
-                <Router>
+          <SubscriptionProvider>
+            <AssetGenerationProvider>
+              <CreateGenerationProvider>
+                <LoadingProvider>
+                  <Router>
+              <SmoothScroll>
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer */}
               {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
@@ -506,117 +557,154 @@ function App() {
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
+                      <Route path="/help" element={<HelpChat />} />
+                      
+                      {/* Onboarding for new authenticated users */}
+                      <Route path="/onboarding" element={
+                        <ProtectedRoute>
+                          <Onboarding />
+                        </ProtectedRoute>
+                      } />
+                      
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
-                          <ThreeDGenerate />
+                          <OnboardingGuard>
+                            <ThreeDGenerate />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
 
-                      {/* Protected routes - require authentication */}
+                      {/* Protected routes - require authentication and onboarding */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <MainSection 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full absolute inset-0 min-h-screen"
-                          />
+                          <OnboardingGuard>
+                            <MainSection 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full absolute inset-0 min-h-screen"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/gallery" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="gallery"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="gallery"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/styles" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="styles"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="styles"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/tutorials" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="tutorials"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="tutorials"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/community" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="community"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="community"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/trending" element={
                         <ProtectedRoute>
-                          <Explore 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            category="trending"
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <Explore 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              category="trending"
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/skybox/:id" element={
                         <ProtectedRoute>
-                          <SkyboxFullScreen 
-                            className="w-full h-full"
-                          />
+                          <OnboardingGuard>
+                            <SkyboxFullScreen 
+                              className="w-full h-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/history" element={
                         <ProtectedRoute>
-                          <History 
-                            setBackgroundSkybox={setBackgroundSkybox}
-                            className="w-full"
-                          />
+                          <OnboardingGuard>
+                            <History 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/profile" element={
                         <ProtectedRoute>
-                          <Profile />
+                          <OnboardingGuard>
+                            <Profile />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/asset-generator" element={
                         <ProtectedRoute>
-                          <AssetGenerator />
+                          <OnboardingGuard>
+                            <AssetGenerator />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/unified-prompt" element={
                         <ProtectedRoute>
-                          <div className="min-h-screen bg-gray-900 p-4">
-                            <div className="max-w-4xl mx-auto">
-                              <PromptPanel 
-                                onAssetsGenerated={(jobId) => {
-                                  // Navigate to preview after successful generation
-                                  window.location.href = `/preview/${jobId}`;
-                                }}
-                                className="w-full"
-                              />
+                          <OnboardingGuard>
+                            <div className="min-h-screen bg-gray-900 p-4">
+                              <div className="max-w-4xl mx-auto">
+                                <PromptPanel 
+                                  onAssetsGenerated={(jobId) => {
+                                    // Navigate to preview after successful generation
+                                    window.location.href = `/preview/${jobId}`;
+                                  }}
+                                  className="w-full"
+                                />
+                              </div>
                             </div>
-                          </div>
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/preview/:jobId" element={
                         <ProtectedRoute>
-                          <PreviewScene />
+                          <OnboardingGuard>
+                            <PreviewScene />
+                          </OnboardingGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/system-status" element={<SystemStatus />} />
@@ -642,12 +730,16 @@ function App() {
               draggable
               pauseOnHover
             />
+            {/* Floating Help Button */}
+            <FloatingHelpButton />
             {/* Global Background Loading Indicator */}
             <GlobalLoadingIndicator />
+          </SmoothScroll>
           </Router>
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
+        </SubscriptionProvider>
       </AuthProvider>
     </ErrorBoundary>
     );
