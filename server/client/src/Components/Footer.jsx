@@ -16,7 +16,8 @@ import {
   FaServer,
   FaWifi,
   FaDatabase,
-  FaCog
+  FaCog,
+  FaMoneyBillWave
 } from 'react-icons/fa';
 import { Link, useNavigate } from 'react-router-dom';
 import { MeshyTestPanel } from './MeshyTestPanel';
@@ -75,6 +76,11 @@ function Footer() {
       name: "Terms & Conditions",
       url: "/terms-conditions",
       icon: FaFileAlt
+    },
+    {
+      name: "Refund Policy",
+      url: "/refund-policy",
+      icon: FaMoneyBillWave
     }
   ];
 
@@ -100,7 +106,7 @@ function Footer() {
                 In3D.<span className="text-cyan-400">AI</span>
               </h3>
               <p className="text-gray-400 text-xs leading-relaxed font-body">
-                Powered by Evoneural Artificial Intelligence OPC. 
+                Powered by Evoneural Artificial Intelligence OPC Private Limited. 
                 Transforming ideas into stunning 3D assets with AI-powered generation.
               </p>
             </div>
@@ -311,7 +317,7 @@ function Footer() {
           <div className="flex flex-col md:flex-row items-center justify-between space-y-3 md:space-y-0">
             <div className="text-center md:text-left">
               <p className="text-gray-500 text-xs font-body">
-                © {currentYear} In3D.AI | Evoneural Artificial Intelligence OPC. All rights reserved.
+                © {currentYear} In3D.AI | Evoneural Artificial Intelligence OPC Private Limited. All rights reserved.
               </p>
             </div>
             
@@ -327,6 +333,12 @@ function Footer() {
                 className="text-gray-400 hover:text-cyan-400 text-xs transition-colors font-body"
               >
                 Terms & Conditions
+              </Link>
+              <Link 
+                to="/refund-policy" 
+                className="text-gray-400 hover:text-cyan-400 text-xs transition-colors font-body"
+              >
+                Refund Policy
               </Link>
               <Link
                 to="/3d-generate"

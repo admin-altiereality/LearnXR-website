@@ -28,6 +28,7 @@ import Blog from './screens/Blog';
 import Pricing from './screens/Pricing';
 import PrivacyPolicy from './screens/PrivacyPolicy';
 import TermsConditions from './screens/TermsConditions';
+import RefundPolicy from './screens/RefundPolicy';
 import ThreeDGenerate from './screens/MeshyGenerate';
 import AssetGenerator from './screens/AssetGenerator';
 import { PreviewScene } from './screens/PreviewScene';
@@ -314,6 +315,7 @@ function App() {
                       <Route path="/pricing" element={<Pricing />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
+                      <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
                           <ThreeDGenerate />
@@ -503,6 +505,7 @@ function App() {
                       <Route path="/pricing" element={<Pricing />} />
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
+                      <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
                           <ThreeDGenerate />

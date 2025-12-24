@@ -150,7 +150,8 @@ const PrivacyPolicy = () => {
                 please contact us using the information below.
               </p>
               
-              <div className="space-y-3 text-gray-400">
+              <div className="space-y-3 text-gray-400 mb-4">
+                <p><strong className="text-white">Company:</strong> Evoneural Artificial Intelligence OPC Private Limited</p>
                 <p><strong className="text-white">Email:</strong> privacy@in3d.ai</p>
                 <p><strong className="text-white">WhatsApp:</strong> +91 7023310122</p>
                 <p><strong className="text-white">Address:</strong> Third Floor, Bhamashah Technohub, Sansthan Path, Malviya Nagar, Jaipur</p>

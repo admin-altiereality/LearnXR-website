@@ -64,7 +64,8 @@ const TermsConditions = () => {
       icon: FaHandshake,
       content: [
         "Subscription fees are billed in advance on a recurring basis.",
-        "All payments are non-refundable except as required by law.",
+        "We offer a 30-day money-back guarantee for new subscriptions. See our Refund Policy for details.",
+        "All payments are non-refundable after the 30-day guarantee period except as required by law.",
         "We may change our pricing with 30 days notice to existing subscribers.",
         "You may cancel your subscription at any time through your account settings.",
         "Unused generation credits do not carry over to the next billing period."
@@ -171,7 +172,7 @@ const TermsConditions = () => {
               
               <h3 className="text-2xl font-bold text-white mb-4">Important Notice</h3>
               <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-                These terms constitute a legally binding agreement between you and Evoneural Artificial Intelligence OPC. 
+                These terms constitute a legally binding agreement between you and Evoneural Artificial Intelligence OPC Private Limited. 
                 By using our services, you acknowledge that you have read, understood, and agree to be bound by these terms.
               </p>
               
