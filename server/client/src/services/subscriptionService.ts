@@ -61,10 +61,10 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       supportLevel: 'standard'
     },
     // These will be set from environment/backend
-    paddlePriceIdMonthly: process.env.VITE_PADDLE_PRO_MONTHLY_PRICE_ID || '',
-    paddlePriceIdYearly: process.env.VITE_PADDLE_PRO_YEARLY_PRICE_ID || '',
-    razorpayPlanIdMonthly: process.env.VITE_RAZORPAY_PRO_MONTHLY_PLAN_ID || '',
-    razorpayPlanIdYearly: process.env.VITE_RAZORPAY_PRO_YEARLY_PLAN_ID || ''
+    paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_PRO_MONTHLY_PRICE_ID || '',
+    paddlePriceIdYearly: import.meta.env.VITE_PADDLE_PRO_YEARLY_PRICE_ID || '',
+    razorpayPlanIdMonthly: import.meta.env.VITE_RAZORPAY_PRO_MONTHLY_PLAN_ID || '',
+    razorpayPlanIdYearly: import.meta.env.VITE_RAZORPAY_PRO_YEARLY_PLAN_ID || ''
   },
   {
     id: 'team',
@@ -96,10 +96,10 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       unityUnrealIntegration: true,
       supportLevel: 'priority'
     },
-    paddlePriceIdMonthly: process.env.VITE_PADDLE_TEAM_MONTHLY_PRICE_ID || '',
-    paddlePriceIdYearly: process.env.VITE_PADDLE_TEAM_YEARLY_PRICE_ID || '',
-    razorpayPlanIdMonthly: process.env.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID || '',
-    razorpayPlanIdYearly: process.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID || ''
+    paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_TEAM_MONTHLY_PRICE_ID || '',
+    paddlePriceIdYearly: import.meta.env.VITE_PADDLE_TEAM_YEARLY_PRICE_ID || '',
+    razorpayPlanIdMonthly: import.meta.env.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID || '',
+    razorpayPlanIdYearly: import.meta.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID || ''
   },
   {
     id: 'enterprise',
@@ -131,7 +131,11 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       teamCollaboration: true,
       unityUnrealIntegration: true,
       supportLevel: 'dedicated'
-    }
+    },
+    paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_ENTERPRISE_MONTHLY_PRICE_ID || '',
+    paddlePriceIdYearly: import.meta.env.VITE_PADDLE_ENTERPRISE_YEARLY_PRICE_ID || '',
+    razorpayPlanIdMonthly: import.meta.env.VITE_RAZORPAY_ENTERPRISE_MONTHLY_PLAN_ID || '',
+    razorpayPlanIdYearly: import.meta.env.VITE_RAZORPAY_ENTERPRISE_YEARLY_PLAN_ID || ''
   }
 ];
 

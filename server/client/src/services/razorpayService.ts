@@ -72,7 +72,7 @@ export class RazorpayService {
     }
   }
 
-  private async createOrder(planId: string, userId: string, billingCycle: 'monthly' | 'yearly' = 'monthly'): Promise<{ id: string; amount: number }> {
+  private async createOrderOrSubscription(planId: string, userId: string, userEmail: string, billingCycle: 'monthly' | 'yearly' = 'monthly'): Promise<{ id: string; amount: number; isSubscription: boolean; authLink?: string }> {
     try {
       if (!this.isInitialized) {
         throw new Error('Razorpay is not properly initialized');
@@ -82,20 +82,84 @@ export class RazorpayService {
       if (plan.isCustomPricing) {
         throw new Error('Enterprise plan requires custom pricing. Please contact sales.');
       }
-      // Use yearly price if billing cycle is yearly, otherwise use monthly price
+      
+      // Get the Razorpay plan ID for this plan and billing cycle
+      const razorpayPlanId = billingCycle === 'yearly' 
+        ? plan.razorpayPlanIdYearly 
+        : plan.razorpayPlanIdMonthly;
+      
+      // Debug logging for plan IDs
+      if (!razorpayPlanId) {
+        console.warn(`⚠️ Razorpay plan ID not found for ${planId} (${billingCycle})`, {
+          planId,
+          billingCycle,
+          razorpayPlanIdMonthly: plan.razorpayPlanIdMonthly,
+          razorpayPlanIdYearly: plan.razorpayPlanIdYearly,
+          envMonthly: import.meta.env.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID,
+          envYearly: import.meta.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID
+        });
+      }
+      
+      // If we have a Razorpay subscription plan ID, use subscription flow
+      if (razorpayPlanId) {
+        try {
+          console.log(`Creating Razorpay subscription with plan_id: ${razorpayPlanId}`);
+          const subscriptionResponse = await api.post('/subscription/create', {
+            userId,
+            planId: razorpayPlanId, // Use Razorpay plan ID
+            planName: plan.name,
+            billingCycle,
+            userEmail: userEmail // Pass email for customer creation
+          });
+          
+          if (subscriptionResponse.data.success && subscriptionResponse.data.data?.subscription_id) {
+            const price = billingCycle === 'yearly' ? plan.yearlyPrice : plan.price;
+            const subscriptionId = subscriptionResponse.data.data.subscription_id;
+            const authLink = subscriptionResponse.data.data.auth_link;
+            
+            console.log('✅ Razorpay subscription created:', subscriptionId);
+            console.log('Subscription auth_link:', authLink);
+            
+            return {
+              id: subscriptionId,
+              amount: Math.round(price * 100),
+              isSubscription: true,
+              authLink: authLink // Store auth_link for potential redirect fallback
+            };
+          } else {
+            console.error('Subscription creation response:', subscriptionResponse.data);
+            throw new Error('Failed to get subscription_id from response');
+          }
+        } catch (subscriptionError: any) {
+          console.error('Failed to create Razorpay subscription:', subscriptionError);
+          console.error('Error details:', {
+            message: subscriptionError.message,
+            response: subscriptionError.response?.data,
+            status: subscriptionError.response?.status
+          });
+          // Fall through to one-time order flow
+        }
+      }
+      
+      // Fallback to one-time order if subscription plan ID not available or subscription creation failed
       const price = billingCycle === 'yearly' ? plan.yearlyPrice : plan.price;
-      // Razorpay expects amount in paise, so multiply by 100
       const amountInPaise = Math.round(price * 100);
+      
       const response = await api.post('/payment/create-order', {
         amount: amountInPaise,
         currency: 'INR',
         planId,
         userId,
-        billingCycle
+        billingCycle,
+        razorpayPlanId // Include Razorpay plan ID for reference/tracking
       });
-      return response.data.data;
+      return {
+        id: response.data.data.id,
+        amount: response.data.data.amount,
+        isSubscription: false
+      };
     } catch (error) {
-      console.error('Error creating order:', error);
+      console.error('Error creating order/subscription:', error);
       throw error;
     }
   }
@@ -109,7 +173,7 @@ export class RazorpayService {
       if (typeof window === 'undefined' || !window.Razorpay) {
         throw new Error('Razorpay SDK not loaded');
       }
-      const order = await this.createOrder(planId, userId, billingCycle);
+      const orderOrSubscription = await this.createOrderOrSubscription(planId, userId, userEmail, billingCycle);
       const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
       if (!plan) {
         throw new Error('Invalid plan selected');
@@ -118,20 +182,44 @@ export class RazorpayService {
         throw new Error('Enterprise plan requires custom pricing. Please contact sales.');
       }
       const billingText = billingCycle === 'yearly' ? ' (Yearly)' : ' (Monthly)';
+      
+      // If subscription has auth_link, redirect to it instead of using checkout.js
+      if (orderOrSubscription.isSubscription && (orderOrSubscription as any).authLink) {
+        console.log('Redirecting to Razorpay subscription auth_link:', (orderOrSubscription as any).authLink);
+        window.location.href = (orderOrSubscription as any).authLink;
+        return Promise.resolve(); // Return immediately as we're redirecting
+      }
+      
       return new Promise<void>((resolve, reject) => {
-        const options = {
+        const baseOptions: any = {
           key: this.razorpayKeyId,
-          amount: order.amount,
-          currency: 'INR',
           name: 'In3D.Ai',
           description: `Upgrade to ${plan.name} Plan${billingText}`,
-          order_id: order.id,
-          prefill: { email: userEmail },
           handler: async (response: any) => {
             try {
-              await this.verifyPayment(response, userId, planId, billingCycle);
+              if (orderOrSubscription.isSubscription) {
+                // For subscriptions, Razorpay handles the payment automatically
+                // The response contains subscription_id, payment_id, and signature
+                console.log('Subscription payment success:', response);
+                
+                // Update our database with subscription details
+                // Note: For subscriptions, we use the internal planId (team, pro, etc.) not the Razorpay plan ID
+                await api.post('/subscription/create', {
+                  userId,
+                  planId, // Internal plan ID (team, pro, etc.)
+                  planName: plan.name,
+                  billingCycle,
+                  providerSubscriptionId: response.razorpay_subscription_id || orderOrSubscription.id,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  razorpaySignature: response.razorpay_signature
+                });
+              } else {
+                // For one-time orders, verify payment first
+                await this.verifyPayment(response, userId, planId, billingCycle);
+              }
               resolve();
             } catch (error) {
+              console.error('Error handling payment response:', error);
               reject(error);
             }
           },
@@ -142,6 +230,19 @@ export class RazorpayService {
             handleback: true
           },
           theme: { color: '#3B82F6' },
+          
+          // Use subscription_id for subscriptions, order_id for one-time payments
+          ...(orderOrSubscription.isSubscription 
+            ? { 
+                subscription_id: orderOrSubscription.id
+              }
+            : { 
+                order_id: orderOrSubscription.id, 
+                amount: orderOrSubscription.amount, 
+                currency: 'INR' 
+              }
+          ),
+          
           // Add these options to prevent COOP issues
           config: {
             display: {
@@ -161,6 +262,12 @@ export class RazorpayService {
               }
             }
           }
+        };
+        
+        // Add prefill after all other options to avoid conflicts
+        const options: any = {
+          ...baseOptions,
+          prefill: { email: userEmail }
         };
         
         try {

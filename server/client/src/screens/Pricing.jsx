@@ -194,7 +194,7 @@ const Pricing = () => {
               },
               {
                 question: 'Are there any usage limits?',
-                answer: 'Each plan has specific generation limits per month. Free plan includes 5 generations, Pro plan includes 60 generations, Team plan includes 120 generations, and Enterprise offers custom quotas. Each plan also has different asset limits per generation. Check your plan details for more information.'
+                answer: 'Each plan has specific generation limits per month. Free plan includes 5 generations, Pro plan includes 60 generations, and Team plan includes 120 generations. Each plan also has different asset limits per generation. For custom quotas and enterprise needs, please contact our sales team. Check your plan details for more information.'
               }
             ].map((faq, index) => (
               <motion.div

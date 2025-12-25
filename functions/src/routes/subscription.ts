@@ -12,10 +12,10 @@ const router = Router();
 
 router.post('/create', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
-  const { userId, planId, planName } = req.body;
+  const { userId, planId, planName, billingCycle, userEmail } = req.body;
   
   try {
-    console.log(`[${requestId}] Creating subscription:`, { userId, planId, planName });
+    console.log(`[${requestId}] Creating subscription:`, { userId, planId, planName, billingCycle });
     
     initializeServices();
     
@@ -27,15 +27,30 @@ router.post('/create', async (req: Request, res: Response) => {
       });
     }
     
-    const subscription = await razorpay.subscriptions.create({
+    // Determine total_count based on billing cycle
+    // For yearly plans, total_count should be 1 (one year), for monthly it's 12 (12 months)
+    const totalCount = billingCycle === 'yearly' ? 1 : 12;
+    
+    // Create subscription with customer details if email is provided
+    const subscriptionData: any = {
       plan_id: planId,
       customer_notify: 1,
-      total_count: 12,
+      total_count: totalCount,
       notes: {
         userId,
-        planName
+        planName,
+        billingCycle: billingCycle || 'monthly'
       }
-    });
+    };
+    
+    // Add customer details if email is provided (helps with payment method selection)
+    if (userEmail) {
+      subscriptionData.customer = {
+        email: userEmail
+      };
+    }
+    
+    const subscription = await razorpay.subscriptions.create(subscriptionData);
     
     const db = admin.firestore();
     await db.collection('subscriptions').doc(subscription.id).set({
@@ -47,12 +62,15 @@ router.post('/create', async (req: Request, res: Response) => {
     });
     
     console.log(`[${requestId}] Subscription created:`, subscription.id);
+    console.log(`[${requestId}] Subscription status:`, subscription.status);
+    console.log(`[${requestId}] Subscription auth_link:`, subscription.auth_link);
     
     return res.json({
       success: true,
       data: {
         subscription_id: subscription.id,
         status: subscription.status,
+        auth_link: subscription.auth_link, // Include auth_link for redirect-based checkout
         key_id: getSecret('RAZORPAY_KEY_ID')
       },
       requestId

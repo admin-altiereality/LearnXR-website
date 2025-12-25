@@ -227,9 +227,9 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
     }
   };
 
-  // Separate regular plans from Enterprise
+  // Filter out Enterprise plan - not visible to public users
+  // Enterprise plans are handled through direct sales contact only
   const regularPlans = SUBSCRIPTION_PLANS.filter(plan => plan.id !== 'enterprise');
-  const enterprisePlan = SUBSCRIPTION_PLANS.find(plan => plan.id === 'enterprise');
 
   const renderPlanCard = (plan: typeof SUBSCRIPTION_PLANS[0], index: number, isEnterprise = false) => {
     const style = getPlanStyle(plan.id);
@@ -586,12 +586,9 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
         {regularPlans.map((plan, index) => renderPlanCard(plan, index, false))}
       </div>
 
-      {/* Enterprise Plan - Full Width */}
-      {enterprisePlan && (
-        <div className="mt-8 lg:mt-12">
-          {renderPlanCard(enterprisePlan, regularPlans.length, true)}
-        </div>
-      )}
+      {/* Enterprise Plan - Hidden from public view
+          Enterprise plans are available through direct sales contact only
+          Contact: support@in3d.ai */}
     </div>
   );
 };
