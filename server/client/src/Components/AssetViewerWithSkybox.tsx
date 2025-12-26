@@ -39,6 +39,19 @@ interface BlendSettings {
   groundFade: boolean;
   depthParallax: boolean;
   parallaxIntensity: number;
+  wireframeEnabled: boolean;
+  wireframeMode: 'overlay' | 'full';
+  wireframeColor: string;
+  wireframeOpacity: number;
+  wireframeLineWidth: number;
+  skyboxWireframeEnabled: boolean;
+  skyboxMeshDensity: 'low' | 'medium' | 'high' | 'epic';
+  skyboxWireframeColor: string;
+  skyboxWireframeOpacity: number;
+  worldMeshEnabled: boolean;
+  worldMeshQuality: 'low' | 'medium' | 'high' | 'epic';
+  worldMeshDepthScale: number;
+  worldMeshSmoothness: number;
 }
 
 // Loading component with enhanced visuals
@@ -66,13 +79,228 @@ function Loader() {
   );
 }
 
+// Mesh density presets for skybox wireframe (higher values = smaller triangles)
+const MESH_DENSITY_PRESETS = {
+  low: [64, 64],
+  medium: [128, 128],
+  high: [256, 256],
+  epic: [512, 512]
+};
+
+// World Mesh quality presets (for depth-based mesh generation)
+const WORLD_MESH_QUALITY_PRESETS = {
+  low: { segments: 64, depthSamples: 32 },
+  medium: { segments: 128, depthSamples: 64 },
+  high: { segments: 256, depthSamples: 128 },
+  epic: { segments: 512, depthSamples: 256 }
+};
+
+// World Mesh component - creates 3D mesh from skybox using depth information
+function WorldMesh({ 
+  skyboxImageUrl, 
+  skyboxTexture, 
+  enabled, 
+  quality, 
+  depthScale, 
+  smoothness 
+}: { 
+  skyboxImageUrl?: string;
+  skyboxTexture: THREE.Texture | null;
+  enabled: boolean;
+  quality: 'low' | 'medium' | 'high' | 'epic';
+  depthScale: number;
+  smoothness: number;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const geometryRef = useRef<THREE.SphereGeometry | null>(null);
+  const [depthMap, setDepthMap] = useState<Float32Array | null>(null);
+  const [depthMapSize, setDepthMapSize] = useState({ width: 0, height: 0 });
+  
+  const { segments, depthSamples } = WORLD_MESH_QUALITY_PRESETS[quality];
+  
+  // Generate depth map from skybox image (simulated depth estimation)
+  useEffect(() => {
+    if (!enabled || !skyboxImageUrl) {
+      setDepthMap(null);
+      return;
+    }
+    
+    const generateDepthMap = async () => {
+      try {
+        // Create a canvas to process the skybox image
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        // Load skybox image
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = reject;
+          img.src = skyboxImageUrl;
+        });
+        
+        const width = depthSamples;
+        const height = Math.floor(depthSamples / 2); // Equirectangular aspect ratio
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw and process image
+        ctx.drawImage(img, 0, 0, width, height);
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        
+        // Generate depth map from luminance (simulated depth estimation)
+        const depthData = new Float32Array(width * height);
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          // Use luminance as depth proxy (darker = closer, brighter = farther)
+          const luminance = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+          // Invert so darker areas are closer, apply smoothing
+          const depth = Math.pow(1 - luminance, smoothness);
+          depthData[i / 4] = depth;
+        }
+        
+        setDepthMap(depthData);
+        setDepthMapSize({ width, height });
+      } catch (error) {
+        console.warn('Failed to generate depth map:', error);
+        setDepthMap(null);
+      }
+    };
+    
+    generateDepthMap();
+  }, [enabled, skyboxImageUrl, depthSamples, smoothness]);
+  
+  // Create geometry with depth displacement
+  useEffect(() => {
+    if (!enabled || !meshRef.current) return;
+    
+    // Dispose old geometry
+    if (geometryRef.current) {
+      geometryRef.current.dispose();
+    }
+    
+    // Create sphere geometry
+    const geometry = new THREE.SphereGeometry(500, segments, segments);
+    geometry.scale(-1, 1, 1);
+    
+    // Apply depth displacement if depth map is available
+    if (depthMap && depthMapSize.width > 0 && geometry.attributes.position) {
+      const positions = geometry.attributes.position;
+      const positionArray = positions.array as Float32Array;
+      
+      for (let i = 0; i < positionArray.length; i += 3) {
+        const x = positionArray[i];
+        const y = positionArray[i + 1];
+        const z = positionArray[i + 2];
+        
+        // Convert 3D position to UV coordinates (spherical to equirectangular)
+        const phi = Math.acos(-y / 500);
+        const theta = Math.atan2(-z, x) + Math.PI;
+        
+        const u = theta / (2 * Math.PI);
+        const v = phi / Math.PI;
+        
+        // Sample depth map
+        const depthX = Math.floor(u * depthMapSize.width);
+        const depthY = Math.floor(v * depthMapSize.height);
+        const depthIndex = depthY * depthMapSize.width + depthX;
+        
+        if (depthIndex >= 0 && depthIndex < depthMap.length) {
+          const depth = depthMap[depthIndex];
+          
+          // Apply depth displacement
+          const displacement = (depth - 0.5) * depthScale * 50; // Scale displacement
+          const normal = new THREE.Vector3(x, y, z).normalize();
+          
+          positionArray[i] += normal.x * displacement;
+          positionArray[i + 1] += normal.y * displacement;
+          positionArray[i + 2] += normal.z * displacement;
+        }
+      }
+      
+      positions.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+    
+    geometryRef.current = geometry;
+    
+    if (meshRef.current) {
+      meshRef.current.geometry = geometry;
+    }
+    
+    return () => {
+      if (geometryRef.current) {
+        geometryRef.current.dispose();
+      }
+    };
+  }, [enabled, depthMap, depthMapSize, segments, depthScale]);
+  
+  if (!enabled || !skyboxTexture) return null;
+  
+  return (
+    <mesh ref={meshRef} geometry={geometryRef.current || undefined}>
+      <meshStandardMaterial
+        map={skyboxTexture}
+        side={THREE.BackSide}
+        roughness={0.8}
+        metalness={0.1}
+      />
+    </mesh>
+  );
+}
+
+// Skybox wireframe overlay component
+function SkyboxWireframe({ 
+  enabled, 
+  meshDensity, 
+  color, 
+  opacity 
+}: { 
+  enabled: boolean; 
+  meshDensity: 'low' | 'medium' | 'high' | 'epic';
+  color: string;
+  opacity: number;
+}) {
+  const [segments] = MESH_DENSITY_PRESETS[meshDensity];
+  
+  if (!enabled) return null;
+  
+  return (
+    <Sphere args={[500, segments, segments]} scale={[-1, 1, 1]}>
+      <meshBasicMaterial
+        wireframe
+        color={new THREE.Color(color)}
+        transparent
+        opacity={opacity}
+        side={THREE.BackSide}
+        depthWrite={false}
+      />
+    </Sphere>
+  );
+}
+
 // Enhanced Skybox sphere with environment mapping support
 function SkyboxSphere({ 
   imageUrl, 
-  onTextureLoad 
+  onTextureLoad,
+  wireframeEnabled = false,
+  meshDensity = 'medium',
+  wireframeColor = '#00ff88',
+  wireframeOpacity = 0.6
 }: { 
   imageUrl: string; 
   onTextureLoad?: (texture: THREE.Texture) => void;
+  wireframeEnabled?: boolean;
+  meshDensity?: 'low' | 'medium' | 'high' | 'epic';
+  wireframeColor?: string;
+  wireframeOpacity?: number;
 }) {
   const [loadError, setLoadError] = useState(false);
   
@@ -88,20 +316,43 @@ function SkyboxSphere({
     return true;
   }, [imageUrl]);
 
+  const [segments] = MESH_DENSITY_PRESETS[meshDensity];
+
   if (!isValidImageUrl || loadError) {
     return (
-      <Sphere args={[500, 64, 64]} scale={[-1, 1, 1]}>
-        <meshBasicMaterial color="#0a0a0a" side={THREE.BackSide} />
-      </Sphere>
+      <>
+        <Sphere args={[500, segments, segments]} scale={[-1, 1, 1]}>
+          <meshBasicMaterial color="#0a0a0a" side={THREE.BackSide} />
+        </Sphere>
+        {wireframeEnabled && (
+          <SkyboxWireframe
+            enabled={wireframeEnabled}
+            meshDensity={meshDensity}
+            color={wireframeColor}
+            opacity={wireframeOpacity}
+          />
+        )}
+      </>
     );
   }
   
   return (
-    <SkyboxSphereInner 
-      imageUrl={imageUrl} 
-      onError={() => setLoadError(true)} 
-      onTextureLoad={onTextureLoad}
-    />
+    <>
+      <SkyboxSphereInner 
+        imageUrl={imageUrl} 
+        onError={() => setLoadError(true)} 
+        onTextureLoad={onTextureLoad}
+        segments={segments}
+      />
+      {wireframeEnabled && (
+        <SkyboxWireframe
+          enabled={wireframeEnabled}
+          meshDensity={meshDensity}
+          color={wireframeColor}
+          opacity={wireframeOpacity}
+        />
+      )}
+    </>
   );
 }
 
@@ -109,11 +360,13 @@ function SkyboxSphere({
 function SkyboxSphereInner({ 
   imageUrl, 
   onError,
-  onTextureLoad
+  onTextureLoad,
+  segments = 64
 }: { 
   imageUrl: string; 
   onError: () => void;
   onTextureLoad?: (texture: THREE.Texture) => void;
+  segments?: number;
 }) {
   // useTexture handles errors via Suspense, but we keep onError for API compatibility
   const texture = useTexture(imageUrl);
@@ -130,7 +383,7 @@ function SkyboxSphereInner({
   void onError;
 
   return (
-    <Sphere args={[500, 64, 64]} scale={[-1, 1, 1]}>
+    <Sphere args={[500, segments, segments]} scale={[-1, 1, 1]}>
       <meshBasicMaterial map={texture} side={THREE.BackSide} />
     </Sphere>
   );
@@ -198,7 +451,105 @@ function ReflectiveGround({
   );
 }
 
-// Enhanced 3D Asset component with environment reflection
+// Wireframe overlay component for merging assets with skybox
+function WireframeOverlay({ 
+  gltf, 
+  enabled, 
+  color, 
+  opacity
+}: { 
+  gltf: any; 
+  enabled: boolean; 
+  color: string; 
+  opacity: number;
+}) {
+  const wireframeGroupRef = useRef<THREE.Group>(null);
+  const wireframeMeshesRef = useRef<THREE.Mesh[]>([]);
+  
+  useEffect(() => {
+    if (!gltf || !enabled || !wireframeGroupRef.current) {
+      // Cleanup if disabled
+      if (wireframeMeshesRef.current.length > 0) {
+        wireframeMeshesRef.current.forEach(mesh => {
+          mesh.geometry.dispose();
+          if (mesh.material instanceof THREE.Material) {
+            mesh.material.dispose();
+          }
+        });
+        wireframeMeshesRef.current = [];
+      }
+      return;
+    }
+    
+    // Clear existing wireframe meshes
+    wireframeMeshesRef.current.forEach(mesh => {
+      mesh.geometry.dispose();
+      if (mesh.material instanceof THREE.Material) {
+        mesh.material.dispose();
+      }
+      wireframeGroupRef.current?.remove(mesh);
+    });
+    wireframeMeshesRef.current = [];
+    
+    // Create wireframe meshes from the model
+    gltf.scene.traverse((child: THREE.Object3D) => {
+      if (child instanceof THREE.Mesh && child.geometry) {
+        try {
+          const wireframeGeometry = child.geometry.clone();
+          const wireframeMaterial = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(color),
+            wireframe: true,
+            transparent: true,
+            opacity: opacity,
+            side: THREE.DoubleSide,
+            depthWrite: false
+          });
+          
+          const wireframeMesh = new THREE.Mesh(wireframeGeometry, wireframeMaterial);
+          
+          // Get world matrix from original mesh
+          child.updateMatrixWorld();
+          wireframeMesh.matrixWorld.copy(child.matrixWorld);
+          wireframeMesh.matrix.copy(child.matrix);
+          
+          wireframeGroupRef.current?.add(wireframeMesh);
+          wireframeMeshesRef.current.push(wireframeMesh);
+        } catch (error) {
+          console.warn('Failed to create wireframe mesh:', error);
+        }
+      }
+    });
+    
+    return () => {
+      // Cleanup on unmount or when dependencies change
+      wireframeMeshesRef.current.forEach(mesh => {
+        mesh.geometry.dispose();
+        if (mesh.material instanceof THREE.Material) {
+          mesh.material.dispose();
+        }
+      });
+      wireframeMeshesRef.current = [];
+    };
+  }, [gltf, enabled, color, opacity]);
+  
+  // Update wireframe properties when they change
+  useEffect(() => {
+    if (wireframeMeshesRef.current.length > 0) {
+      wireframeMeshesRef.current.forEach(mesh => {
+        if (mesh.material instanceof THREE.MeshBasicMaterial) {
+          mesh.material.color.set(color);
+          mesh.material.opacity = opacity;
+        }
+      });
+    }
+  }, [color, opacity]);
+  
+  if (!enabled || !gltf) return null;
+  
+  return <group ref={wireframeGroupRef} />;
+}
+
+// Enhanced 3D Asset component with environment reflection and wireframe support
 function AssetModel({ 
   assetUrl, 
   autoRotate = false, 
@@ -207,7 +558,12 @@ function AssetModel({
   reflectionStrength = 0.5,
   environmentIntensity = 1,
   floatEnabled = false,
-  onLoad, 
+  wireframeEnabled = false,
+  wireframeMode = 'overlay',
+  wireframeColor = '#00ff88',
+  wireframeOpacity = 0.6,
+  wireframeLineWidth = 1, // Reserved for future use (WebGL line width limitations)
+  onLoad,
   onError 
 }: { 
   assetUrl: string; 
@@ -217,6 +573,11 @@ function AssetModel({
   reflectionStrength?: number;
   environmentIntensity?: number;
   floatEnabled?: boolean;
+  wireframeEnabled?: boolean;
+  wireframeMode?: 'overlay' | 'full';
+  wireframeColor?: string;
+  wireframeOpacity?: number;
+  wireframeLineWidth?: number;
   onLoad?: (model: any) => void; 
   onError?: (error: Error) => void;
 }) {
@@ -225,6 +586,9 @@ function AssetModel({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loaderRef = useRef<{ gltfLoader: GLTFLoader; dracoLoader: DRACOLoader } | null>(null);
+  
+  // Suppress unused warning - wireframeLineWidth reserved for future use
+  void wireframeLineWidth;
 
   // Auto-rotation animation with smooth easing
   useFrame((_state, delta) => {
@@ -253,6 +617,46 @@ function AssetModel({
       });
     }
   }, [gltf, envMap, reflectionStrength, environmentIntensity]);
+
+  // Apply wireframe to materials when wireframe mode is 'full'
+  useEffect(() => {
+    if (gltf && wireframeEnabled && wireframeMode === 'full') {
+      gltf.scene.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material: THREE.Material) => {
+            if (material instanceof THREE.MeshStandardMaterial || 
+                material instanceof THREE.MeshPhysicalMaterial ||
+                material instanceof THREE.MeshBasicMaterial) {
+              material.wireframe = true;
+              material.color = new THREE.Color(wireframeColor);
+              material.transparent = true;
+              material.opacity = wireframeOpacity;
+              material.needsUpdate = true;
+            }
+          });
+        }
+      });
+    } else if (gltf && (!wireframeEnabled || wireframeMode === 'overlay')) {
+      // Restore original materials when wireframe is disabled or in overlay mode
+      gltf.scene.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material: THREE.Material) => {
+            if (material instanceof THREE.MeshStandardMaterial || 
+                material instanceof THREE.MeshPhysicalMaterial ||
+                material instanceof THREE.MeshBasicMaterial) {
+              material.wireframe = false;
+              if (material.transparent) {
+                material.opacity = 1;
+              }
+              material.needsUpdate = true;
+            }
+          });
+        }
+      });
+    }
+  }, [gltf, wireframeEnabled, wireframeMode, wireframeColor, wireframeOpacity]);
 
   useEffect(() => {
     if (!assetUrl) return;
@@ -367,12 +771,23 @@ function AssetModel({
   }
 
   const modelContent = (
-    <primitive 
-      ref={meshRef}
-      object={gltf.scene} 
-      scale={1}
-      position={[0, 0, 0]}
-    />
+    <>
+      <primitive 
+        ref={meshRef}
+        object={gltf.scene} 
+        scale={1}
+        position={[0, 0, 0]}
+      />
+      {/* Wireframe overlay for coherence with skybox */}
+      {wireframeEnabled && wireframeMode === 'overlay' && (
+        <WireframeOverlay
+          gltf={gltf}
+          enabled={wireframeEnabled}
+          color={wireframeColor}
+          opacity={wireframeOpacity}
+        />
+      )}
+    </>
   );
 
   // Wrap in Float component if enabled
@@ -514,7 +929,7 @@ function BlendControlPanel({
   isVisible: boolean;
   onToggle: () => void;
 }) {
-  const handleChange = useCallback((key: keyof BlendSettings, value: number | boolean) => {
+  const handleChange = useCallback((key: keyof BlendSettings, value: number | boolean | string) => {
     onSettingsChange({ ...settings, [key]: value });
   }, [settings, onSettingsChange]);
 
@@ -713,20 +1128,329 @@ function BlendControlPanel({
             </div>
           )}
 
+          {/* Wireframe Toggle */}
+          <div className="flex items-center justify-between border-t border-gray-700 pt-3 mt-2">
+            <span className="text-xs text-gray-300">🔲 Wireframe</span>
+            <button
+              onClick={() => handleChange('wireframeEnabled', !settings.wireframeEnabled)}
+              className={`w-10 h-5 rounded-full transition-colors ${
+                settings.wireframeEnabled ? 'bg-emerald-500' : 'bg-gray-600'
+              }`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                settings.wireframeEnabled ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+
+          {/* Wireframe Settings */}
+          {settings.wireframeEnabled && (
+            <div className="space-y-3 pl-4 border-l-2 border-emerald-500/30">
+              {/* Wireframe Mode */}
+              <div className="space-y-2">
+                <label className="text-xs text-gray-400">Mode</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleChange('wireframeMode', 'overlay')}
+                    className={`flex-1 py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.wireframeMode === 'overlay'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Overlay
+                  </button>
+                  <button
+                    onClick={() => handleChange('wireframeMode', 'full')}
+                    className={`flex-1 py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.wireframeMode === 'full'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Full
+                  </button>
+                </div>
+              </div>
+
+              {/* Wireframe Color */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Color</span>
+                  <input
+                    type="color"
+                    value={settings.wireframeColor}
+                    onChange={(e) => handleChange('wireframeColor', e.target.value)}
+                    className="w-8 h-6 rounded border border-gray-700 cursor-pointer"
+                  />
+                </label>
+              </div>
+
+              {/* Wireframe Opacity */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Opacity</span>
+                  <span className="text-emerald-400">{(settings.wireframeOpacity * 100).toFixed(0)}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={settings.wireframeOpacity}
+                  onChange={(e) => handleChange('wireframeOpacity', parseFloat(e.target.value))}
+                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer accent-emerald-400"
+                />
+              </div>
+
+              {/* Wireframe Line Width */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Line Width</span>
+                  <span className="text-emerald-400">{settings.wireframeLineWidth.toFixed(1)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={settings.wireframeLineWidth}
+                  onChange={(e) => handleChange('wireframeLineWidth', parseFloat(e.target.value))}
+                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer accent-emerald-400"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Skybox Wireframe Toggle */}
+          <div className="flex items-center justify-between border-t border-gray-700 pt-3 mt-2">
+            <span className="text-xs text-gray-300">🌐 Skybox Wireframe</span>
+            <button
+              onClick={() => handleChange('skyboxWireframeEnabled', !settings.skyboxWireframeEnabled)}
+              className={`w-10 h-5 rounded-full transition-colors ${
+                settings.skyboxWireframeEnabled ? 'bg-emerald-500' : 'bg-gray-600'
+              }`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                settings.skyboxWireframeEnabled ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+
+          {/* Skybox Wireframe Settings */}
+          {settings.skyboxWireframeEnabled && (
+            <div className="space-y-3 pl-4 border-l-2 border-emerald-500/30">
+              {/* Mesh Density */}
+              <div className="space-y-2">
+                <label className="text-xs text-gray-400">Mesh Density</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleChange('skyboxMeshDensity', 'low')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.skyboxMeshDensity === 'low'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Low
+                  </button>
+                  <button
+                    onClick={() => handleChange('skyboxMeshDensity', 'medium')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.skyboxMeshDensity === 'medium'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Medium
+                  </button>
+                  <button
+                    onClick={() => handleChange('skyboxMeshDensity', 'high')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.skyboxMeshDensity === 'high'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    High
+                  </button>
+                  <button
+                    onClick={() => handleChange('skyboxMeshDensity', 'epic')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.skyboxMeshDensity === 'epic'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Epic
+                  </button>
+                </div>
+              </div>
+
+              {/* Skybox Wireframe Color */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Color</span>
+                  <input
+                    type="color"
+                    value={settings.skyboxWireframeColor}
+                    onChange={(e) => handleChange('skyboxWireframeColor', e.target.value)}
+                    className="w-8 h-6 rounded border border-gray-700 cursor-pointer"
+                  />
+                </label>
+              </div>
+
+              {/* Skybox Wireframe Opacity */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Opacity</span>
+                  <span className="text-emerald-400">{(settings.skyboxWireframeOpacity * 100).toFixed(0)}%</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={settings.skyboxWireframeOpacity}
+                  onChange={(e) => handleChange('skyboxWireframeOpacity', parseFloat(e.target.value))}
+                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer accent-emerald-400"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* World Mesh Toggle */}
+          <div className="flex items-center justify-between border-t border-gray-700 pt-3 mt-2">
+            <span className="text-xs text-gray-300">🌍 World Mesh</span>
+            <button
+              onClick={() => handleChange('worldMeshEnabled', !settings.worldMeshEnabled)}
+              className={`w-10 h-5 rounded-full transition-colors ${
+                settings.worldMeshEnabled ? 'bg-emerald-500' : 'bg-gray-600'
+              }`}
+            >
+              <div className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform ${
+                settings.worldMeshEnabled ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+
+          {/* World Mesh Settings */}
+          {settings.worldMeshEnabled && (
+            <div className="space-y-3 pl-4 border-l-2 border-emerald-500/30">
+              <div className="text-[10px] text-gray-500 italic mb-2">
+                Creates a 3D mesh from your 360° environment using depth information
+              </div>
+              
+              {/* World Mesh Quality */}
+              <div className="space-y-2">
+                <label className="text-xs text-gray-400">Quality</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleChange('worldMeshQuality', 'low')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.worldMeshQuality === 'low'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Low
+                  </button>
+                  <button
+                    onClick={() => handleChange('worldMeshQuality', 'medium')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.worldMeshQuality === 'medium'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Medium
+                  </button>
+                  <button
+                    onClick={() => handleChange('worldMeshQuality', 'high')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.worldMeshQuality === 'high'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    High
+                  </button>
+                  <button
+                    onClick={() => handleChange('worldMeshQuality', 'epic')}
+                    className={`py-1.5 px-2 text-xs rounded transition-colors ${
+                      settings.worldMeshQuality === 'epic'
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                    }`}
+                  >
+                    Epic
+                  </button>
+                </div>
+              </div>
+
+              {/* Depth Scale */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Depth Scale</span>
+                  <span className="text-emerald-400">{settings.worldMeshDepthScale.toFixed(1)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="5"
+                  step="0.1"
+                  value={settings.worldMeshDepthScale}
+                  onChange={(e) => handleChange('worldMeshDepthScale', parseFloat(e.target.value))}
+                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer accent-emerald-400"
+                />
+              </div>
+
+              {/* Smoothness */}
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-xs text-gray-400">
+                  <span>Smoothness</span>
+                  <span className="text-emerald-400">{settings.worldMeshSmoothness.toFixed(1)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="3"
+                  step="0.1"
+                  value={settings.worldMeshSmoothness}
+                  onChange={(e) => handleChange('worldMeshSmoothness', parseFloat(e.target.value))}
+                  className="w-full h-1 bg-gray-700 rounded-full appearance-none cursor-pointer accent-emerald-400"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Reset button */}
           <button
             onClick={() => onSettingsChange({
               reflectionStrength: 0.6,
               environmentIntensity: 1.2,
-              fogEnabled: true,
+              fogEnabled: false,
               fogDensity: 0.008,
-              groundReflection: true,
+              groundReflection: false,
               groundOpacity: 0.4,
               floatEnabled: false,
               particlesEnabled: false,
               groundFade: true,
-              depthParallax: true,
-              parallaxIntensity: 0.3
+              depthParallax: false,
+              parallaxIntensity: 0.3,
+              wireframeEnabled: false,
+              wireframeMode: 'overlay',
+              wireframeColor: '#00ff88',
+              wireframeOpacity: 0.6,
+              wireframeLineWidth: 1,
+              skyboxWireframeEnabled: false,
+              skyboxMeshDensity: 'medium',
+              skyboxWireframeColor: '#00ff88',
+              skyboxWireframeOpacity: 0.6,
+              worldMeshEnabled: false,
+              worldMeshQuality: 'medium',
+              worldMeshDepthScale: 1.0,
+              worldMeshSmoothness: 1.0
             })}
             className="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded-lg transition-colors border border-gray-700"
           >
@@ -755,15 +1479,28 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
   const [blendSettings, setBlendSettings] = useState<BlendSettings>({
     reflectionStrength: 0.6,
     environmentIntensity: 1.2,
-    fogEnabled: true,
+    fogEnabled: false,
     fogDensity: 0.008,
-    groundReflection: true,
+    groundReflection: false,
     groundOpacity: 0.4,
     floatEnabled: false,
     particlesEnabled: false,
     groundFade: true,
-    depthParallax: true,
-    parallaxIntensity: 0.3
+    depthParallax: false,
+    parallaxIntensity: 0.3,
+    wireframeEnabled: false,
+    wireframeMode: 'overlay',
+    wireframeColor: '#00ff88',
+    wireframeOpacity: 0.6,
+    wireframeLineWidth: 1,
+    skyboxWireframeEnabled: false,
+    skyboxMeshDensity: 'medium',
+    skyboxWireframeColor: '#00ff88',
+    skyboxWireframeOpacity: 0.6,
+    worldMeshEnabled: false,
+    worldMeshQuality: 'medium',
+    worldMeshDepthScale: 1.0,
+    worldMeshSmoothness: 1.0
   });
   
   // Parallax effect for depth (Blockade Labs-style)
@@ -844,18 +1581,44 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
         dpr={[1, 2]}
       >
         <Suspense fallback={<Loader />}>
-          {/* Skybox background with environment texture callback */}
-          {skyboxImageUrl ? (
+          {/* World Mesh - 3D mesh from skybox using depth information */}
+          {blendSettings.worldMeshEnabled && skyboxImageUrl && (
+            <WorldMesh
+              skyboxImageUrl={skyboxImageUrl}
+              skyboxTexture={envTexture}
+              enabled={blendSettings.worldMeshEnabled}
+              quality={blendSettings.worldMeshQuality}
+              depthScale={blendSettings.worldMeshDepthScale}
+              smoothness={blendSettings.worldMeshSmoothness}
+            />
+          )}
+          
+          {/* Skybox background with environment texture callback and wireframe */}
+          {!blendSettings.worldMeshEnabled && skyboxImageUrl ? (
             <SkyboxSphere 
               imageUrl={skyboxImageUrl} 
               onTextureLoad={handleTextureLoad}
+              wireframeEnabled={blendSettings.skyboxWireframeEnabled}
+              meshDensity={blendSettings.skyboxMeshDensity}
+              wireframeColor={blendSettings.skyboxWireframeColor}
+              wireframeOpacity={blendSettings.skyboxWireframeOpacity}
             />
-          ) : (
-            <mesh>
-              <sphereGeometry args={[500, 64, 64]} />
-              <meshBasicMaterial color="#050505" side={THREE.BackSide} />
-            </mesh>
-          )}
+          ) : !blendSettings.worldMeshEnabled ? (
+            <>
+              <mesh>
+                <sphereGeometry args={[500, MESH_DENSITY_PRESETS[blendSettings.skyboxMeshDensity][0], MESH_DENSITY_PRESETS[blendSettings.skyboxMeshDensity][0]]} />
+                <meshBasicMaterial color="#050505" side={THREE.BackSide} />
+              </mesh>
+              {blendSettings.skyboxWireframeEnabled && (
+                <SkyboxWireframe
+                  enabled={blendSettings.skyboxWireframeEnabled}
+                  meshDensity={blendSettings.skyboxMeshDensity}
+                  color={blendSettings.skyboxWireframeColor}
+                  opacity={blendSettings.skyboxWireframeOpacity}
+                />
+              )}
+            </>
+          ) : null}
 
           {/* Atmospheric effects */}
           <AtmosphericFog 
@@ -866,7 +1629,7 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
           {/* Enhanced immersive lighting */}
           <ImmersiveLighting intensity={blendSettings.environmentIntensity} />
 
-          {/* 3D Asset with environment mapping */}
+          {/* 3D Asset with environment mapping and wireframe */}
           {assetUrl && (
             <AssetModel 
               assetUrl={assetUrl} 
@@ -876,6 +1639,11 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
               reflectionStrength={blendSettings.reflectionStrength}
               environmentIntensity={blendSettings.environmentIntensity}
               floatEnabled={blendSettings.floatEnabled}
+              wireframeEnabled={blendSettings.wireframeEnabled}
+              wireframeMode={blendSettings.wireframeMode}
+              wireframeColor={blendSettings.wireframeColor}
+              wireframeOpacity={blendSettings.wireframeOpacity}
+              wireframeLineWidth={blendSettings.wireframeLineWidth}
               onLoad={onLoad} 
               onError={handleViewerError} 
             />

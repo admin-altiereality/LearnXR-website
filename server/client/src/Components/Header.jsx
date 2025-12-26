@@ -33,6 +33,8 @@ const Header = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [subscription, setSubscription] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const lastScrollY = useRef(0);
 
   useEffect(() => {
     const fetchProfileAndSubscription = async () => {
@@ -68,6 +70,45 @@ const Header = () => {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Scroll detection for header show/hide with smooth transitions
+  useEffect(() => {
+    let ticking = false;
+    
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentScrollY = window.scrollY;
+          
+          // Show header at the top of the page
+          if (currentScrollY < 10) {
+            setIsHeaderVisible(true);
+          } else {
+            // Hide header when scrolling down, show when scrolling up
+            // Add threshold to prevent flickering on small scrolls
+            const scrollDifference = Math.abs(currentScrollY - lastScrollY.current);
+            if (scrollDifference > 5) {
+              if (currentScrollY > lastScrollY.current) {
+                // Scrolling down
+                setIsHeaderVisible(false);
+              } else {
+                // Scrolling up
+                setIsHeaderVisible(true);
+              }
+            }
+          }
+          
+          lastScrollY.current = currentScrollY;
+          ticking = false;
+        });
+        
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   const handleLogout = async () => {
@@ -174,7 +215,17 @@ const Header = () => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50">
+      <header 
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isHeaderVisible 
+            ? 'translate-y-0 opacity-100' 
+            : '-translate-y-full opacity-0 pointer-events-none'
+        }`}
+        style={{
+          transitionProperty: 'transform, opacity',
+          willChange: 'transform, opacity'
+        }}
+      >
         <div className="mx-4 mt-4">
           {/* Glassmorphism container - removed overflow-hidden to allow dropdown to show */}
           <nav className="

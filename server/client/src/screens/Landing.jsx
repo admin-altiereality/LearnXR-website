@@ -85,7 +85,7 @@ const Landing = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#030303] text-white overflow-x-hidden font-body selection:bg-sky-500/30 selection:text-white">
+    <div className="min-h-screen bg-[#030303] text-white overflow-x-hidden font-body selection:bg-sky-500/30 selection:text-white pt-10">
       <HeroGeometric
         badge="Powered by Evoneural AI"
         title1="In3D.ai crafts worlds"
