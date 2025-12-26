@@ -105,7 +105,7 @@ const detectCountryFromIP = async (): Promise<GeoDetectionResult | null> => {
 
   // Second fallback to ip-api.com (free, 45 requests/minute)
   try {
-    const response = await fetch('http://ip-api.com/json/?fields=countryCode,country');
+    const response = await fetch('https://ip-api.com/json/?fields=countryCode,country');
     if (response.ok) {
       const data = await response.json();
       if (data.countryCode) {

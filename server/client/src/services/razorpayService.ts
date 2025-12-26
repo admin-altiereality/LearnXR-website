@@ -103,45 +103,92 @@ export class RazorpayService {
       // If we have a Razorpay subscription plan ID, use subscription flow
       if (razorpayPlanId) {
         try {
-          console.log(`Creating Razorpay subscription with plan_id: ${razorpayPlanId}`);
+          console.log(`🔄 Creating Razorpay subscription with plan_id: ${razorpayPlanId}`);
+          
+          // Step 1: Create or get Razorpay customer (optional - backend will create if needed)
+          // Note: We skip customer creation here and let the backend handle it
+          // This simplifies the flow and reduces potential failure points
+          let customerId: string | null = null;
+          
+          // Step 2: Create subscription with customer_id
+          console.log(`📋 Creating subscription with:`, {
+            userId,
+            planId: razorpayPlanId,
+            planName: plan.name,
+            billingCycle,
+            customerId
+          });
+          
           const subscriptionResponse = await api.post('/subscription/create', {
             userId,
             planId: razorpayPlanId, // Use Razorpay plan ID
             planName: plan.name,
             billingCycle,
-            userEmail: userEmail // Pass email for customer creation
+            userEmail: userEmail,
+            customerId: customerId // Pass customer_id if available
           });
           
-          if (subscriptionResponse.data.success && subscriptionResponse.data.data?.subscription_id) {
-            const price = billingCycle === 'yearly' ? plan.yearlyPrice : plan.price;
-            const subscriptionId = subscriptionResponse.data.data.subscription_id;
-            const authLink = subscriptionResponse.data.data.auth_link;
-            
-            console.log('✅ Razorpay subscription created:', subscriptionId);
-            console.log('Subscription auth_link:', authLink);
-            
-            return {
-              id: subscriptionId,
-              amount: Math.round(price * 100),
-              isSubscription: true,
-              authLink: authLink // Store auth_link for potential redirect fallback
-            };
-          } else {
-            console.error('Subscription creation response:', subscriptionResponse.data);
-            throw new Error('Failed to get subscription_id from response');
+          console.log(`📥 Subscription creation response:`, subscriptionResponse.data);
+          
+          // Check response structure
+          if (!subscriptionResponse.data) {
+            console.error('❌ No data in subscription response');
+            throw new Error('Empty response from subscription creation endpoint');
           }
+          
+          if (!subscriptionResponse.data.success) {
+            console.error('❌ Subscription creation failed:', subscriptionResponse.data);
+            const errorMsg = subscriptionResponse.data.details || subscriptionResponse.data.error || 'Subscription creation failed';
+            throw new Error(errorMsg);
+          }
+          
+          if (!subscriptionResponse.data.data) {
+            console.error('❌ No data object in response:', subscriptionResponse.data);
+            throw new Error('Response missing data object');
+          }
+          
+          if (!subscriptionResponse.data.data.subscription_id) {
+            console.error('❌ No subscription_id in response data:', subscriptionResponse.data.data);
+            throw new Error('Response missing subscription_id');
+          }
+          
+          const price = billingCycle === 'yearly' ? plan.yearlyPrice : plan.price;
+          const subscriptionId = subscriptionResponse.data.data.subscription_id;
+          const authLink = subscriptionResponse.data.data.auth_link;
+          
+          console.log('✅ Razorpay subscription created successfully:', subscriptionId);
+          console.log('🔗 Subscription auth_link:', authLink);
+          
+          if (!authLink) {
+            console.warn('⚠️ No auth_link in response - subscription may require manual payment setup');
+          }
+          
+          return {
+            id: subscriptionId,
+            amount: Math.round(price * 100),
+            isSubscription: true,
+            authLink: authLink || undefined // Store auth_link for redirect
+          };
         } catch (subscriptionError: any) {
-          console.error('Failed to create Razorpay subscription:', subscriptionError);
-          console.error('Error details:', {
+          console.error('❌ Failed to create Razorpay subscription:', subscriptionError);
+          console.error('📋 Error details:', {
             message: subscriptionError.message,
             response: subscriptionError.response?.data,
-            status: subscriptionError.response?.status
+            status: subscriptionError.response?.status,
+            statusText: subscriptionError.response?.statusText,
+            fullError: subscriptionError
           });
-          // Fall through to one-time order flow
+          
+          // Re-throw with more context
+          const errorMessage = subscriptionError.response?.data?.details || 
+                              subscriptionError.response?.data?.error || 
+                              subscriptionError.message || 
+                              'Failed to create subscription';
+          throw new Error(errorMessage);
         }
       }
       
-      // Fallback to one-time order if subscription plan ID not available or subscription creation failed
+      // Fallback to one-time order if subscription plan ID not available
       const price = billingCycle === 'yearly' ? plan.yearlyPrice : plan.price;
       const amountInPaise = Math.round(price * 100);
       
@@ -183,11 +230,18 @@ export class RazorpayService {
       }
       const billingText = billingCycle === 'yearly' ? ' (Yearly)' : ' (Monthly)';
       
-      // If subscription has auth_link, redirect to it instead of using checkout.js
-      if (orderOrSubscription.isSubscription && (orderOrSubscription as any).authLink) {
-        console.log('Redirecting to Razorpay subscription auth_link:', (orderOrSubscription as any).authLink);
-        window.location.href = (orderOrSubscription as any).authLink;
-        return Promise.resolve(); // Return immediately as we're redirecting
+      // For subscriptions, ALWAYS use auth_link redirect (Razorpay subscriptions require this)
+      if (orderOrSubscription.isSubscription) {
+        const authLink = (orderOrSubscription as any).authLink;
+        if (authLink) {
+          console.log('🔄 Redirecting to Razorpay subscription auth_link:', authLink);
+          window.location.href = authLink;
+          return Promise.resolve(); // Return immediately as we're redirecting
+        } else {
+          // If no auth_link, try to use checkout.js with subscription_id as fallback
+          console.warn('⚠️ No auth_link available, attempting checkout.js with subscription_id');
+          // Continue to checkout.js flow below - it will use subscription_id
+        }
       }
       
       return new Promise<void>((resolve, reject) => {

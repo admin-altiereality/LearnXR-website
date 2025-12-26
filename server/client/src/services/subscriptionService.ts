@@ -3,6 +3,32 @@ import { db } from '../config/firebase';
 import { SubscriptionPlan, UserSubscription, PaymentProvider } from '../types/subscription';
 import api from '../config/axios';
 
+// Load Razorpay plan IDs from environment variables
+const RAZORPAY_PRO_MONTHLY = import.meta.env.VITE_RAZORPAY_PRO_MONTHLY_PLAN_ID || '';
+const RAZORPAY_PRO_YEARLY = import.meta.env.VITE_RAZORPAY_PRO_YEARLY_PLAN_ID || '';
+const RAZORPAY_TEAM_MONTHLY = import.meta.env.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID || '';
+const RAZORPAY_TEAM_YEARLY = import.meta.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID || '';
+const RAZORPAY_ENTERPRISE_MONTHLY = import.meta.env.VITE_RAZORPAY_ENTERPRISE_MONTHLY_PLAN_ID || '';
+const RAZORPAY_ENTERPRISE_YEARLY = import.meta.env.VITE_RAZORPAY_ENTERPRISE_YEARLY_PLAN_ID || '';
+
+// Validate Razorpay plan IDs on load (only in browser)
+if (typeof window !== 'undefined') {
+  const missingPlans: string[] = [];
+  if (!RAZORPAY_PRO_MONTHLY) missingPlans.push('Pro Monthly');
+  if (!RAZORPAY_PRO_YEARLY) missingPlans.push('Pro Yearly');
+  if (!RAZORPAY_TEAM_MONTHLY) missingPlans.push('Team Monthly');
+  if (!RAZORPAY_TEAM_YEARLY) missingPlans.push('Team Yearly');
+  if (!RAZORPAY_ENTERPRISE_MONTHLY) missingPlans.push('Enterprise Monthly');
+  if (!RAZORPAY_ENTERPRISE_YEARLY) missingPlans.push('Enterprise Yearly');
+  
+  if (missingPlans.length > 0) {
+    console.warn('⚠️ Missing Razorpay Plan IDs:', missingPlans.join(', '));
+    console.warn('Please ensure all VITE_RAZORPAY_*_PLAN_ID environment variables are set in .env file');
+  } else {
+    console.log('✅ All Razorpay plan IDs loaded successfully');
+  }
+}
+
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: 'free',
@@ -60,11 +86,10 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       unityUnrealIntegration: true,
       supportLevel: 'standard'
     },
-    // These will be set from environment/backend
     paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_PRO_MONTHLY_PRICE_ID || '',
     paddlePriceIdYearly: import.meta.env.VITE_PADDLE_PRO_YEARLY_PRICE_ID || '',
-    razorpayPlanIdMonthly: import.meta.env.VITE_RAZORPAY_PRO_MONTHLY_PLAN_ID || '',
-    razorpayPlanIdYearly: import.meta.env.VITE_RAZORPAY_PRO_YEARLY_PLAN_ID || ''
+    razorpayPlanIdMonthly: RAZORPAY_PRO_MONTHLY,
+    razorpayPlanIdYearly: RAZORPAY_PRO_YEARLY
   },
   {
     id: 'team',
@@ -98,8 +123,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     },
     paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_TEAM_MONTHLY_PRICE_ID || '',
     paddlePriceIdYearly: import.meta.env.VITE_PADDLE_TEAM_YEARLY_PRICE_ID || '',
-    razorpayPlanIdMonthly: import.meta.env.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID || '',
-    razorpayPlanIdYearly: import.meta.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID || ''
+    razorpayPlanIdMonthly: RAZORPAY_TEAM_MONTHLY,
+    razorpayPlanIdYearly: RAZORPAY_TEAM_YEARLY
   },
   {
     id: 'enterprise',
@@ -134,10 +159,46 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     },
     paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_ENTERPRISE_MONTHLY_PRICE_ID || '',
     paddlePriceIdYearly: import.meta.env.VITE_PADDLE_ENTERPRISE_YEARLY_PRICE_ID || '',
-    razorpayPlanIdMonthly: import.meta.env.VITE_RAZORPAY_ENTERPRISE_MONTHLY_PLAN_ID || '',
-    razorpayPlanIdYearly: import.meta.env.VITE_RAZORPAY_ENTERPRISE_YEARLY_PLAN_ID || ''
+    razorpayPlanIdMonthly: RAZORPAY_ENTERPRISE_MONTHLY,
+    razorpayPlanIdYearly: RAZORPAY_ENTERPRISE_YEARLY
   }
 ];
+
+/**
+ * Validates that a plan has the required Razorpay plan ID for the given billing cycle
+ * @param planId - The plan ID to validate
+ * @param billingCycle - The billing cycle ('monthly' or 'yearly')
+ * @returns true if the plan has a valid Razorpay plan ID, false otherwise
+ */
+export const validateRazorpayPlanId = (planId: string, billingCycle: 'monthly' | 'yearly'): boolean => {
+  const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
+  if (!plan) return false;
+  
+  if (plan.id === 'free') return true; // Free plan doesn't need Razorpay plan ID
+  
+  const razorpayPlanId = billingCycle === 'yearly' 
+    ? plan.razorpayPlanIdYearly 
+    : plan.razorpayPlanIdMonthly;
+  
+  return !!razorpayPlanId && razorpayPlanId.length > 0;
+};
+
+/**
+ * Gets the Razorpay plan ID for a given plan and billing cycle
+ * @param planId - The plan ID
+ * @param billingCycle - The billing cycle ('monthly' or 'yearly')
+ * @returns The Razorpay plan ID or null if not found
+ */
+export const getRazorpayPlanId = (planId: string, billingCycle: 'monthly' | 'yearly'): string | null => {
+  const plan = SUBSCRIPTION_PLANS.find(p => p.id === planId);
+  if (!plan) return null;
+  
+  const razorpayPlanId = billingCycle === 'yearly' 
+    ? plan.razorpayPlanIdYearly 
+    : plan.razorpayPlanIdMonthly;
+  
+  return razorpayPlanId && razorpayPlanId.length > 0 ? razorpayPlanId : null;
+};
 
 /**
  * Creates a default subscription document for a new user
