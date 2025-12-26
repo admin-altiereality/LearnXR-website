@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { SUBSCRIPTION_PLANS } from '../services/subscriptionService';
+import { SUBSCRIPTION_PLANS, validateRazorpayPlanId, getRazorpayPlanId } from '../services/subscriptionService';
 import { useAuth } from '../contexts/AuthContext';
 import { unifiedPaymentService } from '../services/unifiedPaymentService';
 import { 
@@ -96,6 +96,17 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
     if (planId === 'free') {
       toast.error('You are already on the free plan');
       return;
+    }
+
+    // Validate Razorpay plan ID if using Razorpay
+    if (geoInfo?.provider === 'razorpay') {
+      const hasPlanId = validateRazorpayPlanId(planId, billingCycle);
+      if (!hasPlanId) {
+        const planIdValue = getRazorpayPlanId(planId, billingCycle);
+        console.error(`Razorpay plan ID missing for ${planId} (${billingCycle}):`, planIdValue);
+        toast.error(`Payment configuration error for ${planId} plan. Please contact support.`);
+        return;
+      }
     }
 
     setIsProcessing(true);
