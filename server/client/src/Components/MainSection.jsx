@@ -33,8 +33,9 @@ import ConfigurationDiagnostic from './ConfigurationDiagnostic';
 import { AssetViewerWithSkybox } from './AssetViewerWithSkybox';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { incrementStyleUsage } from '../services/styleUsageService';
 
-const MainSection = ({ setBackgroundSkybox }) => {
+const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
 
   // -------------------------
@@ -643,6 +644,100 @@ const MainSection = ({ setBackgroundSkybox }) => {
   }, [setBackgroundSkybox]);
 
   // -------------------------
+  // Restore generation data from history page
+  // -------------------------
+  useEffect(() => {
+    const fromHistory = sessionStorage.getItem('fromHistory');
+    const resumeDataStr = sessionStorage.getItem('resumeGenerationData');
+    
+    if (fromHistory && resumeDataStr && skyboxStyles.length > 0) {
+      try {
+        const resumeData = JSON.parse(resumeDataStr);
+        console.log('🔄 Resuming generation from history:', resumeData);
+        
+        // Restore prompt
+        if (resumeData.prompt) {
+          setPrompt(resumeData.prompt);
+          setGlobalPrompt(resumeData.prompt);
+        }
+        
+        // Restore negative prompt
+        if (resumeData.negativePrompt) {
+          setNegativeText(resumeData.negativePrompt);
+          setGlobalNegativeText(resumeData.negativePrompt);
+        }
+        
+        // Restore style - wait for styles to be loaded
+        if (resumeData.styleId && skyboxStyles.length > 0) {
+          const matchedStyle = skyboxStyles.find(style => {
+            const styleId = style.id?.toString() || style.id;
+            const resumeStyleId = resumeData.styleId?.toString() || resumeData.styleId;
+            return styleId === resumeStyleId || 
+                   style.id === resumeData.styleId ||
+                   style.id?.toString() === resumeData.styleId?.toString();
+          });
+          
+          if (matchedStyle) {
+            console.log('✅ Matched style:', matchedStyle);
+            setSelectedSkybox(matchedStyle);
+            setGlobalSelectedSkybox(matchedStyle);
+          } else {
+            console.warn('⚠️ Could not find matching style for ID:', resumeData.styleId);
+          }
+        }
+        
+        // Restore 3D asset if available
+        if (resumeData.has3DAsset && resumeData.meshUrl) {
+          const restored3DAsset = {
+            id: `resumed-${Date.now()}`,
+            status: 'completed',
+            downloadUrl: resumeData.meshUrl,
+            previewUrl: resumeData.meshUrl,
+            format: resumeData.meshFormat || 'glb',
+            model_urls: resumeData.modelUrls || { glb: resumeData.meshUrl }
+          };
+          setGenerated3DAsset(restored3DAsset);
+          setGlobalGenerated3DAsset(restored3DAsset);
+          
+          // Create a skybox variation for the 3D viewer button to work
+          if (backgroundSkybox) {
+            const skyboxVariation = {
+              id: `resumed-skybox-${Date.now()}`,
+              file_url: backgroundSkybox.image || backgroundSkybox.image_jpg || '',
+              title: backgroundSkybox.title || resumeData.prompt || 'Resumed Generation',
+              prompt: resumeData.prompt || '',
+              generationId: `resumed-${Date.now()}`,
+              preview_url: backgroundSkybox.image || backgroundSkybox.image_jpg || ''
+            };
+            setGeneratedVariations([skyboxVariation]);
+          }
+        } else if (backgroundSkybox) {
+          // Even without 3D asset, create a skybox variation if background exists
+          const skyboxVariation = {
+            id: `resumed-skybox-${Date.now()}`,
+            file_url: backgroundSkybox.image || backgroundSkybox.image_jpg || '',
+            title: backgroundSkybox.title || resumeData.prompt || 'Resumed Generation',
+            prompt: resumeData.prompt || '',
+            generationId: `resumed-${Date.now()}`,
+            preview_url: backgroundSkybox.image || backgroundSkybox.image_jpg || ''
+          };
+          setGeneratedVariations([skyboxVariation]);
+        }
+        
+        // Clean up sessionStorage
+        sessionStorage.removeItem('resumeGenerationData');
+        sessionStorage.removeItem('fromHistory');
+        
+        console.log('✅ Generation data restored successfully');
+      } catch (error) {
+        console.error('❌ Error parsing resume data:', error);
+        sessionStorage.removeItem('resumeGenerationData');
+        sessionStorage.removeItem('fromHistory');
+      }
+    }
+  }, [backgroundSkybox, skyboxStyles, setGlobalPrompt, setGlobalNegativeText, setGlobalSelectedSkybox, setGlobalGenerated3DAsset]);
+
+  // -------------------------
   // Load subscription
   // -------------------------
   useEffect(() => {
@@ -1063,6 +1158,7 @@ const MainSection = ({ setBackgroundSkybox }) => {
             title: variationResults[0].title || prompt,
             imageUrl: variationResults[0].image, // Main image (first variation)
             style_id: selectedSkybox.id,
+            style_name: selectedSkybox.name || selectedSkybox.title || null, // Store style name for easy display
             negative_prompt: negativeText || '',
             status: 'completed',
             variations: variationsArray, // Array of all variations
@@ -1139,6 +1235,18 @@ const MainSection = ({ setBackgroundSkybox }) => {
             console.log(`   - Created At: ${verifyData.createdAt ? 'Set' : 'Missing'}`);
             console.log(`   - Status: ${verifyData.status}`);
             console.log(`   - Image URL: ${verifyData.imageUrl ? 'Present' : 'Missing'}`);
+            
+            // Track style usage for this generation
+            if (skyboxData.style_id) {
+              try {
+                console.log(`📊 Tracking style usage for style ${skyboxData.style_id}`);
+                await incrementStyleUsage(skyboxData.style_id, 1);
+                console.log(`✅ Style usage tracked successfully`);
+              } catch (styleUsageError) {
+                console.error(`⚠️ Failed to track style usage:`, styleUsageError);
+                // Don't fail the whole operation if style tracking fails
+              }
+            }
             
             // Show success notification
             const successMsg = document.createElement('div');
@@ -1527,12 +1635,35 @@ const MainSection = ({ setBackgroundSkybox }) => {
   // Render
   // -------------------------
   
+  // Check for persisted background in sessionStorage as fallback
+  const [persistedBackground, setPersistedBackground] = useState(null);
+  
+  useEffect(() => {
+    const savedBackground = sessionStorage.getItem('appliedBackgroundSkybox');
+    if (savedBackground) {
+      try {
+        const parsedBackground = JSON.parse(savedBackground);
+        setPersistedBackground(parsedBackground);
+      } catch (error) {
+        console.error('Error parsing saved background:', error);
+      }
+    }
+  }, []);
+
+  // Update persisted background when backgroundSkybox prop changes
+  useEffect(() => {
+    if (backgroundSkybox) {
+      setPersistedBackground(backgroundSkybox);
+    }
+  }, [backgroundSkybox]);
+
   // Determine if we should show the dotted surface background
   // Show during: empty state OR during loading
+  // Hide if a background skybox has been applied (from history or elsewhere)
+  const hasBackground = backgroundSkybox || persistedBackground;
   const showDottedSurface = 
-    (generatedVariations.length === 0 && !generated3DAsset) ||
-    isGenerating || 
-    isGenerating3DAsset;
+    ((generatedVariations.length === 0 && !generated3DAsset) && !hasBackground) ||
+    (isGenerating || isGenerating3DAsset);
   
   // Check if loading is active
   const isLoadingActive = isGenerating || isGenerating3DAsset;
@@ -1775,58 +1906,6 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           <span className="text-[10px] text-gray-500">
                             {prompt.length}/600
                           </span>
-                          {/* Voice Input Button */}
-                          {isVoiceSupported && (
-                            <button
-                              type="button"
-                              onClick={toggleVoiceInput}
-                              disabled={isGenerating || isGenerating3DAsset}
-                              className={`p-1 rounded-md transition-all duration-200 ${
-                                isListening
-                                  ? 'bg-red-500/20 text-red-400 border border-red-500/40 animate-pulse hover:bg-red-500/30'
-                                  : 'bg-[#1a1a1a] text-gray-400 border border-[#303030] hover:bg-[#252525] hover:text-gray-200 hover:border-sky-500/40'
-                              } ${
-                                (isGenerating || isGenerating3DAsset) ? 'opacity-50 cursor-not-allowed' : ''
-                              }`}
-                              title={isListening ? 'Stop listening' : 'Voice input - Click to speak your prompt'}
-                            >
-                              <svg 
-                                className="w-3.5 h-3.5" 
-                                fill="none" 
-                                stroke="currentColor" 
-                                viewBox="0 0 24 24"
-                              >
-                                {isListening ? (
-                                  // Stop/Square icon when listening
-                                  <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none" />
-                                ) : (
-                                  // Microphone icon
-                                  <>
-                                    <path 
-                                      strokeLinecap="round" 
-                                      strokeLinejoin="round" 
-                                      strokeWidth={2} 
-                                      d="M19 10v2a7 7 0 01-14 0v-2" 
-                                    />
-                                    <path 
-                                      strokeLinecap="round" 
-                                      strokeLinejoin="round" 
-                                      strokeWidth={2} 
-                                      d="M12 19v3m0 0h-3m3 0h3" 
-                                    />
-                                    <rect 
-                                      x="9" 
-                                      y="2" 
-                                      width="6" 
-                                      height="11" 
-                                      rx="3" 
-                                      strokeWidth={2}
-                                    />
-                                  </>
-                                )}
-                              </svg>
-                            </button>
-                          )}
                         </div>
                       </div>
                       
@@ -1852,9 +1931,9 @@ const MainSection = ({ setBackgroundSkybox }) => {
                         <textarea
                           id="prompt"
                           maxLength={600}
-                          rows={2}
+                          rows={3}
                           placeholder={isListening ? "Listening... Speak your prompt now" : "Describe the environment: lighting, mood, props, architecture... (or click to speak)"}
-                          className={`w-full text-xs rounded-md bg-[#151515] border px-2.5 py-1.5 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 resize-none transition-colors duration-200 ${
+                          className={`w-full text-xs rounded-md bg-[#151515] border px-2.5 py-1.5 pr-9 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-1 resize-none transition-colors duration-200 ${
                             isListening
                               ? 'border-red-500/50 ring-1 ring-red-500/30 focus:ring-red-500/50 focus:border-red-500/50'
                               : 'border-[#303030] focus:ring-sky-500/60 focus:border-sky-500/60'
@@ -1873,15 +1952,65 @@ const MainSection = ({ setBackgroundSkybox }) => {
                           }}
                           readOnly={isGenerating || isGenerating3DAsset}
                         />
+                        {/* Voice Input Button - Bottom Right Corner */}
+                        {isVoiceSupported && (
+                          <button
+                            type="button"
+                            onClick={toggleVoiceInput}
+                            disabled={isGenerating || isGenerating3DAsset}
+                            className={`absolute right-1 bottom-2 p-1.5 rounded-md transition-all duration-200 ${
+                              isListening
+                                ? 'bg-amber-600/25 text-amber-400 border border-amber-600/40 animate-pulse hover:bg-amber-600/35'
+                                : 'bg-amber-700/15 text-amber-500/80 border border-amber-700/25 hover:bg-amber-700/25 hover:text-amber-400 hover:border-amber-700/40'
+                            } ${
+                              (isGenerating || isGenerating3DAsset) ? 'opacity-50 cursor-not-allowed' : ''
+                            }`}
+                            title={isListening ? 'Stop listening' : 'Voice input - Click to speak your prompt'}
+                          >
+                            <svg 
+                              className="w-5 h-5" 
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                              strokeWidth={2}
+                            >
+                              {isListening ? (
+                                // Stop/Square icon when listening
+                                <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none" />
+                              ) : (
+                                // Microphone icon
+                                <>
+                                  <path 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    d="M19 10v2a7 7 0 01-14 0v-2" 
+                                  />
+                                  <path 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    d="M12 19v3m0 0h-3m3 0h3" 
+                                  />
+                                  <rect 
+                                    x="9" 
+                                    y="2" 
+                                    width="6" 
+                                    height="11" 
+                                    rx="3"
+                                  />
+                                </>
+                              )}
+                            </svg>
+                          </button>
+                        )}
                         {/* Listening indicator overlay */}
                         {isListening && (
-                          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+                          <div className="absolute right-12 bottom-2 flex items-center gap-1">
                             <span className="flex space-x-0.5">
-                              <span className="w-1 h-3 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '0ms' }} />
-                              <span className="w-1 h-4 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '100ms' }} />
-                              <span className="w-1 h-2 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '200ms' }} />
-                              <span className="w-1 h-5 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '300ms' }} />
-                              <span className="w-1 h-3 bg-red-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '400ms' }} />
+                              <span className="w-1 h-3 bg-amber-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1 h-4 bg-amber-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '100ms' }} />
+                              <span className="w-1 h-2 bg-amber-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '200ms' }} />
+                              <span className="w-1 h-5 bg-amber-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '300ms' }} />
+                              <span className="w-1 h-3 bg-amber-500 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite]" style={{ animationDelay: '400ms' }} />
                             </span>
                           </div>
                         )}

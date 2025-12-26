@@ -203,19 +203,49 @@ const GlobalLoadingIndicator = () => {
   );
 };
 
+// Component to conditionally show skybox background only on specific pages
+const ConditionalBackground = ({ backgroundSkybox, backgroundKey }) => {
+  const location = useLocation();
+  const isMainPage = location.pathname === '/main';
+  const isHistoryPage = location.pathname === '/history';
+  
+  // Only show background on /main and /history pages
+  const shouldShowBackground = (isMainPage || isHistoryPage) && backgroundSkybox;
+  
+  if (!shouldShowBackground) {
+    return null;
+  }
+  
+  return (
+    <div className="fixed inset-0 w-full h-full z-[1]">
+      <SkyboxFullScreen 
+        key={backgroundKey}
+        isBackground={true} 
+        skyboxData={backgroundSkybox} 
+        className="w-full h-full object-cover"
+      />
+    </div>
+  );
+};
+
 // Component to conditionally render Canvas based on route
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
   const isLandingPage = location.pathname === '/';
   const isMainPage = location.pathname === '/main';
+  const isHistoryPage = location.pathname === '/history';
+  
+  // Pages where background should be shown
+  const shouldShowBackground = isMainPage || isHistoryPage;
   
   // Don't render global Canvas on Landing page since it has its own Canvas components
   if (isLandingPage) {
     return children;
   }
   
+  // Only show default Three.js background on /main and /history pages
   // On /main page without a generated skybox, show transparent background for DottedSurface
-  const showDefaultBackground = !isMainPage || backgroundSkybox;
+  const showDefaultBackground = shouldShowBackground && (!isMainPage || backgroundSkybox);
   
   // Use background skybox image if available, otherwise use default futuristic background
   const textureUrl = backgroundSkybox?.preview_url || backgroundSkybox?.image || 
@@ -223,7 +253,7 @@ const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   
   return (
     <div className="relative w-full min-h-screen bg-black">
-      {/* Three.js Background - Only show if not on /main without skybox */}
+      {/* Three.js Background - Only show on /main and /history pages */}
       {showDefaultBackground && (
         <div className="fixed inset-0 w-full h-full z-0">
           <Canvas 
@@ -285,6 +315,20 @@ function App() {
     const [key, setKey] = useState(0);
     const [threeJsError, setThreeJsError] = useState(false);
 
+    // Load background from sessionStorage on mount (for persistence across navigation)
+    useEffect(() => {
+      const savedBackground = sessionStorage.getItem('appliedBackgroundSkybox');
+      if (savedBackground) {
+        try {
+          const parsedBackground = JSON.parse(savedBackground);
+          setBackgroundSkybox(parsedBackground);
+        } catch (error) {
+          console.error('Error parsing saved background:', error);
+          sessionStorage.removeItem('appliedBackgroundSkybox');
+        }
+      }
+    }, []);
+
     useEffect(() => {
       setKey(prev => prev + 1);
     }, [backgroundSkybox]);
@@ -303,7 +347,7 @@ function App() {
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
                 {/* Header - fixed height */}
-                <div className="sticky top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
+                <div className="relative top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
                   <Header />
                 </div>
 
@@ -347,6 +391,7 @@ function App() {
                           <OnboardingGuard>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
+                              backgroundSkybox={backgroundSkybox}
                               className="w-full px-6"
                             />
                           </OnboardingGuard>
@@ -523,18 +568,8 @@ function App() {
                   <Router>
               <SmoothScroll>
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
-              {/* Skybox Background Layer */}
-              {/* SkyboxFullScreen is a pure THREE.js component, not R3F, so it is safe to render outside <Canvas> */}
-              {backgroundSkybox && (
-                <div className="fixed inset-0 w-full h-full z-[1]">
-                  <SkyboxFullScreen 
-                    key={key}
-                    isBackground={true} 
-                    skyboxData={backgroundSkybox} 
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
+              {/* Skybox Background Layer - Only shows on /main and /history pages */}
+              <ConditionalBackground backgroundSkybox={backgroundSkybox} backgroundKey={key} />
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
                 {/* Header - fixed height */}
@@ -580,6 +615,7 @@ function App() {
                           <OnboardingGuard>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
+                              backgroundSkybox={backgroundSkybox}
                               className="w-full absolute inset-0 min-h-screen"
                             />
                           </OnboardingGuard>

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { AssetViewerWithSkybox } from '../Components/AssetViewerWithSkybox';
+import { skyboxApiService } from '../services/skyboxApiService';
 
 const History = ({ setBackgroundSkybox }) => {
   const [history, setHistory] = useState([]);
@@ -13,12 +14,31 @@ const History = ({ setBackgroundSkybox }) => {
   const [selectedSkybox, setSelectedSkybox] = useState(null);
   const [hoveredGroup, setHoveredGroup] = useState(null);
   const [selectedVariation, setSelectedVariation] = useState(null);
+  const [hoveredVariationsSection, setHoveredVariationsSection] = useState(null);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
   const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'completed', 'pending'
   const [previewItem, setPreviewItem] = useState(null); // Item to show in preview modal
   const [previewType, setPreviewType] = useState('skybox'); // 'skybox' or '3d'
+  const [availableStyles, setAvailableStyles] = useState([]); // Available skybox styles
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // Load available skybox styles
+  useEffect(() => {
+    const loadStyles = async () => {
+      try {
+        const response = await skyboxApiService.getStyles(1, 100);
+        const rawStyles = response?.data?.styles || response?.styles || response?.data || [];
+        const stylesArr = Array.isArray(rawStyles) ? rawStyles : [];
+        if (stylesArr.length > 0) {
+          setAvailableStyles(stylesArr);
+        }
+      } catch (error) {
+        console.error('Failed to load skybox styles:', error);
+      }
+    };
+    loadStyles();
+  }, []);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -117,7 +137,9 @@ const History = ({ setBackgroundSkybox }) => {
               status: data.status || 'completed',
               metadata: data.metadata || {},
               isVariation: false,
-              source: 'skyboxes'
+              source: 'skyboxes',
+              style_id: data.style_id || data.skybox_style_id || data.metadata?.style_id || null,
+              style_name: data.style_name || data.styleName || data.metadata?.style_name || null // Use stored style name if available
             };
 
             // Build variations array - start with skybox variations if they exist
@@ -136,7 +158,8 @@ const History = ({ setBackgroundSkybox }) => {
                 isVariation: true,
                 parentId: doc.id,
                 variationIndex: index,
-                type: 'skybox'
+                type: 'skybox',
+                style_id: baseSkybox.style_id // Inherit style_id from parent
               }));
             }
 
@@ -155,6 +178,22 @@ const History = ({ setBackgroundSkybox }) => {
                 bestMeshUrl = data.meshResult?.downloadUrl || data.meshyAsset?.downloadUrl || data.meshUrl;
               }
               
+              // Check for video URL (MP4 preview)
+              let videoUrl = null;
+              if (data.meshResult?.videoUrl) {
+                videoUrl = data.meshResult.videoUrl;
+              } else if (data.meshyAsset?.videoUrl) {
+                videoUrl = data.meshyAsset.videoUrl;
+              } else if (data.meshResult?.previewUrl && data.meshResult.previewUrl.toLowerCase().includes('.mp4')) {
+                videoUrl = data.meshResult.previewUrl;
+              } else if (data.meshyAsset?.previewUrl && data.meshyAsset.previewUrl.toLowerCase().includes('.mp4')) {
+                videoUrl = data.meshyAsset.previewUrl;
+              } else if (data.meshResult?.downloadUrl && data.meshResult.downloadUrl.toLowerCase().includes('.mp4')) {
+                videoUrl = data.meshResult.downloadUrl;
+              } else if (data.meshyAsset?.downloadUrl && data.meshyAsset.downloadUrl.toLowerCase().includes('.mp4')) {
+                videoUrl = data.meshyAsset.downloadUrl;
+              }
+              
               const meshyVariation = {
                 id: `${doc.id}_mesh`,
                 file_url: bestMeshUrl, // Use the best mesh URL as the primary file_url
@@ -170,7 +209,9 @@ const History = ({ setBackgroundSkybox }) => {
                 model_urls: modelUrls,
                 downloadUrl: data.meshResult?.downloadUrl || data.meshyAsset?.downloadUrl || data.meshUrl,
                 previewUrl: data.meshResult?.previewUrl || data.meshyAsset?.previewUrl,
-                meshUrl: bestMeshUrl // Store the resolved mesh URL directly
+                meshUrl: bestMeshUrl, // Store the resolved mesh URL directly
+                videoUrl: videoUrl, // Store video URL for MP4 preview
+                style_id: baseSkybox.style_id // Inherit style_id from parent
               };
               variationsArray.push(meshyVariation);
               console.log(`📦 History: Added Meshy 3D asset variation to skybox ${doc.id}`, {
@@ -257,6 +298,8 @@ const History = ({ setBackgroundSkybox }) => {
               },
               isVariation: false,
               source: 'unified_jobs',
+              style_id: data.style_id || data.skybox_style_id || data.metadata?.style_id || null,
+              style_name: data.style_name || data.styleName || data.metadata?.style_name || null, // Use stored style name if available
               // Include full job data for potential future use
               jobData: {
                 skyboxUrl: data.skyboxUrl,
@@ -270,6 +313,16 @@ const History = ({ setBackgroundSkybox }) => {
 
             // If job has both skybox and mesh, create variations
             if (data.skyboxUrl && data.meshUrl) {
+              // Check for video URL (MP4 preview) for 3D asset
+              let meshVideoUrl = null;
+              if (data.meshResult?.videoUrl) {
+                meshVideoUrl = data.meshResult.videoUrl;
+              } else if (data.meshResult?.previewUrl && data.meshResult.previewUrl.toLowerCase().includes('.mp4')) {
+                meshVideoUrl = data.meshResult.previewUrl;
+              } else if (data.meshResult?.downloadUrl && data.meshResult.downloadUrl.toLowerCase().includes('.mp4')) {
+                meshVideoUrl = data.meshResult.downloadUrl;
+              }
+              
               jobItem.variations = [
                 {
                   id: `${doc.id}_skybox`,
@@ -291,7 +344,14 @@ const History = ({ setBackgroundSkybox }) => {
                   status: data.meshResult?.status || data.status || 'completed',
                   isVariation: true,
                   parentId: doc.id,
-                  variationIndex: 1
+                  variationIndex: 1,
+                  type: '3d_asset',
+                  format: data.meshResult?.format || 'glb',
+                  model_urls: data.meshResult?.model_urls || data.model_urls,
+                  downloadUrl: data.meshResult?.downloadUrl || data.meshUrl,
+                  previewUrl: data.meshResult?.previewUrl,
+                  meshUrl: data.meshResult?.downloadUrl || data.meshUrl,
+                  videoUrl: meshVideoUrl // Include video URL for MP4 preview
                 }
               ];
             } else {
@@ -339,6 +399,25 @@ const History = ({ setBackgroundSkybox }) => {
       metadata: item.metadata
     };
     setBackgroundSkybox(skyboxData);
+
+    // Save resume data for restoring generation panel
+    const resumeData = {
+      prompt: item.prompt || '',
+      negativePrompt: item.negative_text || item.negativePrompt || '',
+      styleId: item.skybox_style_id || item.style_id || item.metadata?.style_id || null,
+      has3DAsset: item.type === '3d_asset' || !!item.meshUrl || !!item.jobData?.meshUrl || item.metadata?.hasMesh || false,
+      meshUrl: item.meshUrl || item.file_url || item.jobData?.meshUrl || null,
+      meshFormat: item.format || item.jobData?.format || 'glb',
+      modelUrls: item.model_urls || item.jobData?.model_urls || null,
+    };
+    
+    // Save to sessionStorage
+    sessionStorage.setItem('resumeGenerationData', JSON.stringify(resumeData));
+    sessionStorage.setItem('appliedBackgroundSkybox', JSON.stringify(skyboxData));
+    sessionStorage.setItem('fromHistory', 'true');
+    
+    // Navigate to create page
+    navigate('/main');
   };
 
   const handlePreviewClick = (item, e) => {
@@ -508,7 +587,13 @@ const History = ({ setBackgroundSkybox }) => {
         title: variation.title,
         prompt: variation.prompt,
         status: variation.status,
-        created_at: variation.created_at
+        created_at: variation.created_at,
+        // Include parent skybox URL for 3D preview environment
+        file_url: variation.parentSkyboxUrl || variation.file_url,
+        jobData: {
+          ...variation.jobData,
+          skyboxUrl: variation.parentSkyboxUrl || variation.jobData?.skyboxUrl
+        }
       });
       return;
     }
@@ -522,6 +607,27 @@ const History = ({ setBackgroundSkybox }) => {
       metadata: variation.metadata
     };
     setBackgroundSkybox(skyboxData);
+
+    // Save resume data for restoring generation panel
+    // Get parent item data if available (variation might be nested)
+    const parentItem = variation.parentItem || variation;
+    const resumeData = {
+      prompt: variation.prompt || parentItem.prompt || '',
+      negativePrompt: variation.negative_text || parentItem.negative_text || variation.negativePrompt || parentItem.negativePrompt || '',
+      styleId: variation.skybox_style_id || parentItem.skybox_style_id || variation.style_id || parentItem.style_id || variation.metadata?.style_id || parentItem.metadata?.style_id || null,
+      has3DAsset: variation.type === '3d_asset' || !!variation.meshUrl || !!variation.model_urls || parentItem.metadata?.hasMesh || false,
+      meshUrl: variation.meshUrl || variation.downloadUrl || variation.file_url || parentItem.meshUrl || null,
+      meshFormat: variation.meshFormat || variation.format || parentItem.format || 'glb',
+      modelUrls: variation.model_urls || parentItem.model_urls || null,
+    };
+    
+    // Save to sessionStorage
+    sessionStorage.setItem('resumeGenerationData', JSON.stringify(resumeData));
+    sessionStorage.setItem('appliedBackgroundSkybox', JSON.stringify(skyboxData));
+    sessionStorage.setItem('fromHistory', 'true');
+    
+    // Navigate to create page
+    navigate('/main');
   };
 
   const formatDate = (timestamp) => {
@@ -552,6 +658,22 @@ const History = ({ setBackgroundSkybox }) => {
   const formatTitle = (title) => {
     if (!title) return 'Untitled Generation';
     return title.replace(/^World #\d+ /, '').trim();
+  };
+
+  // Get style name from style_id - prioritize stored style_name, fallback to fetching from API
+  const getStyleName = (item) => {
+    // If style_name is already stored in the item, use it directly (no API call needed)
+    if (item.style_name) {
+      return item.style_name;
+    }
+    
+    // Fallback: Look up style name from API if style_id is available
+    if (item.style_id && availableStyles.length > 0) {
+      const style = availableStyles.find(s => s.id === item.style_id || s.id === parseInt(item.style_id));
+      return style?.name || null;
+    }
+    
+    return null;
   };
 
   const getStatusColor = (status) => {
@@ -606,7 +728,7 @@ const History = ({ setBackgroundSkybox }) => {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 backdrop-blur-sm mb-4">
                 <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-xs font-mono font-semibold text-cyan-300 uppercase tracking-wider">Archive</span>
+                <span className="text-xs justify-center items-center text-center font-mono font-semibold text-cyan-300 uppercase tracking-wider">Archive</span>
               </div>
               <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold leading-tight">
                 <span className="bg-gradient-to-r from-white via-cyan-200 to-purple-200 bg-clip-text text-transparent">
@@ -898,6 +1020,18 @@ const History = ({ setBackgroundSkybox }) => {
                         )}
                       </div>
 
+                      {/* Style Badge - Top Right */}
+                      {item.style_id && getStyleName(item) && (
+                        <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-xl rounded-lg border border-purple-500/30 shadow-xl">
+                            <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                            </svg>
+                            <span className="text-[10px] font-display font-semibold text-purple-300 uppercase tracking-wider">{getStyleName(item)}</span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Editorial Hover Overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end">
                         <div className="p-6 w-full">
@@ -972,14 +1106,25 @@ const History = ({ setBackgroundSkybox }) => {
                           </svg>
                           <span className="font-mono">{formatDate(item.created_at)}</span>
                         </div>
-                        {item.metadata?.hasMesh && (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 rounded-lg border border-emerald-500/30 backdrop-blur-sm">
-                            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                            </svg>
-                            <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider">3D</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {/* Style Badge */}
+                          {item.style_id && getStyleName(item) && (
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg border border-purple-500/30 backdrop-blur-sm">
+                              <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                              </svg>
+                              <span className="text-[10px] font-display font-semibold text-purple-300 uppercase tracking-wider">{getStyleName(item)}</span>
+                            </div>
+                          )}
+                          {item.metadata?.hasMesh && (
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 rounded-lg border border-emerald-500/30 backdrop-blur-sm">
+                              <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                              </svg>
+                              <span className="text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider">3D</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -991,21 +1136,105 @@ const History = ({ setBackgroundSkybox }) => {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.2 }}
                       className="mt-6 space-y-4 pt-6 border-t border-gray-800/50"
+                      onMouseEnter={() => setHoveredVariationsSection(item.id)}
+                      onMouseLeave={() => setHoveredVariationsSection(null)}
                     >
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-3 cursor-pointer group/header">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center">
-                            <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center transition-all duration-300 group-hover/header:from-purple-500/30 group-hover/header:to-pink-500/30 group-hover/header:border-purple-400/50">
+                            <svg className="w-4 h-4 text-purple-400 transition-transform duration-300 group-hover/header:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                             </svg>
                           </div>
-                          <h4 className="font-display text-sm font-bold text-gray-200 uppercase tracking-wider">Variations</h4>
+                          <h4 className="font-display text-sm font-bold text-gray-200 uppercase tracking-wider transition-colors duration-300 group-hover/header:text-purple-300">Variations</h4>
                         </div>
-                        <span className="text-xs font-mono text-gray-500 font-semibold">{item.variations.length} total</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-gray-500 font-semibold transition-colors duration-300 group-hover/header:text-purple-400">{item.variations.length} total</span>
+                          <svg 
+                            className={`w-4 h-4 text-gray-500 transition-all duration-300 ${hoveredVariationsSection === item.id ? 'rotate-180 text-purple-400' : ''}`} 
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
                       </div>
                       
-                      <div className={`grid gap-4 ${viewMode === 'grid' ? 'grid-cols-2' : 'grid-cols-4'}`}>
-                        {item.variations.map((variation) => (
+                      <AnimatePresence>
+                        {hoveredVariationsSection === item.id && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                            className="overflow-hidden"
+                          >
+                            <div className={`grid gap-4 ${viewMode === 'grid' ? 'grid-cols-2' : 'grid-cols-4'}`}>
+                        {item.variations.map((variation) => {
+                          // Check if this is a 3D asset variation
+                          const is3DAsset = variation.type === '3d_asset';
+                          
+                          // Helper to check if URL is a video file
+                          const isVideoUrl = (url) => {
+                            if (!url) return false;
+                            const urlLower = url.toLowerCase();
+                            const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+                            if (videoExtensions.some(ext => urlLower.includes(ext))) {
+                              return true;
+                            }
+                            if (urlLower.includes('/output/output.mp4') || 
+                                urlLower.includes('/output.mp4') ||
+                                urlLower.includes('video') ||
+                                urlLower.includes('output.mp4')) {
+                              return true;
+                            }
+                            return false;
+                          };
+                          
+                          // Extract MP4 video URL for 3D assets
+                          let videoUrl = null;
+                          if (is3DAsset) {
+                            // First check if videoUrl is directly stored
+                            if (variation.videoUrl && isVideoUrl(variation.videoUrl)) {
+                              videoUrl = variation.videoUrl;
+                            } else {
+                              // Check various possible locations for video URL
+                              const possibleVideoUrls = [
+                                variation.downloadUrl,
+                                variation.file_url,
+                                variation.previewUrl,
+                                variation.jobData?.meshResult?.videoUrl,
+                                variation.jobData?.meshResult?.downloadUrl,
+                                variation.jobData?.meshResult?.previewUrl,
+                                variation.jobData?.meshUrl
+                              ];
+                              
+                              for (const url of possibleVideoUrls) {
+                                if (url && isVideoUrl(url)) {
+                                  videoUrl = url;
+                                  break;
+                                }
+                              }
+                            }
+                          }
+                          
+                          // Get preview URL - prioritize previewUrl for 3D assets, fallback to file_url
+                          const previewImageUrl = is3DAsset 
+                            ? (variation.previewUrl || variation.file_url)
+                            : variation.file_url;
+                          
+                          // Create variation with parent skybox URL for 3D previews
+                          const variationWithParent = {
+                            ...variation,
+                            parentSkyboxUrl: item.file_url, // Include parent skybox for 3D preview
+                            jobData: {
+                              ...variation.jobData,
+                              skyboxUrl: item.file_url
+                            }
+                          };
+                          
+                          return (
                           <motion.div
                             key={variation.id}
                             whileHover={{ scale: 1.05, y: -4 }}
@@ -1014,18 +1243,101 @@ const History = ({ setBackgroundSkybox }) => {
                               relative group bg-gradient-to-br from-[#1a1a1a]/90 to-[#0a0a0a]/90 backdrop-blur-xl 
                               rounded-2xl overflow-hidden shadow-xl
                               transform transition-all duration-500 cursor-pointer
-                              border border-gray-800/50 hover:border-purple-500/60
+                              border ${is3DAsset ? 'border-emerald-500/40 hover:border-emerald-500/70' : 'border-gray-800/50 hover:border-purple-500/60'}
                               ${selectedVariation?.id === variation.id ? 'ring-2 ring-purple-500/70 shadow-purple-500/30' : ''}
                             `}
-                            onClick={() => handleVariationClick(variation)}
+                            onClick={() => handleVariationClick(variationWithParent)}
                           >
-                            <div className="aspect-square relative overflow-hidden">
-                              {variation.file_url ? (
+                            <div className="aspect-square relative overflow-hidden bg-[#0a0a0a]">
+                              {previewImageUrl && !is3DAsset ? (
                                 <img
-                                  src={variation.file_url}
+                                  src={previewImageUrl}
                                   alt={variation.title}
                                   className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                 />
+                              ) : is3DAsset ? (
+                                // 3D Asset Preview - Show MP4 video if available, otherwise preview image or placeholder
+                                <>
+                                  {videoUrl ? (
+                                    // Show MP4 video preview
+                                    <div className="relative w-full h-full flex items-center justify-center">
+                                      <video
+                                        src={videoUrl}
+                                        autoPlay
+                                        loop
+                                        muted
+                                        playsInline
+                                        className="w-full h-full object-contain"
+                                        style={{ maxHeight: '100%', maxWidth: '100%' }}
+                                        onError={(e) => {
+                                          console.error('❌ Video load error:', videoUrl);
+                                          // Fallback to placeholder if video fails
+                                          e.target.style.display = 'none';
+                                          if (e.target.nextSibling) {
+                                            e.target.nextSibling.style.display = 'flex';
+                                          }
+                                        }}
+                                      />
+                                      {/* Fallback placeholder (hidden by default) */}
+                                      <div className="hidden w-full h-full items-center justify-center bg-gradient-to-br from-emerald-950/30 via-cyan-950/20 to-purple-950/20 relative overflow-hidden">
+                                        <div className="relative z-10 text-center">
+                                          <div className="w-20 h-20 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 backdrop-blur-xl border border-emerald-400/40 flex items-center justify-center shadow-2xl">
+                                            <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                            </svg>
+                                          </div>
+                                          <p className="text-xs font-mono font-semibold text-emerald-400 uppercase tracking-wider">3D Model</p>
+                                        </div>
+                                      </div>
+                                      {/* 3D Overlay Indicator */}
+                                      <div className="absolute inset-0 bg-gradient-to-t from-emerald-900/20 via-transparent to-transparent pointer-events-none" />
+                                    </div>
+                                  ) : previewImageUrl ? (
+                                    <div className="relative w-full h-full">
+                                      <img
+                                        src={previewImageUrl}
+                                        alt={variation.title}
+                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                        onError={(e) => {
+                                          // If preview image fails, show 3D placeholder
+                                          e.target.style.display = 'none';
+                                          if (e.target.nextSibling) {
+                                            e.target.nextSibling.style.display = 'flex';
+                                          }
+                                        }}
+                                      />
+                                      {/* 3D Overlay Indicator */}
+                                      <div className="absolute inset-0 bg-gradient-to-t from-emerald-900/40 via-transparent to-transparent pointer-events-none" />
+                                      {/* Animated 3D Icon Overlay */}
+                                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 backdrop-blur-xl border border-emerald-400/30 flex items-center justify-center shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                          <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                          </svg>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    // 3D Placeholder when no preview image or video
+                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-emerald-950/30 via-cyan-950/20 to-purple-950/20 relative overflow-hidden">
+                                      {/* Animated Background Pattern */}
+                                      <div className="absolute inset-0 opacity-20">
+                                        <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-emerald-500/20 rounded-full blur-3xl animate-pulse" />
+                                        <div className="absolute bottom-1/4 right-1/4 w-32 h-32 bg-cyan-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+                                      </div>
+                                      {/* 3D Icon */}
+                                      <div className="relative z-10 text-center">
+                                        <div className="w-20 h-20 mx-auto mb-3 rounded-2xl bg-gradient-to-br from-emerald-500/30 to-cyan-500/30 backdrop-blur-xl border border-emerald-400/40 flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-300">
+                                          <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                          </svg>
+                                        </div>
+                                        <p className="text-xs font-mono font-semibold text-emerald-400 uppercase tracking-wider">3D Model</p>
+                                        <p className="text-[10px] font-mono text-emerald-500/70 mt-1 uppercase">{variation.format || 'GLB'}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a]">
                                   <svg className="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1035,42 +1347,97 @@ const History = ({ setBackgroundSkybox }) => {
                               )}
 
                               {/* Editorial Variation Number Badge */}
-                              <div className="absolute top-3 left-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-display font-bold px-2.5 py-1 rounded-xl shadow-xl backdrop-blur-xl border border-purple-400/30">
+                              <div className={`absolute top-3 left-3 text-white text-xs font-display font-bold px-2.5 py-1 rounded-xl shadow-xl backdrop-blur-xl border ${
+                                is3DAsset 
+                                  ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 border-emerald-400/30' 
+                                  : 'bg-gradient-to-r from-purple-600 to-pink-600 border-purple-400/30'
+                              }`}>
                                 #{variation.variationIndex + 1}
                               </div>
+                              
+                              {/* 3D Asset Badge */}
+                              {is3DAsset && (
+                                <div className="absolute top-3 right-3 bg-gradient-to-r from-emerald-500/90 to-cyan-500/90 text-white text-[10px] font-display font-bold px-2.5 py-1 rounded-xl shadow-xl backdrop-blur-xl border border-emerald-400/40 uppercase tracking-wider flex items-center gap-1.5">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                                  </svg>
+                                  3D
+                                </div>
+                              )}
 
                               {/* Editorial Hover Overlay */}
                               <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end">
                                 <div className="p-4 w-full">
                                   <div className="flex items-center justify-between">
                                     <span className="text-white text-xs font-display font-semibold flex items-center gap-2">
-                                      <div className="w-6 h-6 rounded-lg bg-purple-500/20 backdrop-blur-xl border border-purple-400/30 flex items-center justify-center">
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
+                                      <div className={`w-6 h-6 rounded-lg backdrop-blur-xl border flex items-center justify-center ${
+                                        is3DAsset 
+                                          ? 'bg-emerald-500/20 border-emerald-400/30' 
+                                          : 'bg-purple-500/20 border-purple-400/30'
+                                      }`}>
+                                        {is3DAsset ? (
+                                          <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                          </svg>
+                                        ) : (
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                          </svg>
+                                        )}
                                       </div>
-                                      Apply
+                                      {is3DAsset ? 'View 3D' : 'Apply'}
                                     </span>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        downloadImage(variation.file_url, `${variation.title}.jpg`);
-                                      }}
-                                      className="p-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-lg transition-all duration-300 hover:scale-110 border border-white/20"
-                                      title="Download"
-                                    >
-                                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                      {/* Preview Button for 3D Assets */}
+                                      {is3DAsset && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleVariationClick(variationWithParent);
+                                          }}
+                                          className="p-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-lg transition-all duration-300 hover:scale-110 border border-white/20"
+                                          title="Preview 3D Model"
+                                        >
+                                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                          </svg>
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (is3DAsset && variation.meshUrl) {
+                                            // For 3D assets, open the mesh URL in a new tab
+                                            window.open(variation.meshUrl, '_blank');
+                                          } else if (variation.file_url) {
+                                            downloadImage(variation.file_url, `${variation.title}.jpg`);
+                                          }
+                                        }}
+                                        className="p-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-lg transition-all duration-300 hover:scale-110 border border-white/20"
+                                        title={is3DAsset ? "Download 3D Model" : "Download"}
+                                      >
+                                        <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </button>
+                                    </div>
                                   </div>
+                                  {variation.title && (
+                                    <p className="text-[10px] text-gray-300/80 line-clamp-1 mt-2 font-body leading-relaxed">{variation.title}</p>
+                                  )}
                                 </div>
                               </div>
                             </div>
                           </motion.div>
-                        ))}
-                      </div>
+                          );
+                        })}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </motion.div>
                   )}
                 </motion.div>
@@ -1123,6 +1490,17 @@ const History = ({ setBackgroundSkybox }) => {
                   </h2>
                   {previewItem.prompt && (
                     <p className="font-body text-gray-300/80 text-base mb-4 leading-relaxed">{previewItem.prompt}</p>
+                  )}
+                  {/* Style Badge in Preview */}
+                  {previewItem.style_id && getStyleName(previewItem) && (
+                    <div className="mb-4 flex items-center gap-2">
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 backdrop-blur-sm">
+                        <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                        </svg>
+                        <span className="text-xs font-display font-semibold text-purple-300">{getStyleName(previewItem)}</span>
+                      </div>
+                    </div>
                   )}
                   <div className="flex items-center gap-4 text-xs">
                     <span className="flex items-center gap-2 font-body text-gray-400">

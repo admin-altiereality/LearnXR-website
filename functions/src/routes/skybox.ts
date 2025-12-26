@@ -7,6 +7,8 @@ import { Router } from 'express';
 import axios from 'axios';
 import * as admin from 'firebase-admin';
 import { initializeServices, BLOCKADE_API_KEY } from '../utils/services';
+import { incrementStyleUsage, getAllStyleUsageStats, getStyleUsageCounts } from '../utils/styleUsageTracker';
+import { migrateStyleUsage } from '../scripts/migrateStyleUsage';
 
 const router = Router();
 
@@ -128,7 +130,7 @@ router.get('/styles', async (req: Request, res: Response) => {
 // Skybox Generation API
 router.post('/generate', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
-  const { prompt, style_id, negative_prompt, userId } = req.body;
+  const { prompt, style_id, negative_prompt, userId, export_wireframe, mesh_density, depth_scale } = req.body;
   
   try {
     console.log(`[${requestId}] Skybox generation requested:`, { prompt, style_id, userId });
@@ -158,12 +160,40 @@ router.post('/generate', async (req: Request, res: Response) => {
     const webhookUrl = `https://${region}-${projectId}.cloudfunctions.net/api/skybox/webhook`;
     console.log(`[${requestId}] Using webhook URL: ${webhookUrl}`);
     
-    const response = await axios.post('https://backend.blockadelabs.com/api/v1/skybox', {
+    // Build request payload
+    const payload: any = {
       prompt,
       style_id,
       negative_prompt: negative_prompt || '',
       webhook_url: webhookUrl
-    }, {
+    };
+
+    // Add wireframe export parameters if provided
+    if (export_wireframe) {
+      payload.export_glb = true;
+      if (mesh_density) {
+        payload.mesh_density = mesh_density;
+      }
+      if (depth_scale !== undefined && depth_scale !== null) {
+        // Validate depth_scale range (3.0 to 10.0)
+        const depthScaleValue = parseFloat(depth_scale);
+        if (depthScaleValue >= 3.0 && depthScaleValue <= 10.0) {
+          payload.depth_scale = depthScaleValue;
+        } else {
+          console.warn(`[${requestId}] Invalid depth_scale value: ${depth_scale}, using default 3.0`);
+          payload.depth_scale = 3.0;
+        }
+      }
+    }
+
+    console.log(`[${requestId}] Sending skybox generation request with wireframe:`, {
+      export_wireframe,
+      mesh_density,
+      depth_scale,
+      payload_keys: Object.keys(payload)
+    });
+
+    const response = await axios.post('https://backend.blockadelabs.com/api/v1/skybox', payload, {
       headers: {
         'x-api-key': BLOCKADE_API_KEY,
         'Content-Type': 'application/json'
@@ -194,7 +224,11 @@ router.post('/generate', async (req: Request, res: Response) => {
       status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      webhookUrl: webhookUrl // Store webhook URL for reference
+      webhookUrl: webhookUrl, // Store webhook URL for reference
+      // Store wireframe export parameters
+      exportWireframe: export_wireframe || false,
+      meshDensity: mesh_density || null,
+      depthScale: depth_scale || null
     };
     const resolvedUserId = userId || (req as any).user?.uid;
     if (resolvedUserId) {
@@ -402,6 +436,10 @@ router.get('/status/:generationId', async (req: Request, res: Response) => {
       console.log(`[${requestId}] Generation failed: ${updateData.errorMessage}`);
     }
     
+    // Check if this is a new completion (status changed from non-completed to completed)
+    const wasCompleted = firestoreData?.status === 'completed';
+    const isNewCompletion = isComplete && !wasCompleted;
+    
     // Always update Firestore, even if status hasn't changed (for lastCheckedAt)
     await db.collection('skyboxes').doc(generationId).set(updateData, { merge: true });
     
@@ -411,6 +449,18 @@ router.get('/status/:generationId', async (req: Request, res: Response) => {
         id: generationId,
         generationId: generation.id || generationId
       });
+      
+      // Track style usage when skybox is newly completed
+      if (isNewCompletion) {
+        // Try to get style_id from multiple sources
+        const styleId = firestoreData?.style_id || updateData.style_id || generation.style_id;
+        if (styleId) {
+          console.log(`[${requestId}] Tracking style usage for style ${styleId}`);
+          await incrementStyleUsage(styleId, 1);
+        } else {
+          console.warn(`[${requestId}] Cannot track style usage: style_id not found for generation ${generationId}`);
+        }
+      }
     }
     
     console.log(`[${requestId}] Firestore updated with status: ${normalizedStatus} (original: ${generation.status})`);
@@ -523,6 +573,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
       console.log(`[${requestId}] Webhook: Generation ${generationId} failed: ${updateData.errorMessage}`);
     }
     
+    // Check if this is a new completion (status changed from non-completed to completed)
+    const wasCompleted = firestoreDoc.data()?.status === 'completed';
+    const isNewCompletion = normalizedStatus === 'completed' && !wasCompleted;
+    
     await db.collection('skyboxes').doc(generationId.toString()).set(updateData, { merge: true });
     
     // If completed, ensure id and generationId fields are set
@@ -531,6 +585,19 @@ router.post('/webhook', async (req: Request, res: Response) => {
         id: generationId.toString(),
         generationId: generationId
       });
+      
+      // Track style usage when skybox is newly completed via webhook
+      if (isNewCompletion) {
+        // Try to get style_id from multiple sources
+        const firestoreData = firestoreDoc.data();
+        const styleId = firestoreData?.style_id || updateData.style_id || webhookData.style_id;
+        if (styleId) {
+          console.log(`[${requestId}] Webhook: Tracking style usage for style ${styleId}`);
+          await incrementStyleUsage(styleId, 1);
+        } else {
+          console.warn(`[${requestId}] Webhook: Cannot track style usage: style_id not found for generation ${generationId}`);
+        }
+      }
     }
     
     console.log(`[${requestId}] Webhook processed successfully for generation: ${generationId}, status: ${normalizedStatus}`);
@@ -607,6 +674,93 @@ router.get('/history', async (req: Request, res: Response) => {
       success: false,
       error: 'Failed to fetch skybox history',
       details: error instanceof Error ? error.message : 'Unknown error',
+      requestId
+    });
+  }
+});
+
+/**
+ * Get style usage statistics
+ * GET /api/skybox/style-usage
+ */
+router.get('/style-usage', async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || `style-usage-${Date.now()}`;
+  
+  try {
+    console.log(`[${requestId}] Fetching style usage statistics`);
+    
+    const styleIds = req.query.styleIds ? (req.query.styleIds as string).split(',').map(id => id.trim()) : null;
+    
+    let usageStats: Record<string, number>;
+    
+    if (styleIds && styleIds.length > 0) {
+      // Get usage for specific styles
+      usageStats = await getStyleUsageCounts(styleIds);
+    } else {
+      // Get all style usage stats
+      usageStats = await getAllStyleUsageStats();
+    }
+    
+    return res.json({
+      success: true,
+      data: {
+        usageStats
+      },
+      message: `Retrieved usage statistics for ${Object.keys(usageStats).length} styles`,
+      requestId
+    });
+  } catch (error) {
+    console.error(`[${requestId}] Error fetching style usage statistics:`, error);
+    
+    return res.status(500).json({
+      success: false,
+      error: 'SERVICE_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to fetch style usage statistics',
+      requestId
+    });
+  }
+});
+
+/**
+ * Migrate style usage statistics from existing skyboxes
+ * POST /api/skybox/migrate-style-usage
+ * Query params: dryRun=true (optional, default: false)
+ */
+router.post('/migrate-style-usage', async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || `migrate-${Date.now()}`;
+  
+  try {
+    const dryRun = req.query.dryRun === 'true' || req.query.dryRun === '1';
+    
+    console.log(`[${requestId}] Starting style usage migration`);
+    console.log(`   Dry run: ${dryRun}`);
+    console.log(`   User: ${(req as any).user?.uid || 'system'}`);
+    
+    // Run migration
+    const result = await migrateStyleUsage(dryRun);
+    
+    return res.status(result.success ? 200 : 500).json({
+      success: result.success,
+      data: {
+        totalSkyboxes: result.totalSkyboxes,
+        completedSkyboxes: result.completedSkyboxes,
+        stylesProcessed: result.stylesProcessed,
+        styleCounts: result.styleCounts,
+        errors: result.errors,
+        dryRun
+      },
+      message: dryRun 
+        ? `Migration dry run completed. Found ${result.stylesProcessed} unique styles.`
+        : `Migration completed successfully. Processed ${result.stylesProcessed} styles.`,
+      requestId
+    });
+  } catch (error) {
+    console.error(`[${requestId}] Error during migration:`, error);
+    
+    return res.status(500).json({
+      success: false,
+      error: 'MIGRATION_ERROR',
+      message: error instanceof Error ? error.message : 'Migration failed',
       requestId
     });
   }

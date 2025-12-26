@@ -15,7 +15,8 @@ import {
   FaCube,
   FaExclamationTriangle,
   FaCheckCircle,
-  FaSpinner
+  FaSpinner,
+  FaNetworkWired
 } from 'react-icons/fa';
 import { useGenerate } from '../hooks/useGenerate';
 import { useAuth } from '../contexts/AuthContext';
@@ -81,6 +82,12 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
   const [meshQuality, setMeshQuality] = useState<'low' | 'medium' | 'high' | 'ultra'>('medium');
   const [meshStyle, setMeshStyle] = useState<'realistic' | 'sculpture' | 'cartoon' | 'anime'>('realistic');
   const [meshFormat, setMeshFormat] = useState<'glb' | 'usdz' | 'obj' | 'fbx'>('glb');
+  
+  // Wireframe export settings
+  const [enableWireframe, setEnableWireframe] = useState(false);
+  const [wireframeMeshDensity, setWireframeMeshDensity] = useState<'low' | 'medium' | 'high' | 'epic'>('medium');
+  const [wireframeDepthScale, setWireframeDepthScale] = useState<number>(3.0);
+  const [showWireframePanel, setShowWireframePanel] = useState(false);
   
   // UI state
   const [availableStyles, setAvailableStyles] = useState<SkyboxStyle[]>([]);
@@ -189,7 +196,10 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
       userId: user.uid,
       skyboxConfig: enableSkybox && selectedStyle ? {
         styleId: selectedStyle.id,
-        negativePrompt: negativePrompt.trim() || undefined
+        negativePrompt: negativePrompt.trim() || undefined,
+        exportWireframe: enableWireframe,
+        meshDensity: enableWireframe ? wireframeMeshDensity : undefined,
+        depthScale: enableWireframe ? wireframeDepthScale : undefined
       } : undefined,
       meshConfig: enableMesh ? {
         quality: meshQuality,
@@ -281,6 +291,9 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
     meshQuality,
     meshStyle,
     meshFormat,
+    enableWireframe,
+    wireframeMeshDensity,
+    wireframeDepthScale,
     validateForm,
     generateAssets,
     onGenerationStart,
@@ -522,6 +535,55 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
                 </div>
               )}
 
+              {/* Wireframe Export Button - Always visible when skybox is enabled */}
+              {enableSkybox ? (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      console.log('Wireframe button clicked, opening panel');
+                      setShowWireframePanel(true);
+                    }}
+                    disabled={isGenerating}
+                    className={`w-full flex items-center justify-between p-4 rounded-xl text-sm font-semibold transition-all shadow-lg ${
+                      enableWireframe
+                        ? 'bg-gradient-to-r from-green-600/30 to-emerald-600/30 border-2 border-green-500/60 text-green-200 hover:from-green-600/40 hover:to-emerald-600/40'
+                        : 'bg-gradient-to-r from-gray-800/80 to-gray-700/80 border-2 border-gray-600/50 text-gray-200 hover:border-gray-500 hover:from-gray-700/90 hover:to-gray-600/90'
+                    } ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.02] cursor-pointer'}`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className={`p-2 rounded-lg ${
+                        enableWireframe 
+                          ? 'bg-green-500/20' 
+                          : 'bg-gray-700/50'
+                      }`}>
+                        <FaNetworkWired className={`w-5 h-5 ${enableWireframe ? 'text-green-400' : 'text-gray-400'}`} />
+                      </div>
+                      <div className="text-left flex-1">
+                        <div className="font-bold text-base">Wireframe 3D Export</div>
+                        <div className="text-xs opacity-75">
+                          {enableWireframe ? 'Export enabled with current settings' : 'Click to configure wireframe export'}
+                        </div>
+                      </div>
+                      {enableWireframe && (
+                        <span className="px-3 py-1 bg-green-500/30 text-green-300 text-xs font-bold rounded-full border border-green-500/50">
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <svg className="w-5 h-5 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-4 p-3 bg-gray-800/30 border border-gray-700/50 rounded-lg text-center">
+                  <p className="text-xs text-gray-400">
+                    Enable <span className="text-blue-400">Generate Skybox</span> to access Wireframe 3D Export
+                  </p>
+                </div>
+              )}
+
               {/* Advanced Settings */}
               <div>
                 <button
@@ -559,6 +621,60 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
                             className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             disabled={isGenerating}
                           />
+                        </div>
+                      )}
+
+                      {/* Wireframe Export Settings */}
+                      {enableSkybox && enableWireframe && (
+                        <div className="space-y-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <FaNetworkWired className="w-4 h-4 text-purple-400" />
+                            <label className="text-sm font-medium text-gray-300">
+                              Wireframe Settings
+                            </label>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-1">
+                                Mesh Density
+                              </label>
+                              <select
+                                value={wireframeMeshDensity}
+                                onChange={(e) => setWireframeMeshDensity(e.target.value as any)}
+                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                disabled={isGenerating}
+                              >
+                                <option value="low">Low (~30-40MB)</option>
+                                <option value="medium">Medium (~40-50MB)</option>
+                                <option value="high">High (~60-70MB)</option>
+                                <option value="epic">Epic (~200-300MB)</option>
+                              </select>
+                            </div>
+                            
+                            <div>
+                              <label className="block text-sm font-medium text-gray-300 mb-1">
+                                Depth Scale: {wireframeDepthScale.toFixed(1)}
+                              </label>
+                              <input
+                                type="range"
+                                min="3.0"
+                                max="10.0"
+                                step="0.1"
+                                value={wireframeDepthScale}
+                                onChange={(e) => setWireframeDepthScale(parseFloat(e.target.value))}
+                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                                disabled={isGenerating}
+                              />
+                              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                                <span>3.0 (Subtle)</span>
+                                <span>10.0 (Pronounced)</span>
+                              </div>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            Export skybox as 3D GLB wireframe model with adjustable mesh density and depth parallax.
+                          </p>
                         </div>
                       )}
 
@@ -645,6 +761,154 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
                 )}
               </button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Wireframe Settings Panel Modal */}
+      <AnimatePresence>
+        {showWireframePanel && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowWireframePanel(false)}
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+            
+            {/* Panel */}
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-2xl bg-gradient-to-br from-gray-900/95 via-gray-800/95 to-gray-900/95 backdrop-blur-xl rounded-2xl border border-gray-700/50 shadow-2xl p-6"
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => setShowWireframePanel(false)}
+                className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+
+              {/* Panel Content - Horizontal Layout like the image */}
+              <div className="space-y-4">
+                <div className="mb-6">
+                  <h3 className="text-xl font-bold text-white mb-1">Wireframe 3D Export</h3>
+                  <p className="text-sm text-gray-400">Export your skybox as a 3D GLB wireframe model</p>
+                </div>
+
+                {/* Horizontal Controls Row */}
+                <div className="flex items-center gap-6 flex-wrap">
+                  {/* Wireframe Toggle */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-white font-medium whitespace-nowrap">Wireframe</span>
+                    <button
+                      type="button"
+                      onClick={() => setEnableWireframe(!enableWireframe)}
+                      disabled={isGenerating}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        enableWireframe ? 'bg-green-500' : 'bg-gray-600'
+                      } ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          enableWireframe ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Mesh Density Selection */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-white font-medium whitespace-nowrap">Mesh density:</label>
+                    <div className="flex items-center gap-3">
+                      {(['low', 'medium', 'high', 'epic'] as const).map((density) => (
+                        <label
+                          key={density}
+                          className="flex items-center space-x-1.5 cursor-pointer group"
+                        >
+                          <input
+                            type="radio"
+                            name="meshDensity"
+                            value={density}
+                            checked={wireframeMeshDensity === density}
+                            onChange={(e) => setWireframeMeshDensity(e.target.value as any)}
+                            disabled={isGenerating || !enableWireframe}
+                            className={`w-4 h-4 ${
+                              wireframeMeshDensity === density 
+                                ? 'text-green-500 border-green-500' 
+                                : 'text-gray-400 border-gray-600'
+                            } focus:ring-green-500 focus:ring-offset-gray-800`}
+                          />
+                          <span className={`text-white capitalize text-sm ${
+                            wireframeMeshDensity === density ? 'font-semibold text-green-300' : 'font-normal'
+                          } ${!enableWireframe ? 'opacity-50' : ''}`}>
+                            {density}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Depth Scale Slider */}
+                  <div className="flex items-center gap-3 flex-1 min-w-[200px]">
+                    <label className="text-white font-medium whitespace-nowrap">Depth scale</label>
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        type="range"
+                        min="3.0"
+                        max="10.0"
+                        step="0.1"
+                        value={wireframeDepthScale}
+                        onChange={(e) => setWireframeDepthScale(parseFloat(e.target.value))}
+                        disabled={isGenerating || !enableWireframe}
+                        className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{
+                          background: `linear-gradient(to right, #10b981 0%, #10b981 ${((wireframeDepthScale - 3.0) / 7.0) * 100}%, #374151 ${((wireframeDepthScale - 3.0) / 7.0) * 100}%, #374151 100%)`
+                        }}
+                      />
+                      <span className="text-green-400 font-semibold text-sm min-w-[40px] text-right">
+                        {wireframeDepthScale.toFixed(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Download Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (enableWireframe) {
+                        setShowWireframePanel(false);
+                      }
+                    }}
+                    disabled={isGenerating || !enableWireframe}
+                    className={`px-6 py-2.5 rounded-lg font-semibold text-black transition-all flex items-center justify-center space-x-2 whitespace-nowrap ${
+                      enableWireframe
+                        ? 'bg-green-500 hover:bg-green-600 hover:scale-105'
+                        : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    } ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>DOWNLOAD GLB</span>
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-400 text-center pt-2">
+                  {enableWireframe 
+                    ? 'Wireframe export is enabled. The GLB file will be generated with your selected settings.'
+                    : 'Enable wireframe to export your skybox as a 3D GLB model.'
+                  }
+                </p>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
