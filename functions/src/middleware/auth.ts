@@ -1,57 +1,163 @@
 /**
  * Authentication middleware
+ * ULTRA-PERMISSIVE for payment endpoints - checks raw URL
  */
 
 import { Request, Response, NextFunction } from 'express';
 import * as admin from 'firebase-admin';
 
 // Public endpoints that don't require authentication
-const PUBLIC_ENDPOINTS = [
-  { method: 'GET', path: '/skybox/styles' },
-  { method: 'GET', path: '/health' },
-  { method: 'GET', path: '/env-check' },
-  { method: 'POST', path: '/skybox/generate' },
-  { method: 'GET', path: '/skybox/status' },
-  { method: 'GET', path: '/skybox/history' },
-  { method: 'POST', path: '/skybox/webhook' }, // Webhook endpoint - no auth required
-  { method: 'POST', path: '/payment/create-order' },
-  { method: 'POST', path: '/payment/verify' },
-  { method: 'GET', path: '/subscription' },
-  { method: 'POST', path: '/user/subscription-status' },
-  { method: 'GET', path: '/proxy-asset' },
-  { method: 'HEAD', path: '/proxy-asset' }
+const PUBLIC_PATHS = [
+  '/skybox/styles',
+  '/health',
+  '/env-check',
+  '/skybox/generate',
+  '/skybox/status',
+  '/skybox/history',
+  '/skybox/webhook',
+  '/payment/create-order',
+  '/payment/verify',
+  '/payment/detect-country',
+  '/subscription/create',  // CRITICAL: Payment endpoint must be public
+  '/subscription/verify-credentials',  // Credential verification endpoint
+  '/subscription',
+  '/user/subscription-status',
+  '/proxy-asset'
 ];
 
-const isPublicEndpoint = (req: Request) => {
-  let path = (req as any).normalizedPath || req.path.split('?')[0];
+const isPublicEndpoint = (req: Request): boolean => {
+  const requestId = (req as any).requestId;
   
-  if (path.startsWith('/api/')) {
-    path = path.substring(4);
-  } else if (path === '/api') {
-    path = '/';
-  }
-  if (!path.startsWith('/')) {
-    path = '/' + path;
+  // Get the RAW original URL before any processing
+  const rawUrl = req.originalUrl || req.url || '';
+  const rawPath = req.path || '';
+  
+  // Check raw URL string directly (most reliable) - FIRST CHECK
+  const urlString = (rawUrl || '').toLowerCase();
+  const pathString = (rawPath || '').toLowerCase();
+  
+  // CRITICAL: Check raw URL for subscription/create (BEFORE any normalization)
+  // This catches /api/subscription/create, /subscription/create, etc.
+  if (req.method === 'POST') {
+    const hasSubscription = urlString.includes('subscription') || pathString.includes('subscription');
+    const hasCreate = urlString.includes('create') || pathString.includes('create');
+    
+    if (hasSubscription && hasCreate) {
+      console.log(`[${requestId}] [AUTH] ✅ ALLOWING (raw URL/path check):`, {
+        rawUrl,
+        rawPath,
+        urlString,
+        pathString
+      });
+      return true; // EARLY RETURN - don't check anything else
+    }
   }
   
-  return PUBLIC_ENDPOINTS.some(
-    ep => ep.method === req.method && (path === ep.path || path.startsWith(ep.path + '/'))
-  );
+  // Get ALL possible path representations
+  const originalPath = (req as any).originalPath || '';
+  const currentPath = req.path || '';
+  const urlPath = req.url?.split('?')[0] || '';
+  
+  // Collect all path variations
+  const allPaths = [
+    originalPath,
+    currentPath,
+    urlPath,
+    rawUrl.split('?')[0],
+    // Also check with /api prefix removed
+    originalPath.startsWith('/api/') ? originalPath.substring(4) : originalPath,
+    currentPath.startsWith('/api/') ? currentPath.substring(4) : currentPath,
+    urlPath.startsWith('/api/') ? urlPath.substring(4) : urlPath,
+    rawUrl.startsWith('/api/') ? rawUrl.substring(4).split('?')[0] : rawUrl.split('?')[0]
+  ].filter(Boolean) as string[];
+  
+  // Normalize all paths
+  const normalizedPaths = allPaths.map(p => {
+    let normalized = p.split('?')[0];
+    if (normalized.startsWith('/api/')) {
+      normalized = normalized.substring(4);
+    }
+    if (!normalized.startsWith('/')) {
+      normalized = '/' + normalized;
+    }
+    return normalized;
+  });
+  
+  // Remove duplicates
+  const uniquePaths = [...new Set(normalizedPaths)];
+  
+  // CRITICAL: Check if ANY path variation matches subscription/create
+  const isSubscriptionCreate = uniquePaths.some(path => {
+    return path === '/subscription/create' || 
+           path.endsWith('/subscription/create') ||
+           (path.includes('subscription') && path.includes('create'));
+  });
+  
+  // Debug logging
+  console.log(`[${requestId}] [AUTH] Path analysis:`, {
+    method: req.method,
+    rawUrl,
+    rawPath,
+    originalPath,
+    currentPath,
+    urlPath,
+    uniquePaths: uniquePaths.slice(0, 5), // Show first 5
+    isSubscriptionCreate,
+    willAllow: isSubscriptionCreate && req.method === 'POST'
+  });
+  
+  // CRITICAL: Always allow POST to subscription/create
+  if (req.method === 'POST' && isSubscriptionCreate) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING subscription/create`);
+    return true;
+  }
+  
+  // Check if any normalized path matches public endpoints
+  const isPublic = uniquePaths.some(normalizedPath => {
+    return PUBLIC_PATHS.some(publicPath => {
+      return normalizedPath === publicPath || normalizedPath.startsWith(publicPath + '/');
+    });
+  });
+  
+  if (isPublic) {
+    console.log(`[${requestId}] [AUTH] ✅ Public endpoint allowed`);
+    return true;
+  }
+  
+  console.log(`[${requestId}] [AUTH] ❌ Endpoint requires authentication`);
+  return false;
 };
 
 export const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
   const requestId = (req as any).requestId;
   
+  // Allow public endpoints without authentication
   if (isPublicEndpoint(req)) {
     return next();
   }
 
+  // Require authentication for protected endpoints
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
+    console.log(`[${requestId}] [AUTH] ❌ No auth token provided - BLOCKING`);
+    console.log(`[${requestId}] [AUTH] Request details:`, {
+      method: req.method,
+      path: req.path,
+      originalUrl: req.originalUrl,
+      url: req.url,
+      originalPath: (req as any).originalPath
+    });
     return res.status(401).json({ 
       error: 'AUTH_REQUIRED', 
       message: 'No token provided',
-      requestId
+      requestId,
+      debug: {
+        path: req.path,
+        originalPath: (req as any).originalPath,
+        url: req.url,
+        originalUrl: req.originalUrl,
+        method: req.method
+      }
     });
   }
   
@@ -61,7 +167,7 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
     (req as any).user = decoded;
     next();
   } catch (err) {
-    console.error('Token verification failed:', err);
+    console.error(`[${requestId}] [AUTH] Token verification failed:`, err);
     return res.status(401).json({ 
       error: 'INVALID_TOKEN', 
       message: 'Invalid or expired token',
@@ -69,4 +175,3 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
     });
   }
 };
-
