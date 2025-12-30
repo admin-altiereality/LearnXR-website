@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useLoading } from '../contexts/LoadingContext';
 import { useCreateGeneration } from '../contexts/CreateGenerationContext';
@@ -34,6 +35,7 @@ import { AssetViewerWithSkybox } from './AssetViewerWithSkybox';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { incrementStyleUsage } from '../services/styleUsageService';
+import { UnifiedGenerationProgress } from './UnifiedGenerationProgress';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -940,6 +942,16 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         prompt: prompt.substring(0, 50) + '...'
       });
 
+      // Initialize both progress indicators simultaneously for seamless experience
+      if (canGenerate3D) {
+        setGenerating3DAsset(true);
+        setAssetGenerationProgress({
+          stage: 'initializing',
+          progress: 0,
+          message: 'Initializing 3D mesh generation...'
+        });
+      }
+
       // Start both skybox polling and 3D asset generation in parallel
       const generationPromises = [];
 
@@ -982,7 +994,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
               } else if (normalizedStatus === "dispatched" || normalizedStatus === "processing") {
                 // Generation is in progress - use shorter interval
                 currentInterval = Math.min(baseInterval * 2, 5000); // 2-5 seconds
-                // Update progress based on status
+                // Update progress based on status - smooth progression
                 const progressPercent = 10 + Math.min((attempts / maxAttempts) * 80, 80);
                 setSkyboxProgress(progressPercent);
               } else if (normalizedStatus === "pending") {
@@ -1045,10 +1057,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       // 3D asset generation promise (if enabled)
       if (canGenerate3D) {
         console.log('🎯 Starting 3D asset generation in parallel with skybox...');
-        setGenerating3DAsset(true);
+        // Progress already initialized above, just update message
         setAssetGenerationProgress({
           stage: 'extracting',
-          progress: 0,
+          progress: 5,
           message: 'Generating 3D asset for your environment...'
         });
 
@@ -1337,8 +1349,49 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           if (variationResults && variationResults.length > 0 && setBackgroundSkybox) {
             setBackgroundSkybox(variationResults[0]);
           }
-          // Automatically show viewer when both complete
-          setShow3DAssetViewer(true);
+          
+          // Show unified completion notification
+          if (variationResults && variationResults.length > 0) {
+            const successMsg = document.createElement('div');
+            successMsg.className = 'fixed top-4 right-4 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white px-6 py-4 rounded-xl shadow-2xl z-50 max-w-md border border-white/20';
+            successMsg.innerHTML = `
+              <div class="flex items-start gap-3">
+                <div class="flex-shrink-0">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                </div>
+                <div class="flex-1">
+                  <div class="font-bold text-lg mb-1">✨ Generation Complete!</div>
+                  <div class="text-sm text-white/90 mb-2">Your immersive 3D environment is ready</div>
+                  <div class="flex items-center gap-4 text-xs text-white/80">
+                    <div class="flex items-center gap-1.5">
+                      <div class="w-2 h-2 rounded-full bg-emerald-300"></div>
+                      <span>Skybox Ready</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <div class="w-2 h-2 rounded-full bg-cyan-300"></div>
+                      <span>3D Mesh Ready</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(successMsg);
+            setTimeout(() => {
+              if (document.body.contains(successMsg)) {
+                successMsg.style.transition = 'opacity 0.3s, transform 0.3s';
+                successMsg.style.opacity = '0';
+                successMsg.style.transform = 'translateY(-10px)';
+                setTimeout(() => document.body.removeChild(successMsg), 300);
+              }
+            }, 4000);
+          }
+          
+          // Automatically show viewer when both complete - with smooth transition
+          setTimeout(() => {
+            setShow3DAssetViewer(true);
+          }, 500); // Small delay for smooth transition
           console.log('✅ 3D asset generated successfully:', asset);
           console.log('📦 Asset downloadUrl:', asset.downloadUrl);
           console.log('📦 Asset previewUrl:', asset.previewUrl);
@@ -1832,53 +1885,24 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                   </div>
                 )}
 
-                {/* PROGRESS BARS (when generating) */}
+                {/* UNIFIED PROGRESS (when generating) */}
                 {(isGenerating || isGenerating3DAsset) && (
-                  <div className="space-y-2">
-                    {/* Skybox Progress Bar */}
-                    {isGenerating && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-gray-300 font-medium">
-                            Skybox Generation
-                          </span>
-                          <span className="text-sky-400 font-semibold">
-                            {Math.round(skyboxProgress)}%
-                          </span>
-                        </div>
-                        <div className="w-full h-1 rounded-full bg-[#1f1f1f] overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-sky-500 via-indigo-500 to-emerald-400 transition-all duration-300"
-                            style={{ width: `${skyboxProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* 3D Asset Progress Bar */}
-                    {isGenerating3DAsset && (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-gray-300 font-medium">
-                            3D Asset Generation
-                          </span>
-                          <span className="text-purple-400 font-semibold">
-                            {assetGenerationProgress ? Math.round(assetGenerationProgress.progress) : 0}%
-                          </span>
-                        </div>
-                        <div className="w-full h-1 rounded-full bg-[#1f1f1f] overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-rose-400 transition-all duration-300"
-                            style={{ width: `${assetGenerationProgress?.progress || 0}%` }}
-                          />
-                        </div>
-                        {assetGenerationProgress?.message && (
-                          <div className="text-[9px] text-gray-400">
-                            {assetGenerationProgress.message}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                  <div className="w-full">
+                    <UnifiedGenerationProgress
+                      skyboxProgress={skyboxProgress}
+                      meshProgress={assetGenerationProgress?.progress || 0}
+                      skyboxEnabled={isGenerating}
+                      meshEnabled={isGenerating3DAsset}
+                      skyboxMessage={isGenerating ? `Generating skybox... ${Math.round(skyboxProgress)}%` : undefined}
+                      meshMessage={assetGenerationProgress?.message}
+                      overallMessage={
+                        isGenerating && isGenerating3DAsset
+                          ? `Creating your immersive 3D environment... ${Math.round((skyboxProgress + (assetGenerationProgress?.progress || 0)) / 2)}%`
+                          : isGenerating
+                          ? `Generating skybox... ${Math.round(skyboxProgress)}%`
+                          : `Generating 3D mesh... ${Math.round(assetGenerationProgress?.progress || 0)}%`
+                      }
+                    />
                   </div>
                 )}
 
@@ -2784,33 +2808,40 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
       {/* 3D Asset Viewer with Skybox Background - Merged Create & 3D Asset Section */}
       {/* Show when 3D asset is completed or when viewer button is clicked */}
-      {show3DAssetViewer && 
-       generated3DAsset && 
-       generated3DAsset.status === 'completed' && 
-       (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) &&
-       generatedVariations.length > 0 && 
-       !isGenerating3DAsset && (
-        <>
-          {/* Debug info in dev mode */}
-          {isDevMode && (
-            <div className="fixed top-20 left-4 bg-black/80 text-white p-3 rounded-lg text-xs z-[10000] max-w-xs">
-              <div className="font-bold mb-2">3D Asset Debug Info:</div>
-              <div>Status: {generated3DAsset.status || 'undefined'}</div>
-              <div>Has downloadUrl: {generated3DAsset.downloadUrl ? 'Yes' : 'No'}</div>
-              <div>Has previewUrl: {generated3DAsset.previewUrl ? 'Yes' : 'No'}</div>
-              <div>Format: {generated3DAsset.format || 'undefined'}</div>
-              <div>Skybox variations: {generatedVariations.length}</div>
-              <div className="mt-2 text-yellow-400">
-                {generated3DAsset.status !== 'completed' && '⚠️ Status not completed'}
-                {!generated3DAsset.downloadUrl && !generated3DAsset.previewUrl && '⚠️ No URL available'}
+      <AnimatePresence>
+        {show3DAssetViewer && 
+         generated3DAsset && 
+         generated3DAsset.status === 'completed' && 
+         (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) &&
+         generatedVariations.length > 0 && 
+         !isGenerating3DAsset && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4, ease: 'easeInOut' }}
+            className="fixed inset-0 w-full h-full z-[9999]"
+          >
+            {/* Debug info in dev mode */}
+            {isDevMode && (
+              <div className="fixed top-20 left-4 bg-black/80 text-white p-3 rounded-lg text-xs z-[10000] max-w-xs">
+                <div className="font-bold mb-2">3D Asset Debug Info:</div>
+                <div>Status: {generated3DAsset.status || 'undefined'}</div>
+                <div>Has downloadUrl: {generated3DAsset.downloadUrl ? 'Yes' : 'No'}</div>
+                <div>Has previewUrl: {generated3DAsset.previewUrl ? 'Yes' : 'No'}</div>
+                <div>Format: {generated3DAsset.format || 'undefined'}</div>
+                <div>Skybox variations: {generatedVariations.length}</div>
+                <div className="mt-2 text-yellow-400">
+                  {generated3DAsset.status !== 'completed' && '⚠️ Status not completed'}
+                  {!generated3DAsset.downloadUrl && !generated3DAsset.previewUrl && '⚠️ No URL available'}
+                </div>
               </div>
-            </div>
-          )}
-          
-          {/* Show viewer when asset is completed and has URL */}
-          {generated3DAsset.status === 'completed' && 
-           (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && (
-            <div className="fixed inset-0 w-full h-full z-[9999]">
+            )}
+            
+            {/* Show viewer when asset is completed and has URL */}
+            {generated3DAsset.status === 'completed' && 
+             (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && (
+              <div className="fixed inset-0 w-full h-full">
               {/* Control buttons overlay */}
               <div className="absolute top-4 right-4 z-[10000] flex gap-2">
                 
@@ -2956,8 +2987,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           )}
           
           {/* Show loading state when asset is generating */}
-          {isGenerating3DAsset && (
-            <div className="fixed inset-0 w-full h-full z-[9998] bg-black/50 flex items-center justify-center">
+          <AnimatePresence>
+            {isGenerating3DAsset && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+                className="fixed inset-0 w-full h-full z-[9998] bg-black/50 flex items-center justify-center"
+              >
               <div className="bg-[#0a0a0a] border border-[#ffffff08] rounded-xl p-6 max-w-md">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
@@ -2981,10 +3019,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </>
-      )}
+            </motion.div>
+            )}
+          </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
