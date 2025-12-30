@@ -21,6 +21,7 @@ import {
 import { useGenerate } from '../hooks/useGenerate';
 import { useAuth } from '../contexts/AuthContext';
 import { skyboxApiService } from '../services/skyboxApiService';
+import { promptParserService, type ParsedPrompt } from '../services/promptParserService';
 import type { GenerationRequest } from '../types/unifiedGeneration';
 import type { SkyboxStyle } from '../types/skybox';
 
@@ -70,6 +71,47 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
     }
   }, [progress, isGenerating]);
 
+  // Analyze prompt when it changes
+  useEffect(() => {
+    if (prompt.trim().length > 0) {
+      try {
+        const parsed = promptParserService.parsePrompt(prompt);
+        setParsedPrompt(parsed);
+        console.log('🔍 Prompt analysis:', {
+          promptType: parsed.promptType,
+          meshScore: parsed.meshScore,
+          skyboxScore: parsed.skyboxScore,
+          confidence: parsed.confidence
+        });
+
+        // Auto-suggest based on analysis (only if user hasn't manually set both)
+        const hasManualSelection = enableSkybox !== enableMesh; // User has made a choice
+        
+        if (!hasManualSelection && parsed.promptType === 'mesh' && parsed.meshScore > 0.6) {
+          // Strong mesh signal - auto-enable mesh, disable skybox
+          setEnableMesh(true);
+          setEnableSkybox(false);
+          console.log('💡 Auto-enabled mesh generation based on prompt analysis');
+        } else if (!hasManualSelection && parsed.promptType === 'skybox' && parsed.skyboxScore > 0.6) {
+          // Strong skybox signal - auto-enable skybox, disable mesh
+          setEnableSkybox(true);
+          setEnableMesh(false);
+          console.log('💡 Auto-enabled skybox generation based on prompt analysis');
+        } else if (!hasManualSelection && parsed.promptType === 'both' && parsed.meshScore > 0.4 && parsed.skyboxScore > 0.4) {
+          // Both detected - enable both
+          setEnableSkybox(true);
+          setEnableMesh(true);
+          console.log('💡 Auto-enabled both generation types based on prompt analysis');
+        }
+      } catch (error) {
+        console.error('Error analyzing prompt:', error);
+        setParsedPrompt(null);
+      }
+    } else {
+      setParsedPrompt(null);
+    }
+  }, [prompt, enableMesh, enableSkybox]);
+
   // Form state
   const [prompt, setPrompt] = useState('');
   const [negativePrompt, setNegativePrompt] = useState('');
@@ -93,6 +135,7 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
   const [availableStyles, setAvailableStyles] = useState<SkyboxStyle[]>([]);
   const [stylesLoading, setStylesLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [parsedPrompt, setParsedPrompt] = useState<ParsedPrompt | null>(null);
 
   // Load available skybox styles
   const loadStyles = useCallback(async () => {
@@ -463,6 +506,104 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({
                   <span>Be descriptive for better results</span>
                 </div>
               </div>
+
+              {/* Prompt Analysis */}
+              {parsedPrompt && prompt.trim().length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
+                      <FaRocket className="w-4 h-4 text-blue-400" />
+                      <span>Prompt Analysis</span>
+                    </h3>
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      parsedPrompt.promptType === 'mesh'
+                        ? 'bg-purple-500/20 text-purple-300'
+                        : parsedPrompt.promptType === 'skybox'
+                        ? 'bg-blue-500/20 text-blue-300'
+                        : parsedPrompt.promptType === 'both'
+                        ? 'bg-green-500/20 text-green-300'
+                        : 'bg-gray-500/20 text-gray-300'
+                    }`}>
+                      {parsedPrompt.promptType === 'mesh' ? '3D Mesh' :
+                       parsedPrompt.promptType === 'skybox' ? 'Skybox' :
+                       parsedPrompt.promptType === 'both' ? 'Both' : 'Unknown'}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {/* Mesh Score */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400 flex items-center space-x-1">
+                          <FaCube className="w-3 h-3" />
+                          <span>3D Mesh Likelihood</span>
+                        </span>
+                        <span className="text-xs text-gray-300 font-medium">
+                          {Math.round(parsedPrompt.meshScore * 100)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-700/50 rounded-full h-2">
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-purple-400 transition-all duration-300"
+                          style={{ width: `${parsedPrompt.meshScore * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Skybox Score */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400 flex items-center space-x-1">
+                          <FaImage className="w-3 h-3" />
+                          <span>Skybox Likelihood</span>
+                        </span>
+                        <span className="text-xs text-gray-300 font-medium">
+                          {Math.round(parsedPrompt.skyboxScore * 100)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-700/50 rounded-full h-2">
+                        <div
+                          className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300"
+                          style={{ width: `${parsedPrompt.skyboxScore * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Suggestions */}
+                    {parsedPrompt.promptType !== 'unknown' && (
+                      <div className="mt-3 pt-3 border-t border-gray-700/50">
+                        {parsedPrompt.promptType === 'mesh' && parsedPrompt.meshScore > 0.6 && !enableMesh && (
+                          <div className="flex items-start space-x-2 text-xs text-purple-300">
+                            <FaExclamationTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span>This prompt appears to describe a 3D mesh object. Consider enabling <strong>Generate 3D Mesh</strong>.</span>
+                          </div>
+                        )}
+                        {parsedPrompt.promptType === 'skybox' && parsedPrompt.skyboxScore > 0.6 && !enableSkybox && (
+                          <div className="flex items-start space-x-2 text-xs text-blue-300">
+                            <FaExclamationTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span>This prompt appears to describe a skybox environment. Consider enabling <strong>Generate Skybox</strong>.</span>
+                          </div>
+                        )}
+                        {parsedPrompt.promptType === 'both' && (
+                          <div className="flex items-start space-x-2 text-xs text-green-300">
+                            <FaCheckCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span>This prompt contains both mesh objects and skybox elements. Both generation types are recommended.</span>
+                          </div>
+                        )}
+                        {parsedPrompt.confidence > 0.5 && (
+                          <div className="mt-2 text-xs text-gray-400">
+                            Confidence: {Math.round(parsedPrompt.confidence * 100)}% • Method: {parsedPrompt.method}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
 
               {/* Generation Options */}
               <div className="grid grid-cols-2 gap-4">
