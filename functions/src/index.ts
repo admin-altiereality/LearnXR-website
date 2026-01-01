@@ -18,6 +18,7 @@ import { authenticateUser } from './middleware/auth';
 const blockadelabsApiKey = defineSecret("BLOCKADE_API_KEY");
 const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
 const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
+const openaiApiKey = defineSecret("OPENAI_API_KEY");
 
 // Lazy Express app creation - only initialize when function is called
 // Note: app is reset on each request to ensure secrets are loaded
@@ -75,6 +76,7 @@ const getApp = (): express.Application => {
     const subscriptionRoutes = require('./routes/subscription').default;
     const userRoutes = require('./routes/user').default;
     const proxyRoutes = require('./routes/proxy').default;
+    const aiDetectionRoutes = require('./routes/aiDetection').default;
     
     app.use('/', healthRoutes);
     app.use('/skybox', skyboxRoutes);
@@ -82,6 +84,7 @@ const getApp = (): express.Application => {
     app.use('/subscription', subscriptionRoutes);
     app.use('/user', userRoutes);
     app.use('/', proxyRoutes);
+    app.use('/ai-detection', aiDetectionRoutes);
     
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
@@ -108,7 +111,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, razorpayKeyId, razorpayKeySecret] // Reference secrets - must match defineSecret names
+    secrets: [blockadelabsApiKey, razorpayKeyId, razorpayKeySecret, openaiApiKey] // Reference secrets - must match defineSecret names
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -117,6 +120,7 @@ export const api = onRequest(
     let blockadeKey: string | undefined;
     let razorpayId: string | undefined;
     let razorpaySecret: string | undefined;
+    let openaiKey: string | undefined;
     
     try {
       blockadeKey = blockadelabsApiKey.value();
@@ -136,10 +140,17 @@ export const api = onRequest(
       console.error('Error accessing RAZORPAY_KEY_SECRET:', err?.message || err);
     }
     
+    try {
+      openaiKey = openaiApiKey.value();
+    } catch (err: any) {
+      console.error('Error accessing OPENAI_API_KEY:', err?.message || err);
+    }
+    
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (razorpayId) process.env.RAZORPAY_KEY_ID = razorpayId;
     if (razorpaySecret) process.env.RAZORPAY_KEY_SECRET = razorpaySecret;
+    if (openaiKey) process.env.OPENAI_API_KEY = openaiKey;
     
     console.log('Secrets loaded:', {
       hasBlockade: !!blockadeKey,
@@ -147,7 +158,9 @@ export const api = onRequest(
       hasRazorpayId: !!razorpayId,
       razorpayIdLength: razorpayId?.length || 0,
       hasRazorpaySecret: !!razorpaySecret,
-      razorpaySecretLength: razorpaySecret?.length || 0
+      razorpaySecretLength: razorpaySecret?.length || 0,
+      hasOpenAI: !!openaiKey,
+      openaiKeyLength: openaiKey?.length || 0
     });
     
     // Initialize services with secrets directly

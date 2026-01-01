@@ -5,6 +5,7 @@ import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
 import subscriptionRoutes from './subscription';
 import userRoutes from './user';
+import aiDetectionRoutes from './aiDetection';
 
 const router = express.Router();
 
@@ -89,6 +90,11 @@ console.log('LinkedIn routes mounted at /api');
 console.log('Mounting user routes...');
 router.use('/user', userRoutes);
 console.log('User routes mounted at /user');
+
+// Mount AI detection routes
+console.log('Mounting AI detection routes...');
+router.use('/ai-detection', aiDetectionRoutes);
+console.log('AI detection routes mounted at /ai-detection');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

@@ -935,33 +935,24 @@ function BlendControlPanel({
 
   return (
     <>
-      {/* Toggle button */}
-      <button
-        onClick={onToggle}
-        className="absolute top-4 left-4 z-[10001] px-3 py-2 bg-black/80 hover:bg-black/90 text-white rounded-lg text-xs font-semibold border border-white/20 flex items-center gap-2 backdrop-blur-md transition-all"
-        title="Toggle blend settings"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-        </svg>
-        <span className="hidden sm:inline">Blend Settings</span>
-      </button>
-
-      {/* Settings panel */}
+      {/* Settings panel - Fixed right side panel */}
       {isVisible && (
-        <div className="absolute top-16 left-4 z-[10001] bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl p-4 w-72 space-y-4 shadow-2xl">
-          <div className="flex items-center justify-between">
+        <div className={`fixed top-0 right-0 h-full z-[10001] bg-[#0a0a0a]/98 backdrop-blur-xl border-l border-[#1a1a1a]/30 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] sm:w-[300px] md:w-[320px]`}>
+          <div className="h-full overflow-y-auto p-4 space-y-4">
+          {/* Header with close button */}
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-semibold text-sm tracking-wide">🎨 Blend Settings</h3>
             <button 
               onClick={onToggle}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-400 hover:text-white transition-colors p-1"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
           
+          <div className="space-y-4">
           {/* Environment Reflection */}
           <div className="space-y-2">
             <label className="flex items-center justify-between text-xs text-gray-300">
@@ -1456,8 +1447,26 @@ function BlendControlPanel({
           >
             Reset to Defaults
           </button>
+          </div>
+          </div>
         </div>
       )}
+      
+      {/* Toggle button - Always visible, positioned on the right side */}
+      <button
+        onClick={onToggle}
+        className={`fixed top-4 z-[10002] px-3 py-2 bg-black/80 hover:bg-black/90 text-white rounded-lg sm:rounded-lg text-xs font-semibold border border-white/20 flex items-center gap-1.5 sm:gap-2 backdrop-blur-md transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isVisible 
+            ? 'right-[280px] sm:right-[300px] md:right-[320px]' 
+            : 'right-4'
+        }`}
+        title="Toggle blend settings"
+      >
+        <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+        </svg>
+        <span className="hidden sm:inline">Blend Settings</span>
+      </button>
     </>
   );
 }
@@ -1543,7 +1552,7 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
   }
   
   return (
-    <div className={`relative w-full h-full min-h-[400px] ${className}`}>
+    <div className={`relative w-full h-full min-h-[400px] ${className} ${showSettings ? 'pr-[280px] sm:pr-[300px] md:pr-[320px]' : ''} transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
       {/* Blend settings control panel */}
       <BlendControlPanel
         settings={blendSettings}
@@ -1552,16 +1561,6 @@ export const AssetViewerWithSkybox: React.FC<AssetViewerWithSkyboxProps> = ({
         onToggle={() => setShowSettings(!showSettings)}
       />
 
-      {/* Info overlay */}
-      <div className="absolute bottom-4 left-4 z-[10000] bg-black/70 backdrop-blur-md rounded-lg px-3 py-2 text-[10px] text-gray-400 border border-white/10">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Immersive 3D View</span>
-        </div>
-        <div className="text-[9px] mt-1 opacity-70">
-          Drag to orbit • Scroll to zoom • Right-click to pan
-        </div>
-      </div>
 
       <Canvas
         camera={{ 
