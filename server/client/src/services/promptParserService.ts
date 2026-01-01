@@ -830,6 +830,61 @@ class PromptParserService {
   }
 
   /**
+   * Enhanced detection with AI (hybrid approach)
+   * Tries AI first, falls back to rule-based if AI fails
+   */
+  async detectWithAI(prompt: string): Promise<{
+    result: ParsedPrompt;
+    aiUsed: boolean;
+    aiResult?: any;
+  }> {
+    // Import dynamically to avoid circular dependencies
+    const { aiDetectionService } = await import('./aiDetectionService');
+    
+    try {
+      // Try AI detection first
+      const aiResponse = await aiDetectionService.detectPromptType(prompt);
+      
+      if (aiResponse.success && aiResponse.data) {
+        const aiData = aiResponse.data;
+        
+        // Convert AI result to ParsedPrompt format
+        const parsed: ParsedPrompt = {
+          original: prompt,
+          asset: aiData.meshDescription || '',
+          background: aiData.skyboxDescription || prompt,
+          confidence: aiData.confidence,
+          method: 'intelligent',
+          promptType: aiData.promptType,
+          meshScore: aiData.meshScore,
+          skyboxScore: aiData.skyboxScore
+        };
+
+        console.log('🤖 AI Detection used:', {
+          promptType: aiData.promptType,
+          confidence: aiData.confidence,
+          reasoning: aiData.reasoning?.substring(0, 100)
+        });
+
+        return {
+          result: parsed,
+          aiUsed: true,
+          aiResult: aiData
+        };
+      }
+    } catch (error) {
+      console.warn('⚠️ AI detection failed, using rule-based fallback:', error);
+    }
+
+    // Fallback to rule-based detection
+    const ruleBasedResult = this.parsePrompt(prompt);
+    return {
+      result: ruleBasedResult,
+      aiUsed: false
+    };
+  }
+
+  /**
    * Test the analyzer with a set of prompts and return results
    * Useful for iterative improvement
    */

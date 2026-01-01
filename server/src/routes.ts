@@ -2,6 +2,7 @@ import * as express from "express";
 import multer from "multer";
 import skyboxRouter from "./routes/skybox";
 import coordinatedPromptRouter from "./routes/coordinatedPrompt";
+import aiDetectionRouter from "./routes/aiDetection";
 
 import {
     cancelAllPedingImagines,
@@ -23,6 +24,7 @@ router.use("/skybox", skyboxRouter);
 
 // Mount coordinated prompt routes
 router.use("/coordinated-prompt", coordinatedPromptRouter);
+router.use("/ai-detection", aiDetectionRouter);
 
 
 // Imagine routes

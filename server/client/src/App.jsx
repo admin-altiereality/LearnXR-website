@@ -60,6 +60,18 @@ const ConditionalFooter = () => {
   );
 };
 
+// Conditional Header - hides on /main route
+const ConditionalHeader = () => {
+  const location = useLocation();
+  const hideHeaderRoutes = ['/main'];
+  
+  if (hideHeaderRoutes.includes(location.pathname)) {
+    return null;
+  }
+  
+  return <Header />;
+};
+
 const BackgroundSphere = ({ textureUrl }) => {
   const [texture, setTexture] = useState(null);
   const [error, setError] = useState(false);
@@ -346,9 +358,9 @@ function App() {
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
-                {/* Header - fixed height */}
+                {/* Header - fixed height - Hidden on /main route */}
                 <div className="relative top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
-                  <Header />
+                  <ConditionalHeader />
                 </div>
 
                 {/* Main content - scrollable */}
@@ -572,8 +584,8 @@ function App() {
               <ConditionalBackground backgroundSkybox={backgroundSkybox} backgroundKey={key} />
               {/* Main Content Layer */}
               <div className="relative flex flex-col min-h-screen">
-                {/* Header - fixed height */}
-                  <Header />
+                {/* Header - fixed height - Hidden on /main route */}
+                <ConditionalHeader />
 
                 {/* Main content - scrollable */}
                 <main className="">
