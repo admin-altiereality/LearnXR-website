@@ -400,10 +400,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle, setB
           fixed top-0 left-0 h-full z-[1000]
           flex flex-col
           backdrop-blur-xl
-          bg-[#0a0a0a]/98
-          border-r border-[#1a1a1a]/30
+          bg-gradient-to-b from-[#0a0a0a]/98 via-[#0a0a0a]/95 to-[#0a0a0a]/98
+          border-r border-[#ffffff]/10
           overflow-hidden
           transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]
+          shadow-[4px_0_24px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.05)]
           ${isOpen 
             ? 'w-full sm:w-[240px] md:w-[260px] lg:w-[280px] xl:w-[300px] 2xl:w-[320px]' 
             : 'w-[48px] sm:w-[56px] md:w-[64px]'
@@ -442,7 +443,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({ isOpen, onToggle, setB
         <div 
           className="absolute right-0 top-0 bottom-0 w-px pointer-events-none"
           style={{
-            background: 'linear-gradient(to bottom, transparent, rgba(255,255,255,0.05), transparent)'
+            background: 'linear-gradient(to bottom, transparent, rgba(255,255,255,0.08), transparent)'
           }}
         />
 

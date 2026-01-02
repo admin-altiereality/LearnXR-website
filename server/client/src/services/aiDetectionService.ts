@@ -10,6 +10,7 @@ export interface AIDetectionResult {
   confidence: number;
   reasoning: string;
   meshDescription?: string;
+  meshAssets?: string[]; // Array of exact phrases from prompt that are 3D assets
   skyboxDescription?: string;
   shouldGenerateMesh: boolean;
   shouldGenerateSkybox: boolean;
