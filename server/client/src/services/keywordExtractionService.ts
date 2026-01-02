@@ -20,9 +20,9 @@ export interface ObjectCategory {
 const OBJECT_CATEGORIES: ObjectCategory[] = [
   {
     name: 'vehicles',
-    keywords: ['spaceship', 'car', 'truck', 'motorcycle', 'bicycle', 'boat', 'airplane', 'helicopter', 'train', 'bus', 'tank', 'submarine', 'rocket', 'ufo', 'hovercraft'],
+    keywords: ['spaceship', 'ship', 'car', 'truck', 'motorcycle', 'bicycle', 'boat', 'airplane', 'helicopter', 'train', 'bus', 'tank', 'submarine', 'rocket', 'ufo', 'hovercraft'],
     description: 'Transportation and vehicle objects',
-    examples: ['futuristic spaceship', 'vintage car', 'military tank']
+    examples: ['futuristic spaceship', 'alien ship', 'vintage car', 'military tank']
   },
   {
     name: 'structures',
@@ -65,13 +65,19 @@ const OBJECT_CATEGORIES: ObjectCategory[] = [
     keywords: ['hammer', 'screwdriver', 'wrench', 'saw', 'drill', 'shovel', 'pickaxe', 'axe', 'knife', 'scissors', 'pliers', 'clamp', 'vise', 'anvil', 'forge'],
     description: 'Tools and equipment',
     examples: ['ancient hammer', 'futuristic drill', 'magical staff']
+  },
+  {
+    name: 'sports',
+    keywords: ['bat', 'ball', 'racket', 'paddle', 'stick', 'club', 'puck', 'disc', 'frisbee', 'dart', 'arrow', 'javelin', 'shot', 'weight', 'dumbbell', 'barbell'],
+    description: 'Sports equipment and athletic items',
+    examples: ['cricket bat', 'tennis racket', 'baseball bat', 'hockey stick']
   }
 ];
 
 // Enhanced keyword patterns for better detection
 const KEYWORD_PATTERNS = [
   // Direct object mentions
-  /\b(spaceship|car|truck|motorcycle|bicycle|boat|airplane|helicopter|train|bus|tank|submarine|rocket|ufo|hovercraft)\b/gi,
+  /\b(spaceship|ship|car|truck|motorcycle|bicycle|boat|airplane|helicopter|train|bus|tank|submarine|rocket|ufo|hovercraft)\b/gi,
   /\b(building|house|castle|tower|bridge|wall|gate|door|window|chimney|roof|stairs|ladder|fence|temple|church|mosque|skyscraper)\b/gi,
   /\b(chair|table|bed|sofa|desk|cabinet|shelf|lamp|mirror|clock|vase|plant|cushion|pillow|rug|curtain)\b/gi,
   /\b(tree|rock|boulder|crystal|flower|bush|grass|mushroom|coral|shell|stone|gem|diamond|emerald|ruby|totem|statue)\b/gi,
@@ -79,6 +85,7 @@ const KEYWORD_PATTERNS = [
   /\b(sword|gun|bow|arrow|shield|armor|helmet|dagger|axe|spear|staff|wand|blaster|laser|cannon|missile)\b/gi,
   /\b(dragon|monster|beast|creature|animal|bird|fish|insect|alien|demon|angel|ghost|skeleton|zombie|vampire|werewolf)\b/gi,
   /\b(hammer|screwdriver|wrench|saw|drill|shovel|pickaxe|axe|knife|scissors|pliers|clamp|vise|anvil|forge)\b/gi,
+  /\b(bat|ball|racket|paddle|stick|club|puck|disc|frisbee|dart|arrow|javelin|shot|weight|dumbbell|barbell)\b/gi,
   
   // Descriptive patterns
   /\b(ancient|medieval|futuristic|modern|vintage|antique|magical|mystical|mechanical|robotic|organic|crystalline)\s+\w+/gi,

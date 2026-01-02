@@ -65,3 +65,60 @@ export const detectPromptType = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * Extract ONLY 3D asset phrases from prompt
+ * POST /api/ai-detection/extract-assets
+ */
+export const extractAssets = async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+  
+  try {
+    const { prompt } = req.body as DetectionRequest;
+
+    if (!prompt || !prompt.trim()) {
+      return res.status(200).json({
+        assets: [],
+        success: true,
+        requestId
+      });
+    }
+
+    console.log(`[${requestId}] Asset extraction requested for prompt:`, prompt.substring(0, 50) + '...');
+
+    // Check if AI is configured
+    if (!aiPromptDetectionService.isAIConfigured()) {
+      console.warn(`[${requestId}] AI not configured, returning empty assets`);
+      return res.status(200).json({
+        assets: [],
+        success: true,
+        method: 'fallback',
+        requestId
+      });
+    }
+
+    // Use simplified AI extraction
+    const result = await aiPromptDetectionService.extractAssetsOnly(prompt.trim());
+
+    console.log(`[${requestId}] Asset extraction completed:`, {
+      count: result.assets.length,
+      assets: result.assets
+    });
+
+    return res.status(200).json({
+      assets: result.assets,
+      success: true,
+      method: 'ai',
+      requestId
+    });
+  } catch (error) {
+    console.error(`[${requestId}] Asset extraction error:`, error);
+    
+    return res.status(200).json({
+      assets: [],
+      success: false,
+      error: error instanceof Error ? error.message : 'Asset extraction failed',
+      requestId
+    });
+  }
+};
+

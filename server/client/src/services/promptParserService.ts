@@ -12,6 +12,7 @@ export interface ParsedPrompt {
   promptType: PromptType; // Whether prompt is primarily for mesh, skybox, or both
   meshScore: number; // 0-1, how likely this is a mesh prompt
   skyboxScore: number; // 0-1, how likely this is a skybox prompt
+  aiResult?: any; // Store AI detection result for access to meshAssets
 }
 
 class PromptParserService {
@@ -32,28 +33,32 @@ class PromptParserService {
     'snow', 'rain', 'storm', 'fog', 'mist', 'wind'
   ];
 
-  // Common 3D mesh object keywords (things that are typically objects, not environments)
+  // Website-specific 3D mesh object keywords (from Meshy integration docs)
   private meshObjectKeywords = [
-    // Furniture & Decor
+    // Furniture & Decor (from website docs)
     'table', 'chair', 'desk', 'lamp', 'vase', 'statue', 'sculpture',
     'furniture', 'sofa', 'bed', 'cabinet', 'shelf', 'stool', 'bench',
     'bookshelf', 'wardrobe', 'dresser', 'nightstand', 'ottoman',
+    'mirror', 'clock', 'cushion', 'pillow', 'rug', 'curtain', 'chandelier',
     // Vehicles
     'car', 'vehicle', 'bike', 'motorcycle', 'plane', 'ship', 'boat',
-    'truck', 'bus', 'train', 'helicopter', 'drone',
+    'truck', 'bus', 'train', 'helicopter', 'drone', 'spaceship',
     // Characters & Figures
     'character', 'figure', 'model', 'doll', 'toy', 'action figure',
     'person', 'human', 'robot', 'android', 'creature', 'monster',
+    'dragon', 'beast', 'animal', 'bird', 'fish', 'insect', 'alien',
     // Weapons & Tools
     'weapon', 'sword', 'gun', 'shield', 'armor', 'helmet', 'axe',
-    'hammer', 'tool', 'wrench', 'screwdriver',
+    'hammer', 'tool', 'wrench', 'screwdriver', 'bow', 'arrow', 'dagger',
+    'spear', 'staff', 'wand', 'blaster', 'laser', 'cannon',
     // Nature Objects (portable/individual)
     'plant', 'flower', 'potted plant', 'crystal', 'gem', 'rock', 'stone',
-    'boulder', 'log', 'branch',
+    'boulder', 'log', 'branch', 'mushroom', 'coral', 'shell', 'totem',
     // Art & Collectibles
-    'artwork', 'painting', 'sculpture', 'bust', 'trophy', 'award',
+    'artwork', 'painting', 'bust', 'trophy', 'award',
     // Electronics & Devices
     'phone', 'computer', 'laptop', 'tablet', 'camera', 'speaker',
+    'satellite', 'antenna', 'screen', 'console', 'panel',
     // Containers & Items
     'box', 'crate', 'barrel', 'bottle', 'jar', 'can', 'container',
     // Architectural Elements (as objects)
@@ -857,7 +862,8 @@ class PromptParserService {
           method: 'intelligent',
           promptType: aiData.promptType,
           meshScore: aiData.meshScore,
-          skyboxScore: aiData.skyboxScore
+          skyboxScore: aiData.skyboxScore,
+          aiResult: aiData // Store full AI result for access to meshAssets
         };
 
         console.log('🤖 AI Detection used:', {

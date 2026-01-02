@@ -32,7 +32,7 @@ OPENAI_API_KEY=sk-your-api-key-here
 ```bash
 # Set as Firebase Functions secret (required)
 firebase functions:secrets:set OPENAI_API_KEY
-# Then enter your API key when prompted (your actual API key)
+# Then enter your API key when prompted: sk-proj-YOUR_API_KEY_HERE
 
 # Note: The secret is automatically loaded in functions/src/index.ts
 ```

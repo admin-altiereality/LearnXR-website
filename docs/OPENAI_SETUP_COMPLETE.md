@@ -72,7 +72,7 @@ To deploy with the API key:
 ```bash
 cd functions
 firebase functions:secrets:set OPENAI_API_KEY
-# Enter your actual API key when prompted
+# Enter: sk-proj-YOUR_API_KEY_HERE
 ```
 
 The secret is already configured in `functions/src/index.ts` to be loaded automatically.

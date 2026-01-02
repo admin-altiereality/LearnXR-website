@@ -169,8 +169,8 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
     if (groupThreads.length === 0) return null;
 
     return (
-      <div key={title} className="mb-6">
-        <h3 className="text-[10px] font-body font-light text-gray-500/60 uppercase tracking-[0.15em] mb-3 px-2 sm:px-3 md:px-4">
+      <div key={title} className="mb-4">
+        <h3 className="text-[10px] font-body font-light text-gray-500/60 uppercase tracking-[0.15em] mb-2 px-2 sm:px-3 md:px-4">
           {title}
         </h3>
         <div className="space-y-0.5">
@@ -194,15 +194,15 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
   return (
     <div className="flex flex-col h-full relative min-h-0">
       {/* Header - Editorial, not UI-like */}
-      <div className={`px-2 sm:px-3 md:px-4 py-3 sm:py-3.5 border-b border-[#1a1a1a]/30 relative flex-shrink-0 ${!isOpen ? 'px-0 py-4 flex items-center justify-center' : ''}`}>
+      <div className={`px-2 sm:px-3 md:px-4 py-2.5 sm:py-3 border-b border-[#ffffff]/5 relative flex-shrink-0 ${!isOpen ? 'px-0 py-4 flex items-center justify-center' : ''}`}>
         {/* Close button - visible when sidebar is open on mobile */}
         {onClose && (
           <button
             onClick={onClose}
             className="
-              absolute top-4 right-4
+              absolute top-3 right-3
               w-7 h-7
-              rounded
+              rounded-lg
               hover:bg-white/[0.03]
               flex items-center justify-center
               text-gray-500 hover:text-gray-400
@@ -222,7 +222,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
           /* Collapsed state - Minimal, thoughtful */
           <button
             onClick={onToggle}
-            className="w-10 h-10 rounded border border-[#1a1a1a]/40 hover:border-[#2a2a2a]/60 bg-transparent hover:bg-white/[0.02] flex items-center justify-center transition-all duration-400 cursor-pointer group"
+            className="w-10 h-10 rounded-lg border border-[#ffffff]/10 hover:border-[#ffffff]/20 bg-transparent hover:bg-white/[0.02] flex items-center justify-center transition-all duration-300 cursor-pointer group"
             aria-label="Expand sidebar"
             style={{ transitionDelay: '0ms' }}
           >
@@ -237,7 +237,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
               {/* Toggle button */}
               <button
                 onClick={onToggle}
-                className="w-9 h-9 rounded border border-[#1a1a1a]/40 hover:border-[#2a2a2a]/60 bg-transparent hover:bg-white/[0.02] flex items-center justify-center transition-all duration-400 cursor-pointer group flex-shrink-0"
+                className="w-9 h-9 rounded-lg border border-[#ffffff]/10 hover:border-[#ffffff]/20 bg-transparent hover:bg-white/[0.02] flex items-center justify-center transition-all duration-300 cursor-pointer group flex-shrink-0"
                 aria-label="Collapse sidebar"
               >
                 <svg className="w-4 h-4 text-gray-500/70 group-hover:text-gray-400 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -249,12 +249,12 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
               <button
                 onClick={onNewChat}
                 className="
-                  flex-1 px-3 py-2
-                  rounded border border-[#1a1a1a]/40
-                  bg-transparent hover:bg-white/[0.02] hover:border-[#2a2a2a]/60
+                  flex-1 px-2.5 py-1.5
+                  rounded-lg border border-[#ffffff]/10
+                  bg-transparent hover:bg-white/[0.02] hover:border-[#ffffff]/20
                   flex items-center gap-2
                   text-sm text-gray-400 font-body font-normal
-                  transition-all duration-400
+                  transition-all duration-300
                   group
                 "
               >
@@ -281,10 +281,10 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search threads"
                 className="
-                  w-full px-3 py-2 pl-8 pr-3
-                  rounded border border-[#1a1a1a]/40
-                  bg-transparent
-                  focus:border-[#2a2a2a]/60 focus:bg-white/[0.02]
+                  w-full px-2.5 py-1.5 pl-7 pr-2.5
+                  rounded-lg border border-[#ffffff]/10
+                  bg-[#0a0a0a]/50
+                  focus:border-[#ffffff]/20 focus:bg-white/[0.02] focus:ring-2 focus:ring-sky-500/20
                   text-sm text-gray-300 font-body
                   placeholder:text-gray-500/50
                   transition-all duration-300
@@ -293,7 +293,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                 "
               />
               <svg
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500/50"
+                className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500/50"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -319,7 +319,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
           >
             {viewMode === 'threads' ? (
               /* Thread list view */
-              <div className="flex-1 overflow-y-auto px-2 sm:px-3 md:px-4 py-4 sm:py-5 md:py-6">
+              <div className="flex-1 overflow-y-auto px-2 sm:px-3 md:px-4 py-3 sm:py-4 md:py-5">
                 <AnimatePresence>
                   {loading ? (
                     <div className="flex flex-col items-center justify-center h-full text-center px-6 -mt-16">
@@ -355,11 +355,11 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
             ) : (
               /* Messages view - Editorial style */
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                <div className="flex-1 overflow-y-auto px-2 sm:px-3 md:px-4 py-4 sm:py-5 md:py-6">
+                <div className="flex-1 overflow-y-auto px-2 sm:px-3 md:px-4 py-3 sm:py-4 md:py-5">
                 {/* Back button */}
                 <button
                   onClick={() => setViewMode('threads')}
-                  className="mb-4 px-2 py-1.5 rounded border border-[#1a1a1a]/40 hover:border-[#2a2a2a]/60 bg-transparent hover:bg-white/[0.02] flex items-center gap-2 text-xs text-gray-400 font-body transition-all duration-300"
+                  className="mb-3 px-2 py-1.5 rounded-lg border border-[#ffffff]/10 hover:border-[#ffffff]/20 bg-transparent hover:bg-white/[0.02] flex items-center gap-2 text-xs text-gray-400 font-body transition-all duration-300"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -375,11 +375,11 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                     transition={{ duration: 0.3 }}
                     className="mb-4"
                   >
-                    <div className="relative rounded-lg overflow-hidden border border-[#1a1a1a]/40 bg-[#0a0a0a] group">
+                    <div className="relative rounded-xl overflow-hidden border border-[#ffffff]/10 bg-[#0a0a0a] shadow-[0_4px_16px_rgba(0,0,0,0.4)] group">
                       <img
                         src={activeThreadGenerationData.imageUrl}
                         alt="Generated skybox"
-                        className="w-full h-32 object-cover"
+                        className="w-full h-28 object-cover"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
@@ -407,7 +407,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
-                    className="mb-6 p-3 sm:p-4 rounded border border-[#1a1a1a]/40 bg-white/[0.02] space-y-3"
+                    className="mb-4 p-2.5 sm:p-3 rounded-xl border border-[#ffffff]/10 bg-gradient-to-br from-[#0f0f0f]/90 via-[#0a0a0a]/80 to-[#0f0f0f]/90 backdrop-blur-sm shadow-[0_4px_16px_rgba(0,0,0,0.4)] space-y-2.5"
                   >
                     {/* Prompt */}
                     {activeThreadGenerationData.prompt && (
@@ -468,9 +468,9 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                             }
                           }}
                           className="
-                            w-full px-3 py-2
-                            rounded border border-[#1a1a1a]/40
-                            bg-transparent hover:bg-white/[0.02] hover:border-[#2a2a2a]/60
+                            w-full px-2.5 py-1.5
+                            rounded-lg border border-[#ffffff]/10
+                            bg-transparent hover:bg-white/[0.02] hover:border-[#ffffff]/20
                             flex items-center justify-center gap-2
                             text-sm text-gray-300 font-body font-normal
                             transition-all duration-300
@@ -488,7 +488,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                 )}
 
                 {/* Messages - Editorial layout */}
-                <div className="space-y-6">
+                <div className="space-y-4">
                   {activeThreadMessages.map((message, index) => {
                     const isUser = message.role === 'user';
                     const formatTime = (date: Date) => {
@@ -532,7 +532,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
 
                         {/* Divider - Subtle */}
                         {index < activeThreadMessages.length - 1 && (
-                          <div className="pt-4 border-t border-[#1a1a1a]/20" />
+                          <div className="pt-3 border-t border-[#ffffff]/5" />
                         )}
                       </motion.div>
                     );
@@ -559,7 +559,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                 
                 {/* Chat Input */}
                 {activeThreadId && (
-                  <div className="border-t border-[#1a1a1a]/30 flex-shrink-0">
+                  <div className="border-t border-[#ffffff]/5 flex-shrink-0">
                     <ChatInput
                       onSend={handleSendMessage}
                       isStreaming={isSending}
@@ -575,7 +575,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
       </AnimatePresence>
 
       {/* User Profile Section - Bottom - Always visible, editorial */}
-      <div className="border-t border-[#1a1a1a]/30 p-4 mt-auto flex-shrink-0">
+      <div className="border-t border-[#ffffff]/5 p-2.5 mt-auto flex-shrink-0">
         <AnimatePresence mode="wait">
           {isOpen ? (
             <motion.div
@@ -585,10 +585,10 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
               onClick={() => navigate('/profile')}
-              className="flex items-center gap-3 px-2 py-2 rounded border border-transparent hover:border-[#1a1a1a]/40 hover:bg-white/[0.02] transition-all duration-400 cursor-pointer group"
+              className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg border border-transparent hover:border-[#ffffff]/10 hover:bg-white/[0.02] transition-all duration-300 cursor-pointer group"
             >
               {/* User Avatar - Subtle, not gradient-heavy */}
-              <div className="w-8 h-8 rounded border border-[#1a1a1a]/40 bg-[#1a1a1a]/20 flex items-center justify-center flex-shrink-0">
+              <div className="w-8 h-8 rounded-lg border border-[#ffffff]/10 bg-[#0a0a0a]/50 flex items-center justify-center flex-shrink-0">
                 {user?.photoURL ? (
                   <img 
                     src={user.photoURL} 
@@ -623,7 +623,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
             >
               <div 
                 onClick={() => navigate('/profile')}
-                className="w-9 h-9 rounded border border-[#1a1a1a]/40 bg-[#1a1a1a]/20 flex items-center justify-center cursor-pointer hover:border-[#2a2a2a]/60 transition-all duration-400"
+                className="w-9 h-9 rounded-lg border border-[#ffffff]/10 bg-[#0a0a0a]/50 flex items-center justify-center cursor-pointer hover:border-[#ffffff]/20 transition-all duration-300"
               >
                 {user?.photoURL ? (
                   <img 

@@ -53,7 +53,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div className="border-t border-[#1a1a1a]/30 bg-[#0a0a0a]/98 p-3">
+    <div className="border-t border-[#ffffff]/5 bg-gradient-to-b from-[#0a0a0a]/98 to-[#0a0a0a]/95 p-2.5">
       {/* Input area */}
       <div className="flex items-end gap-2">
         <div className="flex-1 relative">
@@ -67,10 +67,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             rows={rows}
             className="
               w-full
-              px-3 py-2.5
-              rounded border border-[#1a1a1a]/40
-              bg-transparent
-              focus:border-[#2a2a2a]/60 focus:bg-white/[0.02]
+              px-2.5 py-2
+              rounded-lg border border-[#ffffff]/10
+              bg-[#0a0a0a]/80
+              focus:border-[#ffffff]/20 focus:bg-white/[0.02] focus:ring-2 focus:ring-sky-500/20
               text-sm text-gray-200 font-body
               placeholder:text-gray-500/50
               resize-none
@@ -90,8 +90,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           whileTap={{ scale: message.trim() ? 0.95 : 1 }}
           className="
             w-9 h-9
-            rounded border border-[#1a1a1a]/40
-            bg-transparent hover:bg-white/[0.02] hover:border-[#2a2a2a]/60
+            rounded-lg border border-[#ffffff]/10
+            bg-transparent hover:bg-white/[0.02] hover:border-[#ffffff]/20
             disabled:opacity-30 disabled:cursor-not-allowed
             flex items-center justify-center
             text-gray-400 hover:text-gray-300

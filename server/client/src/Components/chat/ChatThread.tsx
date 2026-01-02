@@ -62,13 +62,13 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
       onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
       className={`
-        relative px-2 sm:px-3 md:px-4 py-2 sm:py-2.5 rounded
+        relative px-2 sm:px-3 md:px-4 py-1.5 sm:py-2 rounded-lg
         transition-all duration-300
         cursor-pointer
         border border-transparent
         ${thread.isActive
-          ? 'bg-white/[0.03] border-[#1a1a1a]/40'
-          : 'hover:bg-white/[0.015] hover:border-[#1a1a1a]/20'
+          ? 'bg-gradient-to-br from-white/[0.04] to-white/[0.02] border-[#ffffff]/10 shadow-[0_2px_8px_rgba(0,0,0,0.2)]'
+          : 'hover:bg-white/[0.02] hover:border-[#ffffff]/10'
         }
       `}
       style={{ transitionDelay: isHovered ? '0ms' : '100ms' }}
@@ -84,9 +84,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
             onKeyDown={handleKeyDown}
             className="
               w-full px-2 py-1
-              bg-white/[0.05] border border-[#1a1a1a]/40
-              rounded text-sm text-gray-200 font-body
-              focus:outline-none focus:border-[#2a2a2a]/60
+              bg-[#0a0a0a]/80 border border-[#ffffff]/10
+              rounded-lg text-sm text-gray-200 font-body
+              focus:outline-none focus:border-[#ffffff]/20 focus:ring-2 focus:ring-sky-500/20
             "
             autoFocus
             onClick={(e) => e.stopPropagation()}
@@ -129,7 +129,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({
                     setIsEditing(true);
                   }}
                   className="
-                    w-5 h-5 rounded
+                    w-5 h-5 rounded-lg
                     hover:bg-white/[0.05]
                     flex items-center justify-center
                     text-gray-500/60 hover:text-gray-400
