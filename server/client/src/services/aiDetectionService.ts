@@ -38,21 +38,54 @@ class AIDetectionService {
 
       console.log('🤖 Requesting AI detection for prompt:', prompt.substring(0, 50) + '...');
 
-      const response = await api.post<AIDetectionResult>('/ai-detection/detect', {
+      const response = await api.post<{
+        success: boolean;
+        data: AIDetectionResult;
+        method: string;
+        requestId?: string;
+      }>('/ai-detection/detect', {
         prompt: prompt.trim()
       });
 
-      console.log('✅ AI Detection response:', {
-        promptType: response.data.promptType,
-        confidence: response.data.confidence,
-        method: 'ai'
+      console.log('✅ AI Detection response received:', response.data);
+      console.log('📊 Response structure:', {
+        hasSuccess: 'success' in (response.data || {}),
+        hasData: 'data' in (response.data || {}),
+        dataKeys: response.data?.data ? Object.keys(response.data.data) : [],
+        fullResponse: response.data
       });
 
-      return {
-        success: true,
-        data: response.data,
-        method: 'ai'
-      };
+      // Handle nested response structure: { success: true, data: {...}, method: 'ai' }
+      if (response.data.success && response.data.data) {
+        const aiData = response.data.data;
+        console.log('✅ AI Detection parsed:', {
+          promptType: aiData.promptType,
+          confidence: aiData.confidence,
+          meshAssets: aiData.meshAssets,
+          meshAssetsCount: aiData.meshAssets?.length || 0,
+          method: response.data.method || 'ai'
+        });
+
+        return {
+          success: true,
+          data: aiData,
+          method: (response.data.method || 'ai') as 'ai' | 'fallback'
+        };
+      } else if (response.data.promptType) {
+        // Direct structure (fallback)
+        return {
+          success: true,
+          data: response.data as AIDetectionResult,
+          method: 'ai'
+        };
+      } else {
+        console.error('❌ Unexpected response structure:', response.data);
+        return {
+          success: false,
+          error: 'Unexpected response format from detection service',
+          method: 'fallback'
+        };
+      }
     } catch (error: any) {
       console.error('❌ AI Detection error:', error);
       

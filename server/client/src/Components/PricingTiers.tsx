@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { SUBSCRIPTION_PLANS, validateRazorpayPlanId, getRazorpayPlanId } from '../services/subscriptionService';
 import { useAuth } from '../contexts/AuthContext';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { unifiedPaymentService } from '../services/unifiedPaymentService';
 import { 
   detectUserCountry, 
@@ -28,6 +30,8 @@ interface GeoInfo {
 
 export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription }) => {
   const { user } = useAuth();
+  const { isFreePlan, subscription } = useSubscription();
+  const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [geoInfo, setGeoInfo] = useState<GeoInfo | null>(null);
   const [showCountrySelector, setShowCountrySelector] = useState(false);
@@ -94,7 +98,9 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
     }
 
     if (planId === 'free') {
-      toast.error('You are already on the free plan');
+      // Allow users to continue with free plan and navigate to main page
+      // This is especially useful for first-time users coming from onboarding
+      navigate('/main');
       return;
     }
 
@@ -244,7 +250,13 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
 
   const renderPlanCard = (plan: typeof SUBSCRIPTION_PLANS[0], index: number, isEnterprise = false) => {
     const style = getPlanStyle(plan.id);
-    const isCurrent = currentSubscription?.planId === plan.id;
+    // Check if user has an active subscription (not just default free plan)
+    // For free plan: only show "Current Plan" if user has an active subscription with status 'active'
+    // If no subscription exists or subscription is null, show "Continue with Free Plan" button
+    const hasActiveSubscription = subscription && subscription.status === 'active';
+    const isCurrent = plan.id === 'free' 
+      ? (hasActiveSubscription && subscription?.planId === 'free')
+      : (hasActiveSubscription && currentSubscription?.planId === plan.id);
     const isHighlighted = style.highlight;
     const price = currentPrice(plan);
     const savings = getSavings(plan);
@@ -477,6 +489,8 @@ export const PricingTiers: React.FC<PricingTiersProps> = ({ currentSubscription 
                     </>
                   ) : plan.isCustomPricing ? (
                     'Contact Sales'
+                  ) : plan.id === 'free' ? (
+                    'Continue with Free Plan'
                   ) : (
                     'Get Started'
                   )}

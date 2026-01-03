@@ -14,7 +14,7 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const { login, loginWithGoogle, user } = useAuth();
-  const { loading: subscriptionLoading } = useSubscription();
+  const { loading: subscriptionLoading, isFreePlan, subscription } = useSubscription();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -28,22 +28,35 @@ export const Login = () => {
         
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          if (userData.onboardingCompleted) {
-            navigate('/main');
-          } else {
+          // First check if onboarding is completed
+          if (!userData.onboardingCompleted) {
+            // First-time user: redirect to onboarding
             navigate('/onboarding');
+            return;
+          }
+          
+          // Onboarding completed: check subscription status
+          if (isFreePlan && !subscription) {
+            // No active subscription: redirect to pricing
+            navigate('/pricing');
+          } else {
+            // Has subscription: go to main
+            navigate('/main');
           }
         } else {
+          // New user: redirect to onboarding
           navigate('/onboarding');
         }
       } catch (error) {
         console.error('Error checking onboarding status:', error);
         navigate('/onboarding');
+      } finally {
+        setCheckingOnboarding(false);
       }
     };
 
     checkOnboardingStatus();
-  }, [user, subscriptionLoading, navigate, checkingOnboarding]);
+  }, [user, subscriptionLoading, isFreePlan, subscription, navigate, checkingOnboarding]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

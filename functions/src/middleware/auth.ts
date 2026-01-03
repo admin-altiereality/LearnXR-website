@@ -22,7 +22,10 @@ const PUBLIC_PATHS = [
   '/subscription/verify-credentials',  // Credential verification endpoint
   '/subscription',
   '/user/subscription-status',
-  '/proxy-asset'
+  '/proxy-asset',
+  '/ai-detection/enhance',  // Allow prompt enhancement without auth
+  '/ai-detection/detect',  // Allow AI detection without auth
+  '/ai-detection/extract-assets'  // Allow asset extraction without auth
 ];
 
 const isPublicEndpoint = (req: Request): boolean => {
@@ -38,7 +41,7 @@ const isPublicEndpoint = (req: Request): boolean => {
   
   // CRITICAL: Check raw URL for subscription/create (BEFORE any normalization)
   // This catches /api/subscription/create, /subscription/create, etc.
-  if (req.method === 'POST') {
+  if (req.method === 'POST' || req.method === 'OPTIONS') {
     const hasSubscription = urlString.includes('subscription') || pathString.includes('subscription');
     const hasCreate = urlString.includes('create') || pathString.includes('create');
     
@@ -48,6 +51,24 @@ const isPublicEndpoint = (req: Request): boolean => {
         rawPath,
         urlString,
         pathString
+      });
+      return true; // EARLY RETURN - don't check anything else
+    }
+    
+    // CRITICAL: Check for ai-detection endpoints (BEFORE any normalization)
+    const hasAiDetection = urlString.includes('ai-detection') || pathString.includes('ai-detection');
+    const hasEnhance = urlString.includes('enhance') || pathString.includes('enhance');
+    const hasDetect = urlString.includes('detect') || pathString.includes('detect');
+    
+    // Allow both /enhance and /detect endpoints
+    if (hasAiDetection && (hasEnhance || hasDetect)) {
+      console.log(`[${requestId}] [AUTH] ✅ ALLOWING ai-detection endpoint (raw URL/path check):`, {
+        method: req.method,
+        rawUrl,
+        rawPath,
+        urlString,
+        pathString,
+        endpoint: hasEnhance ? 'enhance' : 'detect'
       });
       return true; // EARLY RETURN - don't check anything else
     }
@@ -112,6 +133,22 @@ const isPublicEndpoint = (req: Request): boolean => {
     return true;
   }
   
+  // CRITICAL: Always allow POST/OPTIONS to ai-detection endpoints
+  const isAiDetectionEndpoint = uniquePaths.some(path => {
+    return path === '/ai-detection/enhance' || 
+           path === '/ai-detection/detect' ||
+           path === '/ai-detection/extract-assets' ||
+           path.endsWith('/ai-detection/enhance') ||
+           path.endsWith('/ai-detection/detect') ||
+           path.endsWith('/ai-detection/extract-assets') ||
+           (path.includes('ai-detection') && (path.includes('enhance') || path.includes('detect') || path.includes('extract-assets')));
+  });
+  
+  if ((req.method === 'POST' || req.method === 'OPTIONS' || req.method === 'GET') && isAiDetectionEndpoint) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING ai-detection endpoint`);
+    return true;
+  }
+  
   // Check if any normalized path matches public endpoints
   const isPublic = uniquePaths.some(normalizedPath => {
     return PUBLIC_PATHS.some(publicPath => {
@@ -130,6 +167,12 @@ const isPublicEndpoint = (req: Request): boolean => {
 
 export const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
   const requestId = (req as any).requestId;
+  
+  // Always allow OPTIONS requests (CORS preflight)
+  if (req.method === 'OPTIONS') {
+    console.log(`[${requestId}] [AUTH] ✅ Allowing OPTIONS request (CORS preflight)`);
+    return next();
+  }
   
   // Allow public endpoints without authentication
   if (isPublicEndpoint(req)) {

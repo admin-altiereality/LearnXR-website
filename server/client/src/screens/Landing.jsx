@@ -5,7 +5,6 @@ import {
   FaBrain,
   FaCube,
   FaPalette,
-  FaPlay,
   FaArrowRight,
   FaStar,
   FaUsers,
@@ -95,7 +94,7 @@ const Landing = () => {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-20 flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center items-center"
+          className="mt-20 flex justify-center items-center"
         >
           <motion.button
             onClick={handleGetStarted}
@@ -110,17 +109,6 @@ const Landing = () => {
               Get Started Free
               <FaArrowRight className="text-sm" />
             </span>
-          </motion.button>
-
-          <motion.button
-            className="group px-10 py-4 rounded-2xl font-semibold text-lg border border-white/20 hover:border-sky-400/60 transition-all duration-300 flex items-center gap-3 bg-white/5 backdrop-blur-2xl"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-          >
-            <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
-              <FaPlay className="text-sky-400" />
-            </div>
-            <span className="text-white/70">Watch Demo</span>
           </motion.button>
         </motion.div>
 
