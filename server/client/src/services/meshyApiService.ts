@@ -702,6 +702,53 @@ export class MeshyApiService {
   }
 
   /**
+   * Refresh expired Meshy asset URL by fetching task status
+   * Extracts task ID from URL or uses provided taskId
+   */
+  async refreshMeshyUrl(assetUrl: string, taskId?: string): Promise<string | null> {
+    try {
+      // Extract task ID from URL if not provided
+      let extractedTaskId = taskId;
+      if (!extractedTaskId && assetUrl.includes('assets.meshy.ai')) {
+        // Try to extract task ID from URL pattern: .../tasks/{taskId}/output/...
+        const taskIdMatch = assetUrl.match(/\/tasks\/([a-zA-Z0-9_-]+)\//);
+        if (taskIdMatch) {
+          extractedTaskId = taskIdMatch[1];
+        }
+      }
+
+      if (!extractedTaskId) {
+        console.warn('⚠️ Cannot refresh Meshy URL: No task ID found');
+        return null;
+      }
+
+      console.log(`🔄 Refreshing Meshy URL for task: ${extractedTaskId}`);
+      
+      // Get fresh task status from Meshy API
+      const taskStatus = await this.getGenerationStatus(extractedTaskId);
+      
+      if (taskStatus.status === 'SUCCEEDED' && taskStatus.model_urls) {
+        // Return the GLB URL (preferred format)
+        const refreshedUrl = taskStatus.model_urls.glb || 
+                            taskStatus.model_urls.fbx || 
+                            taskStatus.model_urls.obj ||
+                            taskStatus.model_urls.usdz;
+        
+        if (refreshedUrl) {
+          console.log('✅ Successfully refreshed Meshy URL');
+          return refreshedUrl;
+        }
+      }
+
+      console.warn('⚠️ Task status does not have valid model URLs');
+      return null;
+    } catch (error) {
+      console.error('❌ Failed to refresh Meshy URL:', error);
+      return null;
+    }
+  }
+
+  /**
    * Download an asset with fallback strategies
    */
   async downloadAsset(assetUrl: string): Promise<Blob> {

@@ -732,6 +732,62 @@ function AssetModel({
       } catch (err) {
         console.error('Model loading failed:', err);
         const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        
+        // Check if it's a 403 error and the URL is from Meshy
+        if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+          if (assetUrl.includes('assets.meshy.ai')) {
+            console.log('🔄 Detected 403 error for Meshy URL, attempting to refresh...');
+            try {
+              const { meshyApiService } = await import('../services/meshyApiService');
+              const refreshedUrl = await meshyApiService.refreshMeshyUrl(assetUrl);
+              
+              if (refreshedUrl) {
+                console.log('✅ Got refreshed URL, retrying load...');
+                // Retry with refreshed URL
+                const apiBaseUrl = getApiBaseUrl();
+                const proxyUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(refreshedUrl)}`;
+                
+                const loadedGltf = await new Promise<any>((resolve, reject) => {
+                  loaderRef.current!.gltfLoader.load(proxyUrl, resolve, undefined, reject);
+                });
+
+                // Optimize the model for immersive rendering
+                loadedGltf.scene.traverse((child: THREE.Object3D) => {
+                  if (child instanceof THREE.Mesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                      child.material.needsUpdate = true;
+                      child.material.side = THREE.DoubleSide;
+                      
+                      if (child.material instanceof THREE.MeshStandardMaterial) {
+                        child.material.envMapIntensity = environmentIntensity;
+                      }
+                    }
+                  }
+                });
+
+                // Auto-scale and center
+                const box = new THREE.Box3().setFromObject(loadedGltf.scene);
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = 2 / maxDim;
+                loadedGltf.scene.scale.setScalar(scale);
+
+                const center = box.getCenter(new THREE.Vector3());
+                loadedGltf.scene.position.sub(center.multiplyScalar(scale));
+
+                setGltf(loadedGltf);
+                setIsLoading(false);
+                onLoad?.(loadedGltf);
+                return; // Success, exit early
+              }
+            } catch (refreshError) {
+              console.error('❌ Failed to refresh Meshy URL:', refreshError);
+            }
+          }
+        }
+        
         setError(errorMessage);
         setIsLoading(false);
         onError?.(err instanceof Error ? err : new Error(errorMessage));

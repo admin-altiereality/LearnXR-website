@@ -142,6 +142,10 @@ export const api = onRequest(
     
     try {
       openaiKey = openaiApiKey.value();
+      // Clean the API key - remove any whitespace, newlines, or "Bearer " prefix
+      if (openaiKey) {
+        openaiKey = openaiKey.trim().replace(/^Bearer\s+/i, '').replace(/\r?\n/g, '').replace(/\s+/g, '');
+      }
     } catch (err: any) {
       console.error('Error accessing OPENAI_API_KEY:', err?.message || err);
     }
@@ -150,7 +154,10 @@ export const api = onRequest(
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (razorpayId) process.env.RAZORPAY_KEY_ID = razorpayId;
     if (razorpaySecret) process.env.RAZORPAY_KEY_SECRET = razorpaySecret;
-    if (openaiKey) process.env.OPENAI_API_KEY = openaiKey;
+    if (openaiKey) {
+      process.env.OPENAI_API_KEY = openaiKey;
+      console.log('🔑 OpenAI API key cleaned and set, length:', openaiKey.length);
+    }
     
     console.log('Secrets loaded:', {
       hasBlockade: !!blockadeKey,

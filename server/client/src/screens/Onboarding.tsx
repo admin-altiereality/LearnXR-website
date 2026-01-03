@@ -38,7 +38,7 @@ interface OnboardingData {
 const Onboarding = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isFreePlan } = useSubscription();
+  const { isFreePlan, subscription, loading: subscriptionLoading } = useSubscription();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -214,6 +214,7 @@ const Onboarding = () => {
 
   const handleSubmit = async () => {
     if (!user?.uid) return;
+    if (subscriptionLoading) return; // Wait for subscription data to load
 
     setSubmitting(true);
     try {
@@ -241,7 +242,16 @@ const Onboarding = () => {
       }
 
       toast.success('Welcome aboard! Let\'s create something amazing.');
-      navigate('/main');
+      
+      // Wait a moment for subscription context to update, then redirect
+      // Redirect to pricing if user is on free plan and has no active subscription, otherwise to main
+      setTimeout(() => {
+        if (isFreePlan && !subscription) {
+          navigate('/pricing');
+        } else {
+          navigate('/main');
+        }
+      }, 100);
     } catch (error) {
       console.error('Error saving onboarding data:', error);
       toast.error('Something went wrong. Please try again.');
@@ -251,7 +261,15 @@ const Onboarding = () => {
   };
 
   const handleSkip = () => {
-    navigate('/main');
+    // If skipping, still check subscription status
+    // Wait for subscription data if still loading
+    if (subscriptionLoading) return;
+    
+    if (isFreePlan && !subscription) {
+      navigate('/pricing');
+    } else {
+      navigate('/main');
+    }
   };
 
   const fadeUpVariants = {
@@ -562,7 +580,7 @@ const Onboarding = () => {
   return (
     <FuturisticBackground>
       <div className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full max-w-4xl mx-auto ">
           {/* Logo & Welcome Badge */}
           <motion.div
             custom={0}
@@ -571,7 +589,7 @@ const Onboarding = () => {
             animate="visible"
             className="text-center mb-8"
           >
-            <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="flex items-center justify-center gap-3 mt-16 mb-6">
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-fuchsia-500 flex items-center justify-center shadow-[0_0_30px_rgba(14,165,233,0.4)]">
                 <FaCube className="text-white text-xl" />
               </div>

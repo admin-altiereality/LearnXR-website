@@ -1,28 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { useAuth } from '../contexts/AuthContext';
-import { subscriptionService } from '../services/subscriptionService';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { PricingTiers } from '../Components/PricingTiers';
 import { FaCheckCircle, FaRocket, FaShieldAlt, FaInfinity } from 'react-icons/fa';
 
 const Pricing = () => {
-  const { user } = useAuth();
-  const [subscription, setSubscription] = useState(null);
-
-  useEffect(() => {
-    const loadSubscription = async () => {
-      if (user?.uid) {
-        try {
-          const userSubscription = await subscriptionService.getUserSubscription(user.uid);
-          setSubscription(userSubscription);
-        } catch (error) {
-          console.error('Error loading subscription:', error);
-        }
-      }
-    };
-    
-    loadSubscription();
-  }, [user?.uid]);
+  const { subscription } = useSubscription();
 
   const features = [
     {
@@ -108,7 +91,7 @@ const Pricing = () => {
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
           >
-            <PricingTiers currentSubscription={subscription} />
+            <PricingTiers currentSubscription={subscription || undefined} />
           </motion.div>
         </div>
       </section>
