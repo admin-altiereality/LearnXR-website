@@ -1,26 +1,127 @@
 // AI Detection Route for Firebase Functions
 // Handles AI-based prompt detection using OpenAI
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import OpenAI from 'openai';
 
 const router = Router();
 
+// Test route to verify router is working
+router.get('/test', (req: Request, res: Response) => {
+  res.json({ success: true, message: 'aiDetection router is working', path: req.path, url: req.url });
+});
+
+/**
+ * Fallback prompt enhancement when OpenAI is unavailable
+ * Uses rule-based enhancement to add common improvements
+ */
+const applyFallbackEnhancement = (prompt: string): string => {
+  let enhanced = prompt.trim();
+  
+  // Don't enhance if already very long
+  if (enhanced.length > 500) {
+    return enhanced;
+  }
+  
+  const enhancements: string[] = [];
+  
+  // Add lighting if not present
+  if (!enhanced.toLowerCase().match(/(light|lighting|bright|dark|shadow|illuminated|glow|glowing)/i)) {
+    enhancements.push('with soft warm lighting');
+  }
+  
+  // Add mood/atmosphere if not present
+  if (!enhanced.toLowerCase().match(/(mood|atmosphere|atmospheric|ambient|feeling|vibe)/i)) {
+    enhancements.push('in a peaceful atmosphere');
+  }
+  
+  // Add time of day if not present
+  if (!enhanced.toLowerCase().match(/(sunset|sunrise|dawn|dusk|night|day|morning|afternoon|evening|golden hour)/i)) {
+    enhancements.push('during golden hour');
+  }
+  
+  // Add descriptive detail if prompt is short
+  if (enhanced.length < 100 && !enhanced.toLowerCase().match(/(detailed|intricate|ornate|elaborate|rich)/i)) {
+    enhancements.push('with intricate details');
+  }
+  
+  // Apply enhancements
+  if (enhancements.length > 0) {
+    // Add enhancements in a natural way
+    const enhancementText = enhancements.slice(0, 2).join(', '); // Limit to 2 enhancements
+    enhanced = `${enhanced}, ${enhancementText}`;
+  }
+  
+  // Ensure we don't exceed 600 characters
+  if (enhanced.length > 600) {
+    enhanced = enhanced.substring(0, 600).trim();
+    // Try to cut at a word boundary
+    const lastSpace = enhanced.lastIndexOf(' ');
+    if (lastSpace > 550) {
+      enhanced = enhanced.substring(0, lastSpace);
+    }
+  }
+  
+  return enhanced;
+};
+
 // Initialize OpenAI (lazy loading to avoid issues if key is missing)
+// Note: This is re-initialized on each request to ensure secrets are loaded
 let openai: OpenAI | null = null;
 let isConfigured = false;
+let lastInitCheck: number = 0;
+const INIT_CHECK_INTERVAL = 1000; // Check every second if not initialized
 
-const initializeOpenAI = () => {
-  if (openai) return; // Already initialized
+const initializeOpenAI = (forceReinit = false) => {
+  // If already initialized and not forcing reinit, return early
+  if (openai && isConfigured && !forceReinit) {
+    return;
+  }
+  
+  // Throttle initialization checks to avoid excessive checks
+  const now = Date.now();
+  if (!forceReinit && now - lastInitCheck < INIT_CHECK_INTERVAL && openai) {
+    return;
+  }
+  lastInitCheck = now;
   
   const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
-    openai = new OpenAI({ apiKey });
-    isConfigured = true;
-    console.log('✅ OpenAI initialized in Firebase Functions');
-  } else {
-    console.warn('⚠️ OPENAI_API_KEY not found in Firebase Functions');
+  
+  if (!apiKey) {
+    console.warn('⚠️ OPENAI_API_KEY not found in process.env');
     isConfigured = false;
+    openai = null;
+    return;
+  }
+  
+  // Clean the API key - remove any whitespace, newlines, or "Bearer " prefix
+  // Match the same cleaning pattern used in index.ts
+  const cleanedKey = apiKey.trim().replace(/^Bearer\s+/i, '').replace(/\r?\n/g, '').replace(/\s+/g, '');
+  
+  if (!cleanedKey || cleanedKey.length < 10) {
+    console.warn('⚠️ OPENAI_API_KEY is invalid (too short or empty after cleaning)', {
+      originalLength: apiKey.length,
+      cleanedLength: cleanedKey.length
+    });
+    isConfigured = false;
+    openai = null;
+    return;
+  }
+  
+  // Re-initialize if key changed or forcing reinit
+  if (forceReinit || !openai) {
+    try {
+      openai = new OpenAI({ apiKey: cleanedKey });
+      isConfigured = true;
+      console.log('✅ OpenAI initialized in Firebase Functions', {
+        keyLength: cleanedKey.length,
+        keyPrefix: cleanedKey.substring(0, 7) + '...'
+      });
+    } catch (error: any) {
+      console.error('❌ Failed to initialize OpenAI client:', error?.message || error);
+      isConfigured = false;
+      openai = null;
+    }
   }
 };
 
@@ -423,9 +524,42 @@ If no 3D objects found, return empty array: {"assets": []}`;
 /**
  * AI Prompt Enhancement endpoint
  * POST /api/ai-detection/enhance
+ * 
+ * Route path: /enhance (mounted at /ai-detection, so full path is /ai-detection/enhance)
  */
+// Add a catch-all middleware BEFORE routes to log ALL requests to this router
+router.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.path.includes('enhance') || req.url.includes('enhance')) {
+    const requestId = (req as any).requestId || `req-${Date.now()}`;
+    console.log(`[${requestId}] 🔍 [ROUTER MIDDLEWARE] Request to aiDetection router:`, {
+      method: req.method,
+      path: req.path,
+      url: req.url,
+      originalUrl: req.originalUrl,
+      baseUrl: req.baseUrl,
+      route: req.route?.path
+    });
+  }
+  next();
+});
+
+// POST route handler - must be defined FIRST to ensure it matches before other handlers
 router.post('/enhance', async (req: Request, res: Response) => {
-  const requestId = (req as any).requestId;
+  const requestId = (req as any).requestId || `req-${Date.now()}`;
+  
+  // Add request ID to req object if not present
+  if (!(req as any).requestId) {
+    (req as any).requestId = requestId;
+  }
+  
+  console.log(`[${requestId}] ========== POST /enhance ENDPOINT CALLED ==========`);
+  console.log(`[${requestId}] ✅ POST route matched successfully!`);
+  console.log(`[${requestId}] Request method:`, req.method);
+  console.log(`[${requestId}] Request path:`, req.path);
+  console.log(`[${requestId}] Request url:`, req.url);
+  console.log(`[${requestId}] Request originalUrl:`, req.originalUrl);
+  console.log(`[${requestId}] Request baseUrl:`, req.baseUrl);
+  console.log(`[${requestId}] Request body:`, req.body ? { hasPrompt: !!req.body.prompt, promptLength: req.body.prompt?.length || 0 } : 'no body');
   
   try {
     const { prompt } = req.body;
@@ -440,12 +574,17 @@ router.post('/enhance', async (req: Request, res: Response) => {
 
     console.log(`[${requestId}] AI Enhancement requested for prompt:`, prompt.substring(0, 50) + '...');
 
-    // Initialize OpenAI if not already done
-    initializeOpenAI();
+    // Initialize OpenAI - force reinit to ensure secrets are loaded
+    initializeOpenAI(true);
 
-    // If OpenAI is not configured, return error
+    // Check if OpenAI is configured
     if (!isConfigured || !openai) {
-      console.warn(`[${requestId}] OpenAI not configured for enhancement`);
+      console.warn(`[${requestId}] OpenAI not configured for enhancement`, {
+        isConfigured,
+        hasOpenai: !!openai,
+        hasApiKey: !!process.env.OPENAI_API_KEY,
+        apiKeyLength: process.env.OPENAI_API_KEY?.length || 0
+      });
       return res.status(503).json({
         success: false,
         error: 'AI enhancement is not available (OpenAI API key not configured)',
@@ -457,42 +596,150 @@ router.post('/enhance', async (req: Request, res: Response) => {
 
 Your task is to enhance user prompts by adding relevant details that will improve the quality of generated 3D environments and objects. 
 
+CRITICAL REQUIREMENTS:
+1. You MUST always enhance the prompt. Even if the prompt seems complete, add at least one improvement such as lighting, mood, or descriptive detail.
+2. The enhanced prompt MUST be UNDER 600 characters. This is a hard limit - never exceed it.
+3. The enhanced prompt MUST be different from the original. Always add at least lighting, mood, or atmospheric details.
+
 ENHANCEMENT GUIDELINES:
 1. Preserve the original intent and meaning of the prompt
-2. Add appropriate details for:
-   - Lighting conditions (e.g., "soft warm lighting", "dramatic shadows", "golden hour")
-   - Mood and atmosphere (e.g., "peaceful and serene", "mysterious and eerie", "vibrant and energetic")
-   - Time of day (e.g., "at sunset", "during golden hour", "at night", "at dawn")
-   - Weather/atmospheric conditions if relevant (e.g., "with gentle rain", "foggy morning", "clear sky")
-   - Additional descriptive details that enhance the scene
-3. Keep the enhanced prompt concise but descriptive (max 600 characters)
+2. ALWAYS add appropriate details for:
+   - Lighting conditions (e.g., "soft warm lighting", "dramatic shadows", "golden hour", "dim candlelight")
+   - Mood and atmosphere (e.g., "peaceful and serene", "mysterious and eerie", "vibrant and energetic", "solemn and ancient")
+   - Time of day (e.g., "at sunset", "during golden hour", "at night", "at dawn", "in the afternoon")
+   - Weather/atmospheric conditions if relevant (e.g., "with gentle rain", "foggy morning", "clear sky", "dusty air")
+   - Additional descriptive details that enhance the scene (textures, materials, scale, perspective)
+3. Keep the enhanced prompt concise but descriptive - MAXIMUM 600 characters (count carefully!)
 4. Maintain natural language flow
 5. Don't add redundant information already present in the prompt
-6. For 3D objects, add descriptive adjectives if missing (e.g., "detailed", "intricate", "ornate")
+6. For 3D objects, add descriptive adjectives if missing (e.g., "detailed", "intricate", "ornate", "weathered", "polished")
+7. For environments, add spatial and atmospheric context (e.g., "spacious", "intimate", "cavernous", "open-air")
+
+CHARACTER LIMIT: The enhanced prompt must be UNDER 600 characters. If you need to prioritize, keep the most important enhancements and remove less critical details to stay within the limit.
 
 Return ONLY the enhanced prompt text, nothing else. Do not include explanations, JSON, or any other formatting.`;
 
     const userPrompt = `Enhance this prompt for better 3D generation results: "${prompt.trim()}"`;
 
     console.log(`[${requestId}] Calling OpenAI API for prompt enhancement...`);
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 300
+    console.log(`[${requestId}] OpenAI client status:`, {
+      isConfigured,
+      hasOpenai: !!openai,
+      apiKeyLength: process.env.OPENAI_API_KEY?.length || 0
     });
 
-    const enhancedPrompt = completion.choices[0]?.message?.content?.trim();
-    
-    if (!enhancedPrompt) {
-      throw new Error('No enhanced prompt received from AI');
+    let completion;
+    try {
+      if (!openai) {
+        throw new Error('OpenAI client is not initialized');
+      }
+      
+      completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 300
+      });
+      
+      console.log(`[${requestId}] OpenAI API call successful:`, {
+        hasChoices: !!completion.choices,
+        choicesLength: completion.choices?.length || 0,
+        hasMessage: !!completion.choices?.[0]?.message,
+        hasContent: !!completion.choices?.[0]?.message?.content
+      });
+    } catch (openaiError: any) {
+      console.error(`[${requestId}] OpenAI API call failed:`, openaiError);
+      console.error(`[${requestId}] OpenAI error details:`, {
+        name: openaiError?.name,
+        message: openaiError?.message,
+        status: openaiError?.status,
+        code: openaiError?.code,
+        type: openaiError?.type,
+        response: openaiError?.response ? {
+          status: openaiError.response.status,
+          statusText: openaiError.response.statusText,
+          data: openaiError.response.data
+        } : null
+      });
+      
+      // Check if it's a rate limit error (429)
+      if (openaiError?.status === 429 || openaiError?.response?.status === 429 || openaiError?.message?.includes('429') || openaiError?.message?.includes('Rate limit')) {
+        console.log(`[${requestId}] Rate limit hit, using fallback enhancement`);
+        
+        // Use fallback enhancement instead of failing
+        try {
+          const fallbackEnhanced = applyFallbackEnhancement(prompt.trim());
+          if (!res.headersSent) {
+            return res.status(200).json({
+              success: true,
+              data: {
+                originalPrompt: prompt.trim(),
+                enhancedPrompt: fallbackEnhanced,
+                method: 'fallback'
+              },
+              requestId,
+              warning: 'AI enhancement unavailable due to rate limits. Using rule-based enhancement.'
+            });
+          }
+        } catch (fallbackError: any) {
+          console.error(`[${requestId}] Fallback enhancement also failed:`, fallbackError);
+          // If fallback fails, return the rate limit error
+          if (!res.headersSent) {
+            return res.status(503).json({
+              success: false,
+              error: 'AI enhancement is temporarily unavailable due to rate limits. Please try again later or upgrade your OpenAI plan.',
+              requestId,
+              details: {
+                errorType: 'RateLimitError',
+                message: 'OpenAI API rate limit exceeded. The daily request limit has been reached.'
+              }
+            });
+          }
+        }
+        return; // Exit early if we handled the rate limit with fallback
+      }
+      
+      throw openaiError; // Re-throw to be caught by outer catch
     }
 
-    console.log(`[${requestId}] ✅ AI Enhancement successful`);
+    // Validate completion structure before accessing
+    if (!completion || !completion.choices || completion.choices.length === 0) {
+      console.error(`[${requestId}] Invalid completion structure:`, {
+        hasCompletion: !!completion,
+        hasChoices: !!completion?.choices,
+        choicesLength: completion?.choices?.length || 0
+      });
+      throw new Error('Invalid response structure from OpenAI API');
+    }
+
+    let enhancedPrompt = completion.choices[0]?.message?.content?.trim();
+    
+    if (!enhancedPrompt) {
+      console.error(`[${requestId}] No enhanced prompt in response:`, {
+        hasChoices: !!completion.choices,
+        choicesLength: completion.choices?.length || 0,
+        firstChoice: completion.choices?.[0],
+        message: completion.choices?.[0]?.message,
+        content: completion.choices?.[0]?.message?.content
+      });
+      throw new Error('No enhanced prompt received from AI. The response was empty or invalid.');
+    }
+
+    // Enforce 600 character limit - truncate if exceeded
+    if (enhancedPrompt.length > 600) {
+      console.warn(`[${requestId}] ⚠️ Enhanced prompt exceeds 600 characters (${enhancedPrompt.length}), truncating...`);
+      enhancedPrompt = enhancedPrompt.substring(0, 600).trim();
+      // Try to truncate at a word boundary if possible
+      const lastSpace = enhancedPrompt.lastIndexOf(' ');
+      if (lastSpace > 550) { // Only if we're close to the limit
+        enhancedPrompt = enhancedPrompt.substring(0, lastSpace);
+      }
+    }
+
+    console.log(`[${requestId}] ✅ AI Enhancement successful (${enhancedPrompt.length} characters)`);
 
     return res.status(200).json({
       success: true,
@@ -506,13 +753,137 @@ Return ONLY the enhanced prompt text, nothing else. Do not include explanations,
 
   } catch (error: any) {
     console.error(`[${requestId}] ❌ AI Enhancement error:`, error);
-    
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Failed to enhance prompt',
-      requestId
+    console.error(`[${requestId}] Error type:`, typeof error);
+    console.error(`[${requestId}] Error constructor:`, error?.constructor?.name);
+    console.error(`[${requestId}] Error details:`, {
+      name: error?.name,
+      message: error?.message,
+      status: error?.status,
+      code: error?.code,
+      type: error?.type,
+      response: error?.response ? {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data
+      } : null,
+      stack: error?.stack?.substring(0, 1000) // Show more of the stack
     });
+    
+    // Ensure response hasn't been sent
+    if (res.headersSent) {
+      console.error(`[${requestId}] ⚠️ Response already sent, cannot send error response`);
+      return;
+    }
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to enhance prompt';
+    let statusCode = 500;
+    
+    if (error?.response?.status === 401) {
+      errorMessage = 'OpenAI API authentication failed. Please check the API key configuration.';
+      statusCode = 503; // Service unavailable
+    } else if (error?.response?.status === 429 || error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('Rate limit')) {
+      // Try fallback enhancement for rate limit errors
+      console.log(`[${requestId}] Rate limit in outer catch, trying fallback enhancement`);
+      try {
+        const { prompt } = req.body || {};
+        if (prompt && prompt.trim()) {
+          const fallbackEnhanced = applyFallbackEnhancement(prompt.trim());
+          if (!res.headersSent) {
+            return res.status(200).json({
+              success: true,
+              data: {
+                originalPrompt: prompt.trim(),
+                enhancedPrompt: fallbackEnhanced,
+                method: 'fallback'
+              },
+              requestId,
+              warning: 'AI enhancement unavailable due to rate limits. Using rule-based enhancement.'
+            });
+          }
+        }
+      } catch (fallbackError: any) {
+        console.error(`[${requestId}] Fallback enhancement failed:`, fallbackError);
+      }
+      
+      errorMessage = 'AI enhancement is temporarily unavailable due to rate limits. The daily request limit has been reached. Please try again later or upgrade your OpenAI plan.';
+      statusCode = 503;
+    } else if (error?.response?.status === 500 || error?.response?.status === 502 || error?.response?.status === 503) {
+      errorMessage = 'OpenAI API service is temporarily unavailable. Please try again later.';
+      statusCode = 503;
+    } else if (error?.code === 'ECONNREFUSED' || error?.code === 'ENOTFOUND') {
+      errorMessage = 'Cannot connect to OpenAI API. Please check your network connection.';
+      statusCode = 503;
+    } else if (error?.code === 'ETIMEDOUT') {
+      errorMessage = 'OpenAI API request timed out. Please try again.';
+      statusCode = 503;
+    } else if (error?.message) {
+      errorMessage = error.message;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else {
+      errorMessage = `Unexpected error: ${JSON.stringify(error)}`;
+    }
+    
+    try {
+      return res.status(statusCode).json({
+        success: false,
+        error: errorMessage,
+        requestId,
+        details: process.env.NODE_ENV === 'development' ? {
+          errorType: error?.name,
+          errorCode: error?.code,
+          openaiStatus: error?.response?.status,
+          errorMessage: error?.message
+        } : undefined
+      });
+    } catch (sendError: any) {
+      console.error(`[${requestId}] ❌ Failed to send error response:`, sendError);
+      // If we can't send the error response, at least try to end the response
+      if (!res.headersSent) {
+        try {
+          res.status(500).end();
+        } catch {
+          // Ignore if we can't even end the response
+        }
+      }
+      return;
+    }
   }
+});
+
+// Handle OPTIONS (CORS preflight) for /enhance
+router.options('/enhance', (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || `req-${Date.now()}`;
+  console.log(`[${requestId}] OPTIONS /enhance (CORS preflight)`);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  return res.status(204).send();
+});
+
+// Handle unsupported methods (GET, PUT, DELETE, etc.) for /enhance
+// IMPORTANT: Use router.get() instead of router.all() to avoid catching POST requests
+// Express routes are matched in order, so POST must come before GET
+router.get('/enhance', (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || `req-${Date.now()}`;
+  console.log(`[${requestId}] ========== GET /enhance ENDPOINT CALLED (WRONG METHOD) ==========`);
+  console.log(`[${requestId}] Request method:`, req.method);
+  console.log(`[${requestId}] Request path:`, req.path);
+  console.log(`[${requestId}] Request url:`, req.url);
+  console.log(`[${requestId}] Request originalUrl:`, req.originalUrl);
+  console.log(`[${requestId}] Request headers:`, {
+    'content-type': req.headers['content-type'],
+    'user-agent': req.headers['user-agent'],
+    'origin': req.headers.origin
+  });
+  
+  return res.status(405).json({
+    success: false,
+    error: 'GET method not allowed. This endpoint requires POST. Use POST /ai-detection/enhance with a JSON body containing { "prompt": "your prompt here" }',
+    requestId
+  });
 });
 
 export default router;

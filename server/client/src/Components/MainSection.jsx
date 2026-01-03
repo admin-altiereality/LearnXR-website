@@ -39,6 +39,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { incrementStyleUsage } from '../services/styleUsageService';
 import { UnifiedGenerationProgress } from './UnifiedGenerationProgress';
 import { ChatSidebar } from './chat/ChatSidebar';
+import { MobileBottomBar } from './chat/MobileBottomBar';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -132,6 +133,9 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const [enablePromptEnhancement, setEnablePromptEnhancement] = useState(false); // Default to OFF
   const [enhancedPrompt, setEnhancedPrompt] = useState('');
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [enhancementError, setEnhancementError] = useState(null);
+  const isUpdatingFromEnhancement = useRef(false); // Track programmatic updates to prevent clearing enhanced prompt
+  const promptTextareaRef = useRef(null); // Ref for the prompt textarea to preserve cursor position
   
   // Voice input state
   const [isListening, setIsListening] = useState(false);
@@ -483,51 +487,115 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   // Prompt Enhancement Function (AI-Powered)
   // -------------------------
   const enhancePrompt = useCallback(async (originalPrompt) => {
-    if (!originalPrompt.trim()) return originalPrompt;
+    if (!originalPrompt.trim()) {
+      setEnhancementError('Prompt cannot be empty');
+      return originalPrompt;
+    }
     
     setIsEnhancing(true);
+    setEnhancementError(null);
+    
     try {
+      console.log('🚀 Starting prompt enhancement for:', originalPrompt.substring(0, 50) + '...');
+      
       // Use AI-powered enhancement service
       const enhancementResult = await promptEnhancementService.enhancePrompt(originalPrompt.trim());
       
-      if (enhancementResult.success && enhancementResult.data) {
+      console.log('📦 Enhancement result:', {
+        success: enhancementResult.success,
+        hasData: !!enhancementResult.data,
+        dataKeys: enhancementResult.data ? Object.keys(enhancementResult.data) : [],
+        error: enhancementResult.error
+      });
+      
+      if (enhancementResult.success && enhancementResult.data && enhancementResult.data.enhancedPrompt) {
         const enhanced = enhancementResult.data.enhancedPrompt;
+        console.log('✅ Enhancement successful. Original:', originalPrompt);
+        console.log('✅ Enhanced:', enhanced);
         setEnhancedPrompt(enhanced);
+        setEnhancementError(null);
         return enhanced;
       } else {
-        // Fallback to original prompt if enhancement fails
-        console.warn('⚠️ Prompt enhancement failed, using original prompt:', enhancementResult.error);
+        // Show error to user
+        const errorMsg = enhancementResult.error || 'Failed to enhance prompt';
+        console.error('❌ Prompt enhancement failed:', errorMsg, enhancementResult);
+        setEnhancementError(errorMsg);
         return originalPrompt;
       }
     } catch (error) {
-      console.error('Error enhancing prompt:', error);
+      const errorMsg = error.message || 'An unexpected error occurred while enhancing the prompt';
+      console.error('❌ Error enhancing prompt:', error);
+      setEnhancementError(errorMsg);
       return originalPrompt;
     } finally {
       setIsEnhancing(false);
     }
   }, []);
 
-  // Auto-enhance prompt when toggle is on and prompt changes
-  useEffect(() => {
-    if (enablePromptEnhancement && prompt.trim() && !isGenerating && !isGenerating3DAsset) {
-      const timeoutId = setTimeout(async () => {
-        const enhanced = await enhancePrompt(prompt);
-        if (enhanced !== prompt && enhanced.trim()) {
-          // Automatically replace the original prompt with the enhanced version
-          setPrompt(enhanced);
-          setEnhancedPrompt(enhanced);
-          // Save to context if generation is active
-          if (isGenerating || isGenerating3DAsset) {
-            setGlobalPrompt(enhanced);
+  // Helper function to preserve and restore cursor position
+  const updatePromptWithCursorPreservation = useCallback((newPrompt) => {
+    const textarea = promptTextareaRef.current;
+    if (textarea) {
+      // Store current cursor position and focus state
+      const cursorPosition = textarea.selectionStart;
+      const selectionEnd = textarea.selectionEnd;
+      const hasSelection = cursorPosition !== selectionEnd;
+      const wasFocused = document.activeElement === textarea;
+      
+      // Update the prompt
+      setPrompt(newPrompt);
+      setEnhancedPrompt(newPrompt);
+      
+      // Restore cursor position after React updates
+      setTimeout(() => {
+        if (promptTextareaRef.current) {
+          // When enhancement replaces text, place cursor at end
+          // This provides better UX as the user can see the full enhanced text
+          const newLength = newPrompt.length;
+          promptTextareaRef.current.setSelectionRange(newLength, newLength);
+          
+          // Only maintain focus if textarea was already focused
+          if (wasFocused) {
+            promptTextareaRef.current.focus();
           }
         }
-      }, 2000); // Wait 2 seconds after typing stops
-      
-      return () => clearTimeout(timeoutId);
+      }, 0);
     } else {
-      setEnhancedPrompt('');
+      // Fallback if textarea ref is not available
+      setPrompt(newPrompt);
+      setEnhancedPrompt(newPrompt);
     }
-  }, [prompt, enablePromptEnhancement, isGenerating, isGenerating3DAsset, enhancePrompt, setGlobalPrompt]);
+  }, []);
+
+  // Preserve cursor position when parsedPrompt changes (after analysis completes)
+  // This prevents cursor shift when highlighting updates after AI analysis
+  useEffect(() => {
+    // Only preserve cursor if textarea is focused (user might be reading/editing)
+    const textarea = promptTextareaRef.current;
+    if (textarea && document.activeElement === textarea && parsedPrompt !== null) {
+      // Store current cursor position before re-render
+      const cursorPosition = textarea.selectionStart;
+      const selectionEnd = textarea.selectionEnd;
+      const promptLength = textarea.value.length; // Get length from textarea value
+      
+      // Restore cursor position after React re-renders (due to parsedPrompt update causing highlight change)
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (promptTextareaRef.current && document.activeElement === promptTextareaRef.current) {
+            // Get current length from textarea in case it changed
+            const currentPromptLength = promptTextareaRef.current.value.length;
+            const adjustedStart = Math.min(cursorPosition, currentPromptLength);
+            const adjustedEnd = Math.min(selectionEnd, currentPromptLength);
+            promptTextareaRef.current.setSelectionRange(adjustedStart, adjustedEnd);
+          }
+        }, 0);
+      });
+    }
+  }, [parsedPrompt]); // Only trigger when analysis completes (parsedPrompt changes), not on every prompt change
+
+  // Auto-enhancement is DISABLED - only manual enhancement via "Enhance Now" button
+  // Removed auto-enhancement useEffect to prevent automatic enhancement
 
   // -------------------------
   // Load Skybox styles
@@ -1129,65 +1197,58 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       return;
     }
 
-    // 🧠 AI DETECTION: Analyze prompt before generation using AI + rule-based hybrid
-    try {
-      // Try AI detection first (with fallback to rule-based)
-      const detectionResult = await promptParserService.detectWithAI(prompt.trim());
-      const analysis = detectionResult.result;
-      setAiDetectionResult({
-        ...analysis,
-        aiUsed: detectionResult.aiUsed,
-        aiReasoning: detectionResult.aiResult?.reasoning
-      });
-      
-      console.log('🤖 Detection Result:', {
-        method: detectionResult.aiUsed ? 'AI' : 'Rule-based',
-        promptType: analysis.promptType,
-        meshScore: analysis.meshScore,
-        skyboxScore: analysis.skyboxScore,
-        confidence: analysis.confidence,
-        reasoning: detectionResult.aiResult?.reasoning?.substring(0, 100)
-      });
-
-      // Determine what should be generated based on AI analysis
-      const shouldGenerateSkybox = analysis.promptType === 'skybox' || analysis.promptType === 'both';
-      const shouldGenerateMesh = analysis.promptType === 'mesh' || analysis.promptType === 'both';
-      
-      // Check if user's intent matches AI detection
-      // We're always generating skybox here, so check if AI says it should be mesh-only
-      const isMeshOnly = analysis.promptType === 'mesh' && analysis.meshScore > 0.7 && analysis.skyboxScore < 0.3;
-      const isSkyboxOnly = analysis.promptType === 'skybox' && analysis.skyboxScore > 0.7 && analysis.meshScore < 0.3;
-      
-      // Check if 3D asset generation is available and should be enabled
-      const canGenerate3D = storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid;
-      const shouldSuggest3D = shouldGenerateMesh && canGenerate3D && analysis.meshScore > 0.5;
-      
-      // If AI detects mesh-only prompt but user is trying to generate skybox, show warning
-      if (isMeshOnly && analysis.confidence > 0.6) {
-        setPendingGeneration({ type: 'skybox', originalAnalysis: analysis });
-        setShowAiConfirmation(true);
-        return; // Wait for user confirmation
-      }
-      
-      // If AI detects both but 3D generation is not enabled, suggest it
-      if (shouldSuggest3D && analysis.promptType === 'both' && analysis.confidence > 0.5) {
-        setPendingGeneration({ 
-          type: 'both', 
-          originalAnalysis: analysis,
-          suggest3D: true 
+    // ⚡ OPTIMIZED: Start generation immediately, run AI detection in parallel
+    // This eliminates latency - user sees immediate feedback
+    setGenerating(true);
+    setError(null);
+    setProgress(0);
+    setSkyboxProgress(0);
+    setGeneratedVariations([]);
+    setCurrentVariationIndex(0);
+    
+    // Store the original user prompt before any processing
+    const originalUserPrompt = prompt.trim();
+    setGlobalPrompt(originalUserPrompt);
+    setGlobalNegativeText(negativeText || null);
+    setGlobalSelectedSkybox(selectedSkybox);
+    setGlobalNumVariations(numVariations);
+    
+    // Start AI detection in parallel (non-blocking)
+    const detectionPromise = promptParserService.detectWithAI(prompt.trim())
+      .then(detectionResult => {
+        const analysis = detectionResult.result;
+        setAiDetectionResult({
+          ...analysis,
+          aiUsed: detectionResult.aiUsed,
+          aiReasoning: detectionResult.aiResult?.reasoning
         });
-        setShowAiConfirmation(true);
-        return; // Wait for user confirmation
-      }
-      
-      // Proceed with generation (AI detection passed or low confidence)
-      proceedWithGeneration(analysis, shouldSuggest3D);
-      
-    } catch (error) {
-      console.error('❌ AI Detection error:', error);
-      // If detection fails, proceed with normal generation
-      proceedWithGeneration(null, false);
-    }
+        
+        console.log('🤖 Detection Result (parallel):', {
+          method: detectionResult.aiUsed ? 'AI' : 'Rule-based',
+          promptType: analysis.promptType,
+          meshScore: analysis.meshScore,
+          skyboxScore: analysis.skyboxScore,
+          confidence: analysis.confidence,
+          reasoning: detectionResult.aiResult?.reasoning?.substring(0, 100)
+        });
+        
+        return { analysis, detectionResult };
+      })
+      .catch(error => {
+        console.error('❌ AI Detection error (non-blocking):', error);
+        return { analysis: null, detectionResult: null };
+      });
+    
+    // Proceed with generation immediately (don't wait for AI detection)
+    // Use parsedPrompt if available, otherwise proceed with original prompt
+    const initialAnalysis = parsedPrompt ? {
+      promptType: parsedPrompt.meshScore > 0.5 ? 'both' : 'skybox',
+      meshScore: parsedPrompt.meshScore || 0,
+      skyboxScore: parsedPrompt.skyboxScore || 0,
+      confidence: parsedPrompt.confidence || 0
+    } : null;
+    
+    proceedWithGeneration(initialAnalysis, false, detectionPromise);
   };
 
   // Handle AI confirmation dialog actions
@@ -1195,26 +1256,31 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     setShowAiConfirmation(false);
     if (proceed && pendingGeneration) {
       const { originalAnalysis, suggest3D } = pendingGeneration;
-      proceedWithGeneration(originalAnalysis, suggest3D || false);
+      // Start generation immediately, detection already completed
+      proceedWithGeneration(originalAnalysis, suggest3D || false, null);
     }
     setPendingGeneration(null);
   };
 
   // Proceed with actual generation
-  const proceedWithGeneration = async (analysis, shouldEnable3D) => {
-    setGenerating(true);
-    // Store the original user prompt before any processing
-    const originalUserPrompt = prompt.trim();
-    setGlobalPrompt(originalUserPrompt);
-    // Save all UI state to context when generation starts
-    setGlobalNegativeText(negativeText || null);
-    setGlobalSelectedSkybox(selectedSkybox);
-    setGlobalNumVariations(numVariations);
-    setError(null);
-    setProgress(0);
-    setSkyboxProgress(0);
-    setGeneratedVariations([]);
-    setCurrentVariationIndex(0);
+  const proceedWithGeneration = async (initialAnalysis, shouldEnable3D, detectionPromise = null) => {
+    // Wait for AI detection to complete (if still running) - but don't block if it's slow
+    let analysis = initialAnalysis;
+    if (detectionPromise) {
+      try {
+        // Wait max 2 seconds for AI detection, then proceed
+        const detectionResult = await Promise.race([
+          detectionPromise,
+          new Promise(resolve => setTimeout(() => resolve({ analysis: initialAnalysis }), 2000))
+        ]);
+        if (detectionResult?.analysis) {
+          analysis = detectionResult.analysis;
+          console.log('✅ Using AI detection result for generation');
+        }
+      } catch (error) {
+        console.warn('⚠️ AI detection timed out or failed, using initial analysis:', error);
+      }
+    }
 
     let pollInterval;
 
@@ -1285,15 +1351,25 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       }
 
       // Check if 3D asset generation should run in parallel
-      // Use AI detection result if available, otherwise use default logic
-      const aiSuggests3D = analysis?.promptType === 'mesh' || analysis?.promptType === 'both';
-      const canGenerate3D = (shouldEnable3D || aiSuggests3D) && storageAvailable && assetGenerationService.isMeshyConfigured() && user?.uid;
+      // Use AI detection result if available, otherwise use parsedPrompt or default logic
+      const aiSuggests3D = analysis?.promptType === 'mesh' || analysis?.promptType === 'both' || 
+                          (analysis?.meshScore && analysis.meshScore > 0.5);
+      // Also check parsedPrompt for 3D object detection
+      const parsedSuggests3D = parsedPrompt?.meshScore > 0.5 || has3DObjects;
+      const canGenerate3D = (shouldEnable3D || aiSuggests3D || parsedSuggests3D) && 
+                           storageAvailable && 
+                           assetGenerationService.isMeshyConfigured() && 
+                           user?.uid;
       
       console.log('🔍 Parallel Generation - 3D Asset Check:', {
         storageAvailable,
         meshyConfigured: assetGenerationService.isMeshyConfigured(),
         hasUserId: !!user?.uid,
         canGenerate3D,
+        aiSuggests3D,
+        parsedSuggests3D,
+        has3DObjects,
+        meshScore: analysis?.meshScore || parsedPrompt?.meshScore || 0,
         prompt: prompt.substring(0, 50) + '...'
       });
 
@@ -1709,22 +1785,56 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         if (assetResult && assetResult.success && assetResult.assets.length > 0) {
           const asset = assetResult.assets[0];
           
-          // Ensure we have a download URL - extract from model_urls if needed
+          // Enhanced URL extraction - try all possible sources
           let assetUrl = asset.downloadUrl || asset.previewUrl;
           
-          // If no URL, try to extract from metadata.model_urls (if available)
+          // Try extracting from metadata.model_urls (if available)
           if (!assetUrl && asset.metadata?.model_urls) {
             assetUrl = asset.metadata.model_urls.glb || 
                        asset.metadata.model_urls.fbx || 
                        asset.metadata.model_urls.obj ||
-                       asset.metadata.model_urls.usdz;
+                       asset.metadata.model_urls.usdz ||
+                       asset.metadata.model_urls.draco;
             console.log('📦 Extracted URL from model_urls:', assetUrl);
+          }
+          
+          // Try extracting from nested metadata structures
+          if (!assetUrl && asset.metadata) {
+            // Check for direct URL fields in metadata
+            assetUrl = asset.metadata.url || 
+                       asset.metadata.downloadUrl || 
+                       asset.metadata.modelUrl ||
+                       asset.metadata.fileUrl;
+            if (assetUrl) {
+              console.log('📦 Extracted URL from metadata:', assetUrl);
+            }
+          }
+          
+          // Try extracting from result object if available
+          if (!assetUrl && asset.result) {
+            assetUrl = asset.result.downloadUrl || 
+                       asset.result.previewUrl ||
+                       asset.result.url;
+            if (assetUrl) {
+              console.log('📦 Extracted URL from result:', assetUrl);
+            }
           }
           
           // Update asset with the URL if we found one
           if (assetUrl && !asset.downloadUrl) {
             asset.downloadUrl = assetUrl;
           }
+          
+          // Log asset details for debugging
+          console.log('📦 3D Asset Details:', {
+            hasDownloadUrl: !!asset.downloadUrl,
+            hasPreviewUrl: !!asset.previewUrl,
+            hasMetadata: !!asset.metadata,
+            hasModelUrls: !!asset.metadata?.model_urls,
+            finalUrl: assetUrl || 'NOT FOUND',
+            assetId: asset.id,
+            status: asset.status
+          });
           
           // Store grounding metadata with the asset for 3D viewer integration
           if (groundingMetadata) {
@@ -1734,6 +1844,13 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           
           setGenerated3DAsset(asset);
           setGlobalGenerated3DAsset(asset); // Save to context
+          
+          // Ensure 3D viewer is visible when asset is ready
+          if (assetUrl) {
+            setShow3DAssetViewer(true);
+            console.log('✅ 3D Asset ready, showing viewer');
+          }
+          
           // Ensure skybox background is set when both complete
           if (variationResults && variationResults.length > 0 && setBackgroundSkybox) {
             setBackgroundSkybox(variationResults[0]);
@@ -2113,8 +2230,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   return (
     <div className={`absolute inset-0 min-h-screen transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
       isChatSidebarOpen 
-        ? 'pl-0 sm:pl-[240px] md:pl-[260px] lg:pl-[280px] xl:pl-[300px] 2xl:pl-[320px]' 
-        : 'pl-0 sm:pl-[56px] md:pl-[64px]'
+        ? 'pl-0 md:pl-[260px] lg:pl-[280px] xl:pl-[300px] 2xl:pl-[320px]' 
+        : 'pl-0 md:pl-[64px]'
     }`}>
       {/* Dotted Surface Background - Show when nothing is generated OR during loading */}
       {showDottedSurface && (
@@ -2324,58 +2441,155 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           )}
                         </span>
                         <div className="flex items-center gap-2">
-                          {/* Enhance Prompt Toggle - In Header */}
+                          {/* Auto-Enhance Status Indicator - Always Enabled */}
                           <div className="flex items-center gap-1.5">
-                            <label
-                              htmlFor="enhance-prompt"
-                              className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-medium flex items-center gap-1.5 cursor-pointer hover:text-gray-300 transition-colors"
-                            >
+                            <div className="flex items-center gap-1.5">
                               <svg className="w-3 h-3 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                               </svg>
-                              Enhance
+                              <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-medium">
+                                Auto-Enhance
+                              </span>
                               {isEnhancing && (
-                                <span className="text-[9px] text-sky-400 animate-pulse ml-0.5">...</span>
+                                <span className="text-[9px] text-sky-400 animate-pulse ml-0.5">Enhancing...</span>
                               )}
-                            </label>
-                            <button
-                              type="button"
-                              id="enhance-prompt"
-                              onClick={async () => {
-                                const newValue = !enablePromptEnhancement;
-                                setEnablePromptEnhancement(newValue);
-                                if (newValue && prompt.trim()) {
-                                  // When enabling, immediately enhance and replace the prompt
-                                  const enhanced = await enhancePrompt(prompt);
-                                  if (enhanced !== prompt && enhanced.trim()) {
-                                    setPrompt(enhanced);
-                                    setEnhancedPrompt(enhanced);
-                                    // Save to context if generation is active
-                                    if (isGenerating || isGenerating3DAsset) {
-                                      setGlobalPrompt(enhanced);
-                                    }
-                                  }
-                                } else {
-                                  setEnhancedPrompt('');
-                                }
-                              }}
-                              disabled={isGenerating || isGenerating3DAsset}
-                              className={`
-                                relative w-9 h-5 rounded-full border transition-all duration-300
-                                ${enablePromptEnhancement
-                                  ? 'bg-sky-500/30 border-sky-500/50'
-                                  : 'bg-transparent border-[#ffffff]/10 hover:border-[#ffffff]/20'
-                                }
-                                ${(isGenerating || isGenerating3DAsset) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-white/[0.02]'}
-                              `}
-                              aria-label={enablePromptEnhancement ? 'Disable prompt enhancement' : 'Enable prompt enhancement'}
-                            >
-                              <div className={`
-                                absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-300
-                                ${enablePromptEnhancement ? 'translate-x-4' : 'translate-x-0'}
-                              `} />
-                            </button>
+                              <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" title="Auto-enhancement is always enabled" />
+                            </div>
                           </div>
+                          {/* Enhance Now Button - Manual trigger */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!prompt.trim()) {
+                                setEnhancementError('Please enter a prompt first');
+                                return;
+                              }
+                              
+                              console.log('🔘 Enhance Now button clicked. Current prompt:', prompt);
+                              
+                              // Get current prompt value and send to OpenAI
+                              isUpdatingFromEnhancement.current = true;
+                              
+                              try {
+                                const enhanced = await enhancePrompt(prompt);
+                                
+                                // enhancePrompt returns the enhanced string or original on error
+                                if (!enhanced || !enhanced.trim()) {
+                                  console.error('❌ No enhanced prompt returned');
+                                  setEnhancementError('Failed to enhance prompt. Please try again.');
+                                  isUpdatingFromEnhancement.current = false;
+                                  return;
+                                }
+                                
+                                // Normalize both prompts for comparison (trim and lowercase)
+                                const normalizedOriginal = prompt.trim().toLowerCase();
+                                const normalizedEnhanced = enhanced.trim().toLowerCase();
+                                
+                                console.log('📝 Enhancement result:', { 
+                                  original: prompt, 
+                                  enhanced, 
+                                  normalizedOriginal,
+                                  normalizedEnhanced,
+                                  areSame: normalizedOriginal === normalizedEnhanced
+                                });
+                                
+                                if (enhanced && enhanced.trim()) {
+                                // Always update the prompt with the enhanced version, even if similar
+                                // The AI may have made subtle improvements (capitalization, punctuation, word choice)
+                                if (normalizedOriginal !== normalizedEnhanced || enhanced.trim() !== prompt.trim()) {
+                                  // Replace the prompt with enhanced version
+                                  console.log('🔄 Replacing prompt with enhanced version');
+                                  updatePromptWithCursorPreservation(enhanced.trim());
+                                  // Save to context if generation is active
+                                  if (isGenerating || isGenerating3DAsset) {
+                                    setGlobalPrompt(enhanced.trim());
+                                  }
+                                  setEnhancementError(null);
+                                  console.log('✅ Prompt successfully enhanced and replaced!');
+                                  
+                                  // Trigger detection immediately after enhancement (bypass debounce)
+                                  setTimeout(async () => {
+                                    try {
+                                      console.log('🔍 Triggering detection after enhancement...');
+                                      const detectionResult = await promptParserService.detectWithAI(enhanced.trim());
+                                      const parsed = detectionResult.result;
+                                      setParsedPrompt(parsed);
+                                      console.log('✅ Detection completed after enhancement:', {
+                                        method: detectionResult.aiUsed ? 'AI' : 'Rule-based',
+                                        promptType: parsed.promptType,
+                                        meshAssets: parsed.aiResult?.meshAssets,
+                                        meshAssetsCount: parsed.aiResult?.meshAssets?.length || 0
+                                      });
+                                    } catch (error) {
+                                      console.error('❌ Error during post-enhancement detection:', error);
+                                    }
+                                  }, 100); // Small delay to ensure state is updated
+                                } else {
+                                  // If truly identical, still update but show info message
+                                  console.log('ℹ️ Enhanced prompt is identical to original - updating anyway');
+                                  updatePromptWithCursorPreservation(enhanced.trim());
+                                  if (isGenerating || isGenerating3DAsset) {
+                                    setGlobalPrompt(enhanced.trim());
+                                  }
+                                  // Show info instead of error
+                                  setEnhancementError(null);
+                                  console.log('✅ Prompt updated (AI determined no changes needed, but prompt refreshed)');
+                                  
+                                  // Still trigger detection even if identical
+                                  setTimeout(async () => {
+                                    try {
+                                      console.log('🔍 Triggering detection after enhancement...');
+                                      const detectionResult = await promptParserService.detectWithAI(enhanced.trim());
+                                      const parsed = detectionResult.result;
+                                      setParsedPrompt(parsed);
+                                      console.log('✅ Detection completed after enhancement');
+                                    } catch (error) {
+                                      console.error('❌ Error during post-enhancement detection:', error);
+                                    }
+                                  }, 100);
+                                }
+                                } else {
+                                  console.error('❌ Invalid enhanced prompt received:', enhanced);
+                                  setEnhancementError('Failed to get enhanced prompt. Please check the console for details and try again.');
+                                }
+                              } catch (error) {
+                                console.error('❌ Error during enhancement:', error);
+                                const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+                                setEnhancementError(errorMessage || 'Failed to enhance prompt. Please try again.');
+                              } finally {
+                                // Reset flag after state update
+                                setTimeout(() => {
+                                  isUpdatingFromEnhancement.current = false;
+                                }, 0);
+                              }
+                            }}
+                            disabled={isGenerating || isGenerating3DAsset || isEnhancing || !prompt.trim()}
+                            className={`
+                              px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] rounded-md
+                              transition-all duration-300 border
+                              ${(isGenerating || isGenerating3DAsset || isEnhancing || !prompt.trim())
+                                ? 'opacity-50 cursor-not-allowed bg-gray-800/30 border-gray-700/30 text-gray-500'
+                                : 'bg-sky-500/20 border-sky-500/40 text-sky-300 hover:bg-sky-500/30 hover:border-sky-500/60 hover:text-sky-200 hover:shadow-[0_0_12px_rgba(14,165,233,0.2)]'
+                              }
+                            `}
+                            title="Enhance current prompt with AI"
+                          >
+                            {isEnhancing ? (
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Enhancing...
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                </svg>
+                                Enhance Now
+                              </span>
+                            )}
+                          </button>
                           <div className="flex items-center gap-2 px-2 py-0.5 bg-[#0a0a0a]/50 border border-[#ffffff]/5">
                             <span className="text-[10px] text-gray-400 font-semibold tabular-nums">
                               {prompt.length}/600
@@ -2394,6 +2608,24 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <button 
                             onClick={() => setVoiceError(null)}
                             className="text-red-400/60 hover:text-red-400 transition-colors p-0.5 rounded hover:bg-red-500/10"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* Enhancement Error Message */}
+                      {enhancementError && (
+                        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] shadow-[0_0_12px_rgba(217,119,6,0.15)]">
+                          <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span className="flex-1 font-medium">{enhancementError}</span>
+                          <button 
+                            onClick={() => setEnhancementError(null)}
+                            className="text-amber-400/60 hover:text-amber-400 transition-colors p-0.5 rounded hover:bg-amber-500/10"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2493,13 +2725,22 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 .filter(keyword => !skyboxKeywords.some(sk => keyword.includes(sk) || sk.includes(keyword)))
                             : [];
                           
-                          // Debug logging
-                          console.log('🎨 Highlighting Debug:', {
-                            aiAssets,
-                            keywordAssets,
-                            aiResult: parsedPrompt?.aiResult,
-                            meshDescription: parsedPrompt?.aiResult?.meshDescription,
-                            meshAssets: parsedPrompt?.aiResult?.meshAssets,
+                          // Enhanced debug logging for 3D asset detection
+                          console.log('🎨 3D Asset Detection & Highlighting:', {
+                            prompt: prompt.substring(0, 50) + '...',
+                            aiAssets: aiAssets,
+                            aiAssetsCount: aiAssets.length,
+                            keywordAssets: keywordAssets,
+                            keywordAssetsCount: keywordAssets.length,
+                            aiResult: parsedPrompt?.aiResult ? {
+                              meshAssets: parsedPrompt.aiResult.meshAssets,
+                              meshDescription: parsedPrompt.aiResult.meshDescription,
+                              meshScore: parsedPrompt.aiResult.meshScore,
+                              promptType: parsedPrompt.aiResult.promptType
+                            } : null,
+                            assetsToHighlight: assetsToHighlight,
+                            shouldHighlight: shouldHighlight,
+                            meshScore: parsedPrompt?.meshScore,
                             usingAi: aiAssets.length > 0,
                             usingKeywords: aiAssets.length === 0 && keywordAssets.length > 0
                           });
@@ -2510,155 +2751,162 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           // Highlight if we have mesh score > 0.3 OR if we have AI-detected assets
                           const shouldHighlight = (parsedPrompt?.meshScore > 0.3 || aiAssets.length > 0) && assetsToHighlight.length > 0;
                           
-                          // Helper function to find and highlight exact asset phrases in prompt
-                          const getHighlightedText = () => {
-                            // Use enhanced prompt if available, otherwise use original prompt
-                            const promptToHighlight = prompt;
-                            if (!shouldHighlight || !promptToHighlight || assetsToHighlight.length === 0) return null;
+                          // Step 1: Calculate highlight ranges using AI-detected assets
+                          // Enhanced matching algorithm for better 3D asset detection and highlighting
+                          const getHighlightRanges = () => {
+                            if (!shouldHighlight || !prompt || assetsToHighlight.length === 0) {
+                              return [];
+                            }
                             
-                            const lowerPrompt = promptToHighlight.toLowerCase();
-                            const highlights = [];
+                            const lowerPrompt = prompt.toLowerCase();
+                            const ranges = [];
+                            const matchedAssets = new Set(); // Track which assets have been matched
                             
-                            // Process assets: create search targets that exclude environment words
-                            const assetSearchTargets = assetsToHighlight.map(asset => {
-                              const original = asset.toLowerCase().trim();
+                            // Process each AI-detected asset
+                            assetsToHighlight.forEach(asset => {
+                              if (!asset || !asset.trim() || matchedAssets.has(asset.toLowerCase())) return;
                               
-                              // Try to extract just the asset name if it contains environment words
-                              // Pattern: "environment with asset" or "asset in environment"
-                              let cleaned = original;
+                              const baseAsset = asset.trim();
+                              const lowerAsset = baseAsset.toLowerCase();
                               
-                              // Remove environment words at the start
-                              cleaned = cleaned.replace(/^(jupiter|planet|space|beach|desert|forest|room|ballroom|temple|ruins|background|road|floors)\s+with\s+/i, '');
-                              cleaned = cleaned.replace(/^with\s+(jupiter|planet|space|beach|desert|forest|room|ballroom|temple|ruins|background|road|floors)\s+/i, '');
+                              // Generate all possible variations to match
+                              const assetVariations = [];
                               
-                              // Remove environment words at the end
-                              cleaned = cleaned.replace(/\s+(jupiter|planet|space|beach|desert|forest|room|ballroom|temple|ruins|background|road|floors)$/i, '');
-                              cleaned = cleaned.replace(/\s+in\s+(jupiter|planet|space|beach|desert|forest|room|ballroom|temple|ruins|background|road|floors)$/i, '');
-                              cleaned = cleaned.replace(/\s+on\s+(jupiter|planet|space|beach|desert|forest|room|ballroom|temple|ruins|background|road|floors)$/i, '');
+                              // 1. Exact match (preserve original case)
+                              assetVariations.push({ text: baseAsset, isExact: true });
                               
-                              // Return both original and cleaned for searching
-                              return {
-                                original: original,
-                                cleaned: cleaned.trim(),
-                                display: asset // Keep original for display
-                              };
-                            }).filter(item => item.cleaned.length > 0 || item.original.length > 0);
-                            
-                            // Sort by cleaned length (longest first) to match longer phrases before shorter ones
-                            const sortedAssets = [...assetSearchTargets].sort((a, b) => {
-                              const aLen = a.cleaned.length || a.original.length;
-                              const bLen = b.cleaned.length || b.original.length;
-                              return bLen - aLen;
-                            });
-                            
-                            // Find exact phrases (case-insensitive, but preserve original case)
-                            // Match the exact phrase first, then try smart variations only if exact match fails
-                            sortedAssets.forEach(assetItem => {
-                              // Try cleaned version first (without environment words), then original
-                              const searchPhrases = [];
-                              if (assetItem.cleaned && assetItem.cleaned.length > 0 && assetItem.cleaned !== assetItem.original) {
-                                searchPhrases.push({ phrase: assetItem.cleaned, display: assetItem.display });
+                              // 2. Lowercase version
+                              assetVariations.push({ text: lowerAsset, isExact: false });
+                              
+                              // 3. Variations with articles
+                              if (!/^(a|an|the)\s+/i.test(baseAsset)) {
+                                assetVariations.push({ text: `a ${lowerAsset}`, isExact: false });
+                                assetVariations.push({ text: `an ${lowerAsset}`, isExact: false });
+                                assetVariations.push({ text: `the ${lowerAsset}`, isExact: false });
+                                // Also try with capitalized articles
+                                assetVariations.push({ text: `A ${baseAsset}`, isExact: true });
+                                assetVariations.push({ text: `An ${baseAsset}`, isExact: true });
+                                assetVariations.push({ text: `The ${baseAsset}`, isExact: true });
                               }
-                              searchPhrases.push({ phrase: assetItem.original, display: assetItem.display });
                               
+                              // 4. Without leading article
+                              const withoutArticle = baseAsset.replace(/^(a|an|the)\s+/i, '');
+                              if (withoutArticle !== baseAsset) {
+                                assetVariations.push({ text: withoutArticle, isExact: true });
+                                assetVariations.push({ text: withoutArticle.toLowerCase(), isExact: false });
+                              }
+                              
+                              // 5. Try matching individual words if asset is multi-word
+                              const words = baseAsset.split(/\s+/).filter(w => w.length > 2);
+                              if (words.length > 1) {
+                                // Try last 2 words (often the most specific part)
+                                if (words.length >= 2) {
+                                  const lastTwo = words.slice(-2).join(' ');
+                                  assetVariations.push({ text: lastTwo, isExact: true });
+                                  assetVariations.push({ text: lastTwo.toLowerCase(), isExact: false });
+                                }
+                                // Try last word (object name)
+                                const lastWord = words[words.length - 1];
+                                if (lastWord.length > 3) {
+                                  assetVariations.push({ text: lastWord, isExact: true });
+                                  assetVariations.push({ text: lastWord.toLowerCase(), isExact: false });
+                                }
+                              }
+                              
+                              // Try each variation, prioritizing exact matches
                               let foundMatch = false;
                               
-                              for (const { phrase: lowerPhrase, display } of searchPhrases) {
-                                if (!lowerPhrase || lowerPhrase.trim().length === 0) continue;
-                                const trimmedPhrase = lowerPhrase.trim();
-                              
-                              // First, try exact match (most reliable)
-                              foundMatch = false;
-                              let searchIndex = 0;
-                              
-                              while (true) {
-                                const index = lowerPrompt.indexOf(lowerPhrase, searchIndex);
-                                if (index === -1) break;
+                              // First pass: try exact matches (case-sensitive)
+                              for (const variation of assetVariations.filter(v => v.isExact)) {
+                                if (foundMatch) break;
                                 
-                                // Check word boundaries for exact phrase
-                                const beforeChar = index > 0 ? lowerPrompt[index - 1] : ' ';
-                                const afterChar = index + lowerPhrase.length < lowerPrompt.length 
-                                  ? lowerPrompt[index + lowerPhrase.length] 
-                                  : ' ';
+                                const searchText = variation.text;
+                                const lowerSearchText = searchText.toLowerCase();
+                                let searchIndex = 0;
                                 
-                                // Allow word boundaries (space, punctuation, start/end)
-                                const isWordBoundary = /[\s\W]/.test(beforeChar) || index === 0;
-                                const isAfterWordBoundary = /[\s\W]/.test(afterChar) || index + lowerPhrase.length === lowerPrompt.length;
-                                
-                                if (isWordBoundary && isAfterWordBoundary) {
-                                  // Check if this highlight would overlap with an existing one
-                                  const wouldOverlap = highlights.some(h => 
-                                    (index >= h.start && index < h.end) || 
-                                    (index + lowerPhrase.length > h.start && index + lowerPhrase.length <= h.end) ||
-                                    (index < h.start && index + lowerPhrase.length > h.end)
-                                  );
-                                  
-                                  if (!wouldOverlap) {
-                                    highlights.push({
-                                      start: index,
-                                      end: index + lowerPhrase.length,
-                                      phrase: display,
-                                      originalText: prompt.substring(index, index + lowerPhrase.length)
-                                    });
-                                    foundMatch = true;
-                                    break; // Found exact match, no need to try variations
+                                while (true) {
+                                  // Try case-sensitive first
+                                  let index = prompt.indexOf(searchText, searchIndex);
+                                  if (index === -1) {
+                                    // Fallback to case-insensitive
+                                    index = lowerPrompt.indexOf(lowerSearchText, searchIndex);
                                   }
+                                  
+                                  if (index === -1) break;
+                                  
+                                  // Check word boundaries
+                                  const beforeChar = index > 0 ? prompt[index - 1] : ' ';
+                                  const afterIndex = index + searchText.length;
+                                  const afterChar = afterIndex < prompt.length ? prompt[afterIndex] : ' ';
+                                  
+                                  const isWordBoundary = /[\s\W]/.test(beforeChar) || index === 0;
+                                  const isAfterWordBoundary = /[\s\W]/.test(afterChar) || afterIndex === prompt.length;
+                                  
+                                  if (isWordBoundary && isAfterWordBoundary) {
+                                    // Check for overlap with existing ranges
+                                    const overlaps = ranges.some(r => 
+                                      (index >= r.start && index < r.end) || 
+                                      (afterIndex > r.start && afterIndex <= r.end) ||
+                                      (index < r.start && afterIndex > r.end)
+                                    );
+                                    
+                                    if (!overlaps) {
+                                      // Use the actual text from prompt to preserve case
+                                      const actualText = prompt.substring(index, afterIndex);
+                                      ranges.push({ 
+                                        start: index, 
+                                        end: afterIndex,
+                                        asset: baseAsset,
+                                        matchedText: actualText
+                                      });
+                                      matchedAssets.add(lowerAsset);
+                                      foundMatch = true;
+                                      break; // Found match, move to next asset
+                                    }
+                                  }
+                                  
+                                  searchIndex = index + 1;
                                 }
-                                
-                                searchIndex = index + 1;
                               }
                               
-                              // Only try variations if exact match failed
+                              // Second pass: try case-insensitive if no exact match found
                               if (!foundMatch) {
-                                // Smart variations: only try if they make sense
-                                const variations = [];
-                                
-                                // Remove leading article if present
-                                const withoutArticle = lowerPhrase.replace(/^(a|an|the)\s+/, '');
-                                if (withoutArticle !== lowerPhrase && withoutArticle.length > 0) {
-                                  variations.push(withoutArticle);
-                                }
-                                
-                                // Add article only if phrase doesn't start with one
-                                if (!/^(a|an|the)\s+/.test(lowerPhrase)) {
-                                  // Only add "a" if phrase doesn't start with vowel sound
-                                  if (!/^[aeiou]/.test(lowerPhrase)) {
-                                    variations.push(`a ${lowerPhrase}`);
-                                  }
-                                  variations.push(`the ${lowerPhrase}`);
-                                }
-                                
-                                // Try each variation
-                                for (const variation of variations) {
-                                  if (!variation || variation.length < 2) continue;
+                                for (const variation of assetVariations.filter(v => !v.isExact)) {
+                                  if (foundMatch) break;
                                   
-                                  searchIndex = 0;
+                                  const searchText = variation.text.toLowerCase();
+                                  let searchIndex = 0;
+                                  
                                   while (true) {
-                                    const index = lowerPrompt.indexOf(variation, searchIndex);
+                                    const index = lowerPrompt.indexOf(searchText, searchIndex);
                                     if (index === -1) break;
                                     
+                                    // Check word boundaries
                                     const beforeChar = index > 0 ? lowerPrompt[index - 1] : ' ';
-                                    const afterChar = index + variation.length < lowerPrompt.length 
-                                      ? lowerPrompt[index + variation.length] 
-                                      : ' ';
+                                    const afterIndex = index + searchText.length;
+                                    const afterChar = afterIndex < lowerPrompt.length ? lowerPrompt[afterIndex] : ' ';
                                     
                                     const isWordBoundary = /[\s\W]/.test(beforeChar) || index === 0;
-                                    const isAfterWordBoundary = /[\s\W]/.test(afterChar) || index + variation.length === lowerPrompt.length;
+                                    const isAfterWordBoundary = /[\s\W]/.test(afterChar) || afterIndex === lowerPrompt.length;
                                     
                                     if (isWordBoundary && isAfterWordBoundary) {
-                                      const wouldOverlap = highlights.some(h => 
-                                        (index >= h.start && index < h.end) || 
-                                        (index + variation.length > h.start && index + variation.length <= h.end) ||
-                                        (index < h.start && index + variation.length > h.end)
+                                      // Check for overlap
+                                      const overlaps = ranges.some(r => 
+                                        (index >= r.start && index < r.end) || 
+                                        (afterIndex > r.start && afterIndex <= r.end) ||
+                                        (index < r.start && afterIndex > r.end)
                                       );
                                       
-                                      if (!wouldOverlap) {
-                                        highlights.push({
-                                          start: index,
-                                          end: index + variation.length,
-                                          phrase: display,
-                                          originalText: prompt.substring(index, index + variation.length)
+                                      if (!overlaps) {
+                                        // Use actual text from prompt (preserve original case)
+                                        const actualText = prompt.substring(index, afterIndex);
+                                        ranges.push({ 
+                                          start: index, 
+                                          end: afterIndex,
+                                          asset: baseAsset,
+                                          matchedText: actualText
                                         });
+                                        matchedAssets.add(lowerAsset);
                                         foundMatch = true;
                                         break;
                                       }
@@ -2666,65 +2914,107 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                     
                                     searchIndex = index + 1;
                                   }
-                                  
-                                  if (foundMatch) break;
                                 }
                               }
-                              if (foundMatch) break;
-                            }
-                          });
+                            });
                             
-                            if (highlights.length === 0) return null;
+                            // Sort ranges by start position
+                            ranges.sort((a, b) => a.start - b.start);
                             
-                            // Sort highlights by position
-                            highlights.sort((a, b) => a.start - b.start);
+                            // Merge overlapping or adjacent ranges
+                            if (ranges.length === 0) return [];
                             
-                            // Merge overlapping highlights (keep the longer one)
                             const merged = [];
-                            let current = highlights[0];
-                            for (let i = 1; i < highlights.length; i++) {
-                              if (highlights[i].start < current.end) {
-                                // Overlapping - keep the longer phrase
-                                if (highlights[i].end - highlights[i].start > current.end - current.start) {
-                                  current = highlights[i];
-                                }
+                            let current = { ...ranges[0] };
+                            
+                            for (let i = 1; i < ranges.length; i++) {
+                              const gap = ranges[i].start - current.end;
+                              // Merge if overlapping or very close (within 2 chars)
+                              if (ranges[i].start <= current.end || gap <= 2) {
+                                current = { 
+                                  start: current.start, 
+                                  end: Math.max(current.end, ranges[i].end),
+                                  asset: current.asset || ranges[i].asset
+                                };
                               } else {
                                 merged.push(current);
-                                current = highlights[i];
+                                current = { ...ranges[i] };
                               }
                             }
                             merged.push(current);
                             
-                            // Build JSX with highlighted spans
+                            return merged;
+                          };
+                          
+                          // Step 2: Build text with color-only highlights (no background, no re-render of text)
+                          // Uses exact text from prompt to preserve original case
+                          const renderTextWithColorHighlights = () => {
+                            const ranges = getHighlightRanges();
+                            
+                            // Debug logging
+                            if (ranges.length > 0) {
+                              console.log('🎨 Highlighting 3D assets:', {
+                                assets: assetsToHighlight,
+                                ranges: ranges,
+                                promptLength: prompt.length
+                              });
+                            }
+                            
+                            if (ranges.length === 0) return null;
+                            
                             const parts = [];
                             let lastIndex = 0;
                             
-                            merged.forEach((highlight, idx) => {
-                              if (highlight.start > lastIndex) {
-                                parts.push(promptToHighlight.substring(lastIndex, highlight.start));
+                            ranges.forEach((range, idx) => {
+                              // Add normal text before highlight
+                              if (range.start > lastIndex) {
+                                parts.push(prompt.substring(lastIndex, range.start));
                               }
+                              
+                              // Add highlighted text with enhanced visual styling
+                              // Use exact substring from original prompt to preserve case
+                              const highlightedText = prompt.substring(range.start, range.end);
                               parts.push(
-                                <span key={`highlight-${idx}-${highlight.start}`} className="bg-emerald-500/50 text-emerald-200 font-bold px-1 py-0.5 shadow-[0_0_8px_rgba(16,185,129,0.3)]">
-                                  {highlight.originalText}
+                                <span
+                                  key={`hl-${idx}-${range.start}`}
+                                  className="3d-asset-highlight"
+                                  style={{
+                                    color: '#10b981', // emerald-500 - brighter for better visibility
+                                    fontWeight: 700, // bold for emphasis
+                                    display: 'inline',
+                                    margin: 0,
+                                    padding: '0 1px', // Small padding for better visibility
+                                    letterSpacing: 'inherit',
+                                    wordSpacing: 'inherit',
+                                    textShadow: '0 0 8px rgba(16, 185, 129, 0.3)', // Subtle glow effect
+                                    backgroundColor: 'rgba(16, 185, 129, 0.1)', // Subtle background tint
+                                    borderRadius: '2px'
+                                  }}
+                                  title={`3D Asset: ${range.asset || highlightedText}`}
+                                >
+                                  {highlightedText}
                                 </span>
                               );
-                              lastIndex = highlight.end;
+                              
+                              lastIndex = range.end;
                             });
                             
-                            if (lastIndex < promptToHighlight.length) {
-                              parts.push(promptToHighlight.substring(lastIndex));
+                            // Add remaining text
+                            if (lastIndex < prompt.length) {
+                              parts.push(prompt.substring(lastIndex));
                             }
                             
                             return parts;
                           };
                           
-                          const highlightedParts = getHighlightedText();
+                          const highlightedParts = renderTextWithColorHighlights();
                           const hasHighlight = highlightedParts !== null;
                           
                           return (
                             <>
                               {/* Actual textarea for input */}
                               <textarea
+                                ref={promptTextareaRef}
                                 id="prompt"
                                 maxLength={600}
                                 rows={2}
@@ -2741,15 +3031,31 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 value={prompt}
                                 onChange={(e) => {
                                   const newValue = e.target.value;
+                                  // Preserve cursor position during manual edits
+                                  const textarea = e.target;
+                                  const cursorPosition = textarea.selectionStart;
+                                  
                                   setPrompt(newValue);
                                   // Save to context if generation is active
                                   if (isGenerating || isGenerating3DAsset) {
                                     setGlobalPrompt(newValue);
                                   }
-                                  // Clear enhanced prompt when user manually edits
-                                  if (enablePromptEnhancement && enhancedPrompt) {
-                                    setEnhancedPrompt('');
+                                  // Clear enhanced prompt when user manually edits (but not when updating from enhancement)
+                                  // Since enhancement is always on, we track when user manually edits
+                                  if (enhancedPrompt && !isUpdatingFromEnhancement.current) {
+                                    // Only clear if the new value doesn't match the enhanced prompt (user actually changed it)
+                                    if (newValue !== enhancedPrompt) {
+                                      setEnhancedPrompt('');
+                                    }
                                   }
+                                  
+                                  // Restore cursor position after state update
+                                  setTimeout(() => {
+                                    if (promptTextareaRef.current) {
+                                      const adjustedPosition = Math.min(cursorPosition, newValue.length);
+                                      promptTextareaRef.current.setSelectionRange(adjustedPosition, adjustedPosition);
+                                    }
+                                  }, 0);
                                 }}
                                 readOnly={isGenerating || isGenerating3DAsset}
                                 style={{
@@ -2760,11 +3066,17 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               {/* Overlay showing highlighted text */}
                               {hasHighlight && (
                                 <div
-                                  className="absolute inset-0 pointer-events-none px-2.5 py-1.5 pr-12 text-xs text-gray-100 leading-relaxed overflow-hidden"
+                                  className="absolute inset-0 pointer-events-none select-none px-2 py-1 pr-12 text-xs text-gray-100 leading-relaxed overflow-hidden"
                                   style={{
                                     whiteSpace: 'pre-wrap',
                                     wordWrap: 'break-word',
-                                    minHeight: 'calc(2 * 1.25rem + 0.75rem)'
+                                    minHeight: 'calc(2 * 1.25rem + 0.75rem)',
+                                    userSelect: 'none',
+                                    WebkitUserSelect: 'none',
+                                    letterSpacing: 'normal',
+                                    wordSpacing: 'normal',
+                                    fontSize: '0.75rem',
+                                    lineHeight: '1.5'
                                   }}
                                 >
                                   {highlightedParts}
@@ -2925,8 +3237,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       </div>
                     )}
 
-                    {/* Show enhancement status when enabled */}
-                    {enablePromptEnhancement && isEnhancing && (
+                    {/* Show enhancement status when enhancing */}
+                    {isEnhancing && (
                       <div className="p-1.5 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-sky-500/10 border border-sky-500/30 shadow-[0_0_16px_rgba(14,165,233,0.15)] rounded-md">
                         <div className="flex items-center gap-2">
                           <svg className="w-3.5 h-3.5 text-sky-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2937,38 +3249,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       </div>
                     )}
 
-                    {/* 3D Objects Detection Badge - Show detected objects */}
-                    {parsedPrompt && parsedPrompt.aiResult?.meshAssets && parsedPrompt.aiResult.meshAssets.length > 0 && (
-                      <div className="p-1.5 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-emerald-500/10 border border-emerald-500/30 shadow-[0_0_16px_rgba(16,185,129,0.15)] rounded-md">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                          </svg>
-                          <span className="text-xs font-bold text-emerald-300">
-                            {parsedPrompt.aiResult.meshAssets.length} 3D Object{parsedPrompt.aiResult.meshAssets.length !== 1 ? 's' : ''} Detected
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1 mb-1.5">
-                          {parsedPrompt.aiResult.meshAssets.map((asset, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/25 border border-emerald-500/50 text-[10px] text-emerald-200 font-semibold shadow-[0_0_8px_rgba(16,185,129,0.2)]"
-                            >
-                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                              </svg>
-                              {asset}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-gray-400 pt-1 border-t border-emerald-500/20">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span>These objects will be generated as 3D assets</span>
-                        </div>
-                      </div>
-                    )}
+                    {/* 3D Objects Detection - Hidden UI, only highlighting in prompt text */}
 
                     {/* Trial user info badge */}
                     {isTrialUser && (
@@ -3571,8 +3852,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             transition={{ duration: 0.4, ease: 'easeInOut' }}
             className={`absolute inset-0 w-full h-full z-[10] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               isChatSidebarOpen 
-                ? 'pl-0 sm:pl-[240px] md:pl-[260px] lg:pl-[280px] xl:pl-[300px] 2xl:pl-[320px]' 
-                : 'pl-0 sm:pl-[56px] md:pl-[64px]'
+                ? 'pl-0 md:pl-[260px] lg:pl-[280px] xl:pl-[300px] 2xl:pl-[320px]' 
+                : 'pl-0 md:pl-[64px]'
             }`}
           >
             {/* Debug info in dev mode */}
@@ -3593,10 +3874,26 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             
             {/* 3D Viewer - Always visible when skybox is generated */}
             <div className="absolute inset-0 w-full h-full">
-              {/* Control buttons overlay - Only show if 3D asset exists */}
+              {/* Visual indicator when 3D objects are detected in prompt */}
+              {!generated3DAsset && (has3DObjects || parsedPrompt?.meshScore > 0.3) && !isGenerating3DAsset && (
+                <div className="absolute top-4 left-4 z-[10000] bg-purple-600/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg border border-purple-400/50 flex items-center gap-2">
+                  <svg className="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                  <div>
+                    <div className="font-semibold text-sm">3D Objects Detected</div>
+                    <div className="text-xs text-purple-100">Click Generate to create 3D assets</div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Control buttons overlay - Show if 3D asset exists and has URL */}
               {generated3DAsset && 
-               generated3DAsset.status === 'completed' && 
-               (generated3DAsset.downloadUrl || generated3DAsset.previewUrl) && (
+               (generated3DAsset.status === 'completed' || 
+                generated3DAsset.status === 'processing' ||
+                generated3DAsset.status === 'success') && 
+               (generated3DAsset.downloadUrl || generated3DAsset.previewUrl || 
+                generated3DAsset.metadata?.model_urls) && (
                 <div className="absolute top-4 right-4 z-[10000] flex gap-2 flex-wrap sm:flex-nowrap">
                   <button
                     onClick={() => {
@@ -3702,20 +3999,59 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
               )}
               <AssetViewerWithSkybox
                 assetUrl={(() => {
-                  // Get asset URL if 3D asset exists
-                  if (generated3DAsset && generated3DAsset.status === 'completed') {
-                    let url = generated3DAsset.downloadUrl || generated3DAsset.previewUrl;
+                  // Enhanced URL extraction for 3D asset viewer
+                  if (generated3DAsset) {
+                    // Check if status is completed or processing (some APIs return processing with URL)
+                    const isReady = generated3DAsset.status === 'completed' || 
+                                    generated3DAsset.status === 'processing' ||
+                                    generated3DAsset.status === 'success';
                     
-                    // If no URL, try to extract from metadata.model_urls
-                    if (!url && generated3DAsset.metadata?.model_urls) {
-                      url = generated3DAsset.metadata.model_urls.glb || 
-                            generated3DAsset.metadata.model_urls.fbx || 
-                            generated3DAsset.metadata.model_urls.obj ||
-                            generated3DAsset.metadata.model_urls.usdz;
-                      console.log('📦 Using URL from metadata.model_urls:', url);
+                    if (isReady || generated3DAsset.downloadUrl || generated3DAsset.previewUrl) {
+                      let url = generated3DAsset.downloadUrl || generated3DAsset.previewUrl;
+                      
+                      // Try extracting from metadata.model_urls
+                      if (!url && generated3DAsset.metadata?.model_urls) {
+                        url = generated3DAsset.metadata.model_urls.glb || 
+                              generated3DAsset.metadata.model_urls.fbx || 
+                              generated3DAsset.metadata.model_urls.obj ||
+                              generated3DAsset.metadata.model_urls.usdz ||
+                              generated3DAsset.metadata.model_urls.draco;
+                        console.log('📦 Viewer: Using URL from metadata.model_urls:', url);
+                      }
+                      
+                      // Try extracting from nested metadata
+                      if (!url && generated3DAsset.metadata) {
+                        url = generated3DAsset.metadata.url || 
+                              generated3DAsset.metadata.downloadUrl || 
+                              generated3DAsset.metadata.modelUrl ||
+                              generated3DAsset.metadata.fileUrl;
+                        if (url) {
+                          console.log('📦 Viewer: Using URL from metadata:', url);
+                        }
+                      }
+                      
+                      // Try extracting from result object
+                      if (!url && generated3DAsset.result) {
+                        url = generated3DAsset.result.downloadUrl || 
+                              generated3DAsset.result.previewUrl ||
+                              generated3DAsset.result.url;
+                        if (url) {
+                          console.log('📦 Viewer: Using URL from result:', url);
+                        }
+                      }
+                      
+                      if (url) {
+                        console.log('✅ 3D Asset URL found for viewer:', url);
+                        return url;
+                      } else {
+                        console.warn('⚠️ 3D Asset exists but no URL found:', {
+                          hasDownloadUrl: !!generated3DAsset.downloadUrl,
+                          hasPreviewUrl: !!generated3DAsset.previewUrl,
+                          hasMetadata: !!generated3DAsset.metadata,
+                          status: generated3DAsset.status
+                        });
+                      }
                     }
-                    
-                    return url || '';
                   }
                   return '';
                 })()}
@@ -3785,8 +4121,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         )}
       </AnimatePresence>
 
-      {/* Chat Sidebar */}
+      {/* Chat Sidebar - Desktop/Tablet only */}
       <ChatSidebar 
+        isOpen={isChatSidebarOpen} 
+        onToggle={() => setIsChatSidebarOpen(!isChatSidebarOpen)}
+        setBackgroundSkybox={setBackgroundSkybox}
+      />
+
+      {/* Mobile Bottom Bar - Mobile only */}
+      <MobileBottomBar 
         isOpen={isChatSidebarOpen} 
         onToggle={() => setIsChatSidebarOpen(!isChatSidebarOpen)}
         setBackgroundSkybox={setBackgroundSkybox}
