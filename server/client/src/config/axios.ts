@@ -49,22 +49,75 @@ const getApiBaseUrl = () => {
 const api = axios.create({
   baseURL: getApiBaseUrl(),
   withCredentials: false,
+  maxRedirects: 0, // Prevent redirects that might change POST to GET
+  validateStatus: (status: number) => status < 500 // Don't throw on 4xx errors, let us handle them
 });
 
 // Add request interceptor to include Firebase auth token
 api.interceptors.request.use(async (config) => {
   try {
+    // Log request method to debug
+    if (config.url?.includes('enhance')) {
+      console.log('🔍 Request interceptor - Method:', config.method?.toUpperCase() || 'UNDEFINED', 'URL:', config.url);
+      console.log('🔍 Full config:', {
+        method: config.method,
+        url: config.url,
+        baseURL: config.baseURL,
+        data: config.data
+      });
+    }
+    
+    // CRITICAL: Ensure POST method is set for enhance endpoint
+    if (config.url?.includes('enhance')) {
+      if (!config.method || config.method.toLowerCase() !== 'post') {
+        console.error('❌ ERROR: Method is not POST! Setting to POST...', {
+          originalMethod: config.method,
+          url: config.url
+        });
+        config.method = 'POST';
+      }
+    }
+    
     const user = auth.currentUser;
     if (user) {
       const token = await user.getIdToken();
-      config.headers.Authorization = `Bearer ${token}`;
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+        console.log('🔐 Auth token attached to request:', config.url);
+      } else {
+        console.warn('⚠️ User exists but no token available');
+      }
+    } else {
+      console.warn('⚠️ No authenticated user for request:', config.url);
     }
   } catch (error) {
-    console.error('Error getting auth token:', error);
+    console.error('❌ Error getting auth token:', error);
   }
   return config;
 }, (error) => {
   return Promise.reject(error);
 });
+
+// Add response interceptor to log actual request method used
+api.interceptors.response.use(
+  (response) => {
+    if (response.config.url?.includes('enhance')) {
+      console.log('✅ Response interceptor - Actual method used:', response.config.method?.toUpperCase(), 'Status:', response.status);
+    }
+    return response;
+  },
+  (error) => {
+    if (error.config?.url?.includes('enhance')) {
+      console.error('❌ Response error - Method used:', error.config.method?.toUpperCase(), 'Status:', error.response?.status);
+      console.error('❌ Error details:', {
+        method: error.config?.method,
+        url: error.config?.url,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api; 
