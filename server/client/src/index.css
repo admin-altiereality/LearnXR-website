@@ -189,6 +189,15 @@ html {
   .font-mono {
     font-family: 'JetBrains Mono', 'Courier New', monospace;
   }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
 }
 
 /* Smooth scroll for anchor links */
