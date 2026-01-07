@@ -40,6 +40,9 @@ import { incrementStyleUsage } from '../services/styleUsageService';
 import { UnifiedGenerationProgress } from './UnifiedGenerationProgress';
 import { ChatSidebar } from './chat/ChatSidebar';
 import { MobileBottomBar } from './chat/MobileBottomBar';
+import { TeacherAvatar } from './TeacherAvatar';
+import { AvatarSidePanel } from './AvatarSidePanel';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -143,6 +146,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const [voiceError, setVoiceError] = useState(null);
   const recognitionRef = useRef(null);
   
+  // Avatar voice input state
+  const [isAvatarListening, setIsAvatarListening] = useState(false);
+  const [avatarVoiceError, setAvatarVoiceError] = useState(null);
+  const avatarRecognitionRef = useRef(null);
+  
   // Chat sidebar state - load from localStorage, default to false (collapsed)
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -151,6 +159,167 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     }
     return false; // Default to collapsed
   });
+  
+  // Teacher Avatar chat state
+  const [avatarMessages, setAvatarMessages] = useState([]);
+  const [avatarInput, setAvatarInput] = useState('');
+  const [isAvatarLoading, setIsAvatarLoading] = useState(false);
+  const [isAvatarReady, setIsAvatarReady] = useState(false);
+  const [isAvatarPanelOpen, setIsAvatarPanelOpen] = useState(false);
+  const avatarRef = useRef(null);
+  
+  // Avatar configuration state
+  const [avatarConfig, setAvatarConfig] = useState({
+    curriculum: '',
+    class: '',
+    subject: ''
+  });
+  
+  // Available assistants state
+  const [availableAssistants, setAvailableAssistants] = useState([]);
+  const [assistantsLoading, setAssistantsLoading] = useState(true);
+  
+  const CURRICULUMS = ['NCERT', 'CBSE', 'ICSE', 'State Board', 'RBSE'];
+  const CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+  const SUBJECTS = [
+    'Mathematics',
+    'Science',
+    'English',
+    'Hindi',
+    'Social Studies',
+    'Physics',
+    'Chemistry',
+    'Biology',
+    'History',
+    'Geography',
+    'Computer Science'
+  ];
+  
+  // Fetch available assistants on mount
+  useEffect(() => {
+    const fetchAvailableAssistants = async () => {
+      try {
+        setAssistantsLoading(true);
+        const apiUrl = getApiBaseUrl();
+        const response = await fetch(`${apiUrl}/assistant/list?useAvatarKey=true`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch available assistants');
+        }
+        
+        const data = await response.json();
+        // Ensure class values are strings to match CLASSES array
+        const normalizedAssistants = (data.assistants || []).map(a => ({
+          ...a,
+          class: String(a.class) // Ensure class is always a string
+        }));
+        setAvailableAssistants(normalizedAssistants);
+        console.log('✅ Loaded available assistants:', normalizedAssistants.length);
+        if (normalizedAssistants.length > 0) {
+          console.log('📚 Available combinations:', normalizedAssistants);
+          // Group and display in a readable format
+          const grouped = normalizedAssistants.reduce((acc, a) => {
+            const key = `${a.curriculum} - Class ${a.class}`;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(a.subject);
+            return acc;
+          }, {});
+          console.log('📋 Grouped by Curriculum & Class:');
+          Object.keys(grouped).sort().forEach(key => {
+            console.log(`  ${key}: ${grouped[key].join(', ')}`);
+          });
+          
+          // Show RBSE specifically
+          const rbseAssistants = normalizedAssistants.filter(a => a.curriculum === 'RBSE');
+          if (rbseAssistants.length > 0) {
+            const rbseClasses = [...new Set(rbseAssistants.map(a => a.class))].sort();
+            console.log(`📖 RBSE Classes available: ${rbseClasses.join(', ')}`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error fetching available assistants:', error);
+        // On error, show all options (fallback behavior)
+        setAvailableAssistants([]);
+      } finally {
+        setAssistantsLoading(false);
+      }
+    };
+    
+    fetchAvailableAssistants();
+  }, []);
+  
+  // Filter dropdowns based on available assistants
+  const getAvailableCurriculums = useMemo(() => {
+    if (availableAssistants.length === 0) {
+      return CURRICULUMS; // Show all if no assistants loaded yet or error
+    }
+    const unique = [...new Set(availableAssistants.map(a => a.curriculum))];
+    return CURRICULUMS.filter(c => unique.includes(c));
+  }, [availableAssistants]);
+  
+  const getAvailableClasses = useMemo(() => {
+    if (availableAssistants.length === 0) {
+      return CLASSES; // Show all if no assistants loaded yet or error
+    }
+    if (!avatarConfig.curriculum) {
+      return []; // Don't show any classes until curriculum is selected
+    }
+    const filtered = availableAssistants.filter(a => a.curriculum === avatarConfig.curriculum);
+    const unique = [...new Set(filtered.map(a => a.class))];
+    const available = CLASSES.filter(c => unique.includes(c));
+    
+    // Debug logging
+    console.log(`🔍 Filtering classes for ${avatarConfig.curriculum}:`, {
+      totalAssistants: availableAssistants.length,
+      filteredByCurriculum: filtered.length,
+      uniqueClasses: unique,
+      availableClasses: available
+    });
+    
+    return available;
+  }, [availableAssistants, avatarConfig.curriculum]);
+  
+  const getAvailableSubjects = useMemo(() => {
+    if (availableAssistants.length === 0) {
+      return SUBJECTS; // Show all if no assistants loaded yet or error
+    }
+    if (!avatarConfig.curriculum || !avatarConfig.class) {
+      return []; // Don't show any subjects until curriculum and class are selected
+    }
+    const filtered = availableAssistants.filter(
+      a => a.curriculum === avatarConfig.curriculum && a.class === avatarConfig.class
+    );
+    const unique = [...new Set(filtered.map(a => a.subject))];
+    const available = SUBJECTS.filter(s => unique.includes(s));
+    
+    // Debug logging
+    console.log(`🔍 Filtering subjects for ${avatarConfig.curriculum} Class ${avatarConfig.class}:`, {
+      filtered: filtered.length,
+      uniqueSubjects: unique,
+      availableSubjects: available
+    });
+    
+    return available;
+  }, [availableAssistants, avatarConfig.curriculum, avatarConfig.class]);
+  
+  // Reset dependent fields when parent selection changes
+  useEffect(() => {
+    if (avatarConfig.curriculum && avatarConfig.class) {
+      const availableClasses = getAvailableClasses;
+      if (!availableClasses.includes(avatarConfig.class)) {
+        setAvatarConfig(prev => ({ ...prev, class: '', subject: '' }));
+      }
+    }
+  }, [avatarConfig.curriculum, avatarConfig.class, getAvailableClasses]);
+  
+  useEffect(() => {
+    if (avatarConfig.class && avatarConfig.subject) {
+      const availableSubjects = getAvailableSubjects;
+      if (!availableSubjects.includes(avatarConfig.subject)) {
+        setAvatarConfig(prev => ({ ...prev, subject: '' }));
+      }
+    }
+  }, [avatarConfig.class, avatarConfig.subject, getAvailableSubjects]);
   
   // Loading indicator context
   const { showLoading, hideLoading, updateProgress } = useLoading();
@@ -376,78 +545,114 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   // Voice Recognition Setup
   // -------------------------
   useEffect(() => {
+    // Check for HTTPS/localhost requirement
+    const isSecureContext = window.isSecureContext || 
+      window.location.protocol === 'https:' || 
+      window.location.hostname === 'localhost' || 
+      window.location.hostname === '127.0.0.1';
+    
+    if (!isSecureContext) {
+      setIsVoiceSupported(false);
+      setVoiceError('Voice input requires HTTPS connection or localhost.');
+      console.warn('🎤 Voice recognition requires secure context (HTTPS or localhost)');
+      return;
+    }
+    
     // Check for browser support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
-    if (SpeechRecognition) {
-      setIsVoiceSupported(true);
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-      
-      recognition.onstart = () => {
-        setIsListening(true);
-        setVoiceError(null);
-        console.log('🎤 Voice recognition started');
-      };
-      
-      recognition.onresult = (event) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        // Append final transcript to prompt
-        if (finalTranscript) {
-          setPrompt(prev => {
-            const newPrompt = prev ? `${prev} ${finalTranscript}`.trim() : finalTranscript.trim();
-            // Respect max length
-            return newPrompt.substring(0, 600);
-          });
-          console.log('🎤 Voice transcript added:', finalTranscript);
-        }
-      };
-      
-      recognition.onerror = (event) => {
-        console.error('🎤 Voice recognition error:', event.error);
-        setIsListening(false);
-        
-        switch (event.error) {
-          case 'no-speech':
-            setVoiceError('No speech detected. Please try again.');
-            break;
-          case 'audio-capture':
-            setVoiceError('No microphone found. Please check your device.');
-            break;
-          case 'not-allowed':
-            setVoiceError('Microphone access denied. Please allow microphone access.');
-            break;
-          case 'network':
-            setVoiceError('Network error. Please check your connection.');
-            break;
-          default:
-            setVoiceError(`Voice error: ${event.error}`);
-        }
-      };
-      
-      recognition.onend = () => {
-        setIsListening(false);
-        console.log('🎤 Voice recognition ended');
-      };
-      
-      recognitionRef.current = recognition;
-    } else {
+    if (!SpeechRecognition) {
       setIsVoiceSupported(false);
       console.log('🎤 Speech recognition not supported in this browser');
+      return;
     }
+    
+    // Check for microphone availability
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setIsVoiceSupported(false);
+      setVoiceError('Microphone API not available. Please use a modern browser.');
+      console.warn('🎤 MediaDevices API not available');
+      return;
+    }
+    
+    setIsVoiceSupported(true);
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    
+    recognition.onstart = () => {
+      setIsListening(true);
+      setVoiceError(null);
+      console.log('🎤 Voice recognition started');
+    };
+    
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+      let interimTranscript = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      
+      // Append final transcript to prompt
+      if (finalTranscript) {
+        setPrompt(prev => {
+          const newPrompt = prev ? `${prev} ${finalTranscript}`.trim() : finalTranscript.trim();
+          // Respect max length
+          return newPrompt.substring(0, 600);
+        });
+        console.log('🎤 Voice transcript added:', finalTranscript);
+      }
+    };
+    
+    recognition.onerror = (event) => {
+      console.error('🎤 Voice recognition error:', event.error, event);
+      setIsListening(false);
+      
+      // Only show error if it's not a normal end or abort
+      if (event.error === 'aborted') {
+        console.log('🎤 Voice recognition aborted (normal)');
+        return;
+      }
+      
+      switch (event.error) {
+        case 'no-speech':
+          setVoiceError('No speech detected. Please try again.');
+          break;
+        case 'audio-capture':
+          setVoiceError('No microphone found. Please check your device and permissions.');
+          break;
+        case 'not-allowed':
+          setVoiceError('Microphone access denied. Please allow microphone access in your browser settings.');
+          break;
+        case 'network':
+          setVoiceError('Network error. The speech recognition service may be unavailable. Please check your internet connection and try again.');
+          break;
+        case 'service-not-allowed':
+          setVoiceError('Speech recognition service not available. Please try again later.');
+          break;
+        case 'bad-grammar':
+        case 'language-not-supported':
+          setVoiceError('Language not supported. Please try again.');
+          break;
+        default:
+          setVoiceError(`Voice recognition error: ${event.error}. Please check your microphone permissions and try again.`);
+      }
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+      console.log('🎤 Voice recognition ended');
+      // Don't set error on normal end - only on errors
+    };
+    
+    recognitionRef.current = recognition;
     
     // Cleanup
     return () => {
@@ -458,30 +663,289 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   }, []);
 
   // Voice input toggle handler
-  const toggleVoiceInput = useCallback(() => {
-    if (!recognitionRef.current) return;
+  const toggleVoiceInput = useCallback(async () => {
+    if (!recognitionRef.current) {
+      setVoiceError('Voice recognition not available. Please check browser support.');
+      return;
+    }
     
     if (isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } else {
-      setVoiceError(null);
       try {
-        recognitionRef.current.start();
+        recognitionRef.current.stop();
+        setIsListening(false);
+        setVoiceError(null);
       } catch (error) {
+        console.warn('🎤 Error stopping recognition:', error);
+        setIsListening(false);
+      }
+    } else {
+      // Clear any previous errors
+      setVoiceError(null);
+      
+      // Request microphone permission first
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log('🎤 Microphone permission granted');
+          // Stop the stream immediately - we just needed permission
+          stream.getTracks().forEach(track => track.stop());
+        }
+      } catch (permissionError) {
+        console.error('🎤 Microphone permission error:', permissionError);
+        if (permissionError.name === 'NotAllowedError' || permissionError.name === 'PermissionDeniedError') {
+          setVoiceError('Microphone access denied. Please allow microphone access in your browser settings and reload the page.');
+          return;
+        } else if (permissionError.name === 'NotFoundError' || permissionError.name === 'DevicesNotFoundError') {
+          setVoiceError('No microphone found. Please connect a microphone and try again.');
+          return;
+        } else {
+          setVoiceError('Failed to access microphone. Please check your device settings.');
+          return;
+        }
+      }
+      
+      // Small delay to ensure permission is fully processed
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Start recognition after permission is granted
+      try {
+        // Check if recognition is already running
+        if (recognitionRef.current) {
+          recognitionRef.current.start();
+          console.log('🎤 Voice recognition start requested');
+        }
+      } catch (error) {
+        console.error('🎤 Failed to start voice recognition:', error);
         // Handle the case where recognition is already started
         if (error.name === 'InvalidStateError') {
-          recognitionRef.current.stop();
-          setTimeout(() => {
-            recognitionRef.current.start();
-          }, 100);
+          try {
+            recognitionRef.current.stop();
+            setTimeout(() => {
+              try {
+                if (recognitionRef.current) {
+                  recognitionRef.current.start();
+                  console.log('🎤 Voice recognition started after retry');
+                }
+              } catch (retryError) {
+                console.error('🎤 Failed to start voice recognition after retry:', retryError);
+                setVoiceError('Failed to start voice input. Please try again in a moment.');
+              }
+            }, 200);
+          } catch (stopError) {
+            console.error('🎤 Error stopping recognition:', stopError);
+            setVoiceError('Voice recognition is busy. Please wait a moment and try again.');
+          }
         } else {
-          console.error('🎤 Failed to start voice recognition:', error);
-          setVoiceError('Failed to start voice input. Please try again.');
+          setVoiceError(`Failed to start voice input: ${error.message || error.name}. Please check your microphone permissions.`);
         }
       }
     }
   }, [isListening]);
+
+  // Avatar Voice Recognition Setup
+  useEffect(() => {
+    if (!isVoiceSupported) {
+      return;
+    }
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      console.warn('🎤 Avatar: Speech recognition not available');
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    
+    recognition.onstart = () => {
+      setIsAvatarListening(true);
+      setAvatarVoiceError(null);
+      console.log('🎤 Avatar voice recognition started');
+    };
+    
+    recognition.onresult = async (event) => {
+      let finalTranscript = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        }
+      }
+      
+      // Send transcript to avatar assistant
+      if (finalTranscript) {
+        const message = finalTranscript.trim();
+        console.log('🎤 Avatar voice transcript:', message);
+        
+        // Check if avatar is ready
+        if (!avatarRef.current) {
+          console.warn('⚠️ Avatar ref not available, opening panel...');
+          setIsAvatarPanelOpen(true);
+          setAvatarVoiceError('Avatar is initializing. Please try again in a moment.');
+          return;
+        }
+        
+        try {
+          await avatarRef.current.sendMessage(message);
+          // Clear any previous errors on success
+          setAvatarVoiceError(null);
+        } catch (error) {
+          console.error('❌ Error sending voice message to avatar:', error);
+          const errorMsg = error?.message || 'Failed to send voice message.';
+          if (errorMsg.includes('network') || errorMsg.includes('Network') || errorMsg.includes('fetch')) {
+            setAvatarVoiceError('Network error. Please check your connection and try again.');
+          } else if (errorMsg.includes('Thread not initialized')) {
+            setAvatarVoiceError('Avatar is initializing. Please wait a moment and try again.');
+          } else {
+            setAvatarVoiceError(errorMsg);
+          }
+        }
+      }
+    };
+    
+    recognition.onerror = (event) => {
+      console.error('🎤 Avatar voice recognition error:', event.error, event);
+      setIsAvatarListening(false);
+      
+      // Only show error if it's not a normal end or abort
+      if (event.error === 'aborted') {
+        console.log('🎤 Avatar voice recognition aborted (normal)');
+        return;
+      }
+      
+      switch (event.error) {
+        case 'no-speech':
+          setAvatarVoiceError('No speech detected. Please try again.');
+          break;
+        case 'audio-capture':
+          setAvatarVoiceError('No microphone found. Please check your device and permissions.');
+          break;
+        case 'not-allowed':
+          setAvatarVoiceError('Microphone access denied. Please allow microphone access in your browser settings.');
+          break;
+        case 'network':
+          setAvatarVoiceError('Network error. The speech recognition service may be unavailable. Please check your internet connection and try again.');
+          break;
+        case 'service-not-allowed':
+          setAvatarVoiceError('Speech recognition service not available. Please try again later.');
+          break;
+        case 'bad-grammar':
+        case 'language-not-supported':
+          setAvatarVoiceError('Language not supported. Please try again.');
+          break;
+        default:
+          setAvatarVoiceError(`Voice recognition error: ${event.error}. Please check your microphone permissions and try again.`);
+      }
+    };
+    
+    recognition.onend = () => {
+      setIsAvatarListening(false);
+      console.log('🎤 Avatar voice recognition ended');
+    };
+    
+    avatarRecognitionRef.current = recognition;
+    
+    // Cleanup
+    return () => {
+      if (avatarRecognitionRef.current) {
+        avatarRecognitionRef.current.abort();
+      }
+    };
+  }, [isVoiceSupported]);
+
+  // Avatar voice input toggle handler
+  const toggleAvatarVoiceInput = useCallback(async () => {
+    if (!avatarRecognitionRef.current) {
+      setAvatarVoiceError('Voice recognition not available. Please check browser support.');
+      return;
+    }
+    
+    // Check if all config options are selected
+    if (!avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject) {
+      setAvatarVoiceError('Please select curriculum, class, and subject first.');
+      return;
+    }
+    
+    if (isAvatarListening) {
+      try {
+        avatarRecognitionRef.current.stop();
+        setIsAvatarListening(false);
+        setAvatarVoiceError(null);
+      } catch (error) {
+        console.warn('🎤 Avatar: Error stopping recognition:', error);
+        setIsAvatarListening(false);
+      }
+    } else {
+      // Clear any previous errors
+      setAvatarVoiceError(null);
+      // Ensure avatar panel is open
+      if (!isAvatarPanelOpen) {
+        setIsAvatarPanelOpen(true);
+      }
+      
+      // Request microphone permission first
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log('🎤 Avatar: Microphone permission granted');
+          // Stop the stream immediately - we just needed permission
+          stream.getTracks().forEach(track => track.stop());
+        }
+      } catch (permissionError) {
+        console.error('🎤 Avatar: Microphone permission error:', permissionError);
+        if (permissionError.name === 'NotAllowedError' || permissionError.name === 'PermissionDeniedError') {
+          setAvatarVoiceError('Microphone access denied. Please allow microphone access in your browser settings and reload the page.');
+          return;
+        } else if (permissionError.name === 'NotFoundError' || permissionError.name === 'DevicesNotFoundError') {
+          setAvatarVoiceError('No microphone found. Please connect a microphone and try again.');
+          return;
+        } else {
+          setAvatarVoiceError('Failed to access microphone. Please check your device settings.');
+          return;
+        }
+      }
+      
+      // Small delay to ensure permission is fully processed
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Start recognition after permission is granted
+      try {
+        // Check if recognition is already running
+        if (avatarRecognitionRef.current) {
+          avatarRecognitionRef.current.start();
+          console.log('🎤 Avatar: Voice recognition start requested');
+        }
+      } catch (error) {
+        console.error('🎤 Avatar: Failed to start voice recognition:', error);
+        // Handle the case where recognition is already started
+        if (error.name === 'InvalidStateError') {
+          try {
+            avatarRecognitionRef.current.stop();
+            setTimeout(() => {
+              try {
+                if (avatarRecognitionRef.current) {
+                  avatarRecognitionRef.current.start();
+                  console.log('🎤 Avatar: Voice recognition started after retry');
+                }
+              } catch (retryError) {
+                console.error('🎤 Avatar: Failed to start voice recognition after retry:', retryError);
+                setAvatarVoiceError('Failed to start voice input. Please try again in a moment.');
+              }
+            }, 200);
+          } catch (stopError) {
+            console.error('🎤 Avatar: Error stopping recognition:', stopError);
+            setAvatarVoiceError('Voice recognition is busy. Please wait a moment and try again.');
+          }
+        } else {
+          setAvatarVoiceError(`Failed to start voice input: ${error.message || error.name}. Please check your microphone permissions.`);
+        }
+      }
+    }
+  }, [isAvatarListening, isAvatarPanelOpen, avatarConfig]);
 
   // -------------------------
   // Prompt Enhancement Function (AI-Powered)
@@ -2079,6 +2543,29 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   // -------------------------
   // Skybox style change
   // -------------------------
+  // Handle avatar message send
+  const handleAvatarSend = async () => {
+    if (!avatarInput.trim() || isAvatarLoading || !avatarRef.current) {
+      return;
+    }
+
+    const message = avatarInput.trim();
+    setAvatarInput('');
+    setIsAvatarLoading(true);
+
+    try {
+      await avatarRef.current.sendMessage(message);
+    } catch (error) {
+      console.error('Error sending message to avatar:', error);
+      setIsAvatarLoading(false);
+      // Add error message to chat
+      setAvatarMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please try again.'
+      }]);
+    }
+  };
+
   const handleSkyboxStyleChange = (e) => {
     // Search in availableStyles (filtered for trial users) first, then skyboxStyles
     const style = availableStyles.find(
@@ -2420,8 +2907,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                 )}
 
                 {/* Main Grid (Editor style) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-1">
-                  {/* Column 1: Prompt */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-1">
+                  {/* Column 1: Prompt, Variations, Negative Prompt, Download */}
                   <div className="md:col-span-2 space-y-1">
                     <div className={`border border-sky-500/30 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-sky-500/50 shadow-[0_0_24px_rgba(14,165,233,0.2)] border-sky-500/50' : 'hover:border-sky-500/40'
@@ -3328,26 +3815,26 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                     )}
                   </div>
 
-                  {/* Column 2: Style & Actions */}
-                    <div className="space-y-1 flex flex-col">
-                      {/* Style selector */}
-                     <div className={`border border-emerald-500/50 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
+                  {/* Column 2: Style & Generate */}
+                  <div className="md:col-span-1 space-y-1 flex flex-col">
+                    {/* Style selector */}
+                    <div className={`border border-emerald-500/50 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-emerald-500/50 shadow-[0_0_24px_rgba(16,185,129,0.2)] border-emerald-500/60' : 'hover:border-emerald-500/60'
                     } transition-all duration-300`}>
-                      <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
-                        <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-semibold flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
-                          In3D.Ai Style
-                          {(isGenerating || isGenerating3DAsset) && selectedSkybox && (
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" title="Currently generating with this style" />
-                          )}
-                        </span>
-                        {selectedSkybox && (
-                          <span className="text-[9px] text-gray-300 font-semibold px-2 py-0.5 rounded-md bg-[#0a0a0a]/50 border border-[#ffffff]/5">
-                            {selectedSkybox.name}
-                          </span>
-                        )}
-                      </div>
+                          <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
+                            <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-semibold flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+                              In3D.Ai Style
+                              {(isGenerating || isGenerating3DAsset) && selectedSkybox && (
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" title="Currently generating with this style" />
+                              )}
+                            </span>
+                            {selectedSkybox && (
+                              <span className="text-[9px] text-gray-300 font-semibold px-2 py-0.5 rounded-md bg-[#0a0a0a]/50 border border-[#ffffff]/5">
+                                {selectedSkybox.name}
+                              </span>
+                            )}
+                          </div>
 
                        {/* Active style preview above style list – mimic Skybox panel */}
                        {selectedSkybox && (
@@ -3421,7 +3908,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       )}
                     </div>
 
-                    {/* Generation / Download buttons */}
+                    {/* Generation button */}
                     <div className="border border-[#ffffff]/10 bg-gray-800/60 px-2 py-1.5 backdrop-blur-sm flex-1 flex flex-col justify-end rounded-md">
                       <div className="space-y-1">
                         <button
@@ -3801,11 +4288,155 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       )}
                     </div>
                   </div>
+
+                  {/* Column 3: Avatar Configuration */}
+                  <div className="md:col-span-1 space-y-1 flex flex-col">
+                    <div className={`border border-purple-500/30 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
+                      (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-purple-500/50 shadow-[0_0_24px_rgba(168,85,247,0.2)] border-purple-500/50' : 'hover:border-purple-500/40'
+                    } transition-all duration-300`}>
+                      <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
+                        <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-semibold flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.5)]" />
+                          Avatar Config
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <div>
+                          <label className="block text-[9px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">
+                            Curriculum
+                            {assistantsLoading && <span className="ml-1 text-[8px] text-gray-500">(Loading...)</span>}
+                          </label>
+                          <select
+                            value={avatarConfig.curriculum}
+                            onChange={(e) => setAvatarConfig(prev => ({ ...prev, curriculum: e.target.value, class: '', subject: '' }))}
+                            disabled={assistantsLoading}
+                            className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-2 py-1 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <option value="" disabled>Select option</option>
+                            {getAvailableCurriculums.map(cur => (
+                              <option key={cur} value={cur}>{cur}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <div>
+                            <label className="block text-[9px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Class</label>
+                            <select
+                              value={avatarConfig.class}
+                              onChange={(e) => setAvatarConfig(prev => ({ ...prev, class: e.target.value, subject: '' }))}
+                              disabled={assistantsLoading || !avatarConfig.curriculum}
+                              className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-2 py-1 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <option value="" disabled>Select option</option>
+                              {getAvailableClasses.map(cls => (
+                                <option key={cls} value={cls}>Class {cls}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[9px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Subject</label>
+                            <select
+                              value={avatarConfig.subject}
+                              onChange={(e) => setAvatarConfig(prev => ({ ...prev, subject: e.target.value }))}
+                              disabled={assistantsLoading || !avatarConfig.curriculum || !avatarConfig.class}
+                              className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-2 py-1 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <option value="" disabled>Select option</option>
+                              {getAvailableSubjects.map(sub => (
+                                <option key={sub} value={sub}>{sub}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Microphone Button for Avatar Assistant */}
+                      {isVoiceSupported && (
+                        <div className="pt-1 border-t border-[#ffffff]/5">
+                          <button
+                            onClick={toggleAvatarVoiceInput}
+                            disabled={!avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject}
+                            className={`
+                              w-full py-2 text-xs font-bold uppercase tracking-[0.2em]
+                              flex items-center justify-center gap-2
+                              transition-all duration-300 shadow-lg rounded-md
+                              ${
+                                isAvatarListening
+                                  ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_24px_rgba(220,38,38,0.5)] animate-pulse'
+                                  : !avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject
+                                  ? 'bg-gray-800/60 text-gray-500 cursor-not-allowed border border-gray-700/30'
+                                  : 'bg-purple-600 hover:bg-purple-500 text-white hover:shadow-[0_0_24px_rgba(168,85,247,0.5)] hover:-translate-y-0.5 active:translate-y-0'
+                              }
+                            `}
+                            title={
+                              !avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject
+                                ? 'Please select curriculum, class, and subject first'
+                                : isAvatarListening
+                                ? 'Stop listening'
+                                : 'Click to speak to the assistant'
+                            }
+                          >
+                            {isAvatarListening ? (
+                              <>
+                                <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                                </svg>
+                                <span>Listening...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                </svg>
+                                <span>Voice Input</span>
+                              </>
+                            )}
+                          </button>
+                          {avatarVoiceError && (
+                            <div className="mt-1 p-1.5 bg-red-900/20 border border-red-500/30 rounded-md">
+                              <p className="text-[9px] text-red-300 text-center leading-tight">{avatarVoiceError}</p>
+                              <button
+                                onClick={() => setAvatarVoiceError(null)}
+                                className="mt-1 text-[8px] text-red-400 hover:text-red-300 underline mx-auto block transition-colors"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
         </div>
+
+        {/* Column 4: Teacher Avatar - 3D Model Only */}
+        <div className="w-[300px] h-[300px] min-h-[300px]">
+          <TeacherAvatar
+            ref={avatarRef}
+            className="w-full h-full"
+            avatarModelUrl="/models/avatar3.glb"
+            curriculum={avatarConfig.curriculum}
+            class={avatarConfig.class}
+            subject={avatarConfig.subject}
+            useAvatarKey={true}
+            onReady={() => {
+              console.log('✅ Teacher avatar ready');
+              setIsAvatarReady(true);
+            }}
+            onMessage={(message) => {
+              setAvatarMessages(prev => [...prev, { role: 'user', content: message }]);
+            }}
+            onResponse={(response) => {
+              setAvatarMessages(prev => [...prev, { role: 'assistant', content: response }]);
+              setIsAvatarLoading(false);
+            }}
+          />
+        </div>
+
       </div>
 
       {/* Download Popup */}
@@ -4120,6 +4751,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Avatar Side Panel */}
+      <AvatarSidePanel
+        isOpen={isAvatarPanelOpen}
+        onClose={() => setIsAvatarPanelOpen(false)}
+      />
 
       {/* Chat Sidebar - Desktop/Tablet only */}
       <ChatSidebar 

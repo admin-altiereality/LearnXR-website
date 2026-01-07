@@ -61,6 +61,10 @@ console.log('Mounting payment routes at /api/payment');
 app.use('/api/payment', payment_1.default);
 console.log('Mounting API routes at /api');
 app.use('/api', routes_1.router);
+// Serve audio files from public directory
+const publicPath = path_1.default.resolve(process.cwd(), 'server', 'public');
+app.use('/audio', express_1.default.static(path_1.default.join(publicPath, 'audio')));
+console.log('Serving audio files from:', path_1.default.join(publicPath, 'audio'));
 // Serve static files from the React build (only in production)
 if (!isDevelopment) {
     app.use(express_1.default.static(buildPath, {

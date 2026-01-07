@@ -25,7 +25,11 @@ const PUBLIC_PATHS = [
   '/proxy-asset',
   '/ai-detection/enhance',  // Allow prompt enhancement without auth
   '/ai-detection/detect',  // Allow AI detection without auth
-  '/ai-detection/extract-assets'  // Allow asset extraction without auth
+  '/ai-detection/extract-assets',  // Allow asset extraction without auth
+  '/assistant/create-thread',  // Allow assistant thread creation without auth
+  '/assistant/message',  // Allow assistant messages without auth
+  '/assistant/tts/generate',  // Allow TTS generation without auth
+  '/assistant/lipsync/generate'  // Allow viseme generation without auth
 ];
 
 const isPublicEndpoint = (req: Request): boolean => {
@@ -69,6 +73,19 @@ const isPublicEndpoint = (req: Request): boolean => {
         urlString,
         pathString,
         endpoint: hasEnhance ? 'enhance' : 'detect'
+      });
+      return true; // EARLY RETURN - don't check anything else
+    }
+    
+    // CRITICAL: Check for assistant endpoints (BEFORE any normalization)
+    const hasAssistant = urlString.includes('assistant') || pathString.includes('assistant');
+    if (hasAssistant) {
+      console.log(`[${requestId}] [AUTH] ✅ ALLOWING assistant endpoint (raw URL/path check):`, {
+        method: req.method,
+        rawUrl,
+        rawPath,
+        urlString,
+        pathString
       });
       return true; // EARLY RETURN - don't check anything else
     }
@@ -146,6 +163,21 @@ const isPublicEndpoint = (req: Request): boolean => {
   
   if ((req.method === 'POST' || req.method === 'OPTIONS' || req.method === 'GET') && isAiDetectionEndpoint) {
     console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING ai-detection endpoint`);
+    return true;
+  }
+  
+  // CRITICAL: Always allow POST/OPTIONS/GET to assistant endpoints
+  const isAssistantEndpoint = uniquePaths.some(path => {
+    return path === '/assistant/create-thread' ||
+           path === '/assistant/message' ||
+           path === '/assistant/tts/generate' ||
+           path === '/assistant/lipsync/generate' ||
+           path.startsWith('/assistant/') ||
+           (path.includes('assistant') && (path.includes('create-thread') || path.includes('message') || path.includes('tts') || path.includes('lipsync')));
+  });
+  
+  if ((req.method === 'POST' || req.method === 'OPTIONS' || req.method === 'GET') && isAssistantEndpoint) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING assistant endpoint`);
     return true;
   }
   

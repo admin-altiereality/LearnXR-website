@@ -77,6 +77,7 @@ const getApp = (): express.Application => {
     const userRoutes = require('./routes/user').default;
     const proxyRoutes = require('./routes/proxy').default;
     const aiDetectionRoutes = require('./routes/aiDetection').default;
+    const assistantRoutes = require('./routes/assistant').default;
     
     app.use('/', healthRoutes);
     app.use('/skybox', skyboxRoutes);
@@ -85,6 +86,7 @@ const getApp = (): express.Application => {
     app.use('/user', userRoutes);
     app.use('/', proxyRoutes);
     app.use('/ai-detection', aiDetectionRoutes);
+    app.use('/assistant', assistantRoutes);
     
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {

@@ -13,7 +13,9 @@ console.log('Starting app...');
 console.log('Environment variables loaded:', {
   NODE_ENV: process.env.NODE_ENV,
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ? 'Present' : 'Missing (payment features disabled)',
-  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ? 'Present' : 'Missing (payment features disabled)'
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ? 'Present' : 'Missing (payment features disabled)',
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Present' : 'Missing',
+  OPENAI_AVATAR_API_KEY: process.env.OPENAI_AVATAR_API_KEY ? 'Present' : 'Missing (will fallback to OPENAI_API_KEY)'
 });
 
 // Warn about missing payment configuration
@@ -66,6 +68,11 @@ app.use('/api/payment', paymentRoutes);
 
 console.log('Mounting API routes at /api');
 app.use('/api', apiRouter);
+
+// Serve audio files from public directory
+const publicPath = path.resolve(process.cwd(), 'server', 'public');
+app.use('/audio', express.static(path.join(publicPath, 'audio')));
+console.log('Serving audio files from:', path.join(publicPath, 'audio'));
 
 // Serve static files from the React build (only in production)
 if (!isDevelopment) {
