@@ -6,6 +6,7 @@ import linkedinRoutes from './linkedin';
 import subscriptionRoutes from './subscription';
 import userRoutes from './user';
 import aiDetectionRoutes from './aiDetection';
+import assistantRoutes from './assistant';
 
 const router = express.Router();
 
@@ -95,6 +96,11 @@ console.log('User routes mounted at /user');
 console.log('Mounting AI detection routes...');
 router.use('/ai-detection', aiDetectionRoutes);
 console.log('AI detection routes mounted at /ai-detection');
+
+// Mount assistant routes
+console.log('Mounting assistant routes...');
+router.use('/assistant', assistantRoutes);
+console.log('Assistant routes mounted at /assistant');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

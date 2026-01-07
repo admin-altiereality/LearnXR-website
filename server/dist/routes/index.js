@@ -10,6 +10,9 @@ const payment_1 = __importDefault(require("./payment"));
 const skybox_1 = __importDefault(require("./skybox"));
 const linkedin_1 = __importDefault(require("./linkedin"));
 const subscription_1 = __importDefault(require("./subscription"));
+const user_1 = __importDefault(require("./user"));
+const aiDetection_1 = __importDefault(require("./aiDetection"));
+const assistant_1 = __importDefault(require("./assistant"));
 const router = express_1.default.Router();
 exports.router = router;
 console.log('Main router being initialized...');
@@ -75,6 +78,18 @@ console.log('Skybox routes mounted at /skybox');
 console.log('Mounting LinkedIn routes...');
 router.use('/api', linkedin_1.default);
 console.log('LinkedIn routes mounted at /api');
+// Mount user routes
+console.log('Mounting user routes...');
+router.use('/user', user_1.default);
+console.log('User routes mounted at /user');
+// Mount AI detection routes
+console.log('Mounting AI detection routes...');
+router.use('/ai-detection', aiDetection_1.default);
+console.log('AI detection routes mounted at /ai-detection');
+// Mount assistant routes
+console.log('Mounting assistant routes...');
+router.use('/assistant', assistant_1.default);
+console.log('Assistant routes mounted at /assistant');
 // Debug: List all registered routes
 const listRoutes = (router, basePath = '') => {
     const routes = [];

@@ -38,6 +38,8 @@ import { PromptPanel } from './Components/PromptPanel';
 import { MeshyTestPanel } from './Components/MeshyTestPanel';
 import { MeshyDebugPanel } from './Components/MeshyDebugPanel';
 import { ServiceStatusPanel } from './Components/ServiceStatusPanel';
+import TeacherAvatarDemo from './pages/TeacherAvatarDemo';
+import { LearnXRLessonScene } from './Components/LearnXRLessonScene';
 import SystemStatus from './screens/SystemStatus';
 import Onboarding from './screens/Onboarding';
 import HelpChat from './screens/HelpChat';
@@ -60,12 +62,12 @@ const ConditionalFooter = () => {
   );
 };
 
-// Conditional Header - hides on /main route
+// Conditional Header - hides on /main route and teacher avatar pages
 const ConditionalHeader = () => {
   const location = useLocation();
-  const hideHeaderRoutes = ['/main'];
+  const hideHeaderRoutes = ['/main', '/teacher-avatar-demo', '/learnxr/lesson'];
   
-  if (hideHeaderRoutes.includes(location.pathname)) {
+  if (hideHeaderRoutes.includes(location.pathname) || location.pathname.startsWith('/learnxr/')) {
     return null;
   }
   
@@ -535,6 +537,22 @@ function App() {
                       <Route path="/test-panel" element={<MeshyTestPanel />} />
                       <Route path="/debug-panel" element={<MeshyDebugPanel />} />
                       
+                      {/* Teacher Avatar Routes */}
+                      <Route path="/teacher-avatar-demo" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <TeacherAvatarDemo />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/learnxr/lesson" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <LearnXRLessonScene />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      
                       {/* Redirect unknown routes to home */}
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
@@ -756,6 +774,22 @@ function App() {
                         </ProtectedRoute>
                       } />
                       <Route path="/system-status" element={<SystemStatus />} />
+                      
+                      {/* Teacher Avatar Routes */}
+                      <Route path="/teacher-avatar-demo" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <TeacherAvatarDemo />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/learnxr/lesson" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <LearnXRLessonScene />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Redirect unknown routes to home */}
                       <Route path="*" element={<Navigate to="/" />} />
