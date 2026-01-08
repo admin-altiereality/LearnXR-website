@@ -41,7 +41,7 @@ import { UnifiedGenerationProgress } from './UnifiedGenerationProgress';
 import { ChatSidebar } from './chat/ChatSidebar';
 import { MobileBottomBar } from './chat/MobileBottomBar';
 import { TeacherAvatar } from './TeacherAvatar';
-import { AvatarSidePanel } from './AvatarSidePanel';
+import { FloatingMessageBox } from './FloatingMessageBox';
 import { getApiBaseUrl } from '../utils/apiConfig';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
@@ -165,7 +165,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const [avatarInput, setAvatarInput] = useState('');
   const [isAvatarLoading, setIsAvatarLoading] = useState(false);
   const [isAvatarReady, setIsAvatarReady] = useState(false);
-  const [isAvatarPanelOpen, setIsAvatarPanelOpen] = useState(false);
   const avatarRef = useRef(null);
   
   // Avatar configuration state
@@ -175,9 +174,24 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     subject: ''
   });
   
+  // Refs to access latest values in voice recognition handler
+  const avatarConfigRef = useRef(avatarConfig);
+  const isAvatarReadyRef = useRef(isAvatarReady);
+  
+  // Keep refs in sync with state
+  useEffect(() => {
+    avatarConfigRef.current = avatarConfig;
+  }, [avatarConfig]);
+  
+  useEffect(() => {
+    isAvatarReadyRef.current = isAvatarReady;
+  }, [isAvatarReady]);
+  
   // Available assistants state
   const [availableAssistants, setAvailableAssistants] = useState([]);
   const [assistantsLoading, setAssistantsLoading] = useState(true);
+  const [showAssistantsList, setShowAssistantsList] = useState(false);
+  const [assistantsDebugInfo, setAssistantsDebugInfo] = useState(null);
   
   const CURRICULUMS = ['NCERT', 'CBSE', 'ICSE', 'State Board', 'RBSE'];
   const CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -201,21 +215,51 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       try {
         setAssistantsLoading(true);
         const apiUrl = getApiBaseUrl();
-        const response = await fetch(`${apiUrl}/assistant/list?useAvatarKey=true`);
+        const url = `${apiUrl}/assistant/list?useAvatarKey=true`;
+        console.log('🔍 Fetching available assistants from:', url);
+        
+        const response = await fetch(url);
         
         if (!response.ok) {
-          throw new Error('Failed to fetch available assistants');
+          const errorText = await response.text();
+          console.error('❌ API Error Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          });
+          throw new Error(`Failed to fetch available assistants: ${response.status} ${response.statusText}`);
         }
         
         const data = await response.json();
+        console.log('📦 Raw API Response:', data);
+        
+        // Store debug info if available
+        if (data.debug) {
+          setAssistantsDebugInfo(data.debug);
+        }
+        
+        // Check if there's an error in the response
+        if (data.error) {
+          console.error('❌ API returned error:', data.error);
+          setAvailableAssistants([]);
+          return;
+        }
+        
         // Ensure class values are strings to match CLASSES array
         const normalizedAssistants = (data.assistants || []).map(a => ({
           ...a,
           class: String(a.class) // Ensure class is always a string
         }));
+        
         setAvailableAssistants(normalizedAssistants);
         console.log('✅ Loaded available assistants:', normalizedAssistants.length);
-        if (normalizedAssistants.length > 0) {
+        
+        if (normalizedAssistants.length === 0) {
+          console.warn('⚠️ No assistants found. This could mean:');
+          console.warn('   1. No assistants exist in OpenAI with the correct naming pattern');
+          console.warn('   2. Assistants don\'t match the expected format: "{Curriculum} {Class} {Subject} Teacher"');
+          console.warn('   3. The OPENAI_AVATAR_API_KEY might not have access to assistants');
+        } else {
           console.log('📚 Available combinations:', normalizedAssistants);
           // Group and display in a readable format
           const grouped = normalizedAssistants.reduce((acc, a) => {
@@ -238,7 +282,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         }
       } catch (error) {
         console.error('❌ Error fetching available assistants:', error);
-        // On error, show all options (fallback behavior)
+        if (error instanceof Error) {
+          console.error('   Error message:', error.message);
+          console.error('   Error stack:', error.stack);
+        }
+        // On error, show empty array
         setAvailableAssistants([]);
       } finally {
         setAssistantsLoading(false);
@@ -602,12 +650,37 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       
       // Append final transcript to prompt
       if (finalTranscript) {
+        const transcriptText = finalTranscript.trim();
         setPrompt(prev => {
-          const newPrompt = prev ? `${prev} ${finalTranscript}`.trim() : finalTranscript.trim();
+          const newPrompt = prev ? `${prev} ${transcriptText}`.trim() : transcriptText;
           // Respect max length
           return newPrompt.substring(0, 600);
         });
-        console.log('🎤 Voice transcript added:', finalTranscript);
+        console.log('🎤 Voice transcript added:', transcriptText);
+        
+        // Also send to assistant if avatar config is complete and we're using unified voice input
+        // Check if avatar config is complete and avatar is ready (use refs for latest values)
+        try {
+          const currentConfig = avatarConfigRef?.current || {};
+          const currentAvatarReady = isAvatarReadyRef?.current || false;
+          if (currentConfig.curriculum && currentConfig.class && currentConfig.subject && avatarRef?.current && currentAvatarReady) {
+            // Send to assistant asynchronously
+            setTimeout(async () => {
+              try {
+                if (avatarRef.current && typeof avatarRef.current.sendMessage === 'function') {
+                  await avatarRef.current.sendMessage(transcriptText);
+                  console.log('🎤 Voice transcript sent to assistant:', transcriptText);
+                }
+              } catch (error) {
+                console.error('❌ Error sending voice transcript to assistant:', error);
+                // Don't show error to user, just log it
+              }
+            }, 100);
+          }
+        } catch (error) {
+          console.error('❌ Error checking avatar config for voice input:', error);
+          // Continue normally - just don't send to assistant
+        }
       }
     };
     
@@ -660,7 +733,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         recognitionRef.current.abort();
       }
     };
-  }, []);
+  }, []); // Empty deps - recognition setup only runs once, refs are accessed dynamically
 
   // Voice input toggle handler
   const toggleVoiceInput = useCallback(async () => {
@@ -783,8 +856,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         
         // Check if avatar is ready
         if (!avatarRef.current) {
-          console.warn('⚠️ Avatar ref not available, opening panel...');
-          setIsAvatarPanelOpen(true);
+          console.warn('⚠️ Avatar ref not available');
           setAvatarVoiceError('Avatar is initializing. Please try again in a moment.');
           return;
         }
@@ -882,10 +954,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     } else {
       // Clear any previous errors
       setAvatarVoiceError(null);
-      // Ensure avatar panel is open
-      if (!isAvatarPanelOpen) {
-        setIsAvatarPanelOpen(true);
-      }
       
       // Request microphone permission first
       try {
@@ -945,7 +1013,105 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         }
       }
     }
-  }, [isAvatarListening, isAvatarPanelOpen, avatarConfig]);
+  }, [isAvatarListening, avatarConfig]);
+
+  // Unified voice input toggle handler - updates prompt and sends to assistant
+  const toggleUnifiedVoiceInput = useCallback(async () => {
+    if (!recognitionRef.current) {
+      setVoiceError('Voice recognition not available. Please check browser support.');
+      if (avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject) {
+        setAvatarVoiceError('Voice recognition not available. Please check browser support.');
+      }
+      return;
+    }
+    
+    if (isListening) {
+      // Stop listening
+      try {
+        recognitionRef.current.stop();
+        setIsListening(false);
+        setVoiceError(null);
+        setAvatarVoiceError(null);
+      } catch (error) {
+        console.warn('🎤 Error stopping recognition:', error);
+        setIsListening(false);
+      }
+    } else {
+      // Clear any previous errors
+      setVoiceError(null);
+      setAvatarVoiceError(null);
+      
+      // Check if avatar config is complete
+      const canSendToAssistant = avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject;
+      
+      // Request microphone permission first
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          console.log('🎤 Unified: Microphone permission granted');
+          // Stop the stream immediately - we just needed permission
+          stream.getTracks().forEach(track => track.stop());
+        }
+      } catch (permissionError) {
+        console.error('🎤 Unified: Microphone permission error:', permissionError);
+        const errorMsg = permissionError.name === 'NotAllowedError' || permissionError.name === 'PermissionDeniedError'
+          ? 'Microphone access denied. Please allow microphone access in your browser settings and reload the page.'
+          : permissionError.name === 'NotFoundError' || permissionError.name === 'DevicesNotFoundError'
+          ? 'No microphone found. Please connect a microphone and try again.'
+          : 'Failed to access microphone. Please check your device settings.';
+        
+        setVoiceError(errorMsg);
+        if (canSendToAssistant) {
+          setAvatarVoiceError(errorMsg);
+        }
+        return;
+      }
+      
+      // Small delay to ensure permission is fully processed
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Start recognition after permission is granted
+      try {
+        if (recognitionRef.current) {
+          recognitionRef.current.start();
+          console.log('🎤 Unified: Voice recognition started (will update prompt and send to assistant if configured)');
+        }
+      } catch (error) {
+        console.error('🎤 Unified: Failed to start voice recognition:', error);
+        if (error.name === 'InvalidStateError') {
+          try {
+            recognitionRef.current.stop();
+            setTimeout(() => {
+              try {
+                if (recognitionRef.current) {
+                  recognitionRef.current.start();
+                  console.log('🎤 Unified: Voice recognition started after retry');
+                }
+              } catch (retryError) {
+                console.error('🎤 Unified: Failed to start voice recognition after retry:', retryError);
+                setVoiceError('Failed to start voice input. Please try again in a moment.');
+                if (canSendToAssistant) {
+                  setAvatarVoiceError('Failed to start voice input. Please try again in a moment.');
+                }
+              }
+            }, 200);
+          } catch (stopError) {
+            console.error('🎤 Unified: Error stopping recognition:', stopError);
+            setVoiceError('Voice recognition is busy. Please wait a moment and try again.');
+            if (canSendToAssistant) {
+              setAvatarVoiceError('Voice recognition is busy. Please wait a moment and try again.');
+            }
+          }
+        } else {
+          const errorMsg = `Failed to start voice input: ${error.message || error.name}. Please check your microphone permissions.`;
+          setVoiceError(errorMsg);
+          if (canSendToAssistant) {
+            setAvatarVoiceError(errorMsg);
+          }
+        }
+      }
+    }
+  }, [isListening, avatarConfig]);
 
   // -------------------------
   // Prompt Enhancement Function (AI-Powered)
@@ -3505,9 +3671,9 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 id="prompt"
                                 maxLength={600}
                                 rows={2}
-                                placeholder={isListening ? "Listening... Speak your prompt now" : "Describe the environment: lighting, mood, props, architecture... (or click to speak)"}
+                                placeholder={isListening || isAvatarListening ? "Listening... Speak your prompt now" : "Describe the environment: lighting, mood, props, architecture..."}
                                 className={`w-full text-xs bg-gray-800/50 border border-gray-700/50 px-2 py-1 pr-12 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 resize-none transition-all duration-300 font-normal leading-relaxed rounded-md ${
-                                  isListening
+                                  isListening || isAvatarListening
                                     ? 'border-red-500/60 ring-2 ring-red-500/30 focus:ring-red-500/50 focus:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
                                     : 'focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_15px_rgba(14,165,233,0.15)]'
                                 } ${
@@ -3572,68 +3738,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             </>
                           );
                         })()}
-                        {/* Voice Input Button - Bottom Right Corner */}
-                        {isVoiceSupported && (
-                          <button
-                            type="button"
-                            onClick={toggleVoiceInput}
-                            disabled={isGenerating || isGenerating3DAsset}
-                            className={`absolute right-2 bottom-2 p-1.5 transition-all duration-300 shadow-lg backdrop-blur-sm rounded-md ${
-                              isListening
-                                ? 'bg-amber-500/30 text-amber-200 border border-amber-500/60 animate-pulse hover:bg-amber-500/40 shadow-[0_0_20px_rgba(217,119,6,0.5)]'
-                                : 'bg-amber-600/20 text-amber-400 border border-amber-600/30 hover:bg-amber-600/30 hover:text-amber-300 hover:border-amber-500/50 hover:shadow-[0_0_16px_rgba(217,119,6,0.3)]'
-                            } ${
-                              (isGenerating || isGenerating3DAsset) ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                            title={isListening ? 'Stop listening' : 'Voice input - Click to speak your prompt'}
-                          >
-                            <svg 
-                              className="w-4 h-4" 
-                              fill="none" 
-                              stroke="currentColor" 
-                              viewBox="0 0 24 24"
-                              strokeWidth={2}
-                            >
-                              {isListening ? (
-                                // Stop/Square icon when listening
-                                <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none" />
-                              ) : (
-                                // Microphone icon
-                                <>
-                                  <path 
-                                    strokeLinecap="round" 
-                                    strokeLinejoin="round" 
-                                    d="M19 10v2a7 7 0 01-14 0v-2" 
-                                  />
-                                  <path 
-                                    strokeLinecap="round" 
-                                    strokeLinejoin="round" 
-                                    d="M12 19v3m0 0h-3m3 0h3" 
-                                  />
-                                  <rect 
-                                    x="9" 
-                                    y="2" 
-                                    width="6" 
-                                    height="11" 
-                                    rx="3"
-                                  />
-                                </>
-                              )}
-                            </svg>
-                          </button>
-                        )}
-                        {/* Listening indicator overlay */}
-                        {isListening && (
-                          <div className="absolute right-14 bottom-2.5 flex items-center gap-1">
-                            <span className="flex space-x-0.5">
-                              <span className="w-1.5 h-3 bg-amber-400 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite] shadow-[0_0_4px_rgba(217,119,6,0.6)]" style={{ animationDelay: '0ms' }} />
-                              <span className="w-1.5 h-4 bg-amber-400 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite] shadow-[0_0_4px_rgba(217,119,6,0.6)]" style={{ animationDelay: '100ms' }} />
-                              <span className="w-1.5 h-2 bg-amber-400 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite] shadow-[0_0_4px_rgba(217,119,6,0.6)]" style={{ animationDelay: '200ms' }} />
-                              <span className="w-1.5 h-5 bg-amber-400 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite] shadow-[0_0_4px_rgba(217,119,6,0.6)]" style={{ animationDelay: '300ms' }} />
-                              <span className="w-1.5 h-3 bg-amber-400 rounded-full animate-[soundwave_0.8s_ease-in-out_infinite] shadow-[0_0_4px_rgba(217,119,6,0.6)]" style={{ animationDelay: '400ms' }} />
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -4299,6 +4403,17 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.5)]" />
                           Avatar Config
                         </span>
+                        <button
+                          onClick={() => setShowAssistantsList(true)}
+                          disabled={assistantsLoading}
+                          className="text-[8px] text-purple-400 hover:text-purple-300 uppercase tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                          title="Show available assistants"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="hidden sm:inline">List</span>
+                        </button>
                       </div>
                       <div className="space-y-1">
                         <div>
@@ -4350,61 +4465,133 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                         </div>
                       </div>
                       
-                      {/* Microphone Button for Avatar Assistant */}
-                      {isVoiceSupported && (
-                        <div className="pt-1 border-t border-[#ffffff]/5">
+                      {/* Unified Microphone Button and Start Button */}
+                      <div className="pt-1 border-t border-[#ffffff]/5 space-y-1">
+                        <div className="flex gap-1.5">
+                          {/* Voice Input Button - Left Side */}
+                          {isVoiceSupported && (
+                            <button
+                              onClick={toggleUnifiedVoiceInput}
+                              disabled={isGenerating || isGenerating3DAsset}
+                              className={`
+                                flex-1 py-2 text-xs font-bold uppercase tracking-[0.2em]
+                                flex items-center justify-center gap-2
+                                transition-all duration-300 shadow-lg rounded-md
+                                ${
+                                  isListening
+                                    ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_24px_rgba(220,38,38,0.5)] animate-pulse'
+                                    : (isGenerating || isGenerating3DAsset)
+                                    ? 'bg-gray-800/60 text-gray-500 cursor-not-allowed border border-gray-700/30'
+                                    : 'bg-purple-600 hover:bg-purple-500 text-white hover:shadow-[0_0_24px_rgba(168,85,247,0.5)] hover:-translate-y-0.5 active:translate-y-0'
+                                }
+                              `}
+                              title={
+                                (isGenerating || isGenerating3DAsset)
+                                  ? 'Generation in progress'
+                                  : isListening
+                                  ? 'Stop listening'
+                                  : avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject
+                                  ? 'Click to speak - will update prompt and send to assistant'
+                                  : 'Click to speak - will update prompt (configure avatar to also send to assistant)'
+                              }
+                            >
+                              {isListening ? (
+                                <>
+                                  <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                                  </svg>
+                                  <span className="hidden sm:inline">
+                                    {avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject
+                                      ? 'Listening to Both...'
+                                      : 'Listening...'}
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                  </svg>
+                                  <span className="hidden sm:inline">
+                                    {avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject
+                                      ? 'Voice Input (Both)'
+                                      : 'Voice Input'}
+                                  </span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                          
+                          {/* Start Button - Right Side */}
                           <button
-                            onClick={toggleAvatarVoiceInput}
-                            disabled={!avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject}
+                            onClick={generateSkybox}
+                            disabled={isGenerating || isGenerating3DAsset || !prompt?.trim() || !selectedSkybox}
                             className={`
-                              w-full py-2 text-xs font-bold uppercase tracking-[0.2em]
+                              flex-1 py-2 text-xs font-bold uppercase tracking-[0.2em]
                               flex items-center justify-center gap-2
                               transition-all duration-300 shadow-lg rounded-md
                               ${
-                                isAvatarListening
-                                  ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_24px_rgba(220,38,38,0.5)] animate-pulse'
-                                  : !avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject
+                                isGenerating || isGenerating3DAsset
+                                  ? 'bg-blue-600 text-white cursor-not-allowed shadow-none'
+                                  : !prompt?.trim() || !selectedSkybox
                                   ? 'bg-gray-800/60 text-gray-500 cursor-not-allowed border border-gray-700/30'
-                                  : 'bg-purple-600 hover:bg-purple-500 text-white hover:shadow-[0_0_24px_rgba(168,85,247,0.5)] hover:-translate-y-0.5 active:translate-y-0'
+                                  : 'bg-blue-600 hover:bg-blue-500 text-white hover:shadow-[0_0_24px_rgba(37,99,235,0.5)] hover:-translate-y-0.5 active:translate-y-0'
                               }
                             `}
                             title={
-                              !avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject
-                                ? 'Please select curriculum, class, and subject first'
-                                : isAvatarListening
-                                ? 'Stop listening'
-                                : 'Click to speak to the assistant'
+                              isGenerating || isGenerating3DAsset
+                                ? 'Generation in progress'
+                                : !prompt?.trim()
+                                ? 'Please enter a prompt'
+                                : !selectedSkybox
+                                ? 'Please select a style'
+                                : 'Start generation'
                             }
                           >
-                            {isAvatarListening ? (
+                            {isGenerating || isGenerating3DAsset ? (
                               <>
-                                <svg className="w-4 h-4 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                <span>Listening...</span>
+                                <span className="hidden sm:inline">Generating...</span>
                               </>
                             ) : (
                               <>
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <span>Voice Input</span>
+                                <span className="hidden sm:inline">Start</span>
                               </>
                             )}
                           </button>
-                          {avatarVoiceError && (
-                            <div className="mt-1 p-1.5 bg-red-900/20 border border-red-500/30 rounded-md">
-                              <p className="text-[9px] text-red-300 text-center leading-tight">{avatarVoiceError}</p>
-                              <button
-                                onClick={() => setAvatarVoiceError(null)}
-                                className="mt-1 text-[8px] text-red-400 hover:text-red-300 underline mx-auto block transition-colors"
-                              >
-                                Dismiss
-                              </button>
-                            </div>
-                          )}
                         </div>
-                      )}
+                        
+                        {/* Error Messages */}
+                        {(voiceError || avatarVoiceError) && (
+                          <div className="p-1.5 bg-red-900/20 border border-red-500/30 rounded-md">
+                            {voiceError && (
+                              <p className="text-[9px] text-red-300 text-center leading-tight mb-1">
+                                <span className="font-semibold">Prompt:</span> {voiceError}
+                              </p>
+                            )}
+                            {avatarVoiceError && (
+                              <p className="text-[9px] text-red-300 text-center leading-tight">
+                                <span className="font-semibold">Assistant:</span> {avatarVoiceError}
+                              </p>
+                            )}
+                            <button
+                              onClick={() => {
+                                setVoiceError(null);
+                                setAvatarVoiceError(null);
+                              }}
+                              className="mt-1 text-[8px] text-red-400 hover:text-red-300 underline mx-auto block transition-colors"
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4414,7 +4601,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         </div>
 
         {/* Column 4: Teacher Avatar - 3D Model Only */}
-        <div className="w-[300px] h-[300px] min-h-[300px]">
+        <div className="w-[300px] h-[450px] min-h-[450px]">
           <TeacherAvatar
             ref={avatarRef}
             className="w-full h-full"
@@ -4462,6 +4649,159 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         onAssetsGenerated={handleAssetGeneration}
         onClose={() => setShowAssetPanel(false)}
       />
+
+      {/* Available Assistants List Modal */}
+      {showAssistantsList && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setShowAssistantsList(false)}>
+          <div 
+            className="bg-gray-900 border border-purple-500/30 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-purple-500/30 bg-gray-800/60">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.5)]" />
+                <h2 className="text-lg font-semibold text-white uppercase tracking-wider">Available Assistants</h2>
+                <span className="text-xs text-gray-400 bg-gray-700/50 px-2 py-0.5 rounded">
+                  {availableAssistants.length} {availableAssistants.length === 1 ? 'assistant' : 'assistants'}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowAssistantsList(false)}
+                className="text-gray-400 hover:text-white transition-colors p-1 rounded hover:bg-gray-700/50"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {assistantsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-gray-400 text-sm">Loading assistants...</div>
+                </div>
+              ) : availableAssistants.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                  <svg className="w-16 h-16 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-gray-400 text-sm mb-2 font-semibold">No assistants found</p>
+                  <p className="text-gray-500 text-xs mb-4">No assistants match the expected naming pattern</p>
+                  
+                  {assistantsDebugInfo && assistantsDebugInfo.rawCount > 0 && (
+                    <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-700/30 rounded-lg text-left max-w-2xl w-full">
+                      <p className="text-yellow-400 text-xs font-semibold mb-2">⚠️ Debug Information:</p>
+                      <p className="text-gray-400 text-xs mb-2">
+                        Found <span className="text-yellow-300 font-semibold">{assistantsDebugInfo.rawCount}</span> assistant(s) in OpenAI, but none matched the expected format.
+                      </p>
+                      <p className="text-gray-500 text-xs mb-3">
+                        Expected format: <span className="text-purple-300 font-mono">"{'{'}Curriculum{'}'} {'{'}Class{'}'} {'{'}Subject{'}'} Teacher"</span>
+                      </p>
+                      <p className="text-gray-500 text-xs mb-2">Example: <span className="text-purple-300 font-mono">"NCERT 10 Mathematics Teacher"</span></p>
+                      
+                      {assistantsDebugInfo.rawNames && assistantsDebugInfo.rawNames.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-gray-400 text-xs font-semibold mb-2">Found assistant names:</p>
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {assistantsDebugInfo.rawNames.map((name, idx) => (
+                              <div key={idx} className="text-xs text-gray-500 font-mono bg-gray-800/50 px-2 py-1 rounded">
+                                {name}
+                              </div>
+                            ))}
+                          </div>
+                          {assistantsDebugInfo.rawCount > assistantsDebugInfo.rawNames.length && (
+                            <p className="text-gray-500 text-xs mt-2">
+                              ... and {assistantsDebugInfo.rawCount - assistantsDebugInfo.rawNames.length} more
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {(!assistantsDebugInfo || assistantsDebugInfo.rawCount === 0) && (
+                    <div className="mt-4 p-4 bg-blue-900/20 border border-blue-700/30 rounded-lg text-left max-w-2xl w-full">
+                      <p className="text-blue-400 text-xs font-semibold mb-2">ℹ️ No assistants found in OpenAI</p>
+                      <p className="text-gray-400 text-xs">
+                        Make sure you have created assistants in your OpenAI account and that the <span className="text-purple-300 font-mono">OPENAI_AVATAR_API_KEY</span> has access to them.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (() => {
+                // Group assistants by curriculum, then by class
+                const grouped = availableAssistants.reduce((acc, assistant) => {
+                  const { curriculum, class: classLevel, subject } = assistant;
+                  if (!acc[curriculum]) {
+                    acc[curriculum] = {};
+                  }
+                  if (!acc[curriculum][classLevel]) {
+                    acc[curriculum][classLevel] = [];
+                  }
+                  acc[curriculum][classLevel].push(subject);
+                  return acc;
+                }, {});
+
+                return (
+                  <div className="space-y-4">
+                    {Object.keys(grouped).sort().map((curriculum) => (
+                      <div key={curriculum} className="border border-gray-700/50 rounded-lg bg-gray-800/30 overflow-hidden">
+                        <div className="bg-purple-500/10 px-4 py-2 border-b border-purple-500/20">
+                          <h3 className="text-sm font-semibold text-purple-300 uppercase tracking-wider">{curriculum}</h3>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          {Object.keys(grouped[curriculum]).sort((a, b) => parseInt(a) - parseInt(b)).map((classLevel) => (
+                            <div key={classLevel} className="border-l-2 border-purple-500/30 pl-3">
+                              <h4 className="text-xs font-medium text-gray-300 mb-2 uppercase tracking-wider">
+                                Class {classLevel}
+                              </h4>
+                              <div className="flex flex-wrap gap-2">
+                                {grouped[curriculum][classLevel].sort().map((subject) => (
+                                  <span
+                                    key={subject}
+                                    className="text-xs px-2 py-1 bg-gray-700/50 text-gray-200 rounded border border-gray-600/50 hover:border-purple-500/50 hover:bg-gray-700/70 transition-colors cursor-pointer"
+                                    onClick={() => {
+                                      setAvatarConfig({
+                                        curriculum,
+                                        class: classLevel,
+                                        subject
+                                      });
+                                      setShowAssistantsList(false);
+                                    }}
+                                    title={`Click to select: ${curriculum} Class ${classLevel} ${subject}`}
+                                  >
+                                    {subject}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-purple-500/30 bg-gray-800/60 flex items-center justify-between">
+              <p className="text-xs text-gray-400">
+                Click on any subject to select it in the Avatar Config
+              </p>
+              <button
+                onClick={() => setShowAssistantsList(false)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-md transition-colors uppercase tracking-wider"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Storage Status & Diagnostic overlays - ONLY in dev mode */}
       {isDevMode && (
@@ -4752,10 +5092,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         )}
       </AnimatePresence>
 
-      {/* Avatar Side Panel */}
-      <AvatarSidePanel
-        isOpen={isAvatarPanelOpen}
-        onClose={() => setIsAvatarPanelOpen(false)}
+      {/* Floating Message Box for Assistant Responses */}
+      <FloatingMessageBox
+        messages={avatarMessages}
+        isVisible={avatarMessages.length > 0 && avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject}
       />
 
       {/* Chat Sidebar - Desktop/Tablet only */}

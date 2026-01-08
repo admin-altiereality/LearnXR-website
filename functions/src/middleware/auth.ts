@@ -29,7 +29,8 @@ const PUBLIC_PATHS = [
   '/assistant/create-thread',  // Allow assistant thread creation without auth
   '/assistant/message',  // Allow assistant messages without auth
   '/assistant/tts/generate',  // Allow TTS generation without auth
-  '/assistant/lipsync/generate'  // Allow viseme generation without auth
+  '/assistant/lipsync/generate',  // Allow viseme generation without auth
+  '/assistant/list'  // Allow listing assistants without auth
 ];
 
 const isPublicEndpoint = (req: Request): boolean => {
@@ -172,8 +173,9 @@ const isPublicEndpoint = (req: Request): boolean => {
            path === '/assistant/message' ||
            path === '/assistant/tts/generate' ||
            path === '/assistant/lipsync/generate' ||
+           path === '/assistant/list' ||
            path.startsWith('/assistant/') ||
-           (path.includes('assistant') && (path.includes('create-thread') || path.includes('message') || path.includes('tts') || path.includes('lipsync')));
+           (path.includes('assistant') && (path.includes('create-thread') || path.includes('message') || path.includes('tts') || path.includes('lipsync') || path.includes('list')));
   });
   
   if ((req.method === 'POST' || req.method === 'OPTIONS' || req.method === 'GET') && isAssistantEndpoint) {
