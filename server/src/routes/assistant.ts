@@ -73,22 +73,141 @@ router.post('/create-thread', async (req, res) => {
       useAvatarKey: useAvatarKey === true
     });
     
-    const service = getAssistantService(useAvatarKey === true);
+    // Validate required fields if config is provided
+    // Note: All three fields are optional - thread can be created without them
+    // But if any are provided, we should validate them
+    if (curriculum || classLevel || subject) {
+      // If any config is provided, validate all are present and valid
+      if (!curriculum || !classLevel || !subject) {
+        return res.status(400).json({ 
+          error: 'Invalid configuration',
+          message: 'If providing configuration, all three fields (curriculum, class, subject) are required',
+          provided: { curriculum: !!curriculum, class: !!classLevel, subject: !!subject }
+        });
+      }
+      
+      // Validate curriculum
+      const validCurriculums = ['NCERT', 'CBSE', 'ICSE', 'State Board', 'RBSE'];
+      if (!validCurriculums.includes(curriculum)) {
+        return res.status(400).json({ 
+          error: 'Invalid curriculum',
+          message: `Curriculum must be one of: ${validCurriculums.join(', ')}`,
+          provided: curriculum
+        });
+      }
+      
+      // Validate class
+      const validClasses = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+      if (!validClasses.includes(String(classLevel))) {
+        return res.status(400).json({ 
+          error: 'Invalid class',
+          message: `Class must be between 1 and 12`,
+          provided: classLevel
+        });
+      }
+    }
+    
+    // Get assistant service
+    let service: OpenAIAssistantService;
+    try {
+      service = getAssistantService(useAvatarKey === true);
+    } catch (serviceError: any) {
+      console.error('❌ Failed to get assistant service:', serviceError);
+      return res.status(500).json({ 
+        error: 'Service initialization failed',
+        message: 'Failed to initialize OpenAI Assistant Service. Please check your API key configuration.',
+        details: serviceError.message || 'Service initialization error'
+      });
+    }
     
     // Pass config to createThread so assistant is initialized immediately
-    const config = { curriculum, class: classLevel, subject };
-    const threadId = await service.createThread(config);
+    const config = curriculum && classLevel && subject 
+      ? { curriculum, class: classLevel, subject }
+      : undefined;
     
-    console.log('✅ Thread created:', threadId, 'for', curriculum, 'Class', classLevel, subject);
+    let threadId: string;
+    try {
+      threadId = await service.createThread(config);
+    } catch (threadError: any) {
+      console.error('❌ Error creating thread:', threadError);
+      console.error('   Error type:', threadError?.constructor?.name);
+      console.error('   Error message:', threadError?.message);
+      console.error('   Error status:', threadError?.status);
+      console.error('   Error code:', threadError?.code);
+      
+      // Handle OpenAI API key errors
+      if (threadError?.status === 401 || 
+          threadError?.message?.includes('401') || 
+          threadError?.message?.includes('Invalid API key') || 
+          threadError?.message?.includes('authentication') ||
+          threadError?.code === 'invalid_api_key') {
+        return res.status(401).json({ 
+          error: 'OpenAI API authentication failed',
+          message: 'Invalid OpenAI API key. Please check your API key configuration.',
+          details: threadError.message || 'Authentication error'
+        });
+      }
+      
+      // Handle OpenAI quota errors
+      if (threadError?.status === 429 || 
+          threadError?.message?.includes('429') || 
+          threadError?.message?.includes('quota') ||
+          threadError?.code === 'insufficient_quota') {
+        return res.status(429).json({ 
+          error: 'OpenAI API quota exceeded',
+          message: 'You have exceeded your OpenAI API quota. Please check your OpenAI account billing and usage limits.',
+          details: threadError.message || 'Quota limit reached'
+        });
+      }
+      
+      // Handle rate limit errors
+      if (threadError?.status === 429 || 
+          threadError?.message?.includes('rate limit') ||
+          threadError?.code === 'rate_limit_exceeded') {
+        return res.status(429).json({ 
+          error: 'Rate limit exceeded',
+          message: 'Too many requests. Please wait a moment and try again.',
+          details: threadError.message || 'Rate limit error'
+        });
+      }
+      
+      // Handle assistant creation errors
+      if (threadError?.message?.includes('assistant') || 
+          threadError?.code === 'invalid_assistant') {
+        return res.status(400).json({ 
+          error: 'Assistant configuration error',
+          message: 'Failed to create or retrieve assistant. Please check your configuration.',
+          details: threadError.message || 'Assistant error'
+        });
+      }
+      
+      // Generic error
+      return res.status(500).json({ 
+        error: 'Failed to create thread',
+        message: threadError.message || 'Unknown error occurred while creating thread',
+        details: process.env.NODE_ENV === 'development' ? threadError.stack : undefined
+      });
+    }
+    
+    console.log('✅ Thread created:', threadId, config ? `for ${config.curriculum} Class ${config.class} ${config.subject}` : '');
     
     // Store config in response for client to use in subsequent requests
     res.json({ 
       threadId,
-      config: { curriculum, class: classLevel, subject }
+      config: config || null
     });
   } catch (error: any) {
-    console.error('❌ Error creating thread:', error);
-    res.status(500).json({ error: error.message || 'Failed to create thread' });
+    // Catch any unexpected errors
+    console.error('❌ Unexpected error creating thread:', error);
+    console.error('   Error type:', error?.constructor?.name);
+    console.error('   Error message:', error?.message);
+    console.error('   Error stack:', error?.stack);
+    
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: 'An unexpected error occurred while creating thread',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -271,16 +390,52 @@ router.get('/list', async (req, res) => {
     console.log('📋 Listing available assistants (useAvatarKey:', useAvatarKey === 'true', ')');
     
     const service = getAssistantService(useAvatarKey === 'true');
+    
+    // Get raw assistants list for debugging
+    let rawAssistants: any[] = [];
+    try {
+      const openai = (service as any).openai;
+      if (openai) {
+        const rawResponse = await openai.beta.assistants.list({ limit: 100 });
+        rawAssistants = rawResponse.data || [];
+        console.log(`📊 Found ${rawAssistants.length} raw assistants from OpenAI`);
+        if (rawAssistants.length > 0) {
+          console.log('📝 Raw assistant names:', rawAssistants.map(a => a.name || '(unnamed)').slice(0, 10));
+        }
+      }
+    } catch (rawError: any) {
+      console.warn('⚠️ Could not fetch raw assistants for debugging:', rawError.message);
+    }
+    
     const availableAssistants = await service.listAvailableAssistants();
     
-    console.log(`✅ Found ${availableAssistants.length} available assistants`);
+    console.log(`✅ Found ${availableAssistants.length} parsed assistant configurations`);
     
-    res.json({ assistants: availableAssistants });
+    if (availableAssistants.length === 0 && rawAssistants.length > 0) {
+      console.warn('⚠️ WARNING: Raw assistants found but none matched the expected naming pattern!');
+      console.warn('   Expected format: "{Curriculum} {Class} {Subject} Teacher"');
+      console.warn('   Example: "NCERT 10 Mathematics Teacher"');
+      console.warn('   Found assistant names:', rawAssistants.map(a => a.name || '(unnamed)'));
+    }
+    
+    res.json({ 
+      assistants: availableAssistants,
+      debug: {
+        rawCount: rawAssistants.length,
+        parsedCount: availableAssistants.length,
+        rawNames: rawAssistants.slice(0, 20).map(a => a.name || '(unnamed)')
+      }
+    });
   } catch (error: any) {
     console.error('❌ Error listing assistants:', error);
+    console.error('   Error stack:', error.stack);
     res.status(500).json({ 
       error: error.message || 'Failed to list assistants',
-      assistants: [] // Return empty array on error
+      assistants: [], // Return empty array on error
+      debug: {
+        error: error.message,
+        stack: error.stack
+      }
     });
   }
 });

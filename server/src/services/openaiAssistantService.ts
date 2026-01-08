@@ -208,20 +208,32 @@ When answering:
     console.log(`🔧 Creating new assistant: ${assistantName}`);
     console.log(`📋 Instructions preview: ${instructions.substring(0, 200)}...`);
 
-    const assistant = await this.openai.beta.assistants.create({
-      name: assistantName,
-      instructions: instructions,
-      model: config?.model || 'gpt-4o-mini',
-      tools: [
-        {
-          type: 'code_interpreter'
-        }
-      ]
-    });
+    try {
+      const assistant = await this.openai.beta.assistants.create({
+        name: assistantName,
+        instructions: instructions,
+        model: config?.model || 'gpt-4o-mini',
+        tools: [
+          {
+            type: 'code_interpreter'
+          }
+        ]
+      });
 
-    // Cache the assistant ID
-    this.assistants.set(assistantKey, assistant.id);
-    return assistant.id;
+      // Cache the assistant ID
+      this.assistants.set(assistantKey, assistant.id);
+      console.log(`✅ Assistant created and cached: ${assistant.id} for key ${assistantKey}`);
+      return assistant.id;
+    } catch (createError: any) {
+      console.error('❌ Error creating assistant:', createError);
+      console.error('   Error message:', createError.message);
+      console.error('   Error status:', createError.status);
+      console.error('   Error code:', createError.code);
+      
+      // Don't cache failed assistants
+      // Re-throw with more context
+      throw new Error(`Failed to create assistant "${assistantName}": ${createError.message || 'Unknown error'}`);
+    }
   }
 
   /**
@@ -229,20 +241,48 @@ When answering:
    * Optionally accepts config to initialize the assistant immediately
    */
   async createThread(config?: AssistantConfig): Promise<string> {
-    // If config is provided, ensure the assistant is created/updated with correct instructions
-    // This ensures the assistant is ready even before the first message
-    if (config?.curriculum && config?.class && config?.subject) {
-      console.log('🔧 Initializing assistant during thread creation with config:', {
-        curriculum: config.curriculum,
-        class: config.class,
-        subject: config.subject
-      });
-      await this.getOrCreateAssistant(config);
-      console.log('✅ Assistant initialized and ready for', config.curriculum, 'Class', config.class, config.subject);
+    try {
+      // If config is provided, ensure the assistant is created/updated with correct instructions
+      // This ensures the assistant is ready even before the first message
+      if (config?.curriculum && config?.class && config?.subject) {
+        console.log('🔧 Initializing assistant during thread creation with config:', {
+          curriculum: config.curriculum,
+          class: config.class,
+          subject: config.subject
+        });
+        
+        try {
+          await this.getOrCreateAssistant(config);
+          console.log('✅ Assistant initialized and ready for', config.curriculum, 'Class', config.class, config.subject);
+        } catch (assistantError: any) {
+          console.error('❌ Error initializing assistant:', assistantError);
+          // Re-throw with more context
+          throw new Error(`Failed to initialize assistant: ${assistantError.message || 'Unknown error'}`);
+        }
+      }
+      
+      // Create the thread
+      try {
+        const thread = await this.openai.beta.threads.create();
+        console.log('✅ Thread created successfully:', thread.id);
+        return thread.id;
+      } catch (threadError: any) {
+        console.error('❌ Error creating thread:', threadError);
+        console.error('   Error message:', threadError.message);
+        console.error('   Error status:', threadError.status);
+        console.error('   Error code:', threadError.code);
+        
+        // Re-throw with more context
+        throw new Error(`Failed to create thread: ${threadError.message || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      // If it's already our formatted error, re-throw it
+      if (error.message?.startsWith('Failed to')) {
+        throw error;
+      }
+      // Otherwise, wrap it
+      throw new Error(`Thread creation failed: ${error.message || 'Unknown error'}`);
     }
-    
-    const thread = await this.openai.beta.threads.create();
-    return thread.id;
   }
 
   /**
@@ -512,40 +552,54 @@ Student's question: ${message}`;
   private parseRBSEAssistant(name: string): { curriculum: string; class: string; subject: string } | null {
     const upperName = name.toUpperCase();
     
-    // Pattern 1: "Class {number} {Subject} RBSE" or "Class {number}th {Subject} RBSE"
-    const classPattern1 = /^CLASS\s+(\d+)(?:TH|ST|ND|RD)?\s+(.+?)\s+RBSE$/i;
+    // Pattern 1: "Class {number} {Subject} RBSE" - Most common format
+    // Example: "Class 10 Hindi RBSE" or "Class 9 Mathematics RBSE"
+    const classPattern1 = /^CLASS\s+(\d+)\s+(.+?)\s+RBSE$/i;
     const match1 = name.match(classPattern1);
     if (match1) {
       const classNum = this.normalizeClass(match1[1]);
-      const subject = this.normalizeSubject(match1[2]);
+      const subjectStr = match1[2].trim();
+      const subject = this.normalizeSubject(subjectStr);
+      
+      console.log(`🔍 RBSE Pattern 1 match for "${name}": class=${classNum}, subjectStr="${subjectStr}", normalizedSubject=${subject}`);
+      
       if (classNum && subject) {
         return { curriculum: 'RBSE', class: classNum, subject };
+      } else {
+        console.warn(`⚠️ RBSE Pattern 1 matched but normalization failed: classNum=${classNum}, subject=${subject}`);
       }
     }
     
-    // Pattern 2: "{number}th {Subject} | English RBSE Class {number}th {Subject}"
-    const classPattern2 = /^(\d+)(?:TH|ST|ND|RD)?\s+(.+?)\s+\|\s+ENGLISH\s+RBSE\s+CLASS\s+\d+(?:TH|ST|ND|RD)?\s+(.+?)$/i;
+    // Pattern 2: "Class {number}th {Subject} RBSE" (with ordinal suffix)
+    const classPattern2 = /^CLASS\s+(\d+)(?:TH|ST|ND|RD)?\s+(.+?)\s+RBSE$/i;
     const match2 = name.match(classPattern2);
-    if (match2) {
+    if (match2 && !match1) { // Only if pattern 1 didn't match
       const classNum = this.normalizeClass(match2[1]);
-      // Use the subject from the end (after "Class")
-      const subject = this.normalizeSubject(match2[3]);
+      const subjectStr = match2[2].trim();
+      const subject = this.normalizeSubject(subjectStr);
+      
+      console.log(`🔍 RBSE Pattern 2 match for "${name}": class=${classNum}, subjectStr="${subjectStr}", normalizedSubject=${subject}`);
+      
       if (classNum && subject) {
         return { curriculum: 'RBSE', class: classNum, subject };
       }
     }
     
-    // Pattern 3: "Class {number} {Subject} RBSE" (simpler, no "th")
-    const classPattern3 = /^CLASS\s+(\d+)\s+(.+?)\s+RBSE$/i;
+    // Pattern 3: "{number}th {Subject} | English RBSE Class {number}th {Subject}"
+    const classPattern3 = /^(\d+)(?:TH|ST|ND|RD)?\s+(.+?)\s+\|\s+ENGLISH\s+RBSE\s+CLASS\s+\d+(?:TH|ST|ND|RD)?\s+(.+?)$/i;
     const match3 = name.match(classPattern3);
     if (match3) {
       const classNum = this.normalizeClass(match3[1]);
-      const subject = this.normalizeSubject(match3[2]);
+      // Use the subject from the end (after "Class")
+      const subjectStr = match3[3].trim();
+      const subject = this.normalizeSubject(subjectStr);
+      
       if (classNum && subject) {
         return { curriculum: 'RBSE', class: classNum, subject };
       }
     }
     
+    console.warn(`⚠️ RBSE assistant "${name}" did not match any pattern`);
     return null;
   }
 
@@ -565,6 +619,32 @@ Student's question: ${message}`;
         if (!assistant.name) continue;
         
         const name = assistant.name.trim();
+        console.log(`🔍 Parsing assistant: "${name}"`);
+        
+        // Try RBSE patterns FIRST (don't require "Teacher" suffix)
+        // RBSE assistants use format: "Class {number} {Subject} RBSE"
+        if (name.toUpperCase().includes('RBSE')) {
+          console.log(`   → Detected RBSE assistant, attempting to parse...`);
+          const rbseConfig = this.parseRBSEAssistant(name);
+          if (rbseConfig) {
+            console.log(`   ✅ Successfully parsed RBSE:`, rbseConfig);
+            // Check if not already added
+            const exists = availableConfigs.some(
+              c => c.curriculum === rbseConfig.curriculum &&
+                   c.class === rbseConfig.class &&
+                   c.subject === rbseConfig.subject
+            );
+            if (!exists) {
+              availableConfigs.push(rbseConfig);
+              console.log(`   ✅ Added RBSE config to list`);
+            } else {
+              console.log(`   ⚠️ RBSE config already exists, skipping`);
+            }
+          } else {
+            console.log(`   ❌ Failed to parse RBSE assistant: "${name}"`);
+          }
+          continue; // Skip standard format parsing for RBSE
+        }
         
         // Try standard format: "{curriculum} {class} {subject} Teacher"
         if (name.endsWith(' Teacher')) {
@@ -572,7 +652,7 @@ Student's question: ${message}`;
           
           // Try to match each curriculum first
           for (const curriculum of CURRICULUMS) {
-            if (curriculum === 'RBSE') continue; // Handle RBSE separately
+            if (curriculum === 'RBSE') continue; // Handle RBSE separately (already done above)
             
             if (nameWithoutSuffix.startsWith(curriculum + ' ')) {
               const afterCurriculum = nameWithoutSuffix.substring(curriculum.length + 1).trim();
@@ -594,22 +674,6 @@ Student's question: ${message}`;
                 }
               }
               break;
-            }
-          }
-        }
-        
-        // Try RBSE patterns (don't require "Teacher" suffix)
-        if (name.toUpperCase().includes('RBSE')) {
-          const rbseConfig = this.parseRBSEAssistant(name);
-          if (rbseConfig) {
-            // Check if not already added
-            const exists = availableConfigs.some(
-              c => c.curriculum === rbseConfig.curriculum &&
-                   c.class === rbseConfig.class &&
-                   c.subject === rbseConfig.subject
-            );
-            if (!exists) {
-              availableConfigs.push(rbseConfig);
             }
           }
         }

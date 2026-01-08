@@ -19,6 +19,7 @@ const blockadelabsApiKey = defineSecret("BLOCKADE_API_KEY");
 const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
 const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
 const openaiApiKey = defineSecret("OPENAI_API_KEY");
+const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 
 // Lazy Express app creation - only initialize when function is called
 // Note: app is reset on each request to ensure secrets are loaded
@@ -113,7 +114,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, razorpayKeyId, razorpayKeySecret, openaiApiKey] // Reference secrets - must match defineSecret names
+    secrets: [blockadelabsApiKey, razorpayKeyId, razorpayKeySecret, openaiApiKey, openaiAvatarApiKey] // Reference secrets - must match defineSecret names
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -123,6 +124,7 @@ export const api = onRequest(
     let razorpayId: string | undefined;
     let razorpaySecret: string | undefined;
     let openaiKey: string | undefined;
+    let openaiAvatarKey: string | undefined;
     
     try {
       blockadeKey = blockadelabsApiKey.value();
@@ -152,6 +154,16 @@ export const api = onRequest(
       console.error('Error accessing OPENAI_API_KEY:', err?.message || err);
     }
     
+    try {
+      openaiAvatarKey = openaiAvatarApiKey.value();
+      // Clean the API key - remove any whitespace, newlines, or "Bearer " prefix
+      if (openaiAvatarKey) {
+        openaiAvatarKey = openaiAvatarKey.trim().replace(/^Bearer\s+/i, '').replace(/\r?\n/g, '').replace(/\s+/g, '');
+      }
+    } catch (err: any) {
+      console.warn('⚠️ OPENAI_AVATAR_API_KEY not found, will fallback to OPENAI_API_KEY:', err?.message || err);
+    }
+    
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (razorpayId) process.env.RAZORPAY_KEY_ID = razorpayId;
@@ -159,6 +171,12 @@ export const api = onRequest(
     if (openaiKey) {
       process.env.OPENAI_API_KEY = openaiKey;
       console.log('🔑 OpenAI API key cleaned and set, length:', openaiKey.length);
+    }
+    if (openaiAvatarKey) {
+      process.env.OPENAI_AVATAR_API_KEY = openaiAvatarKey;
+      console.log('🔑 OpenAI Avatar API key cleaned and set, length:', openaiAvatarKey.length);
+    } else {
+      console.log('⚠️ OPENAI_AVATAR_API_KEY not set, will use OPENAI_API_KEY as fallback');
     }
     
     console.log('Secrets loaded:', {
@@ -169,7 +187,9 @@ export const api = onRequest(
       hasRazorpaySecret: !!razorpaySecret,
       razorpaySecretLength: razorpaySecret?.length || 0,
       hasOpenAI: !!openaiKey,
-      openaiKeyLength: openaiKey?.length || 0
+      openaiKeyLength: openaiKey?.length || 0,
+      hasOpenAIAvatar: !!openaiAvatarKey,
+      openaiAvatarKeyLength: openaiAvatarKey?.length || 0
     });
     
     // Initialize services with secrets directly

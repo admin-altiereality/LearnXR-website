@@ -8,16 +8,36 @@ import LipSyncService from '../services/lipSyncService';
 
 const router = Router();
 let assistantService: OpenAIAssistantService | null = null;
+let avatarAssistantService: OpenAIAssistantService | null = null;
 let ttsService: TextToSpeechService | null = null;
 let lipSyncService: LipSyncService | null = null;
 
 // Initialize services (lazy loading)
-const getAssistantService = () => {
+const getAssistantService = (useAvatarKey: boolean = false) => {
+  // Use separate service instance for avatar with different API key
+  if (useAvatarKey) {
+    if (!avatarAssistantService) {
+      try {
+        console.log('🔧 Initializing Avatar Assistant Service with OPENAI_AVATAR_API_KEY...');
+        avatarAssistantService = new OpenAIAssistantService(true);
+        console.log('✅ Avatar Assistant Service initialized successfully');
+      } catch (error: any) {
+        console.error('❌ Failed to initialize Avatar Assistant Service:', error.message);
+        console.error('   Error details:', error);
+        throw error;
+      }
+    }
+    return avatarAssistantService;
+  }
+  
   if (!assistantService) {
     try {
-      assistantService = new OpenAIAssistantService();
+      console.log('🔧 Initializing Assistant Service with OPENAI_API_KEY...');
+      assistantService = new OpenAIAssistantService(false);
+      console.log('✅ Assistant Service initialized successfully');
     } catch (error: any) {
-      console.error('Failed to initialize Assistant Service:', error.message);
+      console.error('❌ Failed to initialize Assistant Service:', error.message);
+      console.error('   Error details:', error);
       throw error;
     }
   }
@@ -197,6 +217,103 @@ router.get('/lipsync/generate', (req: Request, res: Response): void => {
     method: req.method,
     allowedMethods: ['POST']
   });
+});
+
+// List available assistants - GET
+router.get('/list', async (req: Request, res: Response): Promise<void> => {
+  const requestId = (req as any).requestId;
+  try {
+    const { useAvatarKey } = req.query;
+    
+    console.log(`[${requestId}] 📋 Listing available assistants (useAvatarKey:`, useAvatarKey === 'true', ')');
+    
+    const service = getAssistantService(useAvatarKey === 'true');
+    
+    // Get raw assistants list for debugging
+    let rawAssistants: any[] = [];
+    let rawErrorDetails: any = null;
+    try {
+      const openai = (service as any).openai;
+      if (!openai) {
+        console.error(`[${requestId}] ❌ OpenAI client is not initialized in service`);
+        rawErrorDetails = { error: 'OpenAI client not initialized' };
+      } else {
+        console.log(`[${requestId}] 🔍 Calling OpenAI API to list assistants...`);
+        const rawResponse = await openai.beta.assistants.list({ limit: 100 });
+        rawAssistants = rawResponse.data || [];
+        console.log(`[${requestId}] 📊 Found ${rawAssistants.length} raw assistants from OpenAI`);
+        if (rawAssistants.length > 0) {
+          console.log(`[${requestId}] 📝 Raw assistant names:`, rawAssistants.map(a => a.name || '(unnamed)').slice(0, 10));
+        } else {
+          console.warn(`[${requestId}] ⚠️ OpenAI API returned empty assistants list`);
+        }
+      }
+    } catch (rawError: any) {
+      console.error(`[${requestId}] ❌ Error fetching raw assistants from OpenAI:`, rawError);
+      console.error(`[${requestId}]    Error message:`, rawError.message);
+      console.error(`[${requestId}]    Error status:`, rawError.status);
+      console.error(`[${requestId}]    Error code:`, rawError.code);
+      console.error(`[${requestId}]    Error stack:`, rawError.stack);
+      rawErrorDetails = {
+        message: rawError.message,
+        status: rawError.status,
+        code: rawError.code,
+        type: rawError.type
+      };
+    }
+    
+    let availableAssistants: Array<{ curriculum: string; class: string; subject: string }> = [];
+    let parseError: any = null;
+    
+    try {
+      availableAssistants = await service.listAvailableAssistants();
+      console.log(`[${requestId}] ✅ Found ${availableAssistants.length} parsed assistant configurations`);
+    } catch (parseErr: any) {
+      console.error(`[${requestId}] ❌ Error parsing assistants:`, parseErr);
+      parseError = {
+        message: parseErr.message,
+        status: parseErr.status,
+        code: parseErr.code,
+        type: parseErr.type
+      };
+    }
+    
+    if (availableAssistants.length === 0 && rawAssistants.length > 0) {
+      console.warn(`[${requestId}] ⚠️ WARNING: Raw assistants found but none matched the expected naming pattern!`);
+      console.warn(`[${requestId}]    Expected format: "{Curriculum} {Class} {Subject} Teacher" or "Class {Class} {Subject} RBSE"`);
+      console.warn(`[${requestId}]    Example: "NCERT 10 Mathematics Teacher" or "Class 10 Hindi RBSE"`);
+      console.warn(`[${requestId}]    Found assistant names:`, rawAssistants.map(a => a.name || '(unnamed)'));
+    }
+    
+    res.json({ 
+      assistants: availableAssistants,
+      debug: {
+        rawCount: rawAssistants.length,
+        parsedCount: availableAssistants.length,
+        rawNames: rawAssistants.slice(0, 20).map(a => a.name || '(unnamed)'),
+        rawError: rawErrorDetails,
+        parseError: parseError,
+        useAvatarKey: useAvatarKey === 'true',
+        hasOpenAIClient: !!(service as any).openai,
+        apiKeyConfigured: useAvatarKey === 'true' 
+          ? !!process.env.OPENAI_AVATAR_API_KEY 
+          : !!process.env.OPENAI_API_KEY,
+        openaiAvatarKeySet: !!process.env.OPENAI_AVATAR_API_KEY,
+        openaiKeySet: !!process.env.OPENAI_API_KEY
+      }
+    });
+  } catch (error: any) {
+    console.error(`[${requestId}] ❌ Error listing assistants:`, error);
+    console.error(`[${requestId}]    Error stack:`, error.stack);
+    res.status(500).json({ 
+      error: error.message || 'Failed to list assistants',
+      assistants: [], // Return empty array on error
+      debug: {
+        error: error.message,
+        stack: error.stack
+      }
+    });
+  }
 });
 
 export default router;
