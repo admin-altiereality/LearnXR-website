@@ -1,6 +1,28 @@
 import axios from 'axios';
 import { auth } from './firebase';
 
+// Debug function to check auth state (can be called from browser console)
+if (typeof window !== 'undefined') {
+  (window as any).checkAuthState = async () => {
+    console.log('🔍 Checking auth state...');
+    console.log('auth.currentUser:', auth.currentUser);
+    if (auth.currentUser) {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        console.log('✅ Token available, length:', token.length);
+        console.log('Token preview:', token.substring(0, 20) + '...');
+        return { user: auth.currentUser, token: token.substring(0, 20) + '...' };
+      } catch (error) {
+        console.error('❌ Error getting token:', error);
+        return { user: auth.currentUser, error };
+      }
+    } else {
+      console.warn('⚠️ No authenticated user');
+      return { user: null };
+    }
+  };
+}
+
 // API base URL - use environment variable or fallback to defaults
 const getApiBaseUrl = () => {
   // Check if we're actually running on localhost in the browser
@@ -17,7 +39,7 @@ const getApiBaseUrl = () => {
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
       const region = 'us-central1';
-      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
+      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
       const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
       console.log('🌐 Using production Firebase Functions:', productionUrl);
       return productionUrl;
@@ -35,7 +57,7 @@ const getApiBaseUrl = () => {
   
   // Use Firebase Functions in production/preview (default)
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
   const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
   console.log('🌐 Using production Firebase Functions:', productionUrl, {
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
@@ -78,27 +100,109 @@ api.interceptors.request.use(async (config) => {
       }
     }
     
-    const user = auth.currentUser;
+    // Ensure headers object exists (axios will create it if needed)
+    if (!config.headers) {
+      config.headers = {} as any;
+    }
+    
+    // Get current user - try multiple times if needed
+    let user = auth.currentUser;
+    
+    // If no current user, wait for auth state to initialize (with timeout)
+    // This handles the case where auth state hasn't propagated yet after login
+    if (!user) {
+      try {
+        // Wait for auth state change with a timeout
+        const authReady = await new Promise<typeof auth.currentUser>((resolve) => {
+          let resolved = false;
+          let timeoutId: NodeJS.Timeout;
+          
+          // First, check immediately if user is available
+          const immediateCheck = auth.currentUser;
+          if (immediateCheck) {
+            resolve(immediateCheck);
+            return;
+          }
+          
+          // Set timeout
+          timeoutId = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              // Final check before resolving with null
+              const finalCheck = auth.currentUser;
+              resolve(finalCheck);
+            }
+          }, 3000); // Wait max 3 seconds
+          
+          // Listen for auth state changes
+          const unsubscribe = auth.onAuthStateChanged((authUser) => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timeoutId);
+              unsubscribe();
+              resolve(authUser);
+            }
+          });
+        });
+        
+        user = authReady || auth.currentUser;
+      } catch (waitError) {
+        // Continue even if wait fails
+        console.warn('⚠️ Error waiting for auth state:', waitError);
+        user = auth.currentUser; // Try one more time
+      }
+    }
+    
+    // Log auth state for debugging protected endpoints
+    if (config.url?.includes('assistant') || config.url?.includes('skybox')) {
+      console.log('🔍 Auth check for:', config.url);
+      console.log('   auth.currentUser:', user ? `${user.uid} (${user.email})` : 'null');
+    }
+    
     if (user) {
-      const token = await user.getIdToken();
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-        console.log('🔐 Auth token attached to request:', config.url);
-      } else {
-        console.warn('⚠️ User exists but no token available');
+      try {
+        // Get token - force refresh if it's a protected endpoint to ensure validity
+        const forceRefresh = config.url?.includes('assistant') || config.url?.includes('skybox');
+        const token = await user.getIdToken(forceRefresh);
+        
+        if (token && token.length > 0) {
+          config.headers.Authorization = `Bearer ${token}`;
+          if (config.url?.includes('assistant') || config.url?.includes('skybox')) {
+            console.log('✅ Auth token attached:', config.url);
+            console.log('   User:', user.uid, 'Email:', user.email);
+            console.log('   Token length:', token.length, 'First 20 chars:', token.substring(0, 20) + '...');
+          }
+        } else {
+          console.error('❌ Got empty token for:', config.url);
+          console.error('   User:', user.uid, 'Email:', user.email);
+        }
+      } catch (tokenError: any) {
+        console.error('❌ Error getting auth token:', config.url);
+        console.error('   User:', user.uid, 'Email:', user.email);
+        console.error('   Error code:', tokenError.code);
+        console.error('   Error message:', tokenError.message);
+        console.error('   Full error:', tokenError);
+        
+        // If token error, the request will likely fail - but let it proceed
+        // The server will return 401 which we can handle
       }
     } else {
-      console.warn('⚠️ No authenticated user for request:', config.url);
+      // Log warning for protected endpoints
+      if (config.url?.includes('assistant') || config.url?.includes('skybox')) {
+        console.error('❌ No authenticated user for request:', config.url);
+        console.error('   auth.currentUser is null');
+        console.error('   User needs to log in before making this request');
+      }
     }
   } catch (error) {
-    console.error('❌ Error getting auth token:', error);
+    console.error('❌ Error in request interceptor:', error);
   }
   return config;
 }, (error) => {
   return Promise.reject(error);
 });
 
-// Add response interceptor to log actual request method used
+// Add response interceptor to log errors and handle 401s
 api.interceptors.response.use(
   (response) => {
     if (response.config.url?.includes('enhance')) {
@@ -106,7 +210,32 @@ api.interceptors.response.use(
     }
     return response;
   },
-  (error) => {
+  async (error) => {
+    // Handle 401 errors - might need to refresh token
+    if (error.response?.status === 401) {
+      const url = error.config?.url || 'unknown';
+      console.error('❌ 401 Unauthorized for:', url);
+      console.error('   Request headers:', error.config?.headers);
+      console.error('   Has Authorization header:', !!error.config?.headers?.Authorization);
+      console.error('   Auth header value:', error.config?.headers?.Authorization ? 'Bearer ***' : 'MISSING');
+      console.error('   Error response:', error.response?.data);
+      
+      // Check if user is authenticated
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('   ⚠️ No authenticated user found. User needs to log in.');
+      } else {
+        console.error('   User exists:', user.uid, user.email);
+        // Try to get a fresh token
+        try {
+          const token = await user.getIdToken(true);
+          console.log('   ✅ Got fresh token, length:', token.length);
+        } catch (tokenError) {
+          console.error('   ❌ Failed to get fresh token:', tokenError);
+        }
+      }
+    }
+    
     if (error.config?.url?.includes('enhance')) {
       console.error('❌ Response error - Method used:', error.config.method?.toUpperCase(), 'Status:', error.response?.status);
       console.error('❌ Error details:', {

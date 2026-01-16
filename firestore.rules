@@ -115,5 +115,28 @@ service cloud.firestore {
     match /system/{document=**} {
       allow read, write: if isAdmin() || request.auth.token.firebase.sign_in_provider == 'google.com';
     }
+    
+    // Curriculum Chapters collection - public read access, admin write access
+    // Document structure: {curriculum}_{class}_{subject}_ch{chapter_number}
+    // Example: "CBSE_8_Science_ch3"
+    match /curriculum_chapters/{chapterId} {
+      // Public read access for all authenticated users (needed for learning content)
+      allow read: if request.auth != null;
+      
+      // Only admins can create/update/delete curriculum content
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // API Keys collection - users can read their own keys, no direct write access
+    // Write operations only through backend (Admin SDK)
+    match /api_keys/{keyId} {
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Write operations only through backend (Admin SDK)
+      allow write: if false;
+    }
   }
 } 

@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { doc, getDoc } from 'firebase/firestore';
 import { FaCube, FaArrowRight } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
-import { useSubscription } from '../../contexts/SubscriptionContext';
+// Subscription removed
 import { db } from '../../config/firebase';
 import FuturisticBackground from '../FuturisticBackground';
 
@@ -14,12 +14,12 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [checkingOnboarding, setCheckingOnboarding] = useState(false);
   const { login, loginWithGoogle, user } = useAuth();
-  const { loading: subscriptionLoading, isFreePlan, subscription } = useSubscription();
+  // Subscription removed
   const navigate = useNavigate();
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
-      if (!user || subscriptionLoading || checkingOnboarding) return;
+      if (!user || checkingOnboarding) return;
 
       setCheckingOnboarding(true);
       try {
@@ -28,21 +28,15 @@ export const Login = () => {
         
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          // First check if onboarding is completed
+          // Check if onboarding is completed
           if (!userData.onboardingCompleted) {
             // First-time user: redirect to onboarding
             navigate('/onboarding');
             return;
           }
           
-          // Onboarding completed: check subscription status
-          if (isFreePlan && !subscription) {
-            // No active subscription: redirect to pricing
-            navigate('/pricing');
-          } else {
-            // Has subscription: go to main
-            navigate('/main');
-          }
+          // Onboarding completed: go to main
+          navigate('/main');
         } else {
           // New user: redirect to onboarding
           navigate('/onboarding');
@@ -56,7 +50,7 @@ export const Login = () => {
     };
 
     checkOnboardingStatus();
-  }, [user, subscriptionLoading, isFreePlan, subscription, navigate, checkingOnboarding]);
+  }, [user, navigate, checkingOnboarding]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

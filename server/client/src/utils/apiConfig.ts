@@ -22,7 +22,7 @@ export const getApiBaseUrl = (): string => {
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
       const region = 'us-central1';
-      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
+      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
       const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
       console.log('🌐 Using production Firebase Functions:', productionUrl);
       return productionUrl;
@@ -33,7 +33,7 @@ export const getApiBaseUrl = (): string => {
   
   // Only use local emulator if we're actually on localhost AND in dev mode
   if (isLocalhost && import.meta.env.DEV) {
-    const localUrl = 'http://localhost:5001/in3devoneuralai/us-central1/api';
+    const localUrl = 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
     console.log('🌐 Using local Firebase emulator:', localUrl);
     return localUrl;
   }

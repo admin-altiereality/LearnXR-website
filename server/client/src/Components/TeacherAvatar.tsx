@@ -8,6 +8,7 @@ import {
 } from '@react-three/drei';
 import * as THREE from 'three';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import api from '../config/axios';
 import { VisemeType, VisemeFrame, VISEME_BLEND_SHAPE_NAMES } from '../services/lipSyncService';
 import { quickScanGLTF, GLTFStructure } from '../utils/gltfScanner';
 
@@ -1472,34 +1473,18 @@ export const TeacherAvatar = React.forwardRef<
 
     const initThread = async () => {
       try {
-        const apiUrl = getServerApiUrl();
-        console.log('🔗 Initializing teacher avatar, API URL:', apiUrl);
+        console.log('🔗 Initializing teacher avatar...');
         
-        const fullUrl = `${apiUrl}/assistant/create-thread`;
-        console.log('📤 Making POST request to:', fullUrl);
-        
-        const response = await fetch(fullUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            curriculum,
-            class: classLevel,
-            subject,
-            useAvatarKey
-          })
+        const response = await api.post('/assistant/create-thread', {
+          curriculum,
+          class: classLevel,
+          subject,
+          useAvatarKey
         });
         
         console.log('📡 Thread creation response status:', response.status);
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ Thread creation failed:', response.status, errorText);
-          throw new Error(`Failed to create thread: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
+        const data = response.data;
         console.log('✅ Thread created successfully:', data.threadId);
         setThreadId(data.threadId);
         setThreadReady(true);
@@ -1534,129 +1519,56 @@ export const TeacherAvatar = React.forwardRef<
     onMessage?.(message);
 
     try {
-      const apiUrl = getServerApiUrl();
-      
       // Get assistant response
-      const responseRes = await fetch(`${apiUrl}/assistant/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+      let responseRes;
+      try {
+        responseRes = await api.post('/assistant/message', { 
           threadId, 
           message,
           curriculum,
           class: classLevel,
           subject,
           useAvatarKey
-        })
-      });
-      
-      if (!responseRes.ok) {
-        let errorText: string;
-        let errorData: any;
-        
-        try {
-          errorText = await responseRes.text();
-          try {
-            errorData = JSON.parse(errorText);
-          } catch {
-            // Not JSON, use as text
-          }
-        } catch {
-          errorText = `HTTP ${responseRes.status}: ${responseRes.statusText}`;
+        });
+      } catch (error: any) {
+        const errorResponse = error.response;
+        if (!errorResponse) {
+          throw error;
         }
         
-        let errorMessage = errorData?.error || errorData?.message || errorText || `Failed to get response: ${responseRes.status} ${responseRes.statusText}`;
+        const errorData = errorResponse.data;
+        let errorMessage = errorData?.error || errorData?.message || `Failed to get response: ${errorResponse.status} ${errorResponse.statusText}`;
         console.error('❌ API Error:', {
-          status: responseRes.status,
-          statusText: responseRes.statusText,
+          status: errorResponse.status,
+          statusText: errorResponse.statusText,
           error: errorMessage,
           details: errorData?.details
         });
         
         // Handle active run errors - retry after a delay
-        if (responseRes.status === 400 && (errorText.includes('already has an active run') || errorText.includes('active run'))) {
+        if (errorResponse.status === 400 && (errorMessage.includes('already has an active run') || errorMessage.includes('active run'))) {
           console.warn('⚠️  Active run detected, waiting and retrying...');
           // Wait a bit and retry once
           await new Promise(resolve => setTimeout(resolve, 2000));
           
           try {
-            const retryRes = await fetch(`${apiUrl}/assistant/message`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                threadId, 
-                message,
-                curriculum,
-                class: classLevel,
-                subject,
-                useAvatarKey
-              })
+            const retryRes = await api.post('/assistant/message', { 
+              threadId, 
+              message,
+              curriculum,
+              class: classLevel,
+              subject,
+              useAvatarKey
             });
             
-            if (retryRes.ok) {
-              const retryData = await retryRes.json();
-              const assistantText = retryData.response;
-              onResponse?.(assistantText);
-              
-              // Continue with TTS and viseme generation
-              // (this code will continue below)
-              const [ttsRes, visemeRes] = await Promise.all([
-                fetch(`${apiUrl}/assistant/tts/generate`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ text: assistantText, voice: 'nova' })
-                }),
-                fetch(`${apiUrl}/assistant/lipsync/generate`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ text: assistantText })
-                })
-              ]);
-
-              if (!ttsRes.ok) {
-                const ttsErrorText = await ttsRes.text();
-                console.error('❌ TTS Error:', ttsErrorText);
-                throw new Error(`Failed to generate speech: ${ttsRes.status} ${ttsRes.statusText}`);
-              }
-              
-              if (!visemeRes.ok) {
-                const visemeErrorText = await visemeRes.text();
-                console.error('❌ Viseme Error:', visemeErrorText);
-                throw new Error(`Failed to generate visemes: ${visemeRes.status} ${visemeRes.statusText}`);
-              }
-
-              const ttsData = await ttsRes.json();
-              const visemeData = await visemeRes.json();
-              const audioUrl = ttsData.audioUrl;
-
-              setCurrentAudioUrl(audioUrl);
-              setVisemes(visemeData.visemes);
-              setIsSpeaking(true);
-
-              const audio = new Audio(audioUrl);
-              audio.addEventListener('ended', () => {
-                setIsSpeaking(false);
-                setCurrentAudioUrl(null);
-              });
-              
-              return; // Successfully retried, exit early
-            } else {
-              let retryErrorText: string;
-              let retryErrorData: any;
-              try {
-                retryErrorText = await retryRes.text();
-                try {
-                  retryErrorData = JSON.parse(retryErrorText);
-                } catch {
-                  // Not JSON
-                }
-              } catch {
-                retryErrorText = `HTTP ${retryRes.status}: ${retryRes.statusText}`;
-              }
-              const retryErrorMessage = retryErrorData?.error || retryErrorData?.message || retryErrorText || `Retry failed: ${retryRes.status}`;
-              console.error('❌ Retry failed:', retryErrorMessage);
-              throw new Error(retryErrorMessage);
-            }
+            const retryData = retryRes.data;
+            const assistantText = retryData.response;
+            
+            // Show text response (audio/TTS disabled)
+            onResponse?.(assistantText);
+            console.log('📝 Text response received (retry, audio disabled):', assistantText.substring(0, 100));
+            
+            return; // Successfully retried, exit early
           } catch (retryError: any) {
             console.error('❌ Retry failed:', retryError);
             errorMessage = 'The previous message is still processing. Please wait a moment and try again.';
@@ -1664,12 +1576,44 @@ export const TeacherAvatar = React.forwardRef<
           }
         }
         
+        // Handle rate limit errors with automatic retry
+        if (errorResponse.status === 429) {
+          const retryAfter = errorResponse.headers?.['retry-after'];
+          const retryDelay = retryAfter ? parseInt(retryAfter) * 1000 : 5000; // Default 5 seconds
+          
+          console.warn(`⚠️ Rate limit exceeded. Retrying in ${retryDelay}ms...`);
+          
+          // Wait and retry once
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          
+          try {
+            const retryRes = await api.post('/assistant/message', { 
+              threadId, 
+              message,
+              curriculum,
+              class: classLevel,
+              subject,
+              useAvatarKey
+            });
+            
+            const retryData = retryRes.data;
+            const assistantText = retryData.response;
+            
+            // Show text response (audio/TTS disabled)
+            onResponse?.(assistantText);
+            console.log('📝 Text response received (retry after rate limit, audio disabled):', assistantText.substring(0, 100));
+            
+            return; // Successfully retried, exit early
+          } catch (retryError: any) {
+            errorMessage = 'Rate limit exceeded. Please wait a moment and try again.';
+            throw new Error(errorMessage);
+          }
+        }
+        
         // Handle specific error statuses with user-friendly messages
-        if (responseRes.status === 429) {
-          errorMessage = errorData?.message || errorData?.error || 'OpenAI API quota exceeded. Please check your OpenAI account billing.';
-        } else if (responseRes.status === 401) {
+        if (errorResponse.status === 401) {
           errorMessage = errorData?.message || errorData?.error || 'OpenAI API authentication failed. Please check your API key configuration.';
-        } else if (responseRes.status === 500) {
+        } else if (errorResponse.status === 500) {
           errorMessage = errorData?.message || errorData?.error || 'Server error occurred. Please try again later.';
           setError(errorMessage);
         }
@@ -1677,91 +1621,42 @@ export const TeacherAvatar = React.forwardRef<
         throw new Error(errorMessage);
       }
       
-      const responseData = await responseRes.json();
+      const responseData = responseRes.data;
+      console.log('📦 Full response data:', responseData);
+      
       if (!responseData || !responseData.response) {
         console.error('❌ Invalid response format:', responseData);
         throw new Error('Invalid response from server: missing response field');
       }
       const assistantText = responseData.response;
 
-      onResponse?.(assistantText);
-
-      // Generate speech and visemes in parallel
-      const [ttsRes, visemeRes] = await Promise.all([
-        fetch(`${apiUrl}/assistant/tts/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: assistantText, voice: 'nova' })
-        }),
-        fetch(`${apiUrl}/assistant/lipsync/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: assistantText })
-        })
-      ]);
-
-      if (!ttsRes.ok) {
-        const ttsError = await ttsRes.text();
-        let errorMessage = `Failed to generate speech: ${ttsRes.status} ${ttsRes.statusText}`;
-        
-        // Handle quota errors with user-friendly message
-        if (ttsRes.status === 429) {
-          try {
-            const errorData = JSON.parse(ttsError);
-            errorMessage = errorData.message || errorData.error || 'OpenAI API quota exceeded. Please check your OpenAI account billing.';
-          } catch {
-            if (ttsError.includes('quota') || ttsError.includes('429')) {
-              errorMessage = 'OpenAI API quota exceeded. Please check your OpenAI account billing and usage limits.';
-            } else {
-              errorMessage += ttsError ? ` - ${ttsError.substring(0, 100)}` : '';
-            }
-          }
-        } else {
-          try {
-            const errorData = JSON.parse(ttsError);
-            errorMessage = errorData.message || errorData.error || errorMessage;
-          } catch {
-            if (ttsError) {
-              errorMessage += ` - ${ttsError.substring(0, 100)}`;
-            }
-          }
-        }
-        
-        throw new Error(errorMessage);
-      }
+      // Show text response immediately (text-only mode)
+      // Audio/TTS generation is disabled - only text responses are shown
+      console.log('📝 Text response received (audio disabled):', assistantText);
+      console.log('📝 Calling onResponse callback with:', assistantText.substring(0, 100));
       
-      if (!visemeRes.ok) {
-        const visemeError = await visemeRes.text();
-        throw new Error(`Failed to generate visemes: ${visemeRes.status} ${visemeRes.statusText}${visemeError ? ' - ' + visemeError.substring(0, 50) : ''}`);
+      if (onResponse) {
+        onResponse(assistantText);
+        console.log('✅ onResponse callback called successfully');
+      } else {
+        console.warn('⚠️ onResponse callback is not defined');
       }
-
-      const ttsData = await ttsRes.json();
-      const visemeData = await visemeRes.json();
-
-      // Audio URL from Firebase Storage is already absolute
-      const audioUrl = ttsData.audioUrl;
-      const visemesArray = visemeData.visemes || [];
-
-      console.log('✅ TTS and viseme data received:');
-      console.log('   Audio URL:', audioUrl);
-      console.log('   Visemes count:', visemesArray.length);
-
-      if (!audioUrl) {
-        throw new Error('No audio URL received from TTS service');
-      }
-
-      if (!visemesArray || visemesArray.length === 0) {
-        console.warn('⚠️  No visemes received, lip sync may not work properly');
-      }
-
-      // Set audio URL and visemes - this will trigger the audio playback useEffect
-      setCurrentAudioUrl(audioUrl);
-      setVisemes(visemesArray);
-      setIsSpeaking(true);
 
     } catch (error: any) {
       console.error('Error in conversation:', error);
-      setError(error.message || 'Failed to process message. Please try again.');
+      let errorMessage = error.message || 'Failed to process message. Please try again.';
+      
+      // Make rate limit errors more user-friendly
+      if (errorMessage.includes('rate limit') || errorMessage.includes('Rate limit') || errorMessage.includes('429')) {
+        errorMessage = 'Rate limit exceeded. Please wait a few seconds and try again.';
+      }
+      
+      setError(errorMessage);
+      // Also show error in the message box with a friendlier message
+      const userFriendlyMessage = errorMessage.includes('rate limit') || errorMessage.includes('Rate limit')
+        ? 'I\'m receiving too many requests right now. Please wait a moment and try again.'
+        : `Sorry, I encountered an error: ${errorMessage}`;
+      onResponse?.(userFriendlyMessage);
     } finally {
       setIsLoading(false);
       isProcessingRef.current = false;

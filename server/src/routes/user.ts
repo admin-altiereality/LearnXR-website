@@ -32,7 +32,7 @@ router.post('/geo-info', async (req, res) => {
     const geoInfo: UserGeoInfo = {
       country: country.toUpperCase(),
       countryName: countryName || country,
-      paymentProvider: paymentProvider || (shouldUseRazorpay(country) ? 'razorpay' : 'paddle'),
+      paymentProvider: 'paddle', // Razorpay removed
       countrySource: countrySource || 'ip',
       detectedAt: detectedAt || new Date().toISOString()
     };
@@ -131,7 +131,7 @@ router.post('/billing-country', async (req, res) => {
     }
 
     const upperCountry = country.toUpperCase();
-    const paymentProvider = shouldUseRazorpay(upperCountry) ? 'razorpay' : 'paddle';
+    const paymentProvider = 'paddle'; // Razorpay removed
 
     // Update user document
     await db.collection('users').doc(userId).set(

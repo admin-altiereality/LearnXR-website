@@ -14,10 +14,8 @@ import { toast } from 'react-toastify';
 import { db } from '../config/firebase';
 import { useAuth, useModal } from '../contexts/AuthContext';
 import { useCreateGeneration } from '../contexts/CreateGenerationContext';
-import { SUBSCRIPTION_PLANS, subscriptionService } from '../services/subscriptionService';
 import Logo from "./Logo";
-import SubscriptionModal from './SubscriptionModal';
-import UpgradeModal from './UpgradeModal';
+// Subscription removed
 
 const Header = () => {
   const { user, logout } = useAuth();
@@ -29,15 +27,13 @@ const Header = () => {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const dropdownRef = useRef(null);
   const mobileMenuRef = useRef(null);
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [subscription, setSubscription] = useState(null);
+  // Subscription removed
   const [profile, setProfile] = useState(null);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollY = useRef(0);
 
   useEffect(() => {
-    const fetchProfileAndSubscription = async () => {
+    const fetchProfile = async () => {
       if (user?.uid) {
         try {
           const profileRef = doc(db, 'users', user.uid);
@@ -45,17 +41,13 @@ const Header = () => {
           if (profileSnap.exists()) {
             setProfile(profileSnap.data());
           }
-
-          const userSubscription = await subscriptionService.getUserSubscription(user.uid);
-          setSubscription(userSubscription);
         } catch (error) {
-          console.error('Error fetching profile/subscription:', error);
-          toast.error('Failed to load subscription data');
+          console.error('Error fetching profile:', error);
         }
       }
     };
 
-    fetchProfileAndSubscription();
+    fetchProfile();
   }, [user?.uid]);
 
   useEffect(() => {
@@ -120,21 +112,6 @@ const Header = () => {
     }
   };
 
-  const handleUpgradeClick = async () => {
-    try {
-      if (!user || !user.email) {
-        toast.error('Please sign in to upgrade your plan');
-        return;
-      }
-
-      setShowUpgradeModal(true);
-      setShowDropdown(false);
-    } catch (error) {
-      console.error('Error handling upgrade:', error);
-      toast.error('Failed to process upgrade. Please try again.');
-    }
-  };
-
   const isActivePath = (path) => {
     return location.pathname === path;
   };
@@ -143,47 +120,7 @@ const Header = () => {
     return location.pathname.startsWith('/explore');
   };
 
-  const getCurrentPlan = () => {
-    if (!subscription) return null;
-    return SUBSCRIPTION_PLANS.find(plan => plan.id === subscription.planId);
-  };
-
-  const getUsagePercentage = () => {
-    if (!subscription || !getCurrentPlan()) return 0;
-    const plan = getCurrentPlan();
-    const used = subscription.usage?.skyboxGenerations || 0;
-    const limit = plan?.limits.skyboxGenerations || 10;
-    return limit === Infinity ? 0 : Math.min((used / limit) * 100, 100);
-  };
-
-  const getRemainingGenerations = () => {
-    if (!subscription || !getCurrentPlan()) return 0;
-    const plan = getCurrentPlan();
-    const used = subscription.usage?.skyboxGenerations || 0;
-    const limit = plan?.limits.skyboxGenerations || 10;
-    return limit === Infinity ? '∞' : Math.max(0, limit - used);
-  };
-
-  const getCurrentUsage = () => {
-    return subscription?.usage?.skyboxGenerations || 0;
-  };
-
-  const getCurrentLimit = () => {
-    const plan = getCurrentPlan();
-    return plan?.limits.skyboxGenerations || 5;
-  };
-
-  const getPlanBadgeStyles = () => {
-    const planId = subscription?.planId || 'free';
-    switch (planId) {
-      case 'pro':
-        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
-      case 'enterprise':
-        return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-      default:
-        return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
-    }
-  };
+  // Subscription functions removed
 
   // Navigation Links Component
   const NavLink = ({ to, label, icon, isActive, activeColor = 'sky' }) => {
@@ -290,17 +227,7 @@ const Header = () => {
                         </svg>
                       }
                     />
-                    <NavLink
-                      to="/pricing"
-                      label="Pricing"
-                      isActive={isActivePath('/pricing')}
-                      activeColor="violet"
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      }
-                    />
+                    {/* Pricing removed */}
                   </div>
                 )}
               </div>
@@ -338,55 +265,7 @@ const Header = () => {
                       </Link>
                     )}
                     
-                    {/* Usage Stats Pill */}
-                    <div className="flex items-center gap-3 px-4 py-2 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a]">
-                      <div className="flex flex-col items-end">
-                        <span className={`text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full border ${getPlanBadgeStyles()}`}>
-                          {getCurrentPlan()?.name || 'Free'} Plan
-                        </span>
-                      </div>
-                      
-                      {getCurrentPlan()?.limits.skyboxGenerations !== Infinity && (
-                        <div className="flex items-center gap-2 pl-3 border-l border-[#333]">
-                          <div className="w-20 h-1.5 rounded-full bg-[#252525] overflow-hidden">
-                            <div 
-                              className={`h-full transition-all duration-500 rounded-full ${
-                                getUsagePercentage() > 80 
-                                  ? 'bg-gradient-to-r from-red-500 to-orange-500' 
-                                  : 'bg-gradient-to-r from-emerald-500 to-sky-400'
-                              }`}
-                              style={{ width: `${getUsagePercentage()}%` }}
-                            />
-                          </div>
-                          <span className="text-[11px] text-gray-400 tabular-nums whitespace-nowrap">
-                            {getCurrentUsage()}/{getCurrentLimit()} used
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Upgrade Button */}
-                    {subscription?.planId === 'free' && (
-                      <button
-                        onClick={handleUpgradeClick}
-                        className="
-                          flex items-center gap-2
-                          px-4 py-2 rounded-xl
-                          bg-gradient-to-r from-violet-500 to-purple-600
-                          hover:from-violet-400 hover:to-purple-500
-                          text-white text-xs font-semibold uppercase tracking-wider
-                          shadow-lg shadow-purple-500/25
-                          transition-all duration-300
-                          hover:shadow-purple-500/40 hover:scale-[1.02]
-                          border border-purple-400/20
-                        "
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        <span>Upgrade</span>
-                      </button>
-                    )}
+                    {/* Subscription features removed */}
 
                     {/* User Profile Dropdown */}
                     <div className="relative" ref={dropdownRef}>
@@ -442,55 +321,9 @@ const Header = () => {
                                 <p className="text-xs text-gray-400 truncate max-w-[180px]">{user.email}</p>
                               </div>
                             </div>
-                            <div className="mt-3">
-                              <span className={`text-[10px] font-semibold uppercase tracking-widest px-2.5 py-1 rounded-full border ${getPlanBadgeStyles()}`}>
-                                {getCurrentPlan()?.name || 'Free'} Plan
-                              </span>
-                            </div>
                           </div>
 
-                          {/* Usage Stats */}
-                          <div className="px-4 py-4 border-b border-[#2a2a2a] space-y-3">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-400">Generations</span>
-                              <span className="text-xs text-gray-200 tabular-nums">
-                                {getCurrentUsage()} / {getCurrentLimit() === Infinity ? '∞' : getCurrentLimit()}
-                              </span>
-                            </div>
-                            {getCurrentLimit() !== Infinity && (
-                              <div className="h-2 rounded-full bg-[#252525] overflow-hidden">
-                                <div
-                                  className={`h-full transition-all duration-500 rounded-full ${
-                                    getUsagePercentage() > 80 
-                                      ? 'bg-gradient-to-r from-red-500 to-orange-500' 
-                                      : 'bg-gradient-to-r from-emerald-500 to-sky-400'
-                                  }`}
-                                  style={{ width: `${getUsagePercentage()}%` }}
-                                />
-                              </div>
-                            )}
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-400">Remaining</span>
-                              <span className="text-xs text-emerald-400 font-medium">
-                                {getRemainingGenerations()} {getCurrentLimit() === Infinity ? '' : 'left'}
-                              </span>
-                            </div>
-                            {subscription?.planId === 'free' && (
-                              <button
-                                onClick={handleUpgradeClick}
-                                className="
-                                  w-full mt-2 px-4 py-2.5 
-                                  bg-gradient-to-r from-violet-500 to-purple-600 
-                                  hover:from-violet-400 hover:to-purple-500 
-                                  text-white text-xs font-semibold uppercase tracking-wider
-                                  rounded-xl transition-all duration-300
-                                  shadow-lg shadow-purple-500/20
-                                "
-                              >
-                                Upgrade for More
-                              </button>
-                            )}
-                          </div>
+                          {/* Subscription features removed */}
 
                           {/* Menu Items */}
                           <div className="py-2">
@@ -586,17 +419,7 @@ const Header = () => {
                         </svg>
                       }
                     />
-                    <NavLink
-                      to="/pricing"
-                      label="Pricing"
-                      isActive={isActivePath('/pricing')}
-                      activeColor="violet"
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      }
-                    />
+                    {/* Pricing removed */}
                     <NavLink
                       to="/help"
                       label="Help"
@@ -760,22 +583,7 @@ const Header = () => {
                       History
                     </Link>
 
-                    <Link
-                      to="/pricing"
-                      className={` 
-                        flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
-                        ${isActivePath('/pricing') 
-                          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' 
-                          : 'text-gray-300 hover:bg-white/[0.05]'
-                        }
-                      `}
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Pricing
-                    </Link>
+                    {/* Pricing removed */}
 
                     <Link
                       to="/help"
@@ -807,32 +615,7 @@ const Header = () => {
                           </div>
                         </div>
                         
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full border ${getPlanBadgeStyles()}`}>
-                            {getCurrentPlan()?.name || 'Free'} Plan
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            {getCurrentUsage()}/{getCurrentLimit() === Infinity ? '∞' : getCurrentLimit()} used
-                          </span>
-                        </div>
-
-                        {getCurrentLimit() !== Infinity && (
-                          <div className="h-1.5 rounded-full bg-[#252525] overflow-hidden">
-                            <div
-                              className="h-full transition-all duration-500 rounded-full bg-gradient-to-r from-emerald-500 to-sky-400"
-                              style={{ width: `${getUsagePercentage()}%` }}
-                            />
-                          </div>
-                        )}
-
-                        {subscription?.planId === 'free' && (
-                          <button
-                            onClick={handleUpgradeClick}
-                            className="w-full mt-3 px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 text-white text-xs font-semibold uppercase tracking-wider rounded-xl"
-                          >
-                            Upgrade Plan
-                          </button>
-                        )}
+                        {/* Subscription features removed */}
                       </div>
                     </div>
 
@@ -869,16 +652,7 @@ const Header = () => {
                       </svg>
                       Blog
                     </Link>
-                    <Link
-                      to="/pricing"
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-white/[0.05] transition-all"
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Pricing
-                    </Link>
+                    {/* Pricing removed */}
                     <Link
                       to="/help"
                       className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-white/[0.05] transition-all"
@@ -910,27 +684,7 @@ const Header = () => {
       {/* Spacer for fixed header */}
       <div className="" />
 
-      {/* Modals */}
-      <SubscriptionModal
-        isOpen={showSubscriptionModal}
-        onClose={() => setShowSubscriptionModal(false)}
-        currentSubscription={subscription}
-        onUpgrade={handleUpgradeClick}
-      />
-
-      {showUpgradeModal && (
-        <div className="fixed inset-0 z-[9999]">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div className="relative h-full flex items-center justify-center p-4">
-            <UpgradeModal
-              isOpen={showUpgradeModal}
-              onClose={() => setShowUpgradeModal(false)}
-              currentPlan={subscription?.planId || 'free'}
-              onSubscriptionUpdate={(updatedSubscription) => setSubscription(updatedSubscription)}
-            />
-          </div>
-        </div>
-      )}
+      {/* Subscription modals removed */}
     </>
   );
 };

@@ -3,6 +3,7 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import OpenAI from 'openai';
+import { validateReadAccess } from '../middleware/validateIn3dApiKey';
 
 const router = Router();
 
@@ -109,13 +110,17 @@ const initializeOpenAI = (forceReinit = false) => {
   }
   
   // Re-initialize if key changed or forcing reinit
+  // Always reinitialize when forceReinit is true to ensure we use the latest API key
   if (forceReinit || !openai) {
     try {
+      // Always create a new instance when forcing reinit to ensure latest API key is used
       openai = new OpenAI({ apiKey: cleanedKey });
       isConfigured = true;
+      const keyPreview = cleanedKey.substring(0, 20) + '...' + cleanedKey.substring(cleanedKey.length - 4);
       console.log('✅ OpenAI initialized in Firebase Functions', {
         keyLength: cleanedKey.length,
-        keyPrefix: cleanedKey.substring(0, 7) + '...'
+        keyPreview: keyPreview,
+        forceReinit: forceReinit
       });
     } catch (error: any) {
       console.error('❌ Failed to initialize OpenAI client:', error?.message || error);
@@ -128,8 +133,9 @@ const initializeOpenAI = (forceReinit = false) => {
 /**
  * AI Detection endpoint
  * POST /api/ai-detection/detect
+ * Read access (API key READ or FULL scope, or Firebase Auth)
  */
-router.post('/detect', async (req: Request, res: Response) => {
+router.post('/detect', validateReadAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {
@@ -376,8 +382,9 @@ Be precise: scores should reflect the actual content. For "both", both scores ca
 /**
  * Extract ONLY 3D asset phrases from prompt
  * POST /api/ai-detection/extract-assets
+ * Read access (API key READ or FULL scope, or Firebase Auth)
  */
-router.post('/extract-assets', async (req: Request, res: Response) => {
+router.post('/extract-assets', validateReadAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {
@@ -544,7 +551,8 @@ router.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // POST route handler - must be defined FIRST to ensure it matches before other handlers
-router.post('/enhance', async (req: Request, res: Response) => {
+// Full access required (API key FULL scope or Firebase Auth)
+router.post('/enhance', validateReadAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId || `req-${Date.now()}`;
   
   // Add request ID to req object if not present

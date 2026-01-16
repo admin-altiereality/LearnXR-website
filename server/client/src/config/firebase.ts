@@ -8,13 +8,13 @@ import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 // Firebase configuration from environment variables
 // Falls back to hardcoded values if env vars are not set (for development)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBo9VsJMft4Qqap5oUmQowwbjiMQErloqU",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "in3devoneuralai.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "in3devoneuralai",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "in3devoneuralai.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "708037023303",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:708037023303:web:f0d5b319b05aa119288362",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-FNENMQ3BMF"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBj8pKRSuj9XHD0eoM7tNQafH-2yXoOyag",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "learnxr-evoneuralai.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "learnxr-evoneuralai",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "learnxr-evoneuralai.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "427897409662",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:427897409662:web:95fc2fe7d527ac911a082f",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-CR7G315QSN"
 };
 
 // Initialize Firebase App FIRST

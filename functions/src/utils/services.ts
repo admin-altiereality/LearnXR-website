@@ -33,6 +33,7 @@ export const initializeAdmin = () => {
 
 // Service state
 export let BLOCKADE_API_KEY = '';
+export let MESHY_API_KEY = '';
 export let razorpay: any = null;
 
 // Helper function to clean secrets (remove whitespace, newlines, etc.)
@@ -46,6 +47,7 @@ const cleanSecret = (secret: string | undefined): string => {
 // Optionally accepts secret values directly (for Firebase Functions v2)
 export const initializeServices = (secrets?: {
   blockadelabsApiKey?: string;
+  meshyApiKey?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
 }) => {
@@ -66,6 +68,25 @@ export const initializeServices = (secrets?: {
   } catch (error) {
     console.error('Failed to configure BlockadeLabs API key:', error);
     BLOCKADE_API_KEY = '';
+  }
+
+  try {
+    // Use provided secrets or fall back to environment variables
+    const apiKey = secrets?.meshyApiKey || getSecret('MESHY_API_KEY');
+    if (apiKey) {
+      MESHY_API_KEY = cleanSecret(apiKey).replace(/^Bearer\s+/i, '').trim();
+      console.log('Meshy API key configured successfully, length:', MESHY_API_KEY.length);
+    } else {
+      console.warn('MESHY_API_KEY not found', {
+        hasProvided: !!secrets?.meshyApiKey,
+        hasEnv: !!process.env.MESHY_API_KEY,
+        envValue: process.env.MESHY_API_KEY ? '***' : 'empty'
+      });
+      MESHY_API_KEY = '';
+    }
+  } catch (error) {
+    console.error('Failed to configure Meshy API key:', error);
+    MESHY_API_KEY = '';
   }
 
   try {

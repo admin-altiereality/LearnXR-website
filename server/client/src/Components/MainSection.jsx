@@ -18,9 +18,9 @@ const TRIAL_ALLOWED_STYLES = [
   { id: 12, name: 'Cyberpunk', slug: 'cyberpunk' },
 ];
 const TRIAL_MAX_VARIATIONS = 1;
-import { subscriptionService } from '../services/subscriptionService';
+// Subscription removed
 import DownloadPopup from './DownloadPopup';
-import UpgradeModal from './UpgradeModal';
+// UpgradeModal removed
 import { skyboxApiService } from '../services/skyboxApiService';
 import AssetGenerationPanel from './AssetGenerationPanel';
 import { MeshyTestPanel } from './MeshyTestPanel';
@@ -37,12 +37,12 @@ import { AssetViewerWithSkybox } from './AssetViewerWithSkybox';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { incrementStyleUsage } from '../services/styleUsageService';
-import { UnifiedGenerationProgress } from './UnifiedGenerationProgress';
-import { ChatSidebar } from './chat/ChatSidebar';
-import { MobileBottomBar } from './chat/MobileBottomBar';
+import { SeparateGenerationProgress } from './SeparateGenerationProgress';
 import { TeacherAvatar } from './TeacherAvatar';
 import { FloatingMessageBox } from './FloatingMessageBox';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import api from '../config/axios';
+import LessonMCQPanel from './LessonMCQPanel';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -103,11 +103,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   
   // Initialize from context if available, otherwise use defaults
   const [numVariations, setNumVariations] = useState(() => {
-    return generationState?.numVariations || 5;
+    return generationState?.numVariations || 1;
   });
   const { user } = useAuth();
-  const [subscription, setSubscription] = useState(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  // Subscription removed
   const navigate = useNavigate();
   const [isMinimized, setIsMinimized] = useState(false);
   const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
@@ -151,15 +150,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const [avatarVoiceError, setAvatarVoiceError] = useState(null);
   const avatarRecognitionRef = useRef(null);
   
-  // Chat sidebar state - load from localStorage, default to false (collapsed)
-  const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('chatSidebarOpen');
-      return saved === 'true';
-    }
-    return false; // Default to collapsed
-  });
-  
   // Teacher Avatar chat state
   const [avatarMessages, setAvatarMessages] = useState([]);
   const [avatarInput, setAvatarInput] = useState('');
@@ -173,10 +163,16 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     class: '',
     subject: ''
   });
+
+  // Lesson state (from Lessons page)
+  const [currentLessonChapter, setCurrentLessonChapter] = useState(null);
+  const [showMCQPanel, setShowMCQPanel] = useState(false);
   
   // Refs to access latest values in voice recognition handler
   const avatarConfigRef = useRef(avatarConfig);
   const isAvatarReadyRef = useRef(isAvatarReady);
+  const greetingSentRef = useRef(false);
+  const lastConfigKeyRef = useRef('');
   
   // Keep refs in sync with state
   useEffect(() => {
@@ -186,6 +182,96 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   useEffect(() => {
     isAvatarReadyRef.current = isAvatarReady;
   }, [isAvatarReady]);
+  
+  // Send greeting when all three config options are selected
+  useEffect(() => {
+    // Only proceed if we have all three config values
+    if (!avatarConfig.curriculum || !avatarConfig.class || !avatarConfig.subject) {
+      return;
+    }
+    
+    const configKey = `${avatarConfig.curriculum}-${avatarConfig.class}-${avatarConfig.subject}`;
+    
+    // Reset greeting flag when config changes
+    if (configKey !== lastConfigKeyRef.current) {
+      greetingSentRef.current = false;
+      lastConfigKeyRef.current = configKey;
+      // Clear previous messages when config changes
+      setAvatarMessages([]);
+    }
+    
+    // Send greeting when all three are selected, avatar is ready, and greeting hasn't been sent
+    if (isAvatarReady && !greetingSentRef.current) {
+      greetingSentRef.current = true;
+      
+      // Wait a moment for the avatar to be fully ready and thread initialized
+      // Increased delay to avoid rate limits and ensure everything is ready
+      const timer = setTimeout(() => {
+        // Use async IIFE to handle async operations
+        (async () => {
+          try {
+            // Double-check greeting hasn't been sent (in case of rapid re-renders)
+            if (greetingSentRef.current === false) {
+              console.warn('⚠️ Greeting flag was reset, skipping');
+              return;
+            }
+            
+            // Check if avatar ref is ready
+            if (!avatarRef.current) {
+              console.warn('⚠️ Avatar ref not available yet');
+              greetingSentRef.current = false;
+              return;
+            }
+            
+            // Check if sendMessage method exists
+            if (typeof avatarRef.current.sendMessage !== 'function') {
+              console.warn('⚠️ Avatar sendMessage method not available yet');
+              greetingSentRef.current = false;
+              return;
+            }
+            
+            // Send a simple "Hello" to trigger the assistant's personalized greeting
+            const greetingMessage = 'Hello';
+            
+            console.log('👋 Sending greeting trigger:', greetingMessage);
+            console.log('📚 Config:', { 
+              curriculum: avatarConfig.curriculum, 
+              class: avatarConfig.class, 
+              subject: avatarConfig.subject 
+            });
+            
+            setIsAvatarLoading(true);
+            
+            // Send greeting via avatar (it will handle the API call internally)
+            await avatarRef.current.sendMessage(greetingMessage);
+            
+            console.log('✅ Greeting message sent successfully');
+            // The onResponse callback will handle adding the assistant's response to avatarMessages
+            // Note: setIsAvatarLoading(false) will be called by onResponse callback
+            
+          } catch (error) {
+            console.error('❌ Error sending greeting:', error);
+            console.error('   Error details:', {
+              message: error?.message,
+              stack: error?.stack,
+              name: error?.name
+            });
+            
+            // Show error message to user
+            setAvatarMessages(prev => [...prev, {
+              role: 'assistant',
+              content: 'Sorry, I encountered an error while trying to greet you. Please try selecting your options again.'
+            }]);
+            
+            greetingSentRef.current = false; // Reset so we can try again
+            setIsAvatarLoading(false);
+          }
+        })();
+      }, 3000); // Increased to 3 seconds to avoid rate limits and ensure thread is fully ready
+      
+      return () => clearTimeout(timer);
+    }
+  }, [avatarConfig.curriculum, avatarConfig.class, avatarConfig.subject, isAvatarReady]);
   
   // Available assistants state
   const [availableAssistants, setAvailableAssistants] = useState([]);
@@ -209,28 +295,23 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     'Computer Science'
   ];
   
-  // Fetch available assistants on mount
+  // Fetch available assistants on mount (only when user is authenticated)
   useEffect(() => {
+    if (!user) {
+      console.log('⏳ Waiting for user authentication before fetching assistants...');
+      return;
+    }
+
     const fetchAvailableAssistants = async () => {
       try {
         setAssistantsLoading(true);
-        const apiUrl = getApiBaseUrl();
-        const url = `${apiUrl}/assistant/list?useAvatarKey=true`;
-        console.log('🔍 Fetching available assistants from:', url);
+        console.log('🔍 Fetching available assistants from API...');
         
-        const response = await fetch(url);
+        const response = await api.get('/assistant/list', {
+          params: { useAvatarKey: true }
+        });
         
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ API Error Response:', {
-            status: response.status,
-            statusText: response.statusText,
-            body: errorText
-          });
-          throw new Error(`Failed to fetch available assistants: ${response.status} ${response.statusText}`);
-        }
-        
-        const data = await response.json();
+        const data = response.data;
         console.log('📦 Raw API Response:', data);
         
         // Store debug info if available
@@ -259,6 +340,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           console.warn('   1. No assistants exist in OpenAI with the correct naming pattern');
           console.warn('   2. Assistants don\'t match the expected format: "{Curriculum} {Class} {Subject} Teacher"');
           console.warn('   3. The OPENAI_AVATAR_API_KEY might not have access to assistants');
+          // Reset avatar config when no assistants are available
+          setAvatarConfig({
+            curriculum: '',
+            class: '',
+            subject: ''
+          });
         } else {
           console.log('📚 Available combinations:', normalizedAssistants);
           // Group and display in a readable format
@@ -286,35 +373,42 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           console.error('   Error message:', error.message);
           console.error('   Error stack:', error.stack);
         }
-        // On error, show empty array
+        // On error, show empty array and reset config
         setAvailableAssistants([]);
+        setAvatarConfig({
+          curriculum: '',
+          class: '',
+          subject: ''
+        });
       } finally {
         setAssistantsLoading(false);
       }
     };
     
     fetchAvailableAssistants();
-  }, []);
+  }, [user]);
   
-  // Filter dropdowns based on available assistants
+  // Filter dropdowns based on available assistants - ONLY show options from assistants using the API key
   const getAvailableCurriculums = useMemo(() => {
+    // Only show curriculums that are available from assistants using the API key
     if (availableAssistants.length === 0) {
-      return CURRICULUMS; // Show all if no assistants loaded yet or error
+      return []; // Don't show any options until assistants are loaded
     }
     const unique = [...new Set(availableAssistants.map(a => a.curriculum))];
-    return CURRICULUMS.filter(c => unique.includes(c));
+    return unique.sort(); // Return only unique curriculums from available assistants
   }, [availableAssistants]);
   
   const getAvailableClasses = useMemo(() => {
+    // Only show classes that are available from assistants using the API key
     if (availableAssistants.length === 0) {
-      return CLASSES; // Show all if no assistants loaded yet or error
+      return []; // Don't show any options until assistants are loaded
     }
     if (!avatarConfig.curriculum) {
       return []; // Don't show any classes until curriculum is selected
     }
     const filtered = availableAssistants.filter(a => a.curriculum === avatarConfig.curriculum);
     const unique = [...new Set(filtered.map(a => a.class))];
-    const available = CLASSES.filter(c => unique.includes(c));
+    const available = unique.sort((a, b) => parseInt(a) - parseInt(b)); // Sort numerically
     
     // Debug logging
     console.log(`🔍 Filtering classes for ${avatarConfig.curriculum}:`, {
@@ -328,8 +422,9 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   }, [availableAssistants, avatarConfig.curriculum]);
   
   const getAvailableSubjects = useMemo(() => {
+    // Only show subjects that are available from assistants using the API key
     if (availableAssistants.length === 0) {
-      return SUBJECTS; // Show all if no assistants loaded yet or error
+      return []; // Don't show any options until assistants are loaded
     }
     if (!avatarConfig.curriculum || !avatarConfig.class) {
       return []; // Don't show any subjects until curriculum and class are selected
@@ -338,7 +433,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       a => a.curriculum === avatarConfig.curriculum && a.class === avatarConfig.class
     );
     const unique = [...new Set(filtered.map(a => a.subject))];
-    const available = SUBJECTS.filter(s => unique.includes(s));
+    const available = unique.sort(); // Return only unique subjects from available assistants
     
     // Debug logging
     console.log(`🔍 Filtering subjects for ${avatarConfig.curriculum} Class ${avatarConfig.class}:`, {
@@ -372,123 +467,49 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   // Loading indicator context
   const { showLoading, hideLoading, updateProgress } = useLoading();
 
-  // Handle prompt, style, and 3D asset from sidebar navigation
+
+  // -------------------------
+  // Handle lesson data from Lessons page
+  // -------------------------
   useEffect(() => {
-    if (location.state?.fromSidebar) {
-      // Handle new chat - clear everything
-      if (location.state?.newChat) {
-        setPrompt('');
-        setGlobalPrompt('');
-        setSelectedSkybox(null);
-        setGlobalSelectedSkybox(null);
-        setGeneratedVariations([]);
-        setGenerated3DAsset(null);
-        setGlobalGenerated3DAsset(null);
-        setCurrentJobId(null);
-        // Clear the state to prevent re-applying
-        window.history.replaceState({}, document.title);
-        return;
+    if (location.state?.fromLessons && location.state?.chapter) {
+      const chapter = location.state.chapter;
+      console.log('📖 MainSection: Loading lesson data:', chapter.id);
+      
+      // Set lesson chapter
+      setCurrentLessonChapter(chapter);
+      
+      // Configure avatar with lesson curriculum/class/subject
+      if (chapter.curriculum && chapter.class && chapter.subject) {
+        setAvatarConfig({
+          curriculum: chapter.curriculum,
+          class: chapter.class.toString(),
+          subject: chapter.subject
+        });
+        console.log('✅ Avatar configured for lesson:', {
+          curriculum: chapter.curriculum,
+          class: chapter.class,
+          subject: chapter.subject
+        });
       }
       
-      // Set prompt
-      if (location.state?.prompt) {
-        setPrompt(location.state.prompt);
-        setGlobalPrompt(location.state.prompt);
-      }
-
-      // Set style if provided
-      if (location.state?.styleId && skyboxStyles.length > 0) {
-        const matchedStyle = skyboxStyles.find(style => {
-          const styleId = style.id?.toString() || style.id;
-          const stateStyleId = location.state.styleId?.toString() || location.state.styleId;
-          return styleId === stateStyleId || 
-                 style.id === location.state.styleId ||
-                 style.id?.toString() === location.state.styleId?.toString();
-        });
-        
-        if (matchedStyle) {
-          console.log('✅ Matched style from sidebar:', matchedStyle);
-          setSelectedSkybox(matchedStyle);
-          setGlobalSelectedSkybox(matchedStyle);
-        } else {
-          console.warn('⚠️ Could not find matching style for ID:', location.state.styleId);
+      // Show MCQ panel if chapter has topics with MCQs
+      const hasMCQs = chapter.topics?.some(topic => {
+        for (let i = 1; i <= 5; i++) {
+          if (topic[`mcq${i}_question`]) return true;
         }
+        return false;
+      });
+      
+      if (hasMCQs) {
+        setShowMCQPanel(true);
+        console.log('✅ MCQ panel will be shown for lesson');
       }
-
-      // Handle 3D asset if available
-      if (location.state?.has3DAsset && location.state?.jobId) {
-        // Store jobId for 3D asset viewing
-        setCurrentJobId(location.state.jobId);
-        
-        // Load 3D asset data from Firebase if jobId is available
-        if (location.state?.assetDownloadUrl || location.state?.assetPreviewUrl) {
-          // Create 3D asset object from navigation state
-          const assetData = {
-            id: location.state.jobId,
-            status: location.state.assetStatus || 'completed',
-            downloadUrl: location.state.assetDownloadUrl,
-            previewUrl: location.state.assetPreviewUrl,
-            format: location.state.assetFormat || 'glb',
-            metadata: location.state.meshResult || {}
-          };
-          setGenerated3DAsset(assetData);
-          setGlobalGenerated3DAsset(assetData);
-          
-          // Also ensure we have a variation set for the button to appear
-          // If we have an imageUrl from the generation data, create a variation
-          if (location.state?.imageUrl && generatedVariations.length === 0) {
-            const variation = {
-              id: location.state.jobId,
-              image: location.state.imageUrl,
-              title: location.state.prompt || 'Generated Skybox',
-              prompt: location.state.prompt
-            };
-            setGeneratedVariations([variation]);
-          }
-        } else if (location.state?.jobId && db) {
-          // Try to load from Firebase if URLs not provided
-          const load3DAsset = async () => {
-            try {
-              const { unifiedStorageService } = await import('../services/unifiedStorageService');
-              const jobData = await unifiedStorageService.getJob(location.state.jobId);
-              
-              if (jobData?.meshResult) {
-                const assetData = {
-                  id: jobData.id,
-                  status: jobData.meshResult.status || 'completed',
-                  downloadUrl: jobData.meshResult.downloadUrl || jobData.meshUrl,
-                  previewUrl: jobData.meshResult.previewUrl,
-                  format: jobData.meshResult.format || 'glb',
-                  metadata: {
-                    model_urls: jobData.meshResult.model_urls || jobData.model_urls
-                  }
-                };
-                setGenerated3DAsset(assetData);
-                setGlobalGenerated3DAsset(assetData);
-                
-                // Also ensure we have a variation set for the button to appear
-                if (jobData.skyboxUrl && generatedVariations.length === 0) {
-                  const variation = {
-                    id: jobData.id,
-                    image: jobData.skyboxUrl,
-                    title: jobData.title || jobData.prompt || 'Generated Skybox',
-                    prompt: jobData.prompt
-                  };
-                  setGeneratedVariations([variation]);
-                }
-              }
-            } catch (error) {
-              console.error('Failed to load 3D asset:', error);
-            }
-          };
-          load3DAsset();
-        }
-      }
-
+      
       // Clear the state to prevent re-applying on re-renders
       window.history.replaceState({}, document.title);
     }
-  }, [location.state, skyboxStyles, setGlobalPrompt, setGlobalSelectedSkybox, setCurrentJobId]);
+  }, [location.state]);
 
   // -------------------------
   // Intelligent prompt parsing with AI detection (waits for typing to stop)
@@ -1231,6 +1252,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   // Load Skybox styles
   // -------------------------
   useEffect(() => {
+    if (!user) {
+      console.log('⏳ Waiting for user authentication before fetching skybox styles...');
+      return;
+    }
+
     setStylesLoading(true);
     setStylesError(null);
     const fetchSkyboxStyles = async () => {
@@ -1261,7 +1287,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       }
     };
     fetchSkyboxStyles();
-  }, []);
+  }, [user]);
 
   // Set default style: "1960s Ethereal Fantasy model2" when styles are loaded
   useEffect(() => {
@@ -1696,92 +1722,31 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   }, [backgroundSkybox, skyboxStyles, setGlobalPrompt, setGlobalNegativeText, setGlobalSelectedSkybox, setGlobalGenerated3DAsset]);
 
   // -------------------------
-  // Load subscription
+  // Subscription removed
   // -------------------------
-  useEffect(() => {
-    const loadSubscription = async () => {
-      if (user?.uid) {
-        const userSubscription = await subscriptionService.getUserSubscription(user.uid);
-        setSubscription(userSubscription);
-      }
-    };
-    
-    loadSubscription();
-  }, [user?.uid]);
 
   // -------------------------
-  // Subscription info
-  // -------------------------
-  const subscriptionInfo = {
-    plan: subscription?.planId || 'Free',
-    generationsLeft: subscription?.usage?.limit - subscription?.usage?.count || 0,
-    totalGenerations: subscription?.usage?.count || 0,
-    planName: subscription?.planId === 'free' ? 'Free Plan' : subscription?.planId === 'pro' ? 'Pro Plan' : 'Enterprise Plan',
-    maxGenerations: subscription?.planId === 'free' ? 5 : subscription?.planId === 'pro' ? 50 : 100
-  };
-
-  // -------------------------
-  // Trial User Detection
+  // Trial User Detection (simplified - all users are trial users now)
   // -------------------------
   const isTrialUser = useMemo(() => {
-    return !subscription || subscription.planId === 'free';
-  }, [subscription]);
+    return true; // All users are trial users
+  }, []);
 
-  // Filter styles based on trial status
+  // Show all styles - no restrictions
   const availableStyles = useMemo(() => {
-    if (isTrialUser) {
-      // For trial users, filter skyboxStyles to only show allowed styles
-      // Match by ID or name (case-insensitive)
-      const allowedIds = TRIAL_ALLOWED_STYLES.map(s => s.id);
-      const allowedNames = TRIAL_ALLOWED_STYLES.map(s => s.name.toLowerCase());
-      
-      const filtered = skyboxStyles.filter(style => 
-        allowedIds.includes(style.id) || 
-        allowedNames.includes(style.name?.toLowerCase())
-      );
-      
-      // If no matches found in API styles, return the predefined trial styles
-      return filtered.length > 0 ? filtered : TRIAL_ALLOWED_STYLES;
-    }
     return skyboxStyles;
-  }, [isTrialUser, skyboxStyles]);
+  }, [skyboxStyles]);
 
-  // Lock variations for trial users
-  useEffect(() => {
-    if (isTrialUser && numVariations !== TRIAL_MAX_VARIATIONS) {
-      setNumVariations(TRIAL_MAX_VARIATIONS);
-    }
-  }, [isTrialUser, numVariations]);
+  // No variation restrictions - users can set any number of variations
 
-  const currentPlan = subscriptionService.getPlanById(subscription?.planId || 'free');
-  const currentUsage = parseInt(subscription?.usage?.skyboxGenerations || 0);
-  const currentLimit = currentPlan?.limits.skyboxGenerations || 10;
-  const isUnlimited = currentLimit === Infinity;
-
-  const remainingGenerations = isUnlimited 
-    ? '∞' 
-    : Math.max(0, currentLimit - currentUsage);
-  
-  const remainingAfterGeneration = isUnlimited 
-    ? '∞' 
-    : Math.max(0, currentLimit - currentUsage - numVariations);
-  
-  const usagePercentage = isUnlimited 
-    ? 0 
-    : Math.min((currentUsage / currentLimit) * 100, 100);
-  
-  const projectedUsagePercentage = isUnlimited 
-    ? 0 
-    : Math.min(((currentUsage + numVariations) / currentLimit) * 100, 100);
-
-  const updateSubscriptionCount = async () => {
-    if (user?.uid) {
-      const updatedSubscription = await subscriptionService.getUserSubscription(
-        user.uid
-      );
-      setSubscription(updatedSubscription);
-    }
-  };
+  // Subscription usage tracking removed
+  const currentUsage = 0;
+  const currentLimit = Infinity; // Unlimited for all users
+  const isUnlimited = true;
+  const remainingGenerations = '∞';
+  const remainingAfterGeneration = '∞';
+  const usagePercentage = 0;
+  const projectedUsagePercentage = 0;
 
   // -------------------------
   // AI Detection State
@@ -1817,15 +1782,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       return;
     }
 
-    if (!isUnlimited && remainingGenerations < numVariations) {
-      const canGenerate = Math.max(0, remainingGenerations);
-      setError(
-        subscription?.planId === 'free' 
-          ? `You've reached your free tier limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please upgrade to continue generating environments.`
-          : `You've reached your daily generation limit. You can generate ${canGenerate} more In3D.Ai environment${canGenerate === 1 ? '' : 's'}. Please try again tomorrow.`
-      );
-      return;
-    }
+    // Generation limit check removed (unlimited for all users)
 
     // ⚡ OPTIMIZED: Start generation immediately, run AI detection in parallel
     // This eliminates latency - user sees immediate feedback
@@ -1871,11 +1828,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     
     // Proceed with generation immediately (don't wait for AI detection)
     // Use parsedPrompt if available, otherwise proceed with original prompt
+    // Use lower threshold (0.3) to match generation logic
     const initialAnalysis = parsedPrompt ? {
-      promptType: parsedPrompt.meshScore > 0.5 ? 'both' : 'skybox',
+      promptType: parsedPrompt.meshScore > 0.3 ? 'both' : 'skybox',
       meshScore: parsedPrompt.meshScore || 0,
       skyboxScore: parsedPrompt.skyboxScore || 0,
-      confidence: parsedPrompt.confidence || 0
+      confidence: parsedPrompt.confidence || 0,
+      aiResult: parsedPrompt.aiResult || null,
+      meshDescription: parsedPrompt.aiResult?.meshDescription || null,
+      meshAssets: parsedPrompt.aiResult?.meshAssets || null
     } : null;
     
     proceedWithGeneration(initialAnalysis, false, detectionPromise);
@@ -1904,8 +1865,22 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           new Promise(resolve => setTimeout(() => resolve({ analysis: initialAnalysis }), 2000))
         ]);
         if (detectionResult?.analysis) {
-          analysis = detectionResult.analysis;
-          console.log('✅ Using AI detection result for generation');
+          // Merge detection result with initial analysis to preserve all fields
+          analysis = {
+            ...initialAnalysis,
+            ...detectionResult.analysis,
+            // Preserve aiResult structure if available
+            aiResult: detectionResult.analysis.aiResult || detectionResult.detectionResult?.aiResult || initialAnalysis?.aiResult || null,
+            meshDescription: detectionResult.analysis.meshDescription || detectionResult.analysis.aiResult?.meshDescription || initialAnalysis?.meshDescription || null,
+            meshAssets: detectionResult.analysis.meshAssets || detectionResult.analysis.aiResult?.meshAssets || initialAnalysis?.meshAssets || null
+          };
+          console.log('✅ Using AI detection result for generation:', {
+            promptType: analysis.promptType,
+            meshScore: analysis.meshScore,
+            hasMeshAssets: !!(analysis.aiResult?.meshAssets && analysis.aiResult.meshAssets.length > 0),
+            hasMeshDescription: !!analysis.meshDescription,
+            meshAssets: analysis.aiResult?.meshAssets || 'N/A'
+          });
         }
       } catch (error) {
         console.warn('⚠️ AI detection timed out or failed, using initial analysis:', error);
@@ -1982,10 +1957,16 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
       // Check if 3D asset generation should run in parallel
       // Use AI detection result if available, otherwise use parsedPrompt or default logic
+      // Lower threshold to 0.3 to catch more cases (matching highlight threshold)
       const aiSuggests3D = analysis?.promptType === 'mesh' || analysis?.promptType === 'both' || 
-                          (analysis?.meshScore && analysis.meshScore > 0.5);
-      // Also check parsedPrompt for 3D object detection
-      const parsedSuggests3D = parsedPrompt?.meshScore > 0.5 || has3DObjects;
+                          (analysis?.meshScore && analysis.meshScore > 0.3) ||
+                          (analysis?.aiResult?.meshAssets && analysis.aiResult.meshAssets.length > 0) ||
+                          (analysis?.meshDescription && analysis.meshDescription.trim().length > 0);
+      // Also check parsedPrompt for 3D object detection - use lower threshold
+      const parsedSuggests3D = (parsedPrompt?.meshScore && parsedPrompt.meshScore > 0.3) || 
+                               has3DObjects ||
+                               (parsedPrompt?.aiResult?.meshAssets && parsedPrompt.aiResult.meshAssets.length > 0) ||
+                               (parsedPrompt?.asset && parsedPrompt.asset.trim().length > 0);
       const canGenerate3D = (shouldEnable3D || aiSuggests3D || parsedSuggests3D) && 
                            storageAvailable && 
                            assetGenerationService.isMeshyConfigured() && 
@@ -1996,10 +1977,16 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         meshyConfigured: assetGenerationService.isMeshyConfigured(),
         hasUserId: !!user?.uid,
         canGenerate3D,
+        shouldEnable3D,
         aiSuggests3D,
         parsedSuggests3D,
         has3DObjects,
-        meshScore: analysis?.meshScore || parsedPrompt?.meshScore || 0,
+        aiMeshScore: analysis?.meshScore || 0,
+        parsedMeshScore: parsedPrompt?.meshScore || 0,
+        aiMeshAssets: analysis?.aiResult?.meshAssets || 'N/A',
+        parsedMeshAssets: parsedPrompt?.aiResult?.meshAssets || 'N/A',
+        aiMeshDescription: analysis?.meshDescription?.substring(0, 50) || 'N/A',
+        parsedAsset: parsedPrompt?.asset?.substring(0, 50) || 'N/A',
         prompt: prompt.substring(0, 50) + '...'
       });
 
@@ -2171,7 +2158,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           skyboxId: variations[0].toString(),
           quality: 'medium',
           style: 'realistic',
-          maxAssets: 1 // Generate single asset for unified view
+          maxAssets: 5 // Generate up to 3 assets if detected in prompt
         }, (progressUpdate) => {
           setAssetGenerationProgress({
             stage: progressUpdate.stage || 'generating',
@@ -2223,18 +2210,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         }
       });
 
-      // Set skybox results
-      if (variationResults) {
-        setGeneratedVariations(variationResults);
-        setCurrentImageForDownload(variationResults[0]);
-        setSkyboxProgress(100);
-        // Automatically show 3D viewer when skybox is generated
-        if (!show3DAssetViewer) {
-          setTimeout(() => {
-            setShow3DAssetViewer(true);
-          }, 500);
-        }
-      }
+      // Don't set skybox results yet - wait for both to complete
+      // Results will be set after processing both skybox and asset
 
       // CRITICAL: Save to Firestore skyboxes collection
       if (user?.uid && variationResults) {
@@ -2270,6 +2247,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             status: 'completed',
             variations: variationsArray, // Array of all variations
             generationIds: variations.map(id => id.toString()), // Store all generation IDs
+            // Add curriculum metadata if avatar config is available
+            ...(avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject ? {
+              curriculum: avatarConfig.curriculum,
+              class: parseInt(avatarConfig.class) || null,
+              subject: avatarConfig.subject,
+            } : {}),
             createdAt: serverTimestamp(), // Always set createdAt for new documents
             updatedAt: serverTimestamp()
           };
@@ -2376,12 +2359,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             setTimeout(() => document.body.removeChild(errorMsg), 5000);
           }
           
-          // Update subscription usage
-          for (let i = 0; i < numVariations; i++) {
-            await subscriptionService.incrementUsage(user.uid, 'skyboxGenerations');
-          }
-          await updateSubscriptionCount();
-          console.log(`✅ Updated subscription usage: ${numVariations} In3D.Ai generations added`);
+          // Subscription usage tracking removed
+          console.log(`✅ Generated ${numVariations} In3D.Ai variations`);
         } catch (error) {
           console.error('❌ CRITICAL ERROR: Failed to save skybox to Firestore:', error);
           console.error('   Error name:', error?.name);
@@ -2407,13 +2386,22 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         console.warn('   User object:', user);
       }
 
+      // Set skybox results now (after both generations complete)
+      if (variationResults) {
+        setGeneratedVariations(variationResults);
+        setCurrentImageForDownload(variationResults[0]);
+        setSkyboxProgress(100);
+      }
+
       setProgress(100);
       setSkyboxProgress(100);
       
       // Process 3D asset result (if generated)
       if (canGenerate3D) {
         if (assetResult && assetResult.success && assetResult.assets.length > 0) {
-          const asset = assetResult.assets[0];
+          // Handle multiple assets if generated (up to 3)
+          const assets = assetResult.assets.slice(0, 3);
+          const asset = assets[0]; // Use first asset for main display
           
           // Enhanced URL extraction - try all possible sources
           let assetUrl = asset.downloadUrl || asset.previewUrl;
@@ -2475,19 +2463,14 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           setGenerated3DAsset(asset);
           setGlobalGenerated3DAsset(asset); // Save to context
           
-          // Ensure 3D viewer is visible when asset is ready
-          if (assetUrl) {
-            setShow3DAssetViewer(true);
-            console.log('✅ 3D Asset ready, showing viewer');
-          }
-          
           // Ensure skybox background is set when both complete
           if (variationResults && variationResults.length > 0 && setBackgroundSkybox) {
             setBackgroundSkybox(variationResults[0]);
           }
           
-          // Show unified completion notification
-          if (variationResults && variationResults.length > 0) {
+          // Show unified completion notification and viewer only after both are ready
+          if (variationResults && variationResults.length > 0 && assetUrl) {
+            // Show unified completion notification
             const successMsg = document.createElement('div');
             successMsg.className = 'fixed top-4 right-4 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white px-6 py-4 rounded-xl shadow-2xl z-50 max-w-md border border-white/20';
             successMsg.innerHTML = `
@@ -2522,12 +2505,13 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                 setTimeout(() => document.body.removeChild(successMsg), 300);
               }
             }, 4000);
+            
+            // Show viewer only after both skybox and asset are ready
+            setTimeout(() => {
+              setShow3DAssetViewer(true);
+              console.log('✅ Both skybox and 3D asset ready, showing viewer');
+            }, 500); // Small delay for smooth transition
           }
-          
-          // Automatically show viewer when both complete - with smooth transition
-          setTimeout(() => {
-            setShow3DAssetViewer(true);
-          }, 500); // Small delay for smooth transition
           console.log('✅ 3D asset generated successfully:', asset);
           console.log('📦 Asset downloadUrl:', asset.downloadUrl);
           console.log('📦 Asset previewUrl:', asset.previewUrl);
@@ -2619,12 +2603,25 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           }
         }
       } else {
+        // 3D generation not enabled - show skybox only
         const reasons = [];
         if (!storageAvailable) reasons.push('Storage not available');
         if (!assetGenerationService.isMeshyConfigured()) reasons.push('Meshy API not configured');
         if (!user?.uid) reasons.push('User not authenticated');
         
         console.warn('⚠️ 3D asset generation skipped (skybox still generated):', reasons.join(', '));
+        
+        // Show skybox viewer when only skybox is generated
+        if (variationResults && variationResults.length > 0) {
+          if (setBackgroundSkybox) {
+            setBackgroundSkybox(variationResults[0]);
+          }
+          // Show viewer for skybox only
+          setTimeout(() => {
+            setShow3DAssetViewer(true);
+            console.log('✅ Skybox ready, showing viewer');
+          }, 500);
+        }
         
         // Only show notification if it's a configuration issue (not just missing objects)
         if (isDevMode || (!storageAvailable || !assetGenerationService.isMeshyConfigured())) {
@@ -2747,11 +2744,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   };
 
   // -------------------------
-  // Upgrade handler
+  // Upgrade handler removed
   // -------------------------
-  const handleUpgrade = () => {
-    setShowUpgradeModal(true);
-  };
 
   // -------------------------
   // Panel size toggle
@@ -2881,11 +2875,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const isLoadingActive = isGenerating || isGenerating3DAsset;
   
   return (
-    <div className={`absolute inset-0 min-h-screen transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-      isChatSidebarOpen 
-        ? 'pl-0 md:pl-[260px] lg:pl-[280px] xl:pl-[300px] 2xl:pl-[320px]' 
-        : 'pl-0 md:pl-[64px]'
-    }`}>
+    <div className="absolute inset-0 min-h-screen transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pl-0 md:pl-[64px]">
       {/* Dotted Surface Background - Show when nothing is generated OR during loading */}
       {showDottedSurface && (
         <div className="fixed inset-0 z-[2]">
@@ -2914,9 +2904,46 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         </div>
       )}
       
-      {/* Bottom Dock Control Panel */}
+      {/* Layer 2: Teacher Avatar - 3D Model (Absolute positioned, behind generation panel) */}
+      {/* z-[20] ensures it's above asset viewer (z-[10]) and background (z-[2], z-[3]) but below generation panel (z-[30]) */}
+      <div className="fixed inset-0 z-[20] pointer-events-none">
+        <div className="absolute top-1/2 right-4 md:right-8 lg:right-12 xl:right-16 2xl:right-20 -translate-y-1/2 w-[200px] h-[300px] sm:w-[250px] sm:h-[375px] md:w-[300px] md:h-[450px] pointer-events-auto">
+          <TeacherAvatar
+            ref={avatarRef}
+            className="w-full h-full"
+            avatarModelUrl="/models/avatar3.glb"
+            curriculum={avatarConfig.curriculum}
+            class={avatarConfig.class}
+            subject={avatarConfig.subject}
+            useAvatarKey={true}
+            onReady={() => {
+              console.log('✅ Teacher avatar ready');
+              setIsAvatarReady(true);
+            }}
+            onMessage={(message) => {
+              setAvatarMessages(prev => [...prev, { role: 'user', content: message }]);
+            }}
+            onResponse={(response) => {
+              console.log('📬 onResponse called in MainSection with:', response);
+              console.log('📬 Current avatarMessages before update:', avatarMessages);
+              if (!response || typeof response !== 'string') {
+                console.error('❌ Invalid response received:', response);
+                return;
+              }
+              setAvatarMessages(prev => {
+                const newMessages = [...prev, { role: 'assistant', content: response }];
+                console.log('📬 New avatarMessages after update:', newMessages);
+                return newMessages;
+              });
+              setIsAvatarLoading(false);
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Layer 1: Bottom Dock Control Panel (Generation Panel - Highest z-index) */}
       <div
-        className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 z-20 ${
+        className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 z-[30] ${
           isMinimized ? 'pb-3' : (isGenerating || isGenerating3DAsset) ? 'pb-2' : 'pb-4'
         }`}
       >
@@ -2924,9 +2951,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           className={`w-full mx-auto transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             isMinimized 
               ? 'max-w-2xl px-2 sm:px-4' 
-              : isChatSidebarOpen
-                ? 'px-2 sm:px-3 md:px-4 lg:px-5 xl:px-6 max-w-full sm:max-w-[calc(100vw-240px-200px)] md:max-w-[calc(100vw-260px-220px)] lg:max-w-[calc(100vw-280px-240px)] xl:max-w-[calc(100vw-300px-260px)] 2xl:max-w-[calc(1536px-320px-280px)]'
-                : 'px-2 sm:px-3 md:px-4 lg:px-5 xl:px-6 max-w-full sm:max-w-[calc(100vw-56px-200px)] md:max-w-[calc(100vw-64px-220px)] lg:max-w-[calc(100vw-240px)] xl:max-w-[calc(100vw-260px)] 2xl:max-w-[calc(1536px-280px)]'
+              : 'px-2 sm:px-3 md:px-4 lg:px-5 xl:px-6 max-w-full sm:max-w-[calc(100vw-56px-200px)] md:max-w-[calc(100vw-64px-220px)] lg:max-w-[calc(100vw-240px)] xl:max-w-[calc(100vw-260px)] 2xl:max-w-[calc(1536px-280px)]'
           }`}
         >
           <div
@@ -2963,27 +2988,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
               </div>
 
               <div className="flex items-center gap-3">
-                {/* Plan / Usage pill */}
-                {!isMinimized && (
-                  <div className="hidden md:flex flex-col items-end text-[11px]">
-                    <span className="uppercase tracking-[0.2em] text-gray-500">
-                      {subscriptionInfo.planName}
-                    </span>
-                    {!isUnlimited && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="w-24 h-1.5 rounded-full bg-[#1e1e1e] overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-emerald-500 to-yellow-400"
-                            style={{ width: `${usagePercentage}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] text-gray-400">
-                          {currentUsage}/{currentLimit} used
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Plan / Usage pill removed */}
 
                 {/* Minimize / Expand button */}
                 {setBackgroundSkybox && (
@@ -3051,36 +3056,37 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                   </div>
                 )}
 
-                {/* UNIFIED PROGRESS (when generating) */}
-                {(isGenerating || isGenerating3DAsset) && (
-                  <div className="w-full mb-0">
-                    <UnifiedGenerationProgress
-                      skyboxProgress={skyboxProgress}
-                      meshProgress={assetGenerationProgress?.progress || 0}
-                      skyboxEnabled={isGenerating}
-                      meshEnabled={isGenerating3DAsset}
-                      skyboxMessage={isGenerating ? `Generating skybox... ${Math.round(skyboxProgress)}%` : undefined}
-                      meshMessage={assetGenerationProgress?.message}
-                      overallMessage={
-                        isGenerating && isGenerating3DAsset
-                          ? `Creating your immersive 3D environment... ${Math.round((skyboxProgress + (assetGenerationProgress?.progress || 0)) / 2)}%`
-                          : isGenerating
-                          ? `Generating skybox... ${Math.round(skyboxProgress)}%`
-                          : `Generating 3D mesh... ${Math.round(assetGenerationProgress?.progress || 0)}%`
-                      }
-                    />
-                  </div>
-                )}
-
-                {/* Main Grid (Editor style) */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-1">
-                  {/* Column 1: Prompt, Variations, Negative Prompt, Download */}
-                  <div className="md:col-span-2 space-y-1">
-                    <div className={`border border-sky-500/30 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
+                {/* Main Grid (Editor style) - 4 columns for 50% | 25% | 25% split */}
+                <motion.div 
+                  className={`grid grid-cols-1 md:grid-cols-4 gap-1 transition-all duration-300 ${
+                    (isGenerating || isGenerating3DAsset) ? 'opacity-90' : ''
+                  }`}
+                  animate={{
+                    padding: (isGenerating || isGenerating3DAsset) ? '0.25rem' : '0.5rem',
+                  }}
+                >
+                  {/* SEPARATE PROGRESS (when generating) - Show at top */}
+                  {(isGenerating || isGenerating3DAsset) && (
+                    <div className="col-span-full mb-0.5 px-1">
+                      <SeparateGenerationProgress
+                        skyboxProgress={skyboxProgress}
+                        meshProgress={assetGenerationProgress?.progress || 0}
+                        skyboxEnabled={isGenerating}
+                        meshEnabled={isGenerating3DAsset}
+                        skyboxMessage={isGenerating ? `Generating skybox... ${Math.round(skyboxProgress)}%` : undefined}
+                        meshMessage={assetGenerationProgress?.message}
+                      />
+                    </div>
+                  )}
+                  {/* Section 1 (Left - 50% width): Prompt, Variations, Negative Prompt, Download */}
+                  <div className={`md:col-span-2 space-y-0.5 flex flex-col transition-all duration-300 ${
+                    (isGenerating || isGenerating3DAsset) ? 'opacity-80 scale-[0.98]' : ''
+                  }`}>
+                    <div className={`border border-sky-500/30 bg-gray-800/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md transition-all duration-300 ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-sky-500/50 shadow-[0_0_24px_rgba(14,165,233,0.2)] border-sky-500/50' : 'hover:border-sky-500/40'
-                    } transition-all duration-300`}>
+                    } ${(isGenerating || isGenerating3DAsset) ? 'scale-[0.98]' : ''}`}>
                       <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
-                        <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-semibold flex items-center gap-2">
+                        <span className="text-[9px] tracking-[0.15em] text-gray-400 uppercase font-semibold flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-sky-400/70 shadow-[0_0_6px_rgba(14,165,233,0.5)]" />
                           Prompt
                           {(isGenerating || isGenerating3DAsset) && (
@@ -3378,6 +3384,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 .filter(keyword => !skyboxKeywords.some(sk => keyword.includes(sk) || sk.includes(keyword)))
                             : [];
                           
+                          // Use AI assets if available, otherwise use keywords
+                          // BUT: Only use keywords if AI didn't detect anything (to avoid false positives)
+                          const assetsToHighlight = aiAssets.length > 0 ? aiAssets : (parsedPrompt?.meshScore > 0.3 ? keywordAssets : []);
+                          // Highlight if we have mesh score > 0.3 OR if we have AI-detected assets
+                          const shouldHighlight = (parsedPrompt?.meshScore > 0.3 || aiAssets.length > 0) && assetsToHighlight.length > 0;
+                          
                           // Enhanced debug logging for 3D asset detection
                           console.log('🎨 3D Asset Detection & Highlighting:', {
                             prompt: prompt.substring(0, 50) + '...',
@@ -3397,12 +3409,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             usingAi: aiAssets.length > 0,
                             usingKeywords: aiAssets.length === 0 && keywordAssets.length > 0
                           });
-                          
-                          // Use AI assets if available, otherwise use keywords
-                          // BUT: Only use keywords if AI didn't detect anything (to avoid false positives)
-                          const assetsToHighlight = aiAssets.length > 0 ? aiAssets : (parsedPrompt?.meshScore > 0.3 ? keywordAssets : []);
-                          // Highlight if we have mesh score > 0.3 OR if we have AI-detected assets
-                          const shouldHighlight = (parsedPrompt?.meshScore > 0.3 || aiAssets.length > 0) && assetsToHighlight.length > 0;
                           
                           // Step 1: Calculate highlight ranges using AI-detected assets
                           // Enhanced matching algorithm for better 3D asset detection and highlighting
@@ -3672,7 +3678,9 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 maxLength={600}
                                 rows={2}
                                 placeholder={isListening || isAvatarListening ? "Listening... Speak your prompt now" : "Describe the environment: lighting, mood, props, architecture..."}
-                                className={`w-full text-xs bg-gray-800/50 border border-gray-700/50 px-2 py-1 pr-12 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 resize-none transition-all duration-300 font-normal leading-relaxed rounded-md ${
+                                className={`w-full text-xs bg-gray-800/50 border border-gray-700/50 px-1.5 py-0.5 pr-12 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 resize-none transition-all duration-300 font-normal leading-tight rounded-md ${
+                                  (isGenerating || isGenerating3DAsset) ? 'h-12' : 'h-16'
+                                } ${
                                   isListening || isAvatarListening
                                     ? 'border-red-500/60 ring-2 ring-red-500/30 focus:ring-red-500/50 focus:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
                                     : 'focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_15px_rgba(14,165,233,0.15)]'
@@ -3741,14 +3749,13 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       </div>
                     </div>
 
-                    {/* Advanced Prompt Controls - Hidden for trial users */}
-                    {!isTrialUser && (
-                      <div className="space-y-1">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-1 pt-0.5 border-t border-[#ffffff]/5">
+                    {/* Advanced Prompt Controls */}
+                    <div className={`space-y-0.5 transition-all duration-300 ${(isGenerating || isGenerating3DAsset) ? 'opacity-70' : ''}`}>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-0.5 pt-0.5 border-t border-[#ffffff]/5">
                           <div className="md:col-span-1">
                             <label
                               htmlFor="variations"
-                              className="block text-[10px] tracking-[0.2em] text-gray-400 uppercase mb-1 font-semibold"
+                              className="block text-[9px] tracking-[0.15em] text-gray-400 uppercase mb-0.5 font-semibold"
                             >
                               Variations
                             </label>
@@ -3758,7 +3765,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               min="1"
                               max="10"
                               placeholder="1–10"
-                              className={`w-full text-xs bg-gray-800/60 border border-gray-700/50 px-2 py-0.5 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-300 rounded-md ${
+                              className={`w-full text-xs bg-gray-800/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-300 rounded-md ${
                                 isGenerating || isGenerating3DAsset 
                                   ? 'opacity-90 cursor-default' 
                                   : 'hover:border-gray-600/50 hover:bg-gray-800/60'
@@ -3780,7 +3787,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <div className="md:col-span-2">
                             <label
                               htmlFor="negativeText"
-                              className="block text-[10px] tracking-[0.2em] text-gray-400 uppercase mb-1 font-semibold"
+                              className="block text-[9px] tracking-[0.15em] text-gray-400 uppercase mb-0.5 font-semibold"
                             >
                               Negative Prompt
                             </label>
@@ -3788,7 +3795,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               type="text"
                               id="negativeText"
                               placeholder="Elements to avoid: low-res, blurry, washed out..."
-                              className={`w-full text-xs bg-gray-800/60 border border-gray-700/50 px-2 py-0.5 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-300 rounded-md ${
+                              className={`w-full text-xs bg-gray-800/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-300 rounded-md ${
                                 isGenerating || isGenerating3DAsset 
                                   ? 'opacity-90 cursor-default' 
                                   : 'hover:border-gray-600/50 hover:bg-gray-800/60'
@@ -3809,7 +3816,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                         {/* Download Button - Below Variations and Negative Prompt */}
                         <button
                           className={`
-                            w-full py-1 text-xs font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2
+                            w-full py-0.5 text-[10px] font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-1.5
                             transition-all duration-300 shadow-lg border rounded-md
                             ${
                               !currentImageForDownload
@@ -3826,7 +3833,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <span>Download</span>
                         </button>
                       </div>
-                    )}
 
                     {/* Show enhancement status when enhancing */}
                     {isEnhancing && (
@@ -3842,17 +3848,6 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
                     {/* 3D Objects Detection - Hidden UI, only highlighting in prompt text */}
 
-                    {/* Trial user info badge */}
-                    {isTrialUser && (
-                      <div className="flex items-center gap-2 px-2 py-1 bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/15 border border-amber-500/30 shadow-[0_0_16px_rgba(217,119,6,0.15)] rounded-md">
-                        <svg className="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="text-[10px] text-amber-300 leading-tight font-medium">
-                          Trial: 1 variation, {TRIAL_ALLOWED_STYLES.length} styles available. <button onClick={handleUpgrade} className="underline hover:text-amber-200 font-semibold transition-colors">Upgrade</button> for full access.
-                        </span>
-                      </div>
-                    )}
 
                     {/* Storage warnings - only show to non-trial users or in dev mode */}
                     {!storageAvailable && (!isTrialUser || isDevMode) && (
@@ -3919,14 +3914,16 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                     )}
                   </div>
 
-                  {/* Column 2: Style & Generate */}
-                  <div className="md:col-span-1 space-y-1 flex flex-col">
+                  {/* Section 2 (Middle - 25% width): Style Section + Generate Button */}
+                  <div className={`md:col-span-1 space-y-0.5 flex flex-col transition-all duration-300 ${
+                    (isGenerating || isGenerating3DAsset) ? 'opacity-80 scale-[0.98]' : ''
+                  }`}>
                     {/* Style selector */}
-                    <div className={`border border-emerald-500/50 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
+                    <div className={`border border-emerald-500/50 bg-gray-800/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-emerald-500/50 shadow-[0_0_24px_rgba(16,185,129,0.2)] border-emerald-500/60' : 'hover:border-emerald-500/60'
                     } transition-all duration-300`}>
                           <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
-                            <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-semibold flex items-center gap-2">
+                            <span className="text-[9px] tracking-[0.15em] text-gray-400 uppercase font-semibold flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
                               In3D.Ai Style
                               {(isGenerating || isGenerating3DAsset) && selectedSkybox && (
@@ -3941,18 +3938,18 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           </div>
 
                        {/* Active style preview above style list – mimic Skybox panel */}
-                       {selectedSkybox && (
+                       {selectedSkybox && !(isGenerating || isGenerating3DAsset) && (
                          <div className="overflow-hidden border border-[#ffffff]/10 bg-black/20 shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)] rounded-md">
                            <div className="relative">
                              {selectedSkybox.image_jpg && (
                                <img
                                  src={selectedSkybox.image_jpg}
                                  alt={selectedSkybox.name}
-                                 className="w-full h-8 object-cover"
+                                 className="w-full h-6 object-cover"
                                />
                              )}
-                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-2 py-0.5">
-                               <p className="text-[10px] font-bold text-gray-100 truncate">
+                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-1.5 py-0.5">
+                               <p className="text-[9px] font-bold text-gray-100 truncate">
                                  {selectedSkybox.name}
                                </p>
                              </div>
@@ -3961,15 +3958,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                        )}
 
                       {stylesLoading ? (
-                        <div className="text-[10px] text-gray-500 py-1 font-medium">Loading styles…</div>
+                        <div className="text-[9px] text-gray-500 py-0.5 font-medium">Loading styles…</div>
                       ) : stylesError ? (
-                        <div className="text-[10px] text-red-400 py-1 font-medium">{stylesError}</div>
+                        <div className="text-[9px] text-red-400 py-0.5 font-medium">{stylesError}</div>
                       ) : (
                         <div className="relative">
                           <select
                             value={selectedSkybox?.id ?? ''}
                             onChange={handleSkyboxStyleChange}
-                            className={`w-full appearance-none border border-emerald-500/60 bg-gray-800/60 px-2 py-1 pr-8 text-xs text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/70 focus:shadow-[0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 rounded-md ${
+                            className={`w-full appearance-none border border-emerald-500/60 bg-gray-800/60 px-1.5 py-0.5 pr-8 text-xs text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/70 focus:shadow-[0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 rounded-md ${
                               isGenerating || isGenerating3DAsset 
                                 ? 'opacity-90 cursor-default' 
                                 : 'hover:border-emerald-500/80 hover:bg-gray-800/60'
@@ -4002,23 +3999,17 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               />
                             </svg>
                           </div>
-                          {/* Trial style count indicator */}
-                          {isTrialUser && (
-                            <p className="text-[9px] text-gray-500 mt-1.5 font-semibold px-1">
-                              {availableStyles.length} styles available in trial
-                            </p>
-                          )}
                         </div>
                       )}
                     </div>
 
                     {/* Generation button */}
-                    <div className="border border-[#ffffff]/10 bg-gray-800/60 px-2 py-1.5 backdrop-blur-sm flex-1 flex flex-col justify-end rounded-md">
-                      <div className="space-y-1">
+                    <div className="border border-[#ffffff]/10 bg-gray-800/60 px-1.5 py-1 backdrop-blur-sm flex-1 flex flex-col justify-end rounded-md">
+                      <div className="space-y-0.5">
                         <button
                           className={`
-                            w-full py-1.5 text-xs font-bold uppercase tracking-[0.2em]
-                            flex items-center justify-center gap-2
+                            w-full py-1 text-xs font-bold uppercase tracking-[0.15em]
+                            flex items-center justify-center gap-1.5
                             transition-all duration-300 shadow-lg rounded-md
                             ${
                               isGenerating
@@ -4028,11 +4019,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 : 'bg-blue-600 hover:bg-blue-500 text-white hover:shadow-[0_0_24px_rgba(37,99,235,0.5)] hover:-translate-y-0.5 active:translate-y-0'
                             }
                           `}
-                          onClick={
-                            !isUnlimited && remainingAfterGeneration < 0
-                              ? handleUpgrade
-                              : generateSkybox
-                          }
+                          onClick={generateSkybox}
                           disabled={isGenerating || isGenerating3DAsset}
                         >
                           {isGenerating || isGenerating3DAsset ? (
@@ -4074,11 +4061,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                   d="M5 10l7-7m0 0l7 7m-7-7v18"
                                 />
                               </svg>
-                              <span>
-                                {subscription?.planId === 'free'
-                                  ? 'Upgrade to Pro'
-                                  : 'Upgrade Plan'}
-                              </span>
+                              <span>Generate</span>
                             </>
                           ) : (
                             <>
@@ -4165,7 +4148,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                   skyboxId: skyboxId,
                                   quality: 'medium',
                                   style: 'realistic',
-                                  maxAssets: 1
+                                  maxAssets: 5
                                 }, (progressUpdate) => {
                                   setAssetGenerationProgress({
                                     stage: progressUpdate.stage || 'generating',
@@ -4393,13 +4376,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                     </div>
                   </div>
 
-                  {/* Column 3: Avatar Configuration */}
-                  <div className="md:col-span-1 space-y-1 flex flex-col">
-                    <div className={`border border-purple-500/30 bg-gray-800/60 px-2 py-1.5 space-y-1 backdrop-blur-sm rounded-md ${
+                  {/* Section 3 (Right - 25% width): Avatar Config + Voice Input + Start Button */}
+                  <div className={`md:col-span-1 space-y-0.5 flex flex-col transition-all duration-300 ${
+                    (isGenerating || isGenerating3DAsset) ? 'opacity-80 scale-[0.98]' : ''
+                  }`}>
+                    <div className={`border border-purple-500/30 bg-gray-800/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-purple-500/50 shadow-[0_0_24px_rgba(168,85,247,0.2)] border-purple-500/50' : 'hover:border-purple-500/40'
                     } transition-all duration-300`}>
                       <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
-                        <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-semibold flex items-center gap-2">
+                        <span className="text-[9px] tracking-[0.15em] text-gray-400 uppercase font-semibold flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-purple-400/70 shadow-[0_0_6px_rgba(168,85,247,0.5)]" />
                           Avatar Config
                         </span>
@@ -4415,67 +4400,78 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <span className="hidden sm:inline">List</span>
                         </button>
                       </div>
-                      <div className="space-y-1">
-                        <div>
-                          <label className="block text-[9px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">
-                            Curriculum
-                            {assistantsLoading && <span className="ml-1 text-[8px] text-gray-500">(Loading...)</span>}
-                          </label>
-                          <select
-                            value={avatarConfig.curriculum}
-                            onChange={(e) => setAvatarConfig(prev => ({ ...prev, curriculum: e.target.value, class: '', subject: '' }))}
-                            disabled={assistantsLoading}
-                            className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-2 py-1 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <option value="" disabled>Select option</option>
-                            {getAvailableCurriculums.map(cur => (
-                              <option key={cur} value={cur}>{cur}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-1">
-                          <div>
-                            <label className="block text-[9px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Class</label>
-                            <select
-                              value={avatarConfig.class}
-                              onChange={(e) => setAvatarConfig(prev => ({ ...prev, class: e.target.value, subject: '' }))}
-                              disabled={assistantsLoading || !avatarConfig.curriculum}
-                              className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-2 py-1 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              <option value="" disabled>Select option</option>
-                              {getAvailableClasses.map(cls => (
-                                <option key={cls} value={cls}>Class {cls}</option>
-                              ))}
-                            </select>
+                      <div className="space-y-0.5">
+                        {assistantsLoading ? (
+                          <div className="text-[8px] text-gray-400 text-center py-2">
+                            Loading assistants...
                           </div>
-                          <div>
-                            <label className="block text-[9px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Subject</label>
-                            <select
-                              value={avatarConfig.subject}
-                              onChange={(e) => setAvatarConfig(prev => ({ ...prev, subject: e.target.value }))}
-                              disabled={assistantsLoading || !avatarConfig.curriculum || !avatarConfig.class}
-                              className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-2 py-1 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              <option value="" disabled>Select option</option>
-                              {getAvailableSubjects.map(sub => (
-                                <option key={sub} value={sub}>{sub}</option>
-                              ))}
-                            </select>
+                        ) : availableAssistants.length === 0 ? (
+                          <div className="text-[8px] text-yellow-400 text-center py-2">
+                            No assistants available. Check API key configuration.
                           </div>
-                        </div>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-[8px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">
+                                Curriculum
+                              </label>
+                              <select
+                                value={avatarConfig.curriculum}
+                                onChange={(e) => setAvatarConfig(prev => ({ ...prev, curriculum: e.target.value, class: '', subject: '' }))}
+                                disabled={getAvailableCurriculums.length === 0}
+                                className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <option value="" disabled>Select option</option>
+                                {getAvailableCurriculums.map(cur => (
+                                  <option key={cur} value={cur}>{cur}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-0.5">
+                              <div>
+                                <label className="block text-[8px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Class</label>
+                                <select
+                                  value={avatarConfig.class}
+                                  onChange={(e) => setAvatarConfig(prev => ({ ...prev, class: e.target.value, subject: '' }))}
+                                  disabled={!avatarConfig.curriculum || getAvailableClasses.length === 0}
+                                  className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <option value="" disabled>Select option</option>
+                                  {getAvailableClasses.map(cls => (
+                                    <option key={cls} value={cls}>Class {cls}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[8px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Subject</label>
+                                <select
+                                  value={avatarConfig.subject}
+                                  onChange={(e) => setAvatarConfig(prev => ({ ...prev, subject: e.target.value }))}
+                                  disabled={!avatarConfig.curriculum || !avatarConfig.class || getAvailableSubjects.length === 0}
+                                  className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  <option value="" disabled>Select option</option>
+                                  {getAvailableSubjects.map(sub => (
+                                    <option key={sub} value={sub}>{sub}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                       
                       {/* Unified Microphone Button and Start Button */}
-                      <div className="pt-1 border-t border-[#ffffff]/5 space-y-1">
-                        <div className="flex gap-1.5">
+                      <div className="pt-0.5 border-t border-[#ffffff]/5 space-y-0.5">
+                        <div className="flex gap-1">
                           {/* Voice Input Button - Left Side */}
                           {isVoiceSupported && (
                             <button
                               onClick={toggleUnifiedVoiceInput}
                               disabled={isGenerating || isGenerating3DAsset}
                               className={`
-                                flex-1 py-2 text-xs font-bold uppercase tracking-[0.2em]
-                                flex items-center justify-center gap-2
+                                flex-1 py-1 text-[10px] font-bold uppercase tracking-[0.15em]
+                                flex items-center justify-center gap-1.5
                                 transition-all duration-300 shadow-lg rounded-md
                                 ${
                                   isListening
@@ -4526,8 +4522,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             onClick={generateSkybox}
                             disabled={isGenerating || isGenerating3DAsset || !prompt?.trim() || !selectedSkybox}
                             className={`
-                              flex-1 py-2 text-xs font-bold uppercase tracking-[0.2em]
-                              flex items-center justify-center gap-2
+                              flex-1 py-1 text-[10px] font-bold uppercase tracking-[0.15em]
+                              flex items-center justify-center gap-1.5
                               transition-all duration-300 shadow-lg rounded-md
                               ${
                                 isGenerating || isGenerating3DAsset
@@ -4594,34 +4590,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       </div>
                     </div>
                   </div>
-                </div>
+                </motion.div>
               </div>
             )}
           </div>
-        </div>
-
-        {/* Column 4: Teacher Avatar - 3D Model Only */}
-        <div className="w-[300px] h-[450px] min-h-[450px]">
-          <TeacherAvatar
-            ref={avatarRef}
-            className="w-full h-full"
-            avatarModelUrl="/models/avatar3.glb"
-            curriculum={avatarConfig.curriculum}
-            class={avatarConfig.class}
-            subject={avatarConfig.subject}
-            useAvatarKey={true}
-            onReady={() => {
-              console.log('✅ Teacher avatar ready');
-              setIsAvatarReady(true);
-            }}
-            onMessage={(message) => {
-              setAvatarMessages(prev => [...prev, { role: 'user', content: message }]);
-            }}
-            onResponse={(response) => {
-              setAvatarMessages(prev => [...prev, { role: 'assistant', content: response }]);
-              setIsAvatarLoading(false);
-            }}
-          />
         </div>
 
       </div>
@@ -4634,12 +4606,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         title={prompt || 'In3D.Ai environment'}
       />
 
-      {/* Upgrade Modal */}
-      <UpgradeModal 
-        isOpen={showUpgradeModal} 
-        onClose={() => setShowUpgradeModal(false)}
-        currentPlan={subscriptionInfo.plan}
-      />
+      {/* Upgrade Modal removed */}
 
       {/* Asset Panel */}
       <AssetGenerationPanel
@@ -4821,11 +4788,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.4, ease: 'easeInOut' }}
-            className={`absolute inset-0 w-full h-full z-[10] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-              isChatSidebarOpen 
-                ? 'pl-0 md:pl-[260px] lg:pl-[280px] xl:pl-[300px] 2xl:pl-[320px]' 
-                : 'pl-0 md:pl-[64px]'
-            }`}
+            className="absolute inset-0 w-full h-full z-[10] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pl-0 md:pl-[64px]"
           >
             {/* Debug info in dev mode */}
             {isDevMode && (
@@ -4921,7 +4884,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           skyboxId: skyboxId,
                           quality: 'medium',
                           style: 'realistic',
-                          maxAssets: 1
+                          maxAssets: 3
                         }, (progressUpdate) => {
                           setAssetGenerationProgress({
                             stage: progressUpdate.stage || 'generating',
@@ -5097,20 +5060,20 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         messages={avatarMessages}
         isVisible={avatarMessages.length > 0 && avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject}
       />
+      {/* Debug info - remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed bottom-4 left-4 z-[100] bg-black/80 text-white text-xs p-2 rounded max-w-xs">
+          <div>Avatar Messages: {avatarMessages.length}</div>
+          <div>Config: {avatarConfig.curriculum || 'none'} / {avatarConfig.class || 'none'} / {avatarConfig.subject || 'none'}</div>
+          <div>Is Visible: {avatarMessages.length > 0 && avatarConfig.curriculum && avatarConfig.class && avatarConfig.subject ? 'Yes' : 'No'}</div>
+          {avatarMessages.length > 0 && (
+            <div className="mt-1 text-[10px]">
+              Latest: {avatarMessages[avatarMessages.length - 1]?.content?.substring(0, 50)}...
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Chat Sidebar - Desktop/Tablet only */}
-      <ChatSidebar 
-        isOpen={isChatSidebarOpen} 
-        onToggle={() => setIsChatSidebarOpen(!isChatSidebarOpen)}
-        setBackgroundSkybox={setBackgroundSkybox}
-      />
-
-      {/* Mobile Bottom Bar - Mobile only */}
-      <MobileBottomBar 
-        isOpen={isChatSidebarOpen} 
-        onToggle={() => setIsChatSidebarOpen(!isChatSidebarOpen)}
-        setBackgroundSkybox={setBackgroundSkybox}
-      />
 
       {/* AI Detection Confirmation Dialog */}
       <AnimatePresence>
@@ -5235,6 +5198,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Lesson MCQ Panel - Floating in right corner */}
+      {currentLessonChapter && (
+        <LessonMCQPanel
+          chapter={currentLessonChapter}
+          isVisible={showMCQPanel}
+          onClose={() => setShowMCQPanel(false)}
+        />
+      )}
     </div>
   );
 };

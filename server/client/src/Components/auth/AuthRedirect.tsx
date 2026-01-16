@@ -1,48 +1,39 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useSubscription } from '../../contexts/SubscriptionContext';
 
 /**
- * Component that redirects authenticated users based on their subscription status
- * - Free plan users: redirect to onboarding or main
- * - Paid plan users: redirect to main
+ * Component that redirects authenticated users
+ * - Authenticated users: redirect to main or onboarding
  * - Unauthenticated users: stay on current page
  */
 interface AuthRedirectProps {
   children: React.ReactNode;
-  redirectFreeTo?: string;
-  redirectPaidTo?: string;
+  redirectTo?: string;
   skipRedirect?: boolean;
 }
 
 export const AuthRedirect = ({ 
   children, 
-  redirectFreeTo = '/onboarding',
-  redirectPaidTo = '/main',
+  redirectTo = '/main',
   skipRedirect = false
 }: AuthRedirectProps) => {
   const { user, loading: authLoading } = useAuth();
-  const { subscription, loading: subscriptionLoading, isFreePlan } = useSubscription();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (skipRedirect || authLoading || subscriptionLoading) {
+    if (skipRedirect || authLoading) {
       return;
     }
 
     if (user) {
-      // If user is authenticated, redirect based on subscription
-      if (isFreePlan) {
-        navigate(redirectFreeTo, { replace: true });
-      } else {
-        navigate(redirectPaidTo, { replace: true });
-      }
+      // If user is authenticated, redirect to specified page
+      navigate(redirectTo, { replace: true });
     }
-  }, [user, subscription, isFreePlan, authLoading, subscriptionLoading, skipRedirect, redirectFreeTo, redirectPaidTo, navigate]);
+  }, [user, authLoading, skipRedirect, redirectTo, navigate]);
 
-  // Show loading state while checking auth/subscription
-  if (authLoading || subscriptionLoading) {
+  // Show loading state while checking auth
+  if (authLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="text-center">

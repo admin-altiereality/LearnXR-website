@@ -2,11 +2,11 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import express from 'express';
 import * as admin from 'firebase-admin';
-import Razorpay from 'razorpay';
+// Razorpay removed - import Razorpay from 'razorpay';
 import { db, isFirebaseInitialized } from '../config/firebase-admin';
 import { 
-  shouldUseRazorpay, 
-  mapRazorpayStatus,
+  // shouldUseRazorpay removed,
+  // mapRazorpayStatus removed,
   mapPaddleStatus,
   PaymentProvider,
   WebhookEvent
@@ -24,23 +24,12 @@ const router = express.Router();
 
 console.log('Payment routes being initialized...');
 
-// Check if Razorpay credentials are available
-const hasRazorpayCredentials = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
+// Razorpay removed - all payments use Paddle
+const hasRazorpayCredentials = false;
+const razorpay: any = null;
 
 // Check if Paddle credentials are available
 const hasPaddleCredentials = process.env.PADDLE_API_KEY && process.env.PADDLE_WEBHOOK_SECRET;
-
-// Initialize Razorpay only if credentials are available
-let razorpay: Razorpay | null = null;
-if (hasRazorpayCredentials) {
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID!,
-    key_secret: process.env.RAZORPAY_KEY_SECRET!
-  });
-  console.log('Razorpay initialized with key_id: Present');
-} else {
-  console.log('Razorpay not initialized - missing credentials');
-}
 
 // Debug middleware for payment routes
 router.use((req, res, next) => {
@@ -139,14 +128,14 @@ router.post('/determine-provider', (req, res) => {
     
     // Priority: billing country > detected country
     const effectiveCountry = billingCountry || country || 'US';
-    const provider: PaymentProvider = shouldUseRazorpay(effectiveCountry) ? 'razorpay' : 'paddle';
+    const provider: PaymentProvider = 'paddle'; // Razorpay removed
     
     return res.json({
       success: true,
       data: {
         provider,
         country: effectiveCountry,
-        razorpayAvailable: hasRazorpayCredentials,
+        razorpayAvailable: false, // Razorpay removed
         paddleAvailable: hasPaddleCredentials
       }
     });
@@ -168,6 +157,14 @@ router.post('/determine-provider', (req, res) => {
  * POST /payment/create-order
  */
 router.post('/create-order', async (req, res) => {
+  // Razorpay removed - endpoint disabled
+  return res.status(503).json({
+    success: false,
+    status: 'error',
+    message: 'Razorpay has been removed. Please use Paddle for payments.'
+  });
+  
+  /* DISABLED - Razorpay removed
   try {
     if (!hasRazorpayCredentials || !razorpay) {
       return res.status(503).json({
@@ -232,12 +229,21 @@ router.post('/create-order', async (req, res) => {
       message: error instanceof Error ? error.message : 'Failed to create order'
     });
   }
+  */
 });
 
 /**
  * Verify Razorpay payment signature
  */
 const verifyPaymentHandler = async (req: express.Request, res: express.Response) => {
+  // Razorpay removed - endpoint disabled
+  return res.status(503).json({
+    success: false,
+    status: 'error',
+    message: 'Razorpay has been removed. Please use Paddle for payments.'
+  });
+  
+  /* DISABLED - Razorpay removed
   try {
     if (!hasRazorpayCredentials) {
       return res.status(503).json({
@@ -316,6 +322,7 @@ const verifyPaymentHandler = async (req: express.Request, res: express.Response)
       message: error instanceof Error ? error.message : 'Failed to verify payment'
     });
   }
+  */
 };
 
 router.post('/verify-payment', verifyPaymentHandler);
@@ -326,6 +333,13 @@ router.post('/verify', verifyPaymentHandler);
  * POST /payment/razorpay/webhook
  */
 router.post('/razorpay/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  // Razorpay removed - endpoint disabled
+  return res.status(503).json({ 
+    error: 'Razorpay has been removed. Please use Paddle for payments.',
+    received: false 
+  });
+  
+  /* DISABLED - Razorpay removed
   try {
     const signature = req.headers['x-razorpay-signature'] as string;
     
@@ -405,6 +419,7 @@ router.post('/razorpay/webhook', express.raw({ type: 'application/json' }), asyn
     console.error('Error processing Razorpay webhook:', error);
     return res.status(500).json({ error: 'Webhook processing failed' });
   }
+  */
 });
 
 // ============================================

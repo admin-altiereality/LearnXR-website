@@ -5,7 +5,7 @@
 
 export type SubscriptionTier = 'free' | 'pro' | 'team' | 'enterprise';
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired';
-export type PaymentProvider = 'razorpay' | 'paddle';
+export type PaymentProvider = 'paddle'; // Razorpay removed
 export type CountrySource = 'billing' | 'ip' | 'locale' | 'manual';
 
 export interface SubscriptionPlan {
@@ -152,10 +152,10 @@ export const mapPaddleStatus = (event: PaddleEventType | string): SubscriptionSt
   }
 };
 
-// Countries that should use Razorpay
-export const RAZORPAY_COUNTRIES = ['IN'];
+// Razorpay removed - all payments use Paddle
+export const RAZORPAY_COUNTRIES: string[] = [];
 
 export const shouldUseRazorpay = (countryCode: string): boolean => {
-  return RAZORPAY_COUNTRIES.includes(countryCode.toUpperCase());
+  return false; // Razorpay disabled
 };
 

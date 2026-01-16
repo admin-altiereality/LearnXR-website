@@ -22,7 +22,7 @@ import {
   FaChartLine
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
-import { useSubscription } from '../contexts/SubscriptionContext';
+// Subscription removed
 import { db } from '../config/firebase';
 import { toast } from 'react-toastify';
 import FuturisticBackground from '../Components/FuturisticBackground';
@@ -38,7 +38,7 @@ interface OnboardingData {
 const Onboarding = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { isFreePlan, subscription, loading: subscriptionLoading } = useSubscription();
+  // Subscription removed
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -214,7 +214,6 @@ const Onboarding = () => {
 
   const handleSubmit = async () => {
     if (!user?.uid) return;
-    if (subscriptionLoading) return; // Wait for subscription data to load
 
     setSubmitting(true);
     try {
@@ -243,15 +242,8 @@ const Onboarding = () => {
 
       toast.success('Welcome aboard! Let\'s create something amazing.');
       
-      // Wait a moment for subscription context to update, then redirect
-      // Redirect to pricing if user is on free plan and has no active subscription, otherwise to main
-      setTimeout(() => {
-        if (isFreePlan && !subscription) {
-          navigate('/pricing');
-        } else {
-          navigate('/main');
-        }
-      }, 100);
+      // Redirect to main after onboarding
+      navigate('/main');
     } catch (error) {
       console.error('Error saving onboarding data:', error);
       toast.error('Something went wrong. Please try again.');
@@ -261,15 +253,8 @@ const Onboarding = () => {
   };
 
   const handleSkip = () => {
-    // If skipping, still check subscription status
-    // Wait for subscription data if still loading
-    if (subscriptionLoading) return;
-    
-    if (isFreePlan && !subscription) {
-      navigate('/pricing');
-    } else {
-      navigate('/main');
-    }
+    // Skip onboarding and go to main
+    navigate('/main');
   };
 
   const fadeUpVariants = {
@@ -714,43 +699,7 @@ const Onboarding = () => {
             </div>
           </motion.div>
 
-          {/* Free Plan Info */}
-          {isFreePlan && (
-            <motion.div
-              custom={3}
-              variants={fadeUpVariants}
-              initial="hidden"
-              animate="visible"
-              className="mt-8 p-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-sm"
-            >
-              <div className="flex items-center justify-center gap-2 mb-4">
-                <FaStar className="text-amber-400" />
-                <h3 className="text-lg font-semibold text-amber-300">
-                  Free Plan Active
-                </h3>
-              </div>
-              <div className="space-y-2 text-left max-w-md mx-auto">
-                <div className="flex items-center gap-2 text-sm text-white/70">
-                  <FaCheck className="text-emerald-400" />
-                  <span>5 generations per month</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-white/70">
-                  <FaCheck className="text-emerald-400" />
-                  <span>1 asset per generation</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-white/70">
-                  <FaCheck className="text-emerald-400" />
-                  <span>Community support</span>
-                </div>
-              </div>
-              <button
-                onClick={() => navigate('/pricing')}
-                className="mt-4 w-full py-2 rounded-xl border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 transition-colors text-sm"
-              >
-                View upgrade options
-              </button>
-            </motion.div>
-          )}
+          {/* Subscription info removed */}
         </div>
       </div>
     </FuturisticBackground>

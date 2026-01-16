@@ -4,7 +4,7 @@
 
 import { Request, Response } from 'express';
 import { Router } from 'express';
-import { initializeServices, BLOCKADE_API_KEY, razorpay } from '../utils/services';
+import { initializeServices, BLOCKADE_API_KEY, MESHY_API_KEY, razorpay } from '../utils/services';
 import { getSecret } from '../utils/config';
 
 const router = Router();
@@ -19,9 +19,11 @@ router.get('/env-check', (req: Request, res: Response) => {
     environment: 'production',
     firebase: true,
     blockadelabs: !!BLOCKADE_API_KEY,
+    meshy: !!MESHY_API_KEY,
     razorpay: !!razorpay,
     env_debug: {
       blockadelabs_key_length: BLOCKADE_API_KEY?.length || 0,
+      meshy_key_length: MESHY_API_KEY?.length || 0,
       razorpay_key_length: getSecret('RAZORPAY_KEY_ID').length,
       razorpay_secret_length: getSecret('RAZORPAY_KEY_SECRET').length
     },
@@ -42,10 +44,12 @@ router.get('/health', (req: Request, res: Response) => {
     services: {
       firebase: true,
       blockadelabs: !!BLOCKADE_API_KEY,
+      meshy: !!MESHY_API_KEY,
       razorpay: !!razorpay
     },
     env_debug: {
       blockadelabs_key_length: BLOCKADE_API_KEY?.length || 0,
+      meshy_key_length: MESHY_API_KEY?.length || 0,
       razorpay_key_length: getSecret('RAZORPAY_KEY_ID').length,
       razorpay_secret_length: getSecret('RAZORPAY_KEY_SECRET').length
     },

@@ -16,8 +16,8 @@ import { authenticateUser } from './middleware/auth';
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set
 const blockadelabsApiKey = defineSecret("BLOCKADE_API_KEY");
-const razorpayKeyId = defineSecret("RAZORPAY_KEY_ID");
-const razorpayKeySecret = defineSecret("RAZORPAY_KEY_SECRET");
+const meshyApiKey = defineSecret("MESHY_API_KEY");
+// Razorpay secrets removed - payment system not needed
 const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 
@@ -73,21 +73,27 @@ const getApp = (): express.Application => {
     // Import routes only when app is created, not at module load time
     const healthRoutes = require('./routes/health').default;
     const skyboxRoutes = require('./routes/skybox').default;
+    const meshyRoutes = require('./routes/meshy').default;
     const paymentRoutes = require('./routes/payment').default;
     const subscriptionRoutes = require('./routes/subscription').default;
     const userRoutes = require('./routes/user').default;
     const proxyRoutes = require('./routes/proxy').default;
     const aiDetectionRoutes = require('./routes/aiDetection').default;
     const assistantRoutes = require('./routes/assistant').default;
+    const apiKeyRoutes = require('./routes/apiKey').default;
+    const curriculumRoutes = require('./routes/curriculum').default;
     
     app.use('/', healthRoutes);
     app.use('/skybox', skyboxRoutes);
+    app.use('/meshy', meshyRoutes);
     app.use('/payment', paymentRoutes);
     app.use('/subscription', subscriptionRoutes);
     app.use('/user', userRoutes);
     app.use('/', proxyRoutes);
     app.use('/ai-detection', aiDetectionRoutes);
     app.use('/assistant', assistantRoutes);
+    app.use('/dev/api-keys', apiKeyRoutes);
+    app.use('/curriculum', curriculumRoutes);
     
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
@@ -114,15 +120,15 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, razorpayKeyId, razorpayKeySecret, openaiApiKey, openaiAvatarApiKey] // Reference secrets - must match defineSecret names
+    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey] // Required secrets (Razorpay removed - payment system not needed)
   },
   (req, res) => {
   // Load secrets and set as environment variables
   // Also pass directly to initializeServices for immediate use
   try {
     let blockadeKey: string | undefined;
-    let razorpayId: string | undefined;
-    let razorpaySecret: string | undefined;
+    let meshyKey: string | undefined;
+    // Razorpay removed - payment system not needed
     let openaiKey: string | undefined;
     let openaiAvatarKey: string | undefined;
     
@@ -133,15 +139,13 @@ export const api = onRequest(
     }
     
     try {
-      razorpayId = razorpayKeyId.value();
+      meshyKey = meshyApiKey.value();
+      // Clean the API key - remove any whitespace, newlines, or "Bearer " prefix
+      if (meshyKey) {
+        meshyKey = meshyKey.trim().replace(/^Bearer\s+/i, '').replace(/\r?\n/g, '').replace(/\s+/g, '');
+      }
     } catch (err: any) {
-      console.error('Error accessing RAZORPAY_KEY_ID:', err?.message || err);
-    }
-    
-    try {
-      razorpaySecret = razorpayKeySecret.value();
-    } catch (err: any) {
-      console.error('Error accessing RAZORPAY_KEY_SECRET:', err?.message || err);
+      console.error('Error accessing MESHY_API_KEY:', err?.message || err);
     }
     
     try {
@@ -166,8 +170,11 @@ export const api = onRequest(
     
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
-    if (razorpayId) process.env.RAZORPAY_KEY_ID = razorpayId;
-    if (razorpaySecret) process.env.RAZORPAY_KEY_SECRET = razorpaySecret;
+    if (meshyKey) {
+      process.env.MESHY_API_KEY = meshyKey;
+      console.log('🔑 Meshy API key cleaned and set, length:', meshyKey.length);
+    }
+    // Razorpay removed - payment system not needed
     if (openaiKey) {
       process.env.OPENAI_API_KEY = openaiKey;
       console.log('🔑 OpenAI API key cleaned and set, length:', openaiKey.length);
@@ -182,10 +189,8 @@ export const api = onRequest(
     console.log('Secrets loaded:', {
       hasBlockade: !!blockadeKey,
       blockadeLength: blockadeKey?.length || 0,
-      hasRazorpayId: !!razorpayId,
-      razorpayIdLength: razorpayId?.length || 0,
-      hasRazorpaySecret: !!razorpaySecret,
-      razorpaySecretLength: razorpaySecret?.length || 0,
+      hasMeshy: !!meshyKey,
+      meshyKeyLength: meshyKey?.length || 0,
       hasOpenAI: !!openaiKey,
       openaiKeyLength: openaiKey?.length || 0,
       hasOpenAIAvatar: !!openaiAvatarKey,
@@ -196,8 +201,8 @@ export const api = onRequest(
     const { initializeServices } = require('./utils/services');
     initializeServices({
       blockadelabsApiKey: blockadeKey,
-      razorpayKeyId: razorpayId,
-      razorpayKeySecret: razorpaySecret
+      meshyApiKey: meshyKey
+      // Razorpay removed - payment system not needed
     });
   } catch (error: any) {
     console.error('Error loading secrets:', error?.message || error, error?.stack);

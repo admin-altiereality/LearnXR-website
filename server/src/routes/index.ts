@@ -3,10 +3,11 @@ import { Readable } from 'stream';
 import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
-import subscriptionRoutes from './subscription';
+// Subscription removed
 import userRoutes from './user';
 import aiDetectionRoutes from './aiDetection';
 import assistantRoutes from './assistant';
+import apiKeyRoutes from './apiKey';
 
 const router = express.Router();
 
@@ -72,10 +73,7 @@ console.log('Mounting payment routes...');
 router.use('/payment', paymentRoutes);
 console.log('Payment routes mounted at /payment');
 
-// Mount subscription routes
-console.log('Mounting subscription routes...');
-router.use('/subscription', subscriptionRoutes);
-console.log('Subscription routes mounted at /subscription');
+// Subscription routes removed
 
 // Mount skybox routes
 console.log('Mounting skybox routes...');
@@ -101,6 +99,11 @@ console.log('AI detection routes mounted at /ai-detection');
 console.log('Mounting assistant routes...');
 router.use('/assistant', assistantRoutes);
 console.log('Assistant routes mounted at /assistant');
+
+// Mount API key routes (Developer Portal)
+console.log('Mounting API key routes...');
+router.use('/dev/api-keys', apiKeyRoutes);
+console.log('API key routes mounted at /dev/api-keys');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {
