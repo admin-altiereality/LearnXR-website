@@ -135,6 +135,8 @@ const getApiBaseUrl = () => {
 export class MeshyApiService {
   private apiKey: string;
   private baseUrl: string;
+  private proxyBaseUrl: string;
+  private useProxy: boolean;
   private maxRetries: number = 3;
   private retryDelay: number = 1000;
   private timeout: number = 30000;
@@ -142,9 +144,20 @@ export class MeshyApiService {
   constructor() {
     this.apiKey = import.meta.env.VITE_MESHY_API_KEY || '';
     this.baseUrl = import.meta.env.VITE_MESHY_API_BASE_URL || 'https://api.meshy.ai/openapi/v2';
+    this.proxyBaseUrl = getApiBaseUrl();
     
-    if (!this.apiKey) {
-      console.warn('Meshy API key not configured. Set VITE_MESHY_API_KEY environment variable.');
+    // Use proxy if API key is not available (for preview channels) or if explicitly configured
+    // In preview channels, environment variables might not be available, so use proxy
+    this.useProxy = !this.apiKey || import.meta.env.VITE_USE_MESHY_PROXY === 'true';
+    
+    if (!this.apiKey && !this.useProxy) {
+      console.warn('Meshy API key not configured. Will attempt to use Firebase proxy.');
+    }
+    
+    if (this.useProxy) {
+      console.log('🔧 Meshy service using Firebase proxy:', this.proxyBaseUrl);
+    } else {
+      console.log('🔧 Meshy service using direct API with client key');
     }
   }
   
@@ -152,19 +165,26 @@ export class MeshyApiService {
    * Check if the service is properly configured
    */
   isConfigured(): boolean {
-    const configured = !!this.apiKey && this.apiKey.length > 0;
-    console.log(`🔧 Meshy service configured: ${configured}`);
+    // Service is configured if we have either an API key or proxy is enabled
+    const configured = (!!this.apiKey && this.apiKey.length > 0) || this.useProxy;
+    console.log(`🔧 Meshy service configured: ${configured} (proxy: ${this.useProxy}, hasKey: ${!!this.apiKey})`);
     return configured;
   }
 
   /**
    * Make authenticated API request with retry logic
+   * Routes through Firebase proxy if useProxy is true
    */
   private async makeRequest(
     endpoint: string, 
     options: RequestInit = {}, 
     retryCount: number = 0
   ): Promise<Response> {
+    // Use proxy if configured
+    if (this.useProxy) {
+      return this.makeProxyRequest(endpoint, options, retryCount);
+    }
+    
     const url = `${this.baseUrl}${endpoint}`;
     
     // Create AbortController for timeout
@@ -226,6 +246,84 @@ export class MeshyApiService {
   }
 
   /**
+   * Make request through Firebase proxy
+   */
+  private async makeProxyRequest(
+    endpoint: string,
+    options: RequestInit = {},
+    retryCount: number = 0
+  ): Promise<Response> {
+    // Map Meshy API endpoints to proxy routes
+    let proxyEndpoint = '';
+    if (endpoint === '/text-to-3d' && options.method === 'POST') {
+      proxyEndpoint = `${this.proxyBaseUrl}/meshy/generate`;
+    } else if (endpoint.startsWith('/text-to-3d/') && options.method === 'GET') {
+      const taskId = endpoint.replace('/text-to-3d/', '');
+      proxyEndpoint = `${this.proxyBaseUrl}/meshy/status/${taskId}`;
+    } else if (endpoint.includes('/cancel') && options.method === 'POST') {
+      const taskId = endpoint.split('/')[2];
+      proxyEndpoint = `${this.proxyBaseUrl}/meshy/cancel/${taskId}`;
+    } else {
+      throw new Error(`Unsupported proxy endpoint: ${endpoint}`);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    const proxyOptions: RequestInit = {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      signal: controller.signal,
+      ...(options.body && { body: options.body }),
+    };
+
+    try {
+      const response = await fetch(proxyEndpoint, proxyOptions);
+      clearTimeout(timeoutId);
+
+      // Handle rate limiting
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const delay = retryAfter ? parseInt(retryAfter) * 1000 : this.retryDelay * Math.pow(2, retryCount);
+        
+        if (retryCount < this.maxRetries) {
+          console.log(`🔄 Rate limited, retrying in ${delay}ms (attempt ${retryCount + 1}/${this.maxRetries})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return this.makeProxyRequest(endpoint, options, retryCount + 1);
+        }
+      }
+
+      // Handle server errors with retry
+      if (response.status >= 500 && retryCount < this.maxRetries) {
+        const delay = this.retryDelay * Math.pow(2, retryCount);
+        console.log(`🔄 Server error, retrying in ${delay}ms (attempt ${retryCount + 1}/${this.maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.makeProxyRequest(endpoint, options, retryCount + 1);
+      }
+
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      // Handle AbortError (timeout)
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${this.timeout}ms`);
+      }
+
+      if (retryCount < this.maxRetries) {
+        const delay = this.retryDelay * Math.pow(2, retryCount);
+        console.log(`🔄 Network error, retrying in ${delay}ms (attempt ${retryCount + 1}/${this.maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.makeProxyRequest(endpoint, options, retryCount + 1);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Generate a 3D asset using Meshy.ai (Preview stage)
    */
   async generateAsset(request: MeshyGenerationRequest): Promise<MeshyGenerationResponse> {
@@ -279,22 +377,31 @@ export class MeshyApiService {
         throw new Error(`Meshy API error: ${response.status} ${response.statusText} - ${errorData.error?.message || errorData.message || 'Unknown error'}`);
       }
 
-      const data = await response.json();
-      console.log('📥 Meshy API response:', data);
-      console.log('📥 Meshy API response (stringified):', JSON.stringify(data, null, 2));
+      let responseData = await response.json();
+      console.log('📥 Meshy API response:', responseData);
+      
+      // Handle proxy response wrapper (if using Firebase proxy)
+      if (responseData.success && responseData.data) {
+        responseData = responseData.data;
+        console.log('📥 Unwrapped proxy response:', responseData);
+      }
+      
+      console.log('📥 Meshy API response (stringified):', JSON.stringify(responseData, null, 2));
       
       // Handle different response formats
       let taskId: string | undefined;
       
-      if (data.result) {
-        taskId = data.result;
-      } else if (data.id) {
-        taskId = data.id;
-      } else if (data.task_id) {
-        taskId = data.task_id;
-      } else if (typeof data === 'string') {
-        taskId = data;
+      if (responseData.result) {
+        taskId = responseData.result;
+      } else if (responseData.id) {
+        taskId = responseData.id;
+      } else if (responseData.task_id) {
+        taskId = responseData.task_id;
+      } else if (typeof responseData === 'string') {
+        taskId = responseData;
       }
+      
+      const data = responseData;
       
       if (!taskId || taskId === 'undefined' || taskId.trim() === '') {
         console.error('❌ No task ID in response:', data);
@@ -335,7 +442,15 @@ export class MeshyApiService {
         throw new Error(`Meshy API error: ${response.status} ${response.statusText} - ${errorData.error?.message || errorData.message || 'Unknown error'}`);
       }
       
-      const data = await response.json();
+      let responseData = await response.json();
+      
+      // Handle proxy response wrapper (if using Firebase proxy)
+      if (responseData.success && responseData.data) {
+        responseData = responseData.data;
+        console.log('📥 Unwrapped proxy status response');
+      }
+      
+      const data = responseData;
       console.log('📊 Task status:', data.status, 'Progress:', data.progress + '%');
       console.log('📦 Full status response:', JSON.stringify(data, null, 2));
       

@@ -1,13 +1,13 @@
 export type SubscriptionTier = 'free' | 'pro' | 'team' | 'enterprise';
 export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired';
-export type PaymentProvider = 'razorpay' | 'paddle';
+export type PaymentProvider = 'paddle'; // Razorpay removed
 export type CountrySource = 'billing' | 'ip' | 'locale' | 'manual';
 
 export interface SubscriptionPlan {
   id: string;
   name: string;
-  price: number; // Monthly price in INR for Razorpay
-  yearlyPrice: number; // Yearly price in INR for Razorpay
+  price: number; // Monthly price (deprecated - use priceUSD)
+  yearlyPrice: number; // Yearly price (deprecated - use yearlyPriceUSD)
   priceUSD: number; // Monthly price in USD for Paddle
   yearlyPriceUSD: number; // Yearly price in USD for Paddle
   billingCycle: 'monthly' | 'yearly';
@@ -28,9 +28,7 @@ export interface SubscriptionPlan {
   // Paddle price IDs for international payments
   paddlePriceIdMonthly?: string;
   paddlePriceIdYearly?: string;
-  // Razorpay plan IDs for subscription payments
-  razorpayPlanIdMonthly?: string;
-  razorpayPlanIdYearly?: string;
+  // Razorpay removed - no longer used
 }
 
 export interface UserSubscription {
@@ -91,10 +89,10 @@ export interface PaymentProviderResult {
   confidence: 'high' | 'medium' | 'low';
 }
 
-// Country codes that should use Razorpay (India only)
-export const RAZORPAY_COUNTRIES = ['IN'];
+// Razorpay removed - all payments use Paddle
+export const RAZORPAY_COUNTRIES: string[] = [];
 
-// Helper to check if country should use Razorpay
+// Helper to check if country should use Razorpay (always returns false)
 export const shouldUseRazorpay = (countryCode: string): boolean => {
-  return RAZORPAY_COUNTRIES.includes(countryCode.toUpperCase());
+  return false; // Razorpay disabled
 };

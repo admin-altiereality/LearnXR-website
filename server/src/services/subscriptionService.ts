@@ -39,7 +39,7 @@ export interface DefaultSubscription {
 export const createDefaultSubscriptionServer = async (
   userId: string, 
   planId: string = 'free',
-  provider: PaymentProvider = 'razorpay'
+  provider: PaymentProvider = 'paddle' // Razorpay removed
 ): Promise<DefaultSubscription> => {
   const db = getFirestore();
   
@@ -93,7 +93,7 @@ export const getUserSubscription = async (userId: string): Promise<DefaultSubscr
       return {
         ...data,
         status: data.status || 'active',
-        provider: data.provider || 'razorpay',
+        provider: data.provider || 'paddle', // Razorpay removed
         cancelAtPeriodEnd: data.cancelAtPeriodEnd ?? false,
         processedEventIds: data.processedEventIds || []
       };
@@ -111,7 +111,7 @@ export const getUserSubscription = async (userId: string): Promise<DefaultSubscr
 export const createSubscriptionIfNotExists = async (
   userId: string, 
   planId: string = 'free',
-  provider: PaymentProvider = 'razorpay'
+  provider: PaymentProvider = 'paddle' // Razorpay removed
 ): Promise<DefaultSubscription | null> => {
   try {
     const exists = await hasExistingSubscription(userId);
@@ -154,7 +154,7 @@ export const upsertSubscription = async (
         userId,
         planId: 'free',
         status: 'active',
-        provider: 'razorpay',
+        provider: 'paddle', // Razorpay removed
         cancelAtPeriodEnd: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

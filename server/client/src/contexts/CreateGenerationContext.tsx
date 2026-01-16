@@ -150,7 +150,7 @@ const initialState: CreateGenerationState = {
   startedAt: null,
   negativeText: null,
   selectedSkybox: null,
-  numVariations: 5,
+  numVariations: 1,
   generated3DAsset: null,
   generatedVariations: [],
   currentVariationIndex: 0

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TeacherAvatar } from './TeacherAvatar';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import api from '../config/axios';
 
 interface AvatarSidePanelProps {
   isOpen: boolean;
@@ -125,24 +126,16 @@ export const AvatarSidePanel: React.FC<AvatarSidePanelProps> = ({ isOpen, onClos
           }]);
           
           // Send directly to API
-          const apiUrl = getApiBaseUrl();
-          fetch(`${apiUrl}/assistant/message`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              threadId,
-              message: 'Hello',
-              curriculum: config.curriculum,
-              class: config.class,
-              subject: config.subject,
-              useAvatarKey: true
-            })
+          api.post('/assistant/message', {
+            threadId,
+            message: 'Hello',
+            curriculum: config.curriculum,
+            class: config.class,
+            subject: config.subject,
+            useAvatarKey: true
           })
-            .then(async (res) => {
-              if (!res.ok) {
-                throw new Error(`Failed to send greeting: ${res.status}`);
-              }
-              const data = await res.json();
+            .then((response) => {
+              const data = response.data;
               const greetingResponse = data.response;
               
               // Add assistant's greeting response
@@ -182,27 +175,16 @@ export const AvatarSidePanel: React.FC<AvatarSidePanelProps> = ({ isOpen, onClos
 
     try {
       setIsAvatarReady(false);
-      const apiUrl = getApiBaseUrl();
       console.log('🔗 Creating thread with config:', config);
       
-      const response = await fetch(`${apiUrl}/assistant/create-thread`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          curriculum: config.curriculum,
-          class: config.class,
-          subject: config.subject,
-          useAvatarKey: true
-        })
+      const response = await api.post('/assistant/create-thread', {
+        curriculum: config.curriculum,
+        class: config.class,
+        subject: config.subject,
+        useAvatarKey: true
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Failed to create thread:', response.status, errorText);
-        throw new Error(`Failed to create thread: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = response.data;
       console.log('✅ Thread created:', data.threadId);
       setThreadId(data.threadId);
       setMessages([]); // Clear messages when switching

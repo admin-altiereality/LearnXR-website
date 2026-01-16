@@ -1,0 +1,483 @@
+{
+  "name": "Curriculum Processing with Skybox and 3D Asset Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "process-curriculum",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract topics array from webhook body\nconst body = $input.item.json.body || $input.item.json;\nconst topics = Array.isArray(body) ? body : (body.topics || []);\n\n// Return array of items, one per topic\nreturn topics.map((topic, index) => ({\n  json: {\n    topic_index: index,\n    topic_id: topic.topic_id,\n    topic_name: topic.topic_name,\n    in3d_prompt: topic.in3d_prompt,\n    asset_list: topic.asset_list || [],\n    full_topic: topic,\n    curriculum: topic.curriculum,\n    class: topic.class,\n    subject: topic.subject,\n    chapter_number: topic.chapter_number,\n    chapter_name: topic.chapter_name\n  }\n}));"
+      },
+      "id": "split-topics",
+      "name": "Split Topics (Code)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api/skybox/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-In3d-Key",
+              "value": "={{ $env.IN3D_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "prompt",
+              "value": "={{ $json.in3d_prompt }}"
+            },
+            {
+              "name": "style_id",
+              "value": "={{ $env.SKYBOX_STYLE_ID || '3' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-skybox",
+      "name": "Generate Skybox",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "mode": "simple",
+        "checkConditions": {
+          "conditions": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "notEqual",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-skybox-status",
+      "name": "Is Skybox Processing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-skybox",
+      "name": "Wait 5s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1050, 100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api/skybox/status/={{ $('Generate Skybox').item.json.data.generationId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-In3d-Key",
+              "value": "={{ $env.IN3D_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "poll-skybox-status",
+      "name": "Poll Skybox Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine skybox data with original topic data, preserving all MCQ fields\nconst skyboxData = $input.item.json;\nconst originalTopic = $('Split Topics (Code)').item.json;\n\n// Preserve all fields from full_topic including MCQs\nconst fullTopicData = originalTopic.full_topic || {};\n\n// Extract skybox generation ID for remix_id (can be used to regenerate)\nconst skyboxGenerationId = skyboxData.data?.generationId || skyboxData.data?.id || skyboxData.generationId || null;\n\nreturn {\n  json: {\n    ...originalTopic,\n    ...fullTopicData, // This includes all MCQ fields (mcq1_question, mcq1_option1, etc.)\n    skybox_id: skyboxGenerationId,\n    skybox_remix_id: skyboxGenerationId, // Store as remix_id for regeneration\n    skybox_url: skyboxData.data?.file_url || skyboxData.data?.url || null,\n    skybox_status: skyboxData.data?.status || 'pending'\n  }\n};"
+      },
+      "id": "merge-skybox-data",
+      "name": "Merge Skybox Data (Code)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split asset_list into individual items, preserving all MCQ fields\nconst topicData = $input.item.json;\nconst assetList = topicData.asset_list || [];\n\n// Get full topic data including all MCQs\nconst fullTopicData = topicData.full_topic || topicData;\n\nif (assetList.length === 0) {\n  // No assets to generate, return topic with empty assets but preserve all fields\n  return [{\n    json: {\n      ...topicData,\n      ...fullTopicData, // Preserve all MCQ fields\n      assets: []\n    }\n  }];\n}\n\n// Return array of items, one per asset, preserving all topic data including MCQs\nreturn assetList.map((assetName, index) => ({\n  json: {\n    asset_index: index,\n    asset_name: assetName,\n    topic_id: topicData.topic_id || fullTopicData.topic_id,\n    topic_index: topicData.topic_index,\n    full_topic: fullTopicData, // Preserve complete topic with all MCQs\n    skybox_url: topicData.skybox_url,\n    skybox_id: topicData.skybox_id,\n    curriculum: topicData.curriculum || fullTopicData.curriculum,\n    class: topicData.class || fullTopicData.class,\n    subject: topicData.subject || fullTopicData.subject,\n    chapter_number: topicData.chapter_number || fullTopicData.chapter_number,\n    chapter_name: topicData.chapter_name || fullTopicData.chapter_name\n  }\n}));"
+      },
+      "id": "split-assets",
+      "name": "Split Asset List (Code)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api/meshy/generate",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-In3d-Key",
+              "value": "={{ $env.IN3D_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "prompt",
+              "value": "={{ $json.asset_name }}"
+            },
+            {
+              "name": "art_style",
+              "value": "realistic"
+            },
+            {
+              "name": "ai_model",
+              "value": "meshy-4"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-asset",
+      "name": "Generate 3D Asset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "mode": "simple",
+        "checkConditions": {
+          "conditions": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "operation": "notEqual",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-asset-status",
+      "name": "Is Asset Processing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "wait-asset",
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api/meshy/status/={{ $('Generate 3D Asset').item.json.data.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-In3d-Key",
+              "value": "={{ $env.IN3D_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "poll-asset-status",
+      "name": "Poll Asset Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract asset data and combine with topic data\nconst assetData = $input.item.json;\nconst originalAsset = $('Split Asset List (Code)').item.json;\n\n// Get asset URL from response\nconst assetUrl = assetData.data?.model_urls?.glb || \n                 assetData.data?.model_urls?.usdz || \n                 assetData.data?.file_url || \n                 assetData.data?.url || \n                 null;\n\n// Extract asset task ID for remix_id (can be used to regenerate)\nconst assetTaskId = assetData.data?.id || assetData.data?.task_id || assetData.result || null;\n\nreturn {\n  json: {\n    ...originalAsset,\n    asset_id: assetTaskId,\n    asset_remix_id: assetTaskId, // Store as remix_id for regeneration\n    asset_url: assetUrl,\n    asset_name: originalAsset.asset_name,\n    asset_status: assetData.data?.status || 'pending'\n  }\n};"
+      },
+      "id": "merge-asset-data",
+      "name": "Merge Asset Data (Code)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Group assets by topic_id and prepare for Firebase, preserving all MCQ fields\nconst items = $input.all();\nconst topicMap = new Map();\n\nitems.forEach(item => {\n  const topicId = item.json.topic_id || item.json.full_topic?.topic_id;\n  if (!topicId) return;\n  \n  if (!topicMap.has(topicId)) {\n    // Initialize topic with base data, preserving ALL fields including MCQs\n    const baseTopic = item.json.full_topic || item.json;\n    \n    // Create topic object preserving all original fields (including all MCQ fields)\n    const topicData = {\n      ...baseTopic, // This spreads all fields including mcq1_question, mcq1_option1, mcq2_*, etc.\n      skybox_id: null,\n      skybox_remix_id: null,\n      skybox_url: null,\n      assets: []\n    };\n    \n    topicMap.set(topicId, topicData);\n  }\n  \n  const topic = topicMap.get(topicId);\n  \n  // Add skybox data if present (don't overwrite existing fields)\n  if (item.json.skybox_id) {\n    topic.skybox_id = item.json.skybox_id;\n  }\n  if (item.json.skybox_remix_id) {\n    topic.skybox_remix_id = item.json.skybox_remix_id;\n  }\n  if (item.json.skybox_url) {\n    topic.skybox_url = item.json.skybox_url;\n  }\n  \n  // Add asset if it exists (including remix_id)\n  if (item.json.asset_id && item.json.asset_url) {\n    topic.assets.push({\n      asset_id: item.json.asset_id,\n      asset_remix_id: item.json.asset_remix_id || item.json.asset_id,\n      asset_url: item.json.asset_url,\n      asset_name: item.json.asset_name\n    });\n  }\n});\n\n// Convert map to array and get first topic for chapter data\nconst topics = Array.from(topicMap.values());\nconst firstTopic = topics[0] || {};\n\n// Return single item with chapter structure, preserving all topic fields including MCQs\nreturn [{\n  json: {\n    curriculum: firstTopic.curriculum,\n    class: firstTopic.class,\n    subject: firstTopic.subject,\n    chapter_number: firstTopic.chapter_number,\n    chapter_name: firstTopic.chapter_name,\n    topics: topics // Each topic includes all original fields + skybox + assets + MCQs + remix_ids\n  }\n}];"
+      },
+      "id": "group-by-topic",
+      "name": "Group by Topic (Code)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2050, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api/curriculum/save",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-In3d-Key",
+              "value": "={{ $env.IN3D_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "save-to-firebase",
+      "name": "Save to Firebase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2250, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2450, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Split Topics (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Topics (Code)": {
+      "main": [
+        [
+          {
+            "node": "Generate Skybox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Skybox": {
+      "main": [
+        [
+          {
+            "node": "Is Skybox Processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Skybox Processing?": {
+      "main": [
+        [
+          {
+            "node": "Wait 5s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Skybox Data (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5s": {
+      "main": [
+        [
+          {
+            "node": "Poll Skybox Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Skybox Status": {
+      "main": [
+        [
+          {
+            "node": "Is Skybox Processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Skybox Data (Code)": {
+      "main": [
+        [
+          {
+            "node": "Split Asset List (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Asset List (Code)": {
+      "main": [
+        [
+          {
+            "node": "Generate 3D Asset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate 3D Asset": {
+      "main": [
+        [
+          {
+            "node": "Is Asset Processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Asset Processing?": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge Asset Data (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Poll Asset Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Asset Status": {
+      "main": [
+        [
+          {
+            "node": "Is Asset Processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Asset Data (Code)": {
+      "main": [
+        [
+          {
+            "node": "Group by Topic (Code)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group by Topic (Code)": {
+      "main": [
+        [
+          {
+            "node": "Save to Firebase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Firebase": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

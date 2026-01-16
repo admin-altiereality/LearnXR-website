@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FaCube, FaArrowRight } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
-import { useSubscription } from '../../contexts/SubscriptionContext';
+// Subscription removed
 import FuturisticBackground from '../FuturisticBackground';
 
 export const Signup = () => {
@@ -12,14 +12,14 @@ export const Signup = () => {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
   const { signup, loginWithGoogle, user } = useAuth();
-  const { loading: subscriptionLoading } = useSubscription();
+  // Subscription removed
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (user && !subscriptionLoading) {
+    if (user) {
       navigate('/onboarding');
     }
-  }, [user, subscriptionLoading, navigate]);
+  }, [user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

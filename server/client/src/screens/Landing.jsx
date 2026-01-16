@@ -15,7 +15,7 @@ import {
   FaCode
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
-import { useSubscription } from '../contexts/SubscriptionContext';
+// Subscription removed
 import { HeroGeometric } from '@/components/ui/shape-landing-hero';
 
 const features = [
@@ -55,7 +55,7 @@ const stats = [
 const Landing = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const { subscription, loading: subscriptionLoading, isFreePlan } = useSubscription();
+  // Subscription removed
   const [activeFeature, setActiveFeature] = useState(0);
 
   useEffect(() => {
@@ -68,16 +68,12 @@ const Landing = () => {
   }, []);
 
   const handleGetStarted = () => {
-    if (authLoading || subscriptionLoading) {
+    if (authLoading) {
       return;
     }
 
     if (user) {
-      if (isFreePlan && !subscription) {
-        navigate('/onboarding');
-      } else {
-        navigate('/main');
-      }
+      navigate('/main');
     } else {
       navigate('/login');
     }

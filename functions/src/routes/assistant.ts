@@ -5,43 +5,49 @@ import { Router, Request, Response } from 'express';
 import OpenAIAssistantService from '../services/openaiAssistantService';
 import TextToSpeechService from '../services/textToSpeechService';
 import LipSyncService from '../services/lipSyncService';
+import { validateReadAccess, validateFullAccess } from '../middleware/validateIn3dApiKey';
 
 const router = Router();
-let assistantService: OpenAIAssistantService | null = null;
-let avatarAssistantService: OpenAIAssistantService | null = null;
+// Services are created fresh on each request to ensure latest API keys from process.env
 let ttsService: TextToSpeechService | null = null;
 let lipSyncService: LipSyncService | null = null;
 
 // Initialize services (lazy loading)
+// Note: Services are recreated on each request to ensure they use the latest API keys from process.env
 const getAssistantService = (useAvatarKey: boolean = false) => {
   // Use separate service instance for avatar with different API key
   if (useAvatarKey) {
-    if (!avatarAssistantService) {
-      try {
-        console.log('🔧 Initializing Avatar Assistant Service with OPENAI_AVATAR_API_KEY...');
-        avatarAssistantService = new OpenAIAssistantService(true);
-        console.log('✅ Avatar Assistant Service initialized successfully');
-      } catch (error: any) {
-        console.error('❌ Failed to initialize Avatar Assistant Service:', error.message);
-        console.error('   Error details:', error);
-        throw error;
-      }
-    }
-    return avatarAssistantService;
-  }
-  
-  if (!assistantService) {
+    // ALWAYS create a new instance to ensure we use the latest API key from process.env
+    // This is critical because secrets are loaded per-request in the function handler
     try {
-      console.log('🔧 Initializing Assistant Service with OPENAI_API_KEY...');
-      assistantService = new OpenAIAssistantService(false);
-      console.log('✅ Assistant Service initialized successfully');
+      console.log('🔧 Initializing Avatar Assistant Service with OPENAI_AVATAR_API_KEY...');
+      const apiKey = process.env.OPENAI_AVATAR_API_KEY;
+      console.log('🔑 OPENAI_AVATAR_API_KEY available:', !!apiKey, apiKey ? `(length: ${apiKey.length})` : '');
+      if (!apiKey) {
+        throw new Error('OPENAI_AVATAR_API_KEY is not set in environment variables');
+      }
+      // Always create new instance - don't reuse cached one
+      const service = new OpenAIAssistantService(true);
+      console.log('✅ Avatar Assistant Service initialized successfully with OPENAI_AVATAR_API_KEY');
+      return service;
     } catch (error: any) {
-      console.error('❌ Failed to initialize Assistant Service:', error.message);
+      console.error('❌ Failed to initialize Avatar Assistant Service:', error.message);
       console.error('   Error details:', error);
       throw error;
     }
   }
-  return assistantService;
+  
+  // Always create a new instance to ensure we use the latest API key from process.env
+  try {
+    console.log('🔧 Initializing Assistant Service with OPENAI_API_KEY...');
+    const service = new OpenAIAssistantService(false);
+    console.log('✅ Assistant Service initialized successfully with OPENAI_API_KEY');
+    return service;
+  } catch (error: any) {
+    console.error('❌ Failed to initialize Assistant Service:', error.message);
+    console.error('   Error details:', error);
+    throw error;
+  }
 };
 
 const getTTSService = () => {
@@ -63,8 +69,8 @@ const getLipSyncService = () => {
   return lipSyncService;
 };
 
-// Create thread - POST only
-router.post('/create-thread', async (req: Request, res: Response): Promise<void> => {
+// Create thread - POST only - Full access required
+router.post('/create-thread', validateFullAccess, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
     const service = getAssistantService();
@@ -87,28 +93,71 @@ router.get('/create-thread', (req: Request, res: Response): void => {
 });
 
 // Send message - POST only
-router.post('/message', async (req: Request, res: Response): Promise<void> => {
+// Send message - Full access required
+router.post('/message', validateFullAccess, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
-    const { threadId, message } = req.body;
+    const { threadId, message, curriculum, class: classLevel, subject, useAvatarKey } = req.body;
+    
+    console.log(`[${requestId}] 📨 Received message request:`, {
+      threadId: threadId?.substring(0, 20) + '...',
+      messageLength: message?.length,
+      curriculum,
+      class: classLevel,
+      subject,
+      useAvatarKey
+    });
     
     if (!threadId || !message) {
+      console.error(`[${requestId}] ❌ Missing required fields:`, { threadId: !!threadId, message: !!message });
       res.status(400).json({ error: 'threadId and message are required' });
       return;
     }
 
-    const service = getAssistantService();
-    const response = await service.sendMessage(threadId, message);
+    const shouldUseAvatarKey = useAvatarKey === true || useAvatarKey === 'true';
+    console.log(`[${requestId}] 🔧 Getting assistant service (useAvatarKey:`, useAvatarKey, ', type:', typeof useAvatarKey, ', shouldUseAvatarKey:', shouldUseAvatarKey, ')');
+    
+    if (shouldUseAvatarKey) {
+      console.log(`[${requestId}] 🔑 Using OPENAI_AVATAR_API_KEY for avatar response`);
+      const apiKey = process.env.OPENAI_AVATAR_API_KEY;
+      console.log(`[${requestId}] 🔑 OPENAI_AVATAR_API_KEY status:`, {
+        exists: !!apiKey,
+        length: apiKey?.length || 0,
+        preview: apiKey ? apiKey.substring(0, 20) + '...' + apiKey.substring(apiKey.length - 4) : 'N/A'
+      });
+    } else {
+      console.log(`[${requestId}] 🔑 Using OPENAI_API_KEY for regular response`);
+    }
+    
+    const service = getAssistantService(shouldUseAvatarKey);
+    const config = { curriculum, class: classLevel, subject };
+    
+    console.log(`[${requestId}] 📤 Sending message to assistant with config:`, config);
+    const response = await service.sendMessage(threadId, message, config);
+    console.log(`[${requestId}] ✅ Assistant response received, length:`, response?.length);
+    
     res.json({ response });
   } catch (error: any) {
-    console.error(`[${requestId}] Error sending message:`, error);
+    console.error(`[${requestId}] ❌ Error sending message:`, error);
+    console.error(`[${requestId}]    Error message:`, error.message);
+    console.error(`[${requestId}]    Error stack:`, error.stack);
     
     // Handle OpenAI quota errors
-    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota')) {
+    if (error.status === 429 || error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('rate_limit')) {
       res.status(429).json({ 
         error: 'OpenAI API quota exceeded',
         message: 'You have exceeded your OpenAI API quota. Please check your OpenAI account billing and usage limits.',
         details: error.message || 'Quota limit reached'
+      });
+      return;
+    }
+    
+    // Handle authentication errors
+    if (error.status === 401 || error.message?.includes('invalid_api_key') || error.message?.includes('authentication')) {
+      res.status(401).json({ 
+        error: 'OpenAI API authentication failed',
+        message: 'Invalid OpenAI API key. Please check your API key configuration.',
+        details: error.message || 'Authentication failed'
       });
       return;
     }
@@ -131,7 +180,8 @@ router.get('/message', (req: Request, res: Response): void => {
 });
 
 // Text to Speech - POST only
-router.post('/tts/generate', async (req: Request, res: Response): Promise<void> => {
+// Generate TTS - Full access required
+router.post('/tts/generate', validateFullAccess, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
     const { text, voice } = req.body;
@@ -190,7 +240,8 @@ router.get('/tts/generate', (req: Request, res: Response): void => {
 });
 
 // Generate visemes - POST only
-router.post('/lipsync/generate', async (req: Request, res: Response): Promise<void> => {
+// Generate lip sync - Full access required
+router.post('/lipsync/generate', validateFullAccess, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
     const { text } = req.body;
@@ -220,7 +271,8 @@ router.get('/lipsync/generate', (req: Request, res: Response): void => {
 });
 
 // List available assistants - GET
-router.get('/list', async (req: Request, res: Response): Promise<void> => {
+// List assistants - Read access
+router.get('/list', validateReadAccess, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
     const { useAvatarKey } = req.query;

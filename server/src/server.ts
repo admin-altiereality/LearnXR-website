@@ -12,17 +12,12 @@ console.log('Starting app...');
 // Log environment variables (without sensitive data)
 console.log('Environment variables loaded:', {
   NODE_ENV: process.env.NODE_ENV,
-  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ? 'Present' : 'Missing (payment features disabled)',
-  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET ? 'Present' : 'Missing (payment features disabled)',
+  // Razorpay removed
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Present' : 'Missing',
   OPENAI_AVATAR_API_KEY: process.env.OPENAI_AVATAR_API_KEY ? 'Present' : 'Missing (will fallback to OPENAI_API_KEY)'
 });
 
-// Warn about missing payment configuration
-if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-  console.warn('⚠️  Razorpay credentials not found. Payment features will be disabled.');
-  console.warn('   To enable payments, set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET environment variables.');
-}
+// Razorpay removed - all payments use Paddle
 
 const app = express();
 const buildPath = path.resolve(process.cwd(), 'client/dist');

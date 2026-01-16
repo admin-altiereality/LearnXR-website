@@ -208,14 +208,26 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
     return next();
   }
   
-  // Allow public endpoints without authentication
-  if (isPublicEndpoint(req)) {
-    return next();
-  }
-
-  // Require authentication for protected endpoints
+  // Check for authentication token
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  const in3dKeyHeader = req.headers['x-in3d-key'] as string;
+  const isPublic = isPublicEndpoint(req);
+  
+  // Check if we have any form of authentication
+  const hasAuthHeader = authHeader?.startsWith('Bearer ');
+  const hasIn3dKey = in3dKeyHeader && in3dKeyHeader.startsWith('in3d_live_');
+  const hasAnyAuth = hasAuthHeader || hasIn3dKey;
+  
+  // If no auth is provided
+  if (!hasAnyAuth) {
+    // For public endpoints, allow without auth
+    if (isPublic) {
+      console.log(`[${requestId}] [AUTH] ✅ Public endpoint, no auth required`);
+      return next();
+    }
+    
+    // For protected endpoints, require auth
+    // Use standardized error response format for n8n compatibility
     console.log(`[${requestId}] [AUTH] ❌ No auth token provided - BLOCKING`);
     console.log(`[${requestId}] [AUTH] Request details:`, {
       method: req.method,
@@ -224,31 +236,62 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
       url: req.url,
       originalPath: (req as any).originalPath
     });
-    return res.status(401).json({ 
-      error: 'AUTH_REQUIRED', 
-      message: 'No token provided',
-      requestId,
-      debug: {
-        path: req.path,
-        originalPath: (req as any).originalPath,
-        url: req.url,
-        originalUrl: req.originalUrl,
-        method: req.method
-      }
-    });
+    
+    const { errorResponse, ErrorCode, HTTP_STATUS } = require('../utils/apiResponse');
+    const { statusCode, response } = errorResponse(
+      'Authentication required',
+      'No token provided. Use Authorization: Bearer <token> or X-In3d-Key: <key> header',
+      ErrorCode.AUTH_REQUIRED,
+      HTTP_STATUS.UNAUTHORIZED,
+      { requestId }
+    );
+    return res.status(statusCode).json(response);
   }
   
-  const token = authHeader.split('Bearer ')[1];
+  // If X-In3d-Key is provided, let validateIn3dApiKey handle it
+  if (hasIn3dKey && !hasAuthHeader) {
+    console.log(`[${requestId}] [AUTH] 🔑 X-In3d-Key header detected, allowing validateIn3dApiKey to handle authentication`);
+    return next();
+  }
+  
+  // Auth header is provided - verify token (even for public endpoints)
+  // This allows validateReadAccess/validateFullAccess to use Firebase Auth
+  const token = authHeader!.split('Bearer ')[1];
+  
+  // Check if it's an In3D API key (starts with in3d_live_)
+  // If so, don't try to verify as Firebase token - let validateIn3dApiKey handle it
+  if (token.startsWith('in3d_live_')) {
+    console.log(`[${requestId}] [AUTH] 🔑 In3D API key detected in Authorization header, skipping Firebase token verification`);
+    // Allow to proceed - validateIn3dApiKey will handle validation
+    return next();
+  }
+  
+  // It's a Firebase token - verify it
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     (req as any).user = decoded;
+    console.log(`[${requestId}] [AUTH] ✅ Firebase token verified, user: ${decoded.uid}`);
     next();
   } catch (err) {
-    console.error(`[${requestId}] [AUTH] Token verification failed:`, err);
-    return res.status(401).json({ 
-      error: 'INVALID_TOKEN', 
-      message: 'Invalid or expired token',
-      requestId
-    });
+    // Token verification failed
+    // For public endpoints, still allow (but without req.user set)
+    // This allows endpoints that truly don't need auth to work
+    if (isPublic) {
+      console.log(`[${requestId}] [AUTH] ⚠️ Firebase token verification failed for public endpoint, allowing without auth:`, err);
+      return next();
+    }
+    
+    // For protected endpoints, block the request
+    // Use standardized error response format for n8n compatibility
+    console.error(`[${requestId}] [AUTH] ❌ Token verification failed:`, err);
+    const { errorResponse, ErrorCode, HTTP_STATUS } = require('../utils/apiResponse');
+    const { statusCode, response } = errorResponse(
+      'Invalid token',
+      'Invalid or expired token',
+      ErrorCode.INVALID_TOKEN,
+      HTTP_STATUS.UNAUTHORIZED,
+      { requestId }
+    );
+    return res.status(statusCode).json(response);
   }
 };

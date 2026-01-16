@@ -18,16 +18,17 @@ import { AuthProvider } from './contexts/AuthContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
-import { SubscriptionProvider } from './contexts/SubscriptionContext';
+// Subscription removed
 import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
 import History from './screens/History';
+import Lessons from './screens/Lessons';
 import Landing from './screens/Landing';
 import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
 import Careers from './screens/Careers';
 import Blog from './screens/Blog';
-import Pricing from './screens/Pricing';
+// Pricing removed
 import PrivacyPolicy from './screens/PrivacyPolicy';
 import TermsConditions from './screens/TermsConditions';
 import RefundPolicy from './screens/RefundPolicy';
@@ -45,6 +46,9 @@ import Onboarding from './screens/Onboarding';
 import HelpChat from './screens/HelpChat';
 import FloatingHelpButton from './Components/FloatingHelpButton';
 import SmoothScroll from './Components/SmoothScroll';
+import DeveloperSettings from './screens/DeveloperSettings';
+import ApiDocumentation from './screens/ApiDocumentation';
+import N8nWorkflows from './screens/N8nWorkflows';
 
 // Conditional Footer - hides on /main route
 const ConditionalFooter = () => {
@@ -296,7 +300,7 @@ const ConditionalCanvas = ({ children, backgroundSkybox }) => {
 
 function checkRequiredEnvVars() {
   const required = [
-    'VITE_RAZORPAY_KEY_ID',
+    // Payment system removed - VITE_RAZORPAY_KEY_ID no longer required
     'VITE_API_URL',
     'VITE_FIREBASE_API_KEY',
     'VITE_FIREBASE_AUTH_DOMAIN',
@@ -351,10 +355,9 @@ function App() {
     if (threeJsError) {
       return (
         <AuthProvider>
-          <SubscriptionProvider>
-            <AssetGenerationProvider>
-              <CreateGenerationProvider>
-                <LoadingProvider>
+          <AssetGenerationProvider>
+            <CreateGenerationProvider>
+              <LoadingProvider>
                   <Router>
               <SmoothScroll>
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
@@ -378,7 +381,7 @@ function App() {
                       <Route path="/" element={<Landing />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
-                      <Route path="/pricing" element={<Pricing />} />
+                      {/* Pricing removed */}
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
@@ -495,10 +498,41 @@ function App() {
                           </OnboardingGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/lessons" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <Lessons 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
                       <Route path="/profile" element={
                         <ProtectedRoute>
                           <OnboardingGuard>
                             <Profile />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/developer" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <DeveloperSettings />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/docs/api" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <ApiDocumentation />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/docs/n8n" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <N8nWorkflows />
                           </OnboardingGuard>
                         </ProtectedRoute>
                       } />
@@ -583,7 +617,7 @@ function App() {
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
-        </SubscriptionProvider>
+        {/* Subscription removed */}
       </AuthProvider>
       );
     }
@@ -591,10 +625,9 @@ function App() {
     return (
       <ErrorBoundary>
         <AuthProvider>
-          <SubscriptionProvider>
-            <AssetGenerationProvider>
-              <CreateGenerationProvider>
-                <LoadingProvider>
+          <AssetGenerationProvider>
+            <CreateGenerationProvider>
+              <LoadingProvider>
                   <Router>
               <SmoothScroll>
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
@@ -618,7 +651,7 @@ function App() {
                       <Route path="/" element={<Landing />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
-                      <Route path="/pricing" element={<Pricing />} />
+                      {/* Pricing removed */}
                       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
@@ -735,10 +768,41 @@ function App() {
                           </OnboardingGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/lessons" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <Lessons 
+                              setBackgroundSkybox={setBackgroundSkybox}
+                              className="w-full"
+                            />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
                       <Route path="/profile" element={
                         <ProtectedRoute>
                           <OnboardingGuard>
                             <Profile />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/developer" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <DeveloperSettings />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/docs/api" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <ApiDocumentation />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/docs/n8n" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <N8nWorkflows />
                           </OnboardingGuard>
                         </ProtectedRoute>
                       } />
@@ -821,7 +885,7 @@ function App() {
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
-        </SubscriptionProvider>
+        {/* Subscription removed */}
       </AuthProvider>
     </ErrorBoundary>
     );

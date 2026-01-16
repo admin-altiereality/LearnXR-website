@@ -9,11 +9,13 @@ import * as admin from 'firebase-admin';
 import { initializeServices, BLOCKADE_API_KEY } from '../utils/services';
 import { incrementStyleUsage, getAllStyleUsageStats, getStyleUsageCounts } from '../utils/styleUsageTracker';
 import { migrateStyleUsage } from '../scripts/migrateStyleUsage';
+import { validateReadAccess, validateFullAccess } from '../middleware/validateIn3dApiKey';
+import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils/apiResponse';
 
 const router = Router();
 
-// Skybox Styles API
-router.get('/styles', async (req: Request, res: Response) => {
+// Skybox Styles API - Read access (API key READ or FULL scope, or Firebase Auth)
+router.get('/styles', validateReadAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 100; // Increased default limit
@@ -61,16 +63,16 @@ router.get('/styles', async (req: Request, res: Response) => {
           }
         }
         
-        return res.json({
-          success: true,
-          data: styles,
+        return res.json(successResponse(styles, {
+          requestId,
+          message: `Successfully retrieved ${styles.length} skybox styles`,
           pagination: {
             page,
             limit,
-            total: styles.length
-          },
-          requestId
-        });
+            total: styles.length,
+            hasMore: styles.length === limit
+          }
+        }));
       } catch (error: any) {
         console.error(`[${requestId}] BlockadeLabs API error:`, error.message || error);
         // Continue to Firestore fallback
@@ -97,38 +99,42 @@ router.get('/styles', async (req: Request, res: Response) => {
     console.log(`[${requestId}] Successfully fetched ${styles.length} styles from Firebase cache`);
     
     if (styles.length === 0) {
-      return res.status(503).json({
-        success: false,
-        error: 'Skybox styles are not available. Please check API configuration.',
-        code: 'STYLES_UNAVAILABLE',
-        requestId
-      });
+      const { statusCode, response } = errorResponse(
+        'Skybox styles are not available',
+        'Skybox styles are not available. Please check API configuration.',
+        ErrorCode.STYLES_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
     }
     
-    return res.json({
-      success: true,
-      data: styles,
+    return res.json(successResponse(styles, {
+      requestId,
+      message: `Successfully retrieved ${styles.length} skybox styles from cache`,
       pagination: {
         page,
         limit,
-        total: styles.length
-      },
-      requestId,
-      source: 'firestore_cache'
-    });
+        total: styles.length,
+        hasMore: styles.length === limit
+      }
+    }));
   } catch (error: any) {
     console.error(`[${requestId}] Error fetching skybox styles:`, error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to fetch skybox styles',
-      details: error.message || 'Unknown error',
-      requestId
-    });
+    const { statusCode, response } = errorResponse(
+      'Failed to fetch skybox styles',
+      error.message || 'An unexpected error occurred while fetching skybox styles',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId, details: error.message }
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
 // Skybox Generation API
-router.post('/generate', async (req: Request, res: Response) => {
+// Generate Skybox - Full access required (API key FULL scope or Firebase Auth)
+router.post('/generate', validateFullAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const { prompt, style_id, negative_prompt, userId, export_wireframe, mesh_density, depth_scale } = req.body;
   
@@ -138,19 +144,25 @@ router.post('/generate', async (req: Request, res: Response) => {
     initializeServices();
     
     if (!BLOCKADE_API_KEY) {
-      return res.status(500).json({
-        success: false,
-        error: 'BlockadeLabs API not configured',
-        requestId
-      });
+      const { statusCode, response } = errorResponse(
+        'Service configuration error',
+        'BlockadeLabs API is not configured. Please contact support.',
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
     }
     
     if (!prompt || !style_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: prompt and style_id',
-        requestId
-      });
+      const { statusCode, response } = errorResponse(
+        'Validation error',
+        'Missing required fields: prompt and style_id are required',
+        ErrorCode.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS.BAD_REQUEST,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
     }
     
     // Construct webhook URL for completion notifications
@@ -205,11 +217,14 @@ router.post('/generate', async (req: Request, res: Response) => {
     
     if (!generation.id) {
       console.error(`[${requestId}] No generation ID returned from BlockadeLabs API`);
-      return res.status(500).json({
-        success: false,
-        error: 'No generation ID returned from API',
-        requestId
-      });
+      const { statusCode, response } = errorResponse(
+        'External API error',
+        'No generation ID returned from BlockadeLabs API',
+        ErrorCode.EXTERNAL_API_ERROR,
+        HTTP_STATUS.BAD_GATEWAY,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
     }
     
     // Store generation in Firestore
@@ -230,7 +245,8 @@ router.post('/generate', async (req: Request, res: Response) => {
       meshDensity: mesh_density || null,
       depthScale: depth_scale || null
     };
-    const resolvedUserId = userId || (req as any).user?.uid;
+    // Get userId from API key user or Firebase Auth user
+    const resolvedUserId = userId || req.apiKeyUser?.userId || req.user?.uid;
     if (resolvedUserId) {
       skyboxData.userId = resolvedUserId;
     }
@@ -240,15 +256,14 @@ router.post('/generate', async (req: Request, res: Response) => {
     
     console.log(`[${requestId}] Skybox data stored in Firestore with ID: ${generationIdStr}`);
     
-    return res.json({
-      success: true,
-      data: {
-        generationId: generation.id,
-        status: 'pending',
-        ...generation
-      },
-      requestId
-    });
+    return res.status(HTTP_STATUS.ACCEPTED).json(successResponse({
+      generationId: generation.id,
+      status: 'pending',
+      ...generation
+    }, {
+      requestId,
+      message: 'Skybox generation initiated successfully'
+    }));
   } catch (error: any) {
     console.error(`[${requestId}] Error generating skybox:`, error);
     
@@ -267,44 +282,53 @@ router.post('/generate', async (req: Request, res: Response) => {
           }
         }
         
-        return res.status(403).json({
-          success: false,
-          error: errorMessage,
-          code: 'QUOTA_EXCEEDED',
-          requestId
-        });
+        const { statusCode, response } = errorResponse(
+          'Quota exceeded',
+          errorMessage,
+          ErrorCode.QUOTA_EXCEEDED,
+          HTTP_STATUS.FORBIDDEN,
+          { requestId }
+        );
+        return res.status(statusCode).json(response);
       }
       
       if (status === 400) {
-        return res.status(400).json({
-          success: false,
-          error: data?.error || 'Invalid request parameters',
-          code: 'INVALID_REQUEST',
-          requestId
-        });
+        const { statusCode, response } = errorResponse(
+          'Invalid request',
+          data?.error || 'Invalid request parameters',
+          ErrorCode.INVALID_REQUEST,
+          HTTP_STATUS.BAD_REQUEST,
+          { requestId, details: data }
+        );
+        return res.status(statusCode).json(response);
       }
       
       if (status === 401) {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid API key or authentication failed',
-          code: 'AUTH_ERROR',
-          requestId
-        });
+        const { statusCode, response } = errorResponse(
+          'Authentication failed',
+          'Invalid API key or authentication failed',
+          ErrorCode.UNAUTHORIZED,
+          HTTP_STATUS.UNAUTHORIZED,
+          { requestId }
+        );
+        return res.status(statusCode).json(response);
       }
     }
     
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to generate skybox',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      requestId
-    });
+    const { statusCode, response } = errorResponse(
+      'Generation failed',
+      error instanceof Error ? error.message : 'Failed to generate skybox',
+      ErrorCode.GENERATION_FAILED,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId, details: error instanceof Error ? error.message : 'Unknown error' }
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
 // Skybox Status API
-router.get('/status/:generationId', async (req: Request, res: Response) => {
+// Get Generation Status - Read access (API key READ or FULL scope, or Firebase Auth)
+router.get('/status/:generationId', validateReadAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   let { generationId } = req.params;
   
@@ -338,21 +362,19 @@ router.get('/status/:generationId', async (req: Request, res: Response) => {
     // If Firestore has completed status with file URL, return it immediately
     if (firestoreData && firestoreData.status === 'completed' && firestoreData.fileUrl) {
       console.log(`[${requestId}] Returning cached completed status from Firestore`);
-      return res.json({
-        success: true,
-        data: {
-          id: generationId,
-          generationId: firestoreData.generationId || generationId,
-          status: 'completed',
-          file_url: firestoreData.fileUrl,
-          thumbnail_url: firestoreData.thumbnailUrl || firestoreData.fileUrl,
-          prompt: firestoreData.prompt,
-          style_id: firestoreData.style_id,
-          ...firestoreData
-        },
+      return res.json(successResponse({
+        id: generationId,
+        generationId: firestoreData.generationId || generationId,
+        status: 'completed',
+        file_url: firestoreData.fileUrl,
+        thumbnail_url: firestoreData.thumbnailUrl || firestoreData.fileUrl,
+        prompt: firestoreData.prompt,
+        style_id: firestoreData.style_id,
+        ...firestoreData
+      }, {
         requestId,
-        source: 'firestore_cache'
-      });
+        message: 'Generation status retrieved successfully'
+      }));
     }
     
     // Get generation status from BlockadeLabs API
@@ -392,13 +414,14 @@ router.get('/status/:generationId', async (req: Request, res: Response) => {
           });
         }
         
-        return res.status(404).json({
-          success: false,
-          error: 'Generation not found',
-          code: 'GENERATION_NOT_FOUND',
-          message: 'The skybox generation does not exist. It may have expired or was never created. Please try generating a new skybox.',
-          requestId
-        });
+        const { statusCode, response } = errorResponse(
+          'Generation not found',
+          'The skybox generation does not exist. It may have expired or was never created. Please try generating a new skybox.',
+          ErrorCode.GENERATION_NOT_FOUND,
+          HTTP_STATUS.NOT_FOUND,
+          { requestId }
+        );
+        return res.status(statusCode).json(response);
       }
       throw apiError;
     }
@@ -471,42 +494,44 @@ router.get('/status/:generationId', async (req: Request, res: Response) => {
       status: normalizedStatus
     };
     
-    return res.json({
-      success: true,
-      data: responseData,
-      requestId
-    });
+    return res.json(successResponse(responseData, {
+      requestId,
+      message: 'Generation status retrieved successfully'
+    }));
   } catch (error: any) {
     console.error(`[${requestId}] Error checking skybox status:`, error);
     
     if (error.response?.status === 404) {
-      return res.status(404).json({
-        success: false,
-        error: 'Generation not found',
-        code: 'GENERATION_NOT_FOUND',
-        message: 'The skybox generation does not exist. It may have expired or was never created. Please try generating a new skybox.',
-        requestId
-      });
+      const { statusCode, response } = errorResponse(
+        'Generation not found',
+        'The skybox generation does not exist. It may have expired or was never created. Please try generating a new skybox.',
+        ErrorCode.GENERATION_NOT_FOUND,
+        HTTP_STATUS.NOT_FOUND,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
     }
     
     if (error.response) {
       const { status, data } = error.response;
-      return res.status(status).json({
-        success: false,
-        error: data?.error || `BlockadeLabs API error (${status})`,
-        code: `BLOCKADE_API_ERROR_${status}`,
-        details: data?.message || error.message,
-        requestId
-      });
+      const { statusCode, response } = errorResponse(
+        'External API error',
+        data?.error || `BlockadeLabs API error (${status})`,
+        ErrorCode.EXTERNAL_API_ERROR,
+        status || HTTP_STATUS.BAD_GATEWAY,
+        { requestId, details: data?.message || error.message }
+      );
+      return res.status(statusCode).json(response);
     }
     
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to check skybox status',
-      code: 'INTERNAL_ERROR',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      requestId
-    });
+    const { statusCode, response } = errorResponse(
+      'Status check failed',
+      'Failed to check skybox status',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId, details: error instanceof Error ? error.message : 'Unknown error' }
+    );
+    return res.status(statusCode).json(response);
   }
 });
 
