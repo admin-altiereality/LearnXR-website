@@ -58,8 +58,14 @@ export interface Topic {
   asset_list: string[]; // List of 3D assets needed (e.g., ["polymer chains", "fiber strands"])
   camera_guidance: string; // Camera movement instructions
   skybox_id?: string; // Reference to skyboxes collection (if skybox generated)
+  skybox_url?: string; // Direct skybox image URL (from N8N workflow)
   skybox_ids?: string[]; // Multiple skybox references (if multiple variations)
   asset_ids?: string[]; // References to 3d_assets collection (if 3D assets generated)
+  asset_urls?: string[]; // Direct asset URLs (from N8N workflow)
   status?: 'pending' | 'generated' | 'failed'; // Generation status
   generatedAt?: string; // When skybox/assets were generated
+  // Avatar scripts
+  topic_avatar_intro?: string; // Introduction script for the avatar
+  topic_avatar_explanation?: string; // Main explanation script
+  topic_avatar_outro?: string; // Conclusion/outro script
 } 

@@ -22,45 +22,54 @@ const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 
 // Lazy Express app creation - only initialize when function is called
-// Note: app is reset on each request to ensure secrets are loaded
+// NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
+// and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
+// because the platform returns the crash response).
 let app: express.Application | null = null;
 
 const getApp = (): express.Application => {
-  // Always reinitialize to ensure secrets are loaded from environment
-  // Initialize admin first
+  if (app) return app;
+
+  // Initialize admin first (safe to call multiple times)
   initializeAdmin();
   
-  // Create Express app (always create new to ensure fresh initialization)
+  // Create Express app once per instance
   app = express();
     
-    // CORS configuration - allow all origins including preview channels
-    app.use(cors({
+    // CORS configuration - allow Firebase Hosting + localhost.
+    // Use a single options object for BOTH middleware and preflight so headers are consistent.
+    const corsOptions: cors.CorsOptions = {
       origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
+
+        const o = origin.toLowerCase();
         
         // Allow all Firebase Hosting origins (production and preview channels)
-        if (origin.includes('.web.app') || origin.includes('.firebaseapp.com')) {
+        if (o.includes('.web.app') || o.includes('.firebaseapp.com')) {
           return callback(null, true);
         }
         
         // Allow localhost for development
-        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        if (o.includes('localhost') || o.includes('127.0.0.1')) {
           return callback(null, true);
         }
         
-        // Allow all origins (fallback)
-        callback(null, true);
+        // Default-deny anything else (tighten security; avoids accidental cross-site usage)
+        return callback(new Error(`CORS blocked for origin: ${origin}`));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
       exposedHeaders: ['Content-Type', 'Authorization'],
-      maxAge: 86400 // 24 hours
-    }));
-    
-    // Handle preflight requests explicitly
-    app.options('*', cors());
+      maxAge: 86400, // 24 hours
+      optionsSuccessStatus: 204
+    };
+
+    app.use(cors(corsOptions));
+
+    // Handle preflight requests explicitly (same options as above)
+    app.options('*', cors(corsOptions));
     
     app.use(express.json());
     
@@ -114,7 +123,9 @@ const getApp = (): express.Application => {
 // Secrets must be included in the options object
 export const api = onRequest(
   {
-    memory: '512MiB',
+    // 512MiB is too tight for some routes (logs show OOM at ~521MiB),
+    // and crashes manifest as 500 + missing CORS headers in the browser.
+    memory: '1GiB',
     timeoutSeconds: 60,
     maxInstances: 10,
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
@@ -210,9 +221,6 @@ export const api = onRequest(
     const { initializeServices } = require('./utils/services');
     initializeServices();
   }
-  
-  // Reset app to force re-initialization with new secrets
-  app = null;
   
   // Lazy initialization - only create app when function is called
   const expressApp = getApp();

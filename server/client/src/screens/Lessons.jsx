@@ -139,90 +139,87 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
   }, [chapters, selectedCurriculum, selectedClass, selectedSubject]);
 
-  // Handle chapter click - navigate to main page with skybox and 3D assets
+  // Handle chapter click - navigate to VR Lesson Player with lesson data
   const handleChapterClick = (chapter) => {
     console.log('📖 Lessons: Chapter clicked:', chapter.id);
     
-    // Find first topic with skybox_url for background
-    const firstTopicWithSkybox = chapter.topics?.find(t => t.skybox_url);
-    const skyboxUrl = firstTopicWithSkybox?.skybox_url || null;
+    // Find first topic with content (skybox, avatar script, or MCQs)
+    const firstTopic = chapter.topics?.find(t => t.skybox_url || t.topic_avatar_intro || t.topic_avatar_explanation);
     
-    // Collect all 3D assets from all topics
-    const allAssetUrls = [];
-    const allAssets = [];
-    
-    chapter.topics?.forEach(topic => {
-      if (topic.asset_urls && Array.isArray(topic.asset_urls)) {
-        topic.asset_urls.forEach((assetUrl, index) => {
-          if (assetUrl) {
-            allAssetUrls.push(assetUrl);
-            allAssets.push({
-              id: topic.asset_ids?.[index] || `asset-${Date.now()}-${index}`,
-              url: assetUrl,
-              topic_id: topic.topic_id,
-              topic_name: topic.topic_name,
-              asset_name: topic.asset_list?.[index] || '3D Asset'
-            });
-          }
-        });
-      }
-    });
-    
-    // Get first 3D asset URL for the resume data (MainSection expects single asset)
-    const firstAssetUrl = allAssetUrls.length > 0 ? allAssetUrls[0] : null;
-    
-    // Set background skybox if available
-    if (skyboxUrl && setBackgroundSkybox) {
-      const skyboxData = {
-        image: skyboxUrl,
-        image_jpg: skyboxUrl,
-        title: chapter.chapter_name,
-        prompt: firstTopicWithSkybox?.in3d_prompt || chapter.chapter_name,
-        metadata: {
-          chapter_id: chapter.id,
-          curriculum: chapter.curriculum,
-          class: chapter.class,
-          subject: chapter.subject
-        }
-      };
-      setBackgroundSkybox(skyboxData);
-      
-      // Save to sessionStorage for persistence
-      sessionStorage.setItem('appliedBackgroundSkybox', JSON.stringify(skyboxData));
+    if (!firstTopic) {
+      console.warn('⚠️ No topic with content found in chapter:', chapter.id);
+      // Fall back to first topic
     }
     
-    // Prepare resume data for MainSection
-    const resumeData = {
-      prompt: firstTopicWithSkybox?.in3d_prompt || chapter.chapter_name,
-      negativePrompt: '',
-      styleId: null, // We don't have style info from curriculum chapters
-      has3DAsset: firstAssetUrl !== null,
-      meshUrl: firstAssetUrl,
-      meshFormat: 'glb', // Default format
-      modelUrls: firstAssetUrl ? { glb: firstAssetUrl } : null,
-      // Additional lesson-specific data
-      chapter: chapter,
-      allAssets: allAssets,
-      allAssetUrls: allAssetUrls
+    const selectedTopic = firstTopic || chapter.topics?.[0];
+    
+    if (!selectedTopic) {
+      console.error('❌ No topics found in chapter:', chapter.id);
+      return;
+    }
+    
+    // Collect MCQs from the topic (flattened format)
+    const mcqs = [];
+    for (let i = 1; i <= 5; i++) {
+      const question = selectedTopic[`mcq${i}_question`];
+      if (question) {
+        const options = [];
+        for (let j = 1; j <= 4; j++) {
+          const option = selectedTopic[`mcq${i}_option${j}`];
+          if (option) options.push(option);
+        }
+        mcqs.push({
+          id: selectedTopic[`mcq${i}_question_id`] || `mcq_${i}`,
+          question,
+          options,
+          correct_option_index: selectedTopic[`mcq${i}_correct_option_index`] || 0,
+          explanation: selectedTopic[`mcq${i}_explanation`] || '',
+        });
+      }
+    }
+    
+    // Build lesson data to store in sessionStorage
+    const lessonData = {
+      chapter: {
+        chapter_id: chapter.id,
+        chapter_name: chapter.chapter_name,
+        chapter_number: chapter.chapter_number,
+        curriculum: chapter.curriculum,
+        class_name: `Class ${chapter.class}`,
+        subject: chapter.subject,
+      },
+      topic: {
+        topic_id: selectedTopic.topic_id || `topic_${Date.now()}`,
+        topic_name: selectedTopic.topic_name || chapter.chapter_name,
+        topic_priority: selectedTopic.topic_priority || 1,
+        learning_objective: selectedTopic.learning_objective || '',
+        in3d_prompt: selectedTopic.in3d_prompt || '',
+        skybox_id: selectedTopic.skybox_id,
+        skybox_url: selectedTopic.skybox_url,
+        avatar_intro: selectedTopic.topic_avatar_intro || selectedTopic.avatar_intro || '',
+        avatar_explanation: selectedTopic.topic_avatar_explanation || selectedTopic.avatar_explanation || '',
+        avatar_outro: selectedTopic.topic_avatar_outro || selectedTopic.avatar_outro || '',
+        asset_list: selectedTopic.asset_list || [],
+        asset_urls: selectedTopic.asset_urls || [],
+        asset_ids: selectedTopic.asset_ids || [],
+        mcqs: mcqs,
+      },
+      startedAt: new Date().toISOString(),
     };
     
-    // Save to sessionStorage
-    sessionStorage.setItem('resumeGenerationData', JSON.stringify(resumeData));
-    sessionStorage.setItem('fromLessons', 'true');
-    sessionStorage.setItem('fromHistory', 'true'); // Reuse fromHistory flag for compatibility
-    
-    // Navigate to main page
-    navigate('/main', {
-      state: {
-        chapter: chapter,
-        curriculum: chapter.curriculum,
-        class: chapter.class,
-        subject: chapter.subject,
-        fromLessons: true,
-        skyboxUrl: skyboxUrl,
-        assetUrls: allAssetUrls
-      }
+    console.log('📚 Lessons: Launching lesson with data:', {
+      chapterId: lessonData.chapter.chapter_id,
+      topicName: lessonData.topic.topic_name,
+      hasSkybox: !!lessonData.topic.skybox_url,
+      hasIntro: !!lessonData.topic.avatar_intro,
+      mcqCount: lessonData.topic.mcqs.length,
     });
+    
+    // Store lesson in sessionStorage for VRLessonPlayer to pick up
+    sessionStorage.setItem('activeLesson', JSON.stringify(lessonData));
+    
+    // Navigate to VR Lesson Player
+    navigate('/vrlessonplayer');
   };
 
   // Format date helper

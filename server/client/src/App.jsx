@@ -18,6 +18,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
+import { LessonProvider } from './contexts/LessonContext';
 // Subscription removed
 import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
@@ -44,16 +45,19 @@ import { LearnXRLessonScene } from './Components/LearnXRLessonScene';
 import SystemStatus from './screens/SystemStatus';
 import Onboarding from './screens/Onboarding';
 import HelpChat from './screens/HelpChat';
-import FloatingHelpButton from './Components/FloatingHelpButton';
+// FloatingHelpButton removed - using integrated help instead
 import SmoothScroll from './Components/SmoothScroll';
 import DeveloperSettings from './screens/DeveloperSettings';
 import ApiDocumentation from './screens/ApiDocumentation';
 import N8nWorkflows from './screens/N8nWorkflows';
+import ContentLibrary from './screens/studio/ContentLibrary';
+import ChapterEditor from './screens/studio/ChapterEditor';
+import VRLessonPlayer from './screens/VRLessonPlayer';
 
 // Conditional Footer - hides on /main route
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/main'];
+  const hideFooterRoutes = ['/main', '/vrlessonplayer'];
   
   if (hideFooterRoutes.includes(location.pathname)) {
     return null;
@@ -66,12 +70,15 @@ const ConditionalFooter = () => {
   );
 };
 
-// Conditional Header - hides on /main route and teacher avatar pages
+// Conditional Header - hides on /main route, teacher avatar pages, and studio pages
 const ConditionalHeader = () => {
   const location = useLocation();
-  const hideHeaderRoutes = ['/main', '/teacher-avatar-demo', '/learnxr/lesson'];
+  const hideHeaderRoutes = ['/main', '/teacher-avatar-demo', '/learnxr/lesson', '/vrlessonplayer'];
   
-  if (hideHeaderRoutes.includes(location.pathname) || location.pathname.startsWith('/learnxr/')) {
+  // Hide header on specific routes or paths starting with certain prefixes
+  if (hideHeaderRoutes.includes(location.pathname) || 
+      location.pathname.startsWith('/learnxr/') ||
+      location.pathname.startsWith('/studio/')) {
     return null;
   }
   
@@ -355,6 +362,7 @@ function App() {
     if (threeJsError) {
       return (
         <AuthProvider>
+          <LessonProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
               <LoadingProvider>
@@ -536,6 +544,32 @@ function App() {
                           </OnboardingGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Studio Content Editor Routes */}
+                      <Route path="/studio/content" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <ContentLibrary />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/studio/content/:chapterId" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <ChapterEditor />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* VR Lesson Player */}
+                      <Route path="/vrlessonplayer" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <VRLessonPlayer />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      
                       <Route path="/asset-generator" element={
                         <ProtectedRoute>
                           <OnboardingGuard>
@@ -608,8 +642,7 @@ function App() {
               draggable
               pauseOnHover
             />
-            {/* Floating Help Button */}
-            <FloatingHelpButton />
+            {/* Floating Help Button removed */}
             {/* Global Background Loading Indicator */}
             <GlobalLoadingIndicator />
           </SmoothScroll>
@@ -617,6 +650,7 @@ function App() {
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
+          </LessonProvider>
         {/* Subscription removed */}
       </AuthProvider>
       );
@@ -625,6 +659,7 @@ function App() {
     return (
       <ErrorBoundary>
         <AuthProvider>
+          <LessonProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
               <LoadingProvider>
@@ -806,6 +841,32 @@ function App() {
                           </OnboardingGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Studio Content Editor Routes */}
+                      <Route path="/studio/content" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <ContentLibrary />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/studio/content/:chapterId" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <ChapterEditor />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* VR Lesson Player */}
+                      <Route path="/vrlessonplayer" element={
+                        <ProtectedRoute>
+                          <OnboardingGuard>
+                            <VRLessonPlayer />
+                          </OnboardingGuard>
+                        </ProtectedRoute>
+                      } />
+                      
                       <Route path="/asset-generator" element={
                         <ProtectedRoute>
                           <OnboardingGuard>
@@ -876,8 +937,7 @@ function App() {
               draggable
               pauseOnHover
             />
-            {/* Floating Help Button */}
-            <FloatingHelpButton />
+            {/* Floating Help Button removed */}
             {/* Global Background Loading Indicator */}
             <GlobalLoadingIndicator />
           </SmoothScroll>
@@ -885,6 +945,7 @@ function App() {
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
+          </LessonProvider>
         {/* Subscription removed */}
       </AuthProvider>
     </ErrorBoundary>
