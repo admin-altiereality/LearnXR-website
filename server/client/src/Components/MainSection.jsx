@@ -43,6 +43,8 @@ import { FloatingMessageBox } from './FloatingMessageBox';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import api from '../config/axios';
 import LessonMCQPanel from './LessonMCQPanel';
+import { LessonModeOverlay } from './LessonModeOverlay';
+import { useLesson } from '../contexts/LessonContext';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -108,6 +110,9 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const { user } = useAuth();
   // Subscription removed
   const navigate = useNavigate();
+  
+  // Lesson mode - for lessons launched from Content Studio
+  const { activeLesson, lessonPhase, isLessonActive } = useLesson();
   const [isMinimized, setIsMinimized] = useState(false);
   const [currentImageForDownload, setCurrentImageForDownload] = useState(null);
   const [stylesLoading, setStylesLoading] = useState(true);
@@ -182,6 +187,58 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   useEffect(() => {
     isAvatarReadyRef.current = isAvatarReady;
   }, [isAvatarReady]);
+  
+  // Handle lesson mode - set skybox when a lesson is launched from Content Studio
+  useEffect(() => {
+    if (activeLesson?.topic?.skybox_url && setBackgroundSkybox) {
+      console.log('📚 Lesson Mode: Setting skybox from lesson data:', activeLesson.topic.skybox_url);
+      setBackgroundSkybox({
+        image: activeLesson.topic.skybox_url,
+        image_jpg: activeLesson.topic.skybox_url,
+        title: activeLesson.topic.topic_name,
+        id: activeLesson.topic.skybox_id || 'lesson-skybox',
+      });
+      
+      // Also set the avatar config from lesson data
+      setAvatarConfig({
+        curriculum: activeLesson.chapter.curriculum,
+        class: activeLesson.chapter.class_name,
+        subject: activeLesson.chapter.subject,
+      });
+      
+      // Create a skybox variation for the viewer
+      const skyboxVariation = {
+        id: `lesson-${Date.now()}`,
+        file_url: activeLesson.topic.skybox_url,
+        image: activeLesson.topic.skybox_url, // Required for AssetViewerWithSkybox
+        image_jpg: activeLesson.topic.skybox_url,
+        title: activeLesson.topic.topic_name,
+        prompt: activeLesson.topic.in3d_prompt || '',
+        generationId: `lesson-${activeLesson.topic.topic_id}`,
+        preview_url: activeLesson.topic.skybox_url,
+      };
+      setGeneratedVariations([skyboxVariation]);
+      setCurrentVariationIndex(0); // Ensure we're using the first variation
+      
+      // If there are 3D assets, set the first one
+      if (activeLesson.topic.asset_urls && activeLesson.topic.asset_urls.length > 0) {
+        const assetUrl = activeLesson.topic.asset_urls[0];
+        console.log('📚 Lesson Mode: Setting 3D asset from lesson data:', assetUrl);
+        setGenerated3DAsset({
+          id: `lesson-asset-${Date.now()}`,
+          downloadUrl: assetUrl,
+          previewUrl: assetUrl,
+          status: 'completed',
+        });
+        setGlobalGenerated3DAsset({
+          id: `lesson-asset-${Date.now()}`,
+          downloadUrl: assetUrl,
+          previewUrl: assetUrl,
+          status: 'completed',
+        });
+      }
+    }
+  }, [activeLesson, setBackgroundSkybox, setAvatarConfig, setGenerated3DAsset, setGlobalGenerated3DAsset]);
   
   // Send greeting when all three config options are selected
   useEffect(() => {
@@ -5205,6 +5262,47 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           chapter={currentLessonChapter}
           isVisible={showMCQPanel}
           onClose={() => setShowMCQPanel(false)}
+        />
+      )}
+      
+      {/* Lesson Mode Overlay - Controls lesson flow from Content Studio */}
+      {isLessonActive() && (
+        <LessonModeOverlay
+          avatarRef={avatarRef}
+          onSetSkybox={(url) => {
+            setBackgroundSkybox({
+              image: url,
+              image_jpg: url,
+              title: activeLesson?.topic?.topic_name || 'Lesson Skybox',
+              id: activeLesson?.topic?.skybox_id || 'lesson-skybox',
+            });
+            // Also update variations for the 3D viewer
+            setGeneratedVariations([{
+              id: `lesson-skybox-${Date.now()}`,
+              file_url: url,
+              image: url,
+              image_jpg: url,
+              title: activeLesson?.topic?.topic_name || 'Lesson Skybox',
+              prompt: activeLesson?.topic?.in3d_prompt || '',
+              generationId: `lesson-${activeLesson?.topic?.topic_id || 'skybox'}`,
+              preview_url: url,
+            }]);
+            setCurrentVariationIndex(0);
+          }}
+          onSet3DAsset={(url) => {
+            setGenerated3DAsset({
+              id: `lesson-asset-${Date.now()}`,
+              downloadUrl: url,
+              previewUrl: url,
+              status: 'completed',
+            });
+            setGlobalGenerated3DAsset({
+              id: `lesson-asset-${Date.now()}`,
+              downloadUrl: url,
+              previewUrl: url,
+              status: 'completed',
+            });
+          }}
         />
       )}
     </div>

@@ -25,6 +25,8 @@ interface TeacherAvatarProps {
   subject?: string;
   useAvatarKey?: boolean;
   externalThreadId?: string | null; // If provided, use this thread instead of creating one
+  audioUrl?: string | null; // Audio URL for TTS playback and lip sync
+  visemes?: VisemeFrame[]; // Viseme frames for lip sync animation
 }
 
 interface AvatarModelProps {
@@ -1334,7 +1336,9 @@ export const TeacherAvatar = React.forwardRef<
   class: classLevel,
   subject,
   useAvatarKey = false,
-  externalThreadId
+  externalThreadId,
+  audioUrl: externalAudioUrl,
+  visemes: externalVisemes
 }, ref) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -1347,6 +1351,27 @@ export const TeacherAvatar = React.forwardRef<
   const isProcessingRef = useRef<boolean>(false);
   const testBodyMovementRef = useRef<(() => void) | null>(null);
   const testLipMovementRef = useRef<(() => void) | null>(null);
+  
+  // Sync external audio URL and visemes for lip sync
+  useEffect(() => {
+    if (externalAudioUrl) {
+      console.log('🎤 External audio URL received for lip sync:', externalAudioUrl.substring(0, 50));
+      setCurrentAudioUrl(externalAudioUrl);
+      setIsSpeaking(true);
+    } else {
+      setCurrentAudioUrl(null);
+      setIsSpeaking(false);
+    }
+  }, [externalAudioUrl]);
+  
+  useEffect(() => {
+    if (externalVisemes && externalVisemes.length > 0) {
+      console.log('👄 External visemes received for lip sync:', externalVisemes.length, 'frames');
+      setVisemes(externalVisemes);
+    } else {
+      setVisemes([]);
+    }
+  }, [externalVisemes]);
 
   // Test function: Make model speak without OpenAI API
   const testLipSync = () => {
