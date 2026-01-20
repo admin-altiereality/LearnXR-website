@@ -1,23 +1,105 @@
-import { Scene } from '../../../types/curriculum';
+/**
+ * AvatarTab - Avatar Scripts and TTS Audio Management
+ * 
+ * Data Source: chapter_tts collection (NEW Firestore schema)
+ * TTS audio files are now stored in the chapter_tts collection
+ */
+
+import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import { Scene, ChapterTTS } from '../../../types/curriculum';
+import { getChapterTTS } from '../../../lib/firestore/queries';
 import {
   MessageSquare,
   BookOpen,
   Flag,
   Volume2,
   Loader2,
+  RefreshCw,
+  Play,
+  Pause,
+  ExternalLink,
+  Mic,
 } from 'lucide-react';
 
 interface AvatarTabProps {
   sceneFormState: Partial<Scene>;
   onSceneChange: (field: keyof Scene, value: unknown) => void;
   isReadOnly: boolean;
+  chapterId?: string;
+  topicId?: string;
 }
 
 export const AvatarTab = ({
   sceneFormState,
   onSceneChange,
   isReadOnly,
+  chapterId,
+  topicId,
 }: AvatarTabProps) => {
+  // TTS audio from chapter_tts collection
+  const [ttsData, setTtsData] = useState<ChapterTTS[]>([]);
+  const [loadingTTS, setLoadingTTS] = useState(false);
+  const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
+  
+  // Load TTS data from chapter_tts collection
+  useEffect(() => {
+    const loadTTSData = async () => {
+      if (!chapterId || !topicId) return;
+      
+      setLoadingTTS(true);
+      try {
+        const data = await getChapterTTS(chapterId, topicId);
+        setTtsData(data);
+        console.log('✅ Loaded TTS data from chapter_tts collection:', data.length);
+      } catch (error) {
+        console.error('Error loading TTS data:', error);
+      } finally {
+        setLoadingTTS(false);
+      }
+    };
+    
+    loadTTSData();
+  }, [chapterId, topicId]);
+  
+  const handleRefreshTTS = async () => {
+    if (!chapterId || !topicId) return;
+    
+    setLoadingTTS(true);
+    try {
+      const data = await getChapterTTS(chapterId, topicId);
+      setTtsData(data);
+      toast.success('TTS data refreshed');
+    } catch (error) {
+      console.error('Error refreshing TTS:', error);
+      toast.error('Failed to refresh TTS');
+    } finally {
+      setLoadingTTS(false);
+    }
+  };
+  
+  const handlePlayAudio = (audioUrl: string, scriptType: string) => {
+    if (playingAudio === scriptType) {
+      audioRef?.pause();
+      setPlayingAudio(null);
+    } else {
+      if (audioRef) {
+        audioRef.pause();
+      }
+      const audio = new Audio(audioUrl);
+      audio.onended = () => setPlayingAudio(null);
+      audio.play();
+      setAudioRef(audio);
+      setPlayingAudio(scriptType);
+    }
+  };
+  
+  // Get TTS for a specific script type
+  const getTTSForType = (type: 'intro' | 'explanation' | 'outro'): ChapterTTS | undefined => {
+    return ttsData.find(t => t.script_type === type);
+  };
+
   const scriptSections = [
     {
       id: 'avatar_intro',
@@ -85,19 +167,86 @@ export const AvatarTab = ({
             <h2 className="text-lg font-semibold text-white">Avatar Scripts</h2>
             <p className="text-sm text-slate-400 mt-1">
               Write the dialogue for the teaching avatar in each phase of the lesson
+              {ttsData.length > 0 && (
+                <span className="text-cyan-400/60 ml-1">
+                  ({ttsData.length} TTS audio{ttsData.length !== 1 ? 's' : ''} from chapter_tts)
+                </span>
+              )}
             </p>
           </div>
-          <button
-            disabled={isReadOnly}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                     text-slate-300 bg-slate-800/50 hover:bg-slate-700/50
-                     rounded-lg border border-slate-600/50
-                     transition-all duration-200 disabled:opacity-50"
-          >
-            <Volume2 className="w-4 h-4" />
-            Preview Voice
-          </button>
+          <div className="flex items-center gap-2">
+            {chapterId && topicId && (
+              <button
+                onClick={handleRefreshTTS}
+                disabled={loadingTTS}
+                className="p-2 text-slate-400 hover:text-white
+                         bg-slate-800/50 hover:bg-slate-700/50
+                         rounded-lg border border-slate-600/50
+                         transition-all duration-200"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingTTS ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+            <button
+              disabled={isReadOnly}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium
+                       text-slate-300 bg-slate-800/50 hover:bg-slate-700/50
+                       rounded-lg border border-slate-600/50
+                       transition-all duration-200 disabled:opacity-50"
+            >
+              <Volume2 className="w-4 h-4" />
+              Preview Voice
+            </button>
+          </div>
         </div>
+        
+        {/* TTS Audio List */}
+        {ttsData.length > 0 && (
+          <div className="p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-xl">
+            <div className="flex items-center gap-2 mb-3">
+              <Mic className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm font-medium text-cyan-400">Generated TTS Audio</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {ttsData.map((tts) => (
+                <div key={tts.id} className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                  <button
+                    onClick={() => tts.audio_url && handlePlayAudio(tts.audio_url, tts.script_type)}
+                    disabled={!tts.audio_url}
+                    className={`p-2 rounded-lg transition-all ${
+                      playingAudio === tts.script_type 
+                        ? 'bg-cyan-500 text-white' 
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    } disabled:opacity-50`}
+                  >
+                    {playingAudio === tts.script_type ? (
+                      <Pause className="w-4 h-4" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-white capitalize">{tts.script_type}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {tts.duration_seconds ? `${tts.duration_seconds}s` : 'No duration'}
+                      {tts.voice_name && ` • ${tts.voice_name}`}
+                    </p>
+                  </div>
+                  {tts.audio_url && (
+                    <a
+                      href={tts.audio_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 text-slate-500 hover:text-white"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* Script Sections */}
         {scriptSections.map((section) => {

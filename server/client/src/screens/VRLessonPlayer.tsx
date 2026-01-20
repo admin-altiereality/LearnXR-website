@@ -3,15 +3,16 @@
  * 
  * Features:
  * - Interactive 360° skybox background
- * - 3D asset display with Meshy proxy support
- * - Avatar with TTS narration
+ * - 3D asset display with platform-aware loading (Android: FBX/GLB, iOS: USDZ)
+ * - Avatar with pre-generated TTS narration from Firestore
+ * - NO runtime TTS generation - uses stored audio URLs only
  * - Assistant chat for Q&A
  * - MCQ flow after lesson
  * - Comprehensive error handling
- * - TTS Progress indicators
+ * - Simple voiceover player UI (Play/Pause/Stop)
  */
 
-import { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -21,11 +22,15 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { db } from '../config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import api from '../config/axios';
+import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
+import type { ChapterTTS, MeshyAsset, ChapterMCQ } from '../types/curriculum';
 import {
   Play,
+  Pause,
+  Square,
   Volume2,
   VolumeX,
   MessageSquare,
@@ -48,11 +53,6 @@ import {
   Move,
   AlertTriangle,
   RefreshCcw,
-  Mic,
-  Radio,
-  User,
-  Users,
-  ChevronDown,
 } from 'lucide-react';
 
 // ============================================================================
@@ -182,6 +182,76 @@ const log = (emoji: string, message: string, data?: any) => {
       console.log(`${emoji} [VRPlayer] ${message}`);
     }
   }
+};
+
+// ============================================================================
+// Platform Detection - For 3D Asset Format Selection
+// ============================================================================
+
+type Platform = 'android' | 'ios' | 'web' | 'unknown';
+
+const detectPlatform = (): Platform => {
+  if (typeof navigator === 'undefined') return 'unknown';
+  
+  const ua = navigator.userAgent.toLowerCase();
+  
+  // Check for Meta Quest / Android
+  if (ua.includes('oculus') || ua.includes('quest') || ua.includes('android')) {
+    return 'android';
+  }
+  
+  // Check for iOS
+  if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod') || 
+      (ua.includes('macintosh') && 'ontouchend' in document)) {
+    return 'ios';
+  }
+  
+  return 'web';
+};
+
+/**
+ * Select the best 3D asset URL based on platform
+ * Android/Quest: Prefer FBX, fallback to GLB
+ * iOS: Prefer USDZ, fallback to GLB
+ * Web: Use GLB
+ */
+const selectPlatformAssetUrl = (asset: MeshyAsset | null, platform: Platform): string | null => {
+  if (!asset) return null;
+  
+  switch (platform) {
+    case 'android':
+      // Android/Quest: FBX first, then GLB
+      return asset.fbx_url || asset.glb_url || null;
+    case 'ios':
+      // iOS: USDZ first, then GLB
+      return asset.usdz_url || asset.glb_url || null;
+    case 'web':
+    default:
+      // Web: GLB is best supported
+      return asset.glb_url || null;
+  }
+};
+
+// ============================================================================
+// TTS Audio Cache - Prevents redundant fetches
+// ============================================================================
+
+const ttsCache = new Map<string, ChapterTTS[]>();
+
+const getCachedTTS = async (chapterId: string, topicId: string): Promise<ChapterTTS[]> => {
+  const cacheKey = `${chapterId}_${topicId}`;
+  
+  if (ttsCache.has(cacheKey)) {
+    log('📦', 'Using cached TTS data');
+    return ttsCache.get(cacheKey)!;
+  }
+  
+  log('🔍', 'Fetching TTS from Firestore...');
+  const ttsData = await getChapterTTS(chapterId, topicId);
+  ttsCache.set(cacheKey, ttsData);
+  log('✅', `Cached ${ttsData.length} TTS entries`);
+  
+  return ttsData;
 };
 
 // ============================================================================
@@ -443,66 +513,168 @@ function LessonScene({
 }
 
 // ============================================================================
-// TTS Progress Component
+// Voiceover Player Component - Simple UI for TTS Playback
 // ============================================================================
 
-const TTSProgressBar = ({ 
-  status, 
-  progress = 0 
+interface VoiceoverPlayerProps {
+  audioUrl: string | null;
+  isPlaying: boolean;
+  isPaused: boolean;
+  currentTime: number;
+  duration: number;
+  onPlay: () => void;
+  onPause: () => void;
+  onStop: () => void;
+  disabled?: boolean;
+  status: 'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'error';
+}
+
+const VoiceoverPlayer = ({
+  audioUrl,
+  isPlaying,
+  isPaused,
+  currentTime,
+  duration,
+  onPlay,
+  onPause,
+  onStop,
+  disabled,
+  status,
+}: VoiceoverPlayerProps) => {
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+  
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-black/50 backdrop-blur-sm rounded-xl border border-white/10">
+      {/* Play/Pause Button */}
+      <button
+        onClick={isPlaying ? onPause : onPlay}
+        disabled={disabled || !audioUrl || status === 'loading'}
+        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                  ${disabled || !audioUrl 
+                    ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed' 
+                    : isPlaying 
+                      ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' 
+                      : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                  }`}
+      >
+        {status === 'loading' ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : isPlaying ? (
+          <Pause className="w-4 h-4" />
+        ) : (
+          <Play className="w-4 h-4" />
+        )}
+      </button>
+      
+      {/* Stop Button */}
+      <button
+        onClick={onStop}
+        disabled={disabled || status === 'idle'}
+        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all
+                  ${disabled || status === 'idle'
+                    ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed' 
+                    : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                  }`}
+      >
+        <Square className="w-3.5 h-3.5" />
+      </button>
+      
+      {/* Progress Bar */}
+      <div className="flex-1 mx-2">
+        <div className="h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+          <motion.div 
+            className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500"
+            style={{ width: `${progress}%` }}
+            transition={{ duration: 0.1 }}
+          />
+        </div>
+      </div>
+      
+      {/* Time Display */}
+      <div className="text-[10px] text-slate-400 font-mono min-w-[60px] text-right">
+        {formatTime(currentTime)} / {formatTime(duration)}
+      </div>
+      
+      {/* Status Indicator */}
+      {status === 'error' && (
+        <div className="flex items-center gap-1 text-amber-400">
+          <AlertTriangle className="w-3.5 h-3.5" />
+        </div>
+      )}
+      
+      {!audioUrl && status !== 'loading' && (
+        <div className="flex items-center gap-1 text-slate-500">
+          <VolumeX className="w-3.5 h-3.5" />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// TTS Status Indicator Component
+// ============================================================================
+
+const TTSStatusIndicator = ({ 
+  status,
+  scriptType,
 }: { 
-  status: 'idle' | 'generating' | 'playing' | 'error'; 
-  progress?: number;
+  status: 'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'error';
+  scriptType?: string;
 }) => {
   if (status === 'idle') return null;
   
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-black/40 backdrop-blur-sm rounded-xl border border-white/10">
-      {status === 'generating' && (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-black/40 backdrop-blur-sm rounded-lg border border-white/10">
+      {status === 'loading' && (
         <>
-          <div className="relative w-6 h-6">
-            <Radio className="w-6 h-6 text-cyan-400 animate-pulse" />
-            <span className="absolute inset-0 rounded-full bg-cyan-400/30 animate-ping" />
-          </div>
-          <div className="flex-1">
-            <p className="text-xs text-cyan-300 font-medium">Generating audio...</p>
-            <div className="mt-1 h-1 bg-slate-700 rounded-full overflow-hidden">
-              <motion.div 
-                className="h-full bg-gradient-to-r from-cyan-500 to-blue-500"
-                initial={{ width: '0%' }}
-                animate={{ width: `${progress}%` }}
-                transition={{ duration: 0.3 }}
-              />
-            </div>
-          </div>
+          <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+          <p className="text-[10px] text-cyan-300 font-medium">Loading audio...</p>
         </>
       )}
       
       {status === 'playing' && (
         <>
-          <div className="flex items-center gap-1">
-            {[1, 2, 3, 4, 5].map((i) => (
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4].map((i) => (
               <motion.div
                 key={i}
-                className="w-1 bg-emerald-400 rounded-full"
-                animate={{ 
-                  height: [8, 16, 8],
-                }}
-                transition={{
-                  duration: 0.5,
-                  repeat: Infinity,
-                  delay: i * 0.1,
-                }}
+                className="w-0.5 bg-emerald-400 rounded-full"
+                animate={{ height: [6, 12, 6] }}
+                transition={{ duration: 0.4, repeat: Infinity, delay: i * 0.08 }}
               />
             ))}
           </div>
-          <p className="text-xs text-emerald-300 font-medium">Speaking...</p>
+          <p className="text-[10px] text-emerald-300 font-medium">
+            {scriptType ? `Playing ${scriptType}` : 'Playing...'}
+          </p>
+        </>
+      )}
+      
+      {status === 'paused' && (
+        <>
+          <Pause className="w-4 h-4 text-amber-400" />
+          <p className="text-[10px] text-amber-300 font-medium">Paused</p>
         </>
       )}
       
       {status === 'error' && (
         <>
-          <AlertTriangle className="w-5 h-5 text-amber-400" />
-          <p className="text-xs text-amber-300 font-medium">Audio unavailable - showing text</p>
+          <AlertTriangle className="w-4 h-4 text-red-400" />
+          <p className="text-[10px] text-red-300 font-medium">TTS not available</p>
+        </>
+      )}
+      
+      {status === 'ready' && (
+        <>
+          <Volume2 className="w-4 h-4 text-slate-400" />
+          <p className="text-[10px] text-slate-400 font-medium">Audio ready</p>
         </>
       )}
     </div>
@@ -514,19 +686,156 @@ const TTSProgressBar = ({
 // ============================================================================
 
 const VRLessonPlayerInner = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const lessonContext = useLesson();
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('🎬 [VRLessonPlayer] Component rendering...');
+  console.log('═══════════════════════════════════════════════════════');
+  
+  // STEP 1: Initialize React Router hooks
+  let navigate: ReturnType<typeof useNavigate>;
+  try {
+    navigate = useNavigate();
+    console.log('✅ [Init 1] useNavigate initialized');
+  } catch (e) {
+    console.error('❌ [Init 1] useNavigate failed:', e);
+    throw new Error('Failed to initialize navigation');
+  }
+  
+  // STEP 2: Initialize Auth context
+  let user: any = null;
+  try {
+    const authContext = useAuth();
+    user = authContext?.user ?? null;
+    console.log('✅ [Init 2] useAuth initialized, user:', user?.uid ? 'logged in' : 'null');
+  } catch (e) {
+    console.error('❌ [Init 2] useAuth failed:', e);
+    // Continue without user - some features won't work
+  }
+  
+  // STEP 3: Initialize Lesson context with defensive access
+  let lessonContext: ReturnType<typeof useLesson> | null = null;
+  try {
+    lessonContext = useLesson();
+    console.log('✅ [Init 3] useLesson initialized, activeLesson:', lessonContext?.activeLesson ? 'exists' : 'null');
+  } catch (e) {
+    console.error('❌ [Init 3] useLesson failed:', e);
+    // Will use sessionStorage fallback
+  }
 
-  // Extract from context with safety
-  const activeLesson = lessonContext?.activeLesson;
-  const lessonPhase = lessonContext?.lessonPhase || 'idle';
-  const currentScriptIndex = lessonContext?.currentScriptIndex || 0;
-  const setPhase = lessonContext?.setPhase || (() => {});
-  const advanceScript = lessonContext?.advanceScript || (() => {});
-  const hasNextScript = lessonContext?.hasNextScript || (() => false);
-  const endLesson = lessonContext?.endLesson || (() => {});
-  const submitQuizResults = lessonContext?.submitQuizResults || (() => {});
+  // Extract from context with safety - use stable defaults
+  const activeLesson = lessonContext?.activeLesson ?? null;
+  const lessonPhase = lessonContext?.lessonPhase ?? 'idle';
+  const currentScriptIndex = lessonContext?.currentScriptIndex ?? 0;
+  const setPhase = lessonContext?.setPhase ?? (() => { console.warn('setPhase not available'); });
+  const advanceScript = lessonContext?.advanceScript ?? (() => { console.warn('advanceScript not available'); });
+  const hasNextScript = lessonContext?.hasNextScript ?? (() => false);
+  const endLesson = lessonContext?.endLesson ?? (() => { console.warn('endLesson not available'); });
+  const submitQuizResults = lessonContext?.submitQuizResults ?? (() => { console.warn('submitQuizResults not available'); });
+
+  // STEP 4: Initialize all state hooks BEFORE any conditional logic
+  const [extraLessonData, setExtraLessonData] = useState<any>(null);
+  const [dataInitialized, setDataInitialized] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [initPhase, setInitPhase] = useState<'starting' | 'loading-storage' | 'validating' | 'ready' | 'error'>('starting');
+  
+  console.log('✅ [Init 4] State hooks initialized');
+
+  // STEP 5: Load extra lesson data from sessionStorage on mount with comprehensive validation
+  useEffect(() => {
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('📦 [VRLessonPlayer] Data initialization effect running...');
+    console.log('═══════════════════════════════════════════════════════');
+    
+    const initializeData = async () => {
+      setInitPhase('loading-storage');
+      
+      try {
+        // Give a small delay for context to propagate
+        console.log('⏳ [Data Init] Waiting for context propagation...');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Check context first
+        console.log('🔍 [Data Init] Checking context state...');
+        console.log('  - activeLesson from context:', activeLesson ? 'exists' : 'null');
+        if (activeLesson) {
+          console.log('  - chapter_id:', activeLesson.chapter?.chapter_id);
+          console.log('  - topic_id:', activeLesson.topic?.topic_id);
+        }
+        
+        // Check sessionStorage
+        console.log('🔍 [Data Init] Checking sessionStorage...');
+        const stored = sessionStorage.getItem('activeLesson');
+        
+        if (stored) {
+          console.log('  - Found data in sessionStorage, length:', stored.length);
+          setInitPhase('validating');
+          
+          try {
+            const parsed = JSON.parse(stored);
+            console.log('  - Parsed successfully');
+            
+            // Validate the parsed data
+            if (parsed && typeof parsed === 'object') {
+              const hasChapter = !!(parsed.chapter && parsed.chapter.chapter_id);
+              const hasTopic = !!(parsed.topic && parsed.topic.topic_id);
+              
+              console.log('  - Validation:', { hasChapter, hasTopic });
+              
+              if (hasChapter && hasTopic) {
+                console.log('✅ [Data Init] Lesson data validated from sessionStorage');
+                setExtraLessonData(parsed);
+              } else {
+                console.warn('⚠️ [Data Init] SessionStorage data missing required fields');
+              }
+            } else {
+              console.warn('⚠️ [Data Init] Parsed data is not an object');
+            }
+          } catch (parseErr) {
+            console.error('❌ [Data Init] JSON parse error:', parseErr);
+          }
+        } else {
+          console.log('  - No data in sessionStorage');
+        }
+        
+        setInitPhase('ready');
+        setDataInitialized(true);
+        console.log('✅ [Data Init] Initialization complete');
+        
+      } catch (e) {
+        console.error('❌ [Data Init] Error:', e);
+        setInitError('Failed to load lesson data');
+        setInitPhase('error');
+        setDataInitialized(true);
+      }
+    };
+    
+    initializeData();
+  }, []); // Empty dependency - run once on mount
+  
+  // Compute if lesson data is valid
+  const isLessonDataValid = useMemo(() => {
+    const fromContext = !!(activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id);
+    const fromStorage = !!(extraLessonData?.chapter?.chapter_id && extraLessonData?.topic?.topic_id);
+    console.log('🔍 [Validation] isLessonDataValid:', { fromContext, fromStorage });
+    return fromContext || fromStorage;
+  }, [activeLesson, extraLessonData]);
+  
+  // Get the best available lesson data (context takes priority)
+  const effectiveLesson = useMemo(() => {
+    if (activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id) {
+      console.log('📋 [effectiveLesson] Using context data');
+      return activeLesson;
+    }
+    if (extraLessonData?.chapter && extraLessonData?.topic) {
+      console.log('📋 [effectiveLesson] Using sessionStorage data');
+      return {
+        chapter: extraLessonData.chapter,
+        topic: extraLessonData.topic,
+        startedAt: extraLessonData.startedAt || new Date().toISOString(),
+      };
+    }
+    console.log('📋 [effectiveLesson] No valid data available');
+    return null;
+  }, [activeLesson, extraLessonData]);
 
   // Refs
   const avatarRef = useRef<{ sendMessage: (text: string) => Promise<void> } | null>(null);
@@ -537,21 +846,31 @@ const VRLessonPlayerInner = () => {
   const [skyboxLoading, setSkyboxLoading] = useState(true);
   const [skyboxError, setSkyboxError] = useState<string | null>(null);
 
-  // Asset State
+  // Asset State - Platform-aware
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
   const [assetLoading, setAssetLoading] = useState(false);
+  const [meshyAssets, setMeshyAssets] = useState<MeshyAsset[]>([]);
+  const [currentAssetIndex, setCurrentAssetIndex] = useState(0);
+  const platform = useMemo(() => detectPlatform(), []);
 
-  // Avatar Gender Selection
-  const [avatarGender, setAvatarGender] = useState<'male' | 'female'>('male');
-  const [showGenderDropdown, setShowGenderDropdown] = useState(false);
+  // Lesson Ready State - Wait for user to click Start (NO auto-play)
+  const [lessonReady, setLessonReady] = useState(false);
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState(true);
   
-  // TTS State
-  const [ttsStatus, setTtsStatus] = useState<'idle' | 'generating' | 'playing' | 'error'>('idle');
-  const [ttsProgress, setTtsProgress] = useState(0);
+  // TTS State - Pre-generated audio from Firestore (NO runtime generation)
+  const [ttsData, setTtsData] = useState<ChapterTTS[]>([]);
+  const [ttsStatus, setTtsStatus] = useState<'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'error'>('idle');
   const [isMuted, setIsMuted] = useState(false);
   const [avatarReady, setAvatarReady] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const [currentVisemes, setCurrentVisemes] = useState<any[]>([]);
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [autoplayEnabled, setAutoplayEnabled] = useState(true);
+  const [userPaused, setUserPaused] = useState(false); // Track if user manually paused
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false); // Prevent echo/double play
+  const [lessonStage, setLessonStage] = useState<'intro' | 'explanation' | 'outro' | 'quiz' | 'completed'>('intro');
+  const [waitingForUser, setWaitingForUser] = useState(false); // Wait for user to click "Continue"
 
   // Chat State
   const [showChat, setShowChat] = useState(false);
@@ -561,7 +880,9 @@ const VRLessonPlayerInner = () => {
   const [threadId, setThreadId] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  // MCQ State
+  // MCQ State - Fetched from chapter_mcqs collection
+  const [fetchedMCQs, setFetchedMCQs] = useState<ChapterMCQ[]>([]);
+  const [mcqsLoading, setMcqsLoading] = useState(false);
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [showMcqResult, setShowMcqResult] = useState(false);
@@ -581,8 +902,79 @@ const VRLessonPlayerInner = () => {
       ].filter(Boolean) as string[]
     : [];
   const currentScript = scripts[currentScriptIndex] || '';
-  const mcqs = activeLesson?.topic?.mcqs || [];
+  
+  // Use fetched MCQs, fallback to embedded MCQs from lesson data
+  const mcqs = useMemo(() => {
+    if (fetchedMCQs.length > 0) {
+      // Convert ChapterMCQ to the format expected by the MCQ UI
+      // Handle various field formats that might exist in Firestore
+      return fetchedMCQs.map(mcq => {
+        // Handle different possible formats for options
+        let options: string[] = [];
+        if (Array.isArray(mcq.options) && mcq.options.length > 0) {
+          options = mcq.options;
+        } else if ((mcq as any).choices && Array.isArray((mcq as any).choices)) {
+          // Some MCQs might use "choices" instead of "options"
+          options = (mcq as any).choices;
+        } else if ((mcq as any).answers && Array.isArray((mcq as any).answers)) {
+          // Some MCQs might use "answers"
+          options = (mcq as any).answers;
+        } else {
+          // Try to extract options from individual fields (option_a, option_b, etc.)
+          const extractedOptions: string[] = [];
+          const mcqAny = mcq as any;
+          ['option_a', 'option_b', 'option_c', 'option_d', 'option1', 'option2', 'option3', 'option4'].forEach(key => {
+            if (mcqAny[key]) extractedOptions.push(mcqAny[key]);
+          });
+          if (extractedOptions.length > 0) {
+            options = extractedOptions;
+          }
+        }
+        
+        // Handle correct answer index
+        let correctIndex = mcq.correct_option_index ?? 0;
+        if (typeof correctIndex !== 'number') {
+          correctIndex = parseInt(String(correctIndex), 10) || 0;
+        }
+        // Handle if correct answer is stored as 1-indexed
+        if ((mcq as any).correct_answer_index !== undefined) {
+          correctIndex = (mcq as any).correct_answer_index;
+        }
+        // Handle if correct answer is stored as letter (A, B, C, D)
+        const correctLetter = (mcq as any).correct_answer || (mcq as any).correct_option;
+        if (typeof correctLetter === 'string' && correctLetter.length === 1) {
+          const letterIndex = correctLetter.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
+          if (letterIndex >= 0 && letterIndex < 4) {
+            correctIndex = letterIndex;
+          }
+        }
+
+        return {
+          id: mcq.id || `mcq_${Math.random().toString(36).substr(2, 9)}`,
+          question: mcq.question || (mcq as any).question_text || '',
+          options: options,
+          correct_option_index: correctIndex,
+          explanation: mcq.explanation || (mcq as any).explanation_text || '',
+        };
+      }).filter(mcq => mcq.question && mcq.options.length > 0); // Only include valid MCQs
+    }
+    // Fallback to embedded MCQs
+    const embeddedMcqs = activeLesson?.topic?.mcqs || [];
+    return embeddedMcqs.filter((mcq: any) => mcq.question && mcq.options?.length > 0);
+  }, [fetchedMCQs, activeLesson]);
+  
   const currentMcq = mcqs[currentMcqIndex];
+  
+  // Debug log for MCQs
+  useEffect(() => {
+    if (mcqs.length > 0) {
+      log('📝', `Loaded ${mcqs.length} MCQs`, mcqs.map(m => ({ 
+        id: m.id, 
+        question: m.question?.substring(0, 50),
+        optionsCount: m.options?.length 
+      })));
+    }
+  }, [mcqs]);
 
   // ============================================================================
   // Initialize Thread for Chat
@@ -610,6 +1002,50 @@ const VRLessonPlayerInner = () => {
     
     initThread();
   }, [activeLesson, threadId]);
+
+  // ============================================================================
+  // Fetch MCQs from Firestore (chapter_mcqs collection)
+  // ============================================================================
+
+  useEffect(() => {
+    const fetchMCQs = async () => {
+      if (!activeLesson?.chapter?.chapter_id || !activeLesson?.topic?.topic_id) {
+        log('⚠️', 'Cannot fetch MCQs: missing chapter or topic ID');
+        return;
+      }
+      
+      // Skip if we already have embedded MCQs
+      if (activeLesson.topic.mcqs && activeLesson.topic.mcqs.length > 0) {
+        log('ℹ️', `Using ${activeLesson.topic.mcqs.length} embedded MCQs from lesson data`);
+        return;
+      }
+      
+      setMcqsLoading(true);
+      
+      try {
+        const chapterId = activeLesson.chapter.chapter_id;
+        const topicId = activeLesson.topic.topic_id;
+        
+        log('📝', 'Fetching MCQs from Firestore...', { chapterId, topicId });
+        
+        const mcqData = await getChapterMCQs(chapterId, topicId);
+        
+        if (mcqData.length > 0) {
+          log('✅', `Loaded ${mcqData.length} MCQs from chapter_mcqs collection`);
+          setFetchedMCQs(mcqData);
+        } else {
+          log('⚠️', 'No MCQs found in Firestore for this lesson');
+        }
+      } catch (error) {
+        console.error('Failed to fetch MCQs:', error);
+        log('❌', 'MCQ fetch error:', error);
+      } finally {
+        setMcqsLoading(false);
+      }
+    };
+    
+    fetchMCQs();
+  }, [activeLesson]);
 
   // ============================================================================
   // Fetch Skybox
@@ -656,17 +1092,82 @@ const VRLessonPlayerInner = () => {
   }, [activeLesson]);
 
   // ============================================================================
-  // Fetch 3D Asset
+  // Fetch 3D Asset (Platform-aware: FBX for Android, USDZ for iOS, GLB for Web)
   // ============================================================================
 
   useEffect(() => {
-    if (activeLesson?.topic?.asset_urls?.[0]) {
-      const url = activeLesson.topic.asset_urls[0];
-      log('📦', '3D Asset URL from topic:', url.substring(0, 80));
-      setAssetUrl(url);
-      setAssetLoading(true);
-    }
-  }, [activeLesson]);
+    const loadAsset = () => {
+      if (!activeLesson) return;
+      
+      let selectedUrl: string | null = null;
+      
+      // Priority 1: Check image3dasset from extraLessonData (image-to-3D converted models with multiple formats)
+      const img3d = extraLessonData?.image3dasset;
+      if (img3d) {
+        log('📦', '3D Asset: Found image3dasset, selecting by platform:', platform);
+        
+        if (platform === 'android') {
+          // Android/Meta Quest: prefer FBX, fallback to GLB
+          selectedUrl = img3d.imagemodel_fbx || img3d.imagemodel_glb || img3d.imageasset_url;
+        } else if (platform === 'ios') {
+          // iOS: prefer USDZ, fallback to GLB
+          selectedUrl = img3d.imagemodel_usdz || img3d.imagemodel_glb || img3d.imageasset_url;
+        } else {
+          // Web: use GLB
+          selectedUrl = img3d.imagemodel_glb || img3d.imageasset_url;
+        }
+        
+        if (selectedUrl) {
+          log('✅', `Selected ${platform} asset from image3dasset:`, selectedUrl.substring(0, 80));
+          setAssetUrl(selectedUrl);
+          setAssetLoading(true);
+          return;
+        }
+      }
+      
+      // Priority 2: Check topic asset_urls
+      if (activeLesson.topic?.asset_urls?.[0]) {
+        selectedUrl = activeLesson.topic.asset_urls[0];
+        log('📦', '3D Asset URL from topic.asset_urls:', selectedUrl.substring(0, 80));
+        setAssetUrl(selectedUrl);
+        setAssetLoading(true);
+        return;
+      }
+      
+      // Priority 3: Fetch from Meshy assets collection
+      if (activeLesson.chapter?.chapter_id && activeLesson.topic?.topic_id) {
+        log('🔍', 'Fetching 3D assets from meshy_assets collection...');
+        getMeshyAssets(activeLesson.chapter.chapter_id, activeLesson.topic.topic_id)
+          .then((assets) => {
+            if (assets.length > 0) {
+              const asset = assets[0];
+              // Select platform-appropriate URL
+              if (platform === 'android') {
+                selectedUrl = asset.fbx_url || asset.glb_url;
+              } else if (platform === 'ios') {
+                selectedUrl = asset.usdz_url || asset.glb_url;
+              } else {
+                selectedUrl = asset.glb_url;
+              }
+              
+              if (selectedUrl) {
+                log('✅', `Selected ${platform} asset from meshy_assets:`, selectedUrl.substring(0, 80));
+                setAssetUrl(selectedUrl);
+                setAssetLoading(true);
+                setMeshyAssets(assets);
+              }
+            } else {
+              log('ℹ️', 'No 3D assets found for this lesson');
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to fetch meshy assets:', err);
+          });
+      }
+    };
+    
+    loadAsset();
+  }, [activeLesson, platform, extraLessonData]);
 
   // Hide drag hint
   useEffect(() => {
@@ -676,20 +1177,6 @@ const VRLessonPlayerInner = () => {
     }
   }, [showDragHint, sceneReady]);
 
-  // Close gender dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (!target.closest('.gender-dropdown-container')) {
-        setShowGenderDropdown(false);
-      }
-    };
-    
-    if (showGenderDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showGenderDropdown]);
 
   // ============================================================================
   // Load Progress
@@ -706,148 +1193,386 @@ const VRLessonPlayerInner = () => {
   }, [lessonId]);
 
   // ============================================================================
-  // Auto-start Lesson
+  // Audio Cleanup (defined early for use in other hooks)
+  // ============================================================================
+
+  // Cleanup function to properly dispose of audio
+  const cleanupAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.onended = null;
+      audioRef.current.onplay = null;
+      audioRef.current.onpause = null;
+      audioRef.current.onerror = null;
+      audioRef.current.ontimeupdate = null;
+      audioRef.current.onloadedmetadata = null;
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+    setIsPlayingAudio(false);
+  }, []);
+
+  // ============================================================================
+  // NO Auto-start - Wait for user to click "Start Lesson"
+  // ============================================================================
+
+  // Track last played phase ref (declared early for use in handlers)
+  const lastPlayedPhaseRef = useRef<string | null>(null);
+
+  // Lesson only starts when user explicitly clicks the Start button
+  const handleStartLesson = useCallback(() => {
+    log('▶️', 'User clicked Start Lesson');
+    setShowWelcomeScreen(false);
+    setLessonReady(true);
+    setPhase('intro');
+    // Reset the last played phase so TTS can play
+    lastPlayedPhaseRef.current = null;
+  }, [setPhase]);
+
+  // Stop lesson and return to welcome screen
+  const handleStopLesson = useCallback(() => {
+    log('⏹️', 'User clicked Stop Lesson');
+    cleanupAudio();
+    setTtsStatus('ready');
+    setWaitingForUser(false);
+    setLessonReady(false);
+    setShowWelcomeScreen(true);
+    setPhase('loading');
+    setCurrentMcqIndex(0);
+    setMcqAnswers({});
+    setShowMcqResult(false);
+    setSelectedAnswer(null);
+    lastPlayedPhaseRef.current = null;
+  }, [cleanupAudio, setPhase]);
+
+  // ============================================================================
+  // Fetch TTS Data from Firestore (Pre-generated - NO runtime generation)
   // ============================================================================
 
   useEffect(() => {
-    if (lessonPhase === 'loading' && activeLesson) {
-      const timer = setTimeout(() => {
-        setPhase('intro');
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [lessonPhase, activeLesson, setPhase]);
+    const fetchTTSData = async () => {
+      if (!activeLesson?.topic?.topic_id || !activeLesson?.chapter?.chapter_id) {
+        log('⚠️', 'Missing chapter/topic ID for TTS fetch');
+        return;
+      }
+      
+      setTtsStatus('loading');
+      
+      try {
+        const chapterId = activeLesson.chapter.chapter_id;
+        const topicId = activeLesson.topic.topic_id;
+        
+        log('🔍', 'Fetching pre-generated TTS from Firestore...', { chapterId, topicId });
+        const data = await getCachedTTS(chapterId, topicId);
+        
+        if (data.length > 0) {
+          setTtsData(data);
+          setTtsStatus('ready');
+          log('✅', `Loaded ${data.length} TTS entries from Firestore`);
+        } else {
+          setTtsData([]);
+          setTtsStatus('error');
+          log('⚠️', 'No TTS data found in Firestore');
+        }
+      } catch (error) {
+        console.error('Failed to fetch TTS data:', error);
+        setTtsStatus('error');
+        setTtsData([]);
+      }
+    };
+    
+    fetchTTSData();
+  }, [activeLesson]);
 
   // ============================================================================
-  // TTS Generation and Playback with Lip Sync
+  // Fetch 3D Assets from Firestore (Platform-aware)
   // ============================================================================
 
-  const generateAndPlayTTS = useCallback(async (text: string) => {
-    if (isMuted || !text) {
-      log('🔇', 'TTS skipped (muted or empty text)');
+  useEffect(() => {
+    const fetchAssets = async () => {
+      if (!activeLesson?.topic?.topic_id || !activeLesson?.chapter?.chapter_id) {
+        return;
+      }
+      
+      setAssetLoading(true);
+      
+      try {
+        const chapterId = activeLesson.chapter.chapter_id;
+        const topicId = activeLesson.topic.topic_id;
+        
+        log('📦', 'Fetching 3D assets for platform:', platform);
+        const assets = await getMeshyAssets(chapterId, topicId);
+        
+        if (assets.length > 0) {
+          setMeshyAssets(assets);
+          // Select first asset with platform-appropriate URL
+          const firstAssetUrl = selectPlatformAssetUrl(assets[0], platform);
+          setAssetUrl(firstAssetUrl);
+          log('✅', `Loaded ${assets.length} 3D assets, selected format for ${platform}`);
+        } else {
+          // Fallback to topic asset_urls if available
+          if (activeLesson.topic.asset_urls?.[0]) {
+            setAssetUrl(activeLesson.topic.asset_urls[0]);
+            log('📦', 'Using fallback asset URL from topic');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch 3D assets:', error);
+        // Fallback to topic asset_urls
+        if (activeLesson?.topic?.asset_urls?.[0]) {
+          setAssetUrl(activeLesson.topic.asset_urls[0]);
+        }
+      } finally {
+        setAssetLoading(false);
+      }
+    };
+    
+    fetchAssets();
+  }, [activeLesson, platform]);
+
+  // ============================================================================
+  // Get TTS Audio URL for Current Script Type
+  // ============================================================================
+
+  const getTTSForCurrentPhase = useCallback((): ChapterTTS | null => {
+    if (ttsData.length === 0) return null;
+    
+    // Map lesson phase to script_type
+    let scriptType: 'intro' | 'explanation' | 'outro' | 'full' = 'full';
+    if (lessonPhase === 'intro') scriptType = 'intro';
+    else if (lessonPhase === 'explanation') scriptType = 'explanation';
+    else if (lessonPhase === 'outro') scriptType = 'outro';
+    
+    // Find matching TTS entry
+    const match = ttsData.find(tts => tts.script_type === scriptType);
+    if (match) return match;
+    
+    // Fallback: try 'full' type if specific not found
+    const fullMatch = ttsData.find(tts => tts.script_type === 'full');
+    if (fullMatch) return fullMatch;
+    
+    // Return first available
+    return ttsData[0] || null;
+  }, [ttsData, lessonPhase]);
+
+  // ============================================================================
+  // Audio Playback Controls (Pre-generated TTS) - SINGLE SOURCE, NO ECHO
+  // ============================================================================
+
+  const playTTS = useCallback(() => {
+    // Prevent echo: don't play if already playing
+    if (isPlayingAudio) {
+      log('⚠️', 'Audio already playing, skipping duplicate play');
       return;
     }
 
-    try {
-      setTtsStatus('generating');
-      setTtsProgress(20);
-      
-      // Select voice based on gender
-      const voice = avatarGender === 'male' ? 'onyx' : 'nova'; // onyx = male, nova = female
-      log('🎤', `Generating TTS (${avatarGender}, voice: ${voice}) for:`, text.substring(0, 50));
-      
-      // Call TTS endpoint
-      const response = await api.post('/assistant/tts/generate', {
-        text: text,
-        voice: voice,
-      });
-      
-      setTtsProgress(60);
-      
-      // Generate visemes for lip sync
-      let visemes: any[] = [];
-      try {
-        log('👄', 'Generating visemes for lip sync...');
-        const visemeResponse = await api.post('/assistant/lipsync/generate', {
-          text: text,
-        });
-        visemes = visemeResponse.data?.visemes || [];
-        log('✅', `Generated ${visemes.length} viseme frames`);
-      } catch (visemeError) {
-        console.warn('Viseme generation failed, continuing without lip sync:', visemeError);
-      }
-      
-      setTtsProgress(80);
-      
-      if (response.data?.audioUrl) {
-        log('✅', 'TTS audio URL received:', response.data.audioUrl.substring(0, 50));
-        setTtsProgress(100);
-        
-        // Set audio URL and visemes for TeacherAvatar component
-        setCurrentAudioUrl(response.data.audioUrl);
-        setCurrentVisemes(visemes);
-        
-        // Play the audio
-        if (audioRef.current) {
-          audioRef.current.pause();
-        }
-        
-        const audio = new Audio(response.data.audioUrl);
-        audioRef.current = audio;
-        
-        audio.onplay = () => {
-          setTtsStatus('playing');
-        };
-        
-        audio.onended = () => {
-          setTtsStatus('idle');
-          setTtsProgress(0);
-          setCurrentAudioUrl(null);
-          setCurrentVisemes([]);
-        };
-        
-        audio.onerror = (e) => {
-          console.error('Audio playback error:', e);
-          setTtsStatus('error');
-          setCurrentAudioUrl(null);
-          setCurrentVisemes([]);
-        };
-        
-        await audio.play();
-      } else {
-        throw new Error('No audio URL in response');
-      }
-    } catch (error: any) {
-      console.error('TTS generation failed:', error);
-      log('❌', 'TTS error:', error.message);
+    if (isMuted) {
+      log('🔇', 'TTS skipped (muted)');
+      // Even if muted, wait then show continue
+      setWaitingForUser(true);
+      return;
+    }
+    
+    const ttsEntry = getTTSForCurrentPhase();
+    if (!ttsEntry?.audio_url) {
+      log('⚠️', 'No audio URL available for current phase');
       setTtsStatus('error');
+      // Still allow progression even without audio
+      setWaitingForUser(true);
+      return;
+    }
+    
+    log('🎵', `Playing TTS for ${lessonPhase}:`, ttsEntry.audio_url.substring(0, 60));
+    
+    // Clean up any existing audio first
+    cleanupAudio();
+    
+    // Mark that we're starting playback
+    setIsPlayingAudio(true);
+    setTtsStatus('loading');
+    
+    const audio = new Audio();
+    audioRef.current = audio;
+    
+    // IMPORTANT: Prevent looping
+    audio.loop = false;
+    
+    // Set duration from TTS data if available
+    if (ttsEntry.duration_seconds) {
+      setAudioDuration(ttsEntry.duration_seconds);
+    }
+    
+    audio.onloadedmetadata = () => {
+      setAudioDuration(audio.duration);
+      log('📊', `Audio duration: ${audio.duration}s`);
+    };
+    
+    audio.ontimeupdate = () => {
+      setAudioCurrentTime(audio.currentTime);
+    };
+    
+    audio.oncanplay = () => {
+      setTtsStatus('ready');
+    };
+    
+    audio.onplay = () => {
+      log('▶️', 'Audio started playing');
+      setTtsStatus('playing');
+      setCurrentAudioUrl(ttsEntry.audio_url || null);
+      setUserPaused(false);
+    };
+    
+    audio.onpause = () => {
+      if (!audio.ended) {
+        setTtsStatus('paused');
+      }
+    };
+    
+    // CRITICAL: Handle audio end - trigger lesson progression
+    audio.onended = () => {
+      log('✅', `TTS ${lessonPhase} completed`);
+      setTtsStatus('ready');
+      setAudioCurrentTime(0);
       setCurrentAudioUrl(null);
       setCurrentVisemes([]);
+      setIsPlayingAudio(false);
       
-      // Show text even if TTS fails
-      setTimeout(() => {
-        setTtsStatus('idle');
-      }, 3000);
-    }
-  }, [isMuted, avatarGender]);
+      // Wait for user to click "Continue" before progressing
+      setWaitingForUser(true);
+    };
+    
+    audio.onerror = (e) => {
+      console.error('Audio playback error:', e);
+      log('❌', 'Audio error, allowing progression');
+      setTtsStatus('error');
+      setCurrentAudioUrl(null);
+      setIsPlayingAudio(false);
+      // Still allow user to continue even on error
+      setWaitingForUser(true);
+    };
+    
+    // Set source and play
+    audio.src = ttsEntry.audio_url;
+    audio.play().catch(err => {
+      console.error('Failed to play audio:', err);
+      setTtsStatus('error');
+      setIsPlayingAudio(false);
+      setWaitingForUser(true);
+    });
+  }, [isMuted, getTTSForCurrentPhase, isPlayingAudio, lessonPhase, cleanupAudio]);
 
-  // Play script when phase changes
-  useEffect(() => {
-    if (['intro', 'explanation', 'outro'].includes(lessonPhase) && currentScript && scripts.length > 0) {
-      // Generate and play TTS
-      generateAndPlayTTS(currentScript);
-    }
-  }, [lessonPhase, currentScriptIndex, currentScript, scripts.length, generateAndPlayTTS]);
-
-  const handleReplay = useCallback(() => {
-    if (currentScript) {
-      generateAndPlayTTS(currentScript);
-    }
-  }, [currentScript, generateAndPlayTTS]);
-
-  const handleNext = useCallback(() => {
-    // Stop current audio
+  const pauseTTS = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
-      audioRef.current = null;
+      setUserPaused(true);
     }
-    setTtsStatus('idle');
+  }, []);
 
-    if (hasNextScript()) {
+  const stopTTS = useCallback(() => {
+    cleanupAudio();
+    setTtsStatus('ready');
+    setAudioCurrentTime(0);
+    setCurrentAudioUrl(null);
+    setCurrentVisemes([]);
+    setUserPaused(false);
+  }, [cleanupAudio]);
+
+  const resumeTTS = useCallback(() => {
+    if (audioRef.current && ttsStatus === 'paused') {
+      audioRef.current.play().catch(err => {
+        console.error('Failed to resume audio:', err);
+      });
+      setUserPaused(false);
+    }
+  }, [ttsStatus]);
+
+  // ============================================================================
+  // Lesson Flow Control - Auto-play on phase change (only once per phase)
+  // ============================================================================
+
+  useEffect(() => {
+    // Only auto-play if:
+    // 1. Lesson has been started by user (lessonReady)
+    // 2. We're in a TTS phase
+    // 3. TTS data is ready
+    // 4. Auto-play is enabled
+    // 5. User hasn't paused
+    // 6. Not muted
+    // 7. We haven't already played this phase
+    // 8. Not currently playing
+    if (
+      lessonReady &&
+      ['intro', 'explanation', 'outro'].includes(lessonPhase) && 
+      ttsData.length > 0 &&
+      ttsStatus === 'ready' && 
+      autoplayEnabled && 
+      !userPaused &&
+      !isMuted &&
+      !isPlayingAudio &&
+      lastPlayedPhaseRef.current !== lessonPhase
+    ) {
+      lastPlayedPhaseRef.current = lessonPhase;
+      setWaitingForUser(false);
+      
+      // Delay to ensure UI is ready
+      const timer = setTimeout(() => {
+        playTTS();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [lessonReady, lessonPhase, ttsData, ttsStatus, autoplayEnabled, userPaused, isMuted, isPlayingAudio, playTTS]);
+
+  // Reset lastPlayedPhase when changing lessons
+  useEffect(() => {
+    lastPlayedPhaseRef.current = null;
+  }, [activeLesson]);
+
+  const handleReplay = useCallback(() => {
+    lastPlayedPhaseRef.current = null; // Allow replay
+    stopTTS();
+    setWaitingForUser(false);
+    setTimeout(() => playTTS(), 200);
+  }, [stopTTS, playTTS]);
+
+  // ============================================================================
+  // Lesson Navigation - Progress through stages in order
+  // ============================================================================
+
+  const handleContinue = useCallback(() => {
+    // Stop current audio and clean up
+    cleanupAudio();
+    setTtsStatus('ready');
+    setWaitingForUser(false);
+    lastPlayedPhaseRef.current = null; // Reset so next phase can auto-play
+    
+    // Determine next stage based on current lesson phase
+    if (lessonPhase === 'intro') {
+      log('➡️', 'Moving from intro to explanation');
+      setPhase('explanation');
       advanceScript();
-      const nextIndex = currentScriptIndex + 1;
-      if (nextIndex === 0) setPhase('intro');
-      else if (nextIndex === 1) setPhase('explanation');
-      else if (nextIndex === 2) setPhase('outro');
-    } else {
+    } else if (lessonPhase === 'explanation') {
+      log('➡️', 'Moving from explanation to outro');
+      setPhase('outro');
+      advanceScript();
+    } else if (lessonPhase === 'outro') {
+      // After outro, show MCQs if available
       if (mcqs.length > 0) {
+        log('📝', 'Outro complete - showing MCQs');
         setPhase('quiz');
       } else {
+        log('🎉', 'Lesson complete (no MCQs)');
         setPhase('completed');
         saveProgress(lessonId, { completedAt: new Date().toISOString() });
+        // Save to Firestore for tracking completed lessons
+        saveLessonCompletionToFirestore();
       }
+    } else if (lessonPhase === 'quiz') {
+      // This is handled by MCQ navigation
     }
-  }, [hasNextScript, advanceScript, currentScriptIndex, mcqs, setPhase, lessonId]);
+  }, [lessonPhase, mcqs, setPhase, advanceScript, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
+
+  // Legacy handler for backward compatibility
+  const handleNext = handleContinue;
 
   // ============================================================================
   // Chat Functions with TTS
@@ -890,11 +1615,8 @@ const VRLessonPlayerInner = () => {
           timestamp: new Date(),
         }]);
 
-        // Optionally play TTS for chat response (if not muted)
-        if (!isMuted && assistantResponse.length < 500) {
-          // Use gender-based voice for chat responses too
-          generateAndPlayTTS(assistantResponse);
-        }
+        // Note: Chat responses use text-only (no runtime TTS generation)
+        // TTS is only available for pre-generated lesson content from Firestore
       } else {
         throw new Error('Chat thread not initialized');
       }
@@ -918,7 +1640,7 @@ const VRLessonPlayerInner = () => {
     } finally {
       setChatLoading(false);
     }
-  }, [chatInput, chatLoading, activeLesson, threadId, isMuted, generateAndPlayTTS]);
+  }, [chatInput, chatLoading, activeLesson, threadId]);
 
   useEffect(() => {
     if (chatScrollRef.current) {
@@ -943,6 +1665,100 @@ const VRLessonPlayerInner = () => {
     saveProgress(lessonId, { mcqAnswers: newAnswers });
   };
 
+  // Save quiz results and lesson completion to Firestore
+  const saveQuizResultsToFirestore = useCallback(async (correct: number, total: number, answers: Record<string, number>) => {
+    if (!user || !activeLesson) return;
+    
+    const chapterId = activeLesson.chapter?.chapter_id;
+    const topicId = activeLesson.topic?.topic_id;
+    
+    try {
+      // 1. Save to user_quiz_results collection
+      const resultsRef = doc(db, 'user_quiz_results', `${user.uid}_${lessonId}`);
+      await setDoc(resultsRef, {
+        userId: user.uid,
+        lessonId,
+        chapterId,
+        topicId,
+        curriculum: activeLesson.chapter?.curriculum,
+        className: activeLesson.chapter?.class_name,
+        subject: activeLesson.chapter?.subject,
+        topicName: activeLesson.topic?.topic_name,
+        score: {
+          correct,
+          total,
+          percentage: Math.round((correct / total) * 100),
+        },
+        answers,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
+      log('✅', 'Quiz results saved to user_quiz_results');
+      
+      // 2. Save/Update lesson progress in user_lesson_progress collection
+      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
+      await setDoc(progressRef, {
+        userId: user.uid,
+        chapterId,
+        topicId,
+        curriculum: activeLesson.chapter?.curriculum,
+        className: activeLesson.chapter?.class_name,
+        subject: activeLesson.chapter?.subject,
+        chapterName: activeLesson.chapter?.chapter_name,
+        chapterNumber: activeLesson.chapter?.chapter_number,
+        topicName: activeLesson.topic?.topic_name,
+        completed: true,
+        quizCompleted: total > 0,
+        quizScore: total > 0 ? {
+          correct,
+          total,
+          percentage: Math.round((correct / total) * 100),
+        } : null,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
+      log('✅', 'Lesson progress saved to user_lesson_progress');
+      
+    } catch (error) {
+      console.error('Failed to save quiz results/progress to Firestore:', error);
+      log('❌', 'Failed to save results:', error);
+    }
+  }, [user, activeLesson, lessonId]);
+  
+  // Save lesson completion without quiz (when lesson ends without MCQs)
+  const saveLessonCompletionToFirestore = useCallback(async () => {
+    if (!user || !activeLesson) return;
+    
+    const chapterId = activeLesson.chapter?.chapter_id;
+    const topicId = activeLesson.topic?.topic_id;
+    
+    try {
+      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
+      await setDoc(progressRef, {
+        userId: user.uid,
+        chapterId,
+        topicId,
+        curriculum: activeLesson.chapter?.curriculum,
+        className: activeLesson.chapter?.class_name,
+        subject: activeLesson.chapter?.subject,
+        chapterName: activeLesson.chapter?.chapter_name,
+        chapterNumber: activeLesson.chapter?.chapter_number,
+        topicName: activeLesson.topic?.topic_name,
+        completed: true,
+        quizCompleted: false,
+        quizScore: null,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
+      log('✅', 'Lesson completion saved (no quiz)');
+    } catch (error) {
+      console.error('Failed to save lesson completion:', error);
+    }
+  }, [user, activeLesson]);
+
   const handleMcqNext = () => {
     setShowMcqResult(false);
     setSelectedAnswer(null);
@@ -950,16 +1766,29 @@ const VRLessonPlayerInner = () => {
     if (currentMcqIndex < mcqs.length - 1) {
       setCurrentMcqIndex(prev => prev + 1);
     } else {
+      // Calculate final score
       let correct = 0;
+      const finalAnswers = { ...mcqAnswers };
+      
       mcqs.forEach((mcq, idx) => {
         const answer = idx === currentMcqIndex ? selectedAnswer : mcqAnswers[mcq.id];
+        if (idx === currentMcqIndex && selectedAnswer !== null) {
+          finalAnswers[mcq.id] = selectedAnswer;
+        }
         if (answer === mcq.correct_option_index) correct++;
       });
+      
+      // Submit results
       submitQuizResults(correct, mcqs.length);
+      
+      // Save to local storage
       saveProgress(lessonId, {
         completedAt: new Date().toISOString(),
         score: { correct, total: mcqs.length },
       });
+      
+      // Save to Firestore
+      saveQuizResultsToFirestore(correct, mcqs.length, finalAnswers);
     }
   };
 
@@ -982,10 +1811,76 @@ const VRLessonPlayerInner = () => {
   }, []);
 
   // ============================================================================
-  // No Lesson State
+  // Initialization / Loading State
   // ============================================================================
 
-  if (!activeLesson) {
+  console.log('🔍 [Render] Checking render state:', { dataInitialized, initError, initPhase, isLessonDataValid });
+
+  // Show loading while data initializes
+  if (!dataInitialized) {
+    console.log('🔄 [Render] Showing loading state, phase:', initPhase);
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-6">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 flex items-center justify-center">
+            <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">Loading Lesson...</h1>
+          <p className="text-slate-400 mb-2">Please wait while we prepare your lesson.</p>
+          <p className="text-xs text-slate-500 font-mono">
+            {initPhase === 'starting' && 'Initializing...'}
+            {initPhase === 'loading-storage' && 'Loading saved data...'}
+            {initPhase === 'validating' && 'Validating content...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if initialization failed
+  if (initError) {
+    console.log('❌ [Render] Showing error state:', initError);
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-6">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-red-500/20 to-orange-600/20 border border-red-500/30 flex items-center justify-center">
+            <AlertTriangle className="w-10 h-10 text-red-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">Failed to Load Lesson</h1>
+          <p className="text-slate-400 mb-4">{initError}</p>
+          <p className="text-xs text-slate-500 mb-6 font-mono">Phase: {initPhase}</p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => {
+                console.log('🔄 Retrying lesson load...');
+                window.location.reload();
+              }}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-700 
+                       text-white font-semibold rounded-xl"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => {
+                console.log('🚪 Navigating back to lessons...');
+                sessionStorage.removeItem('activeLesson');
+                navigate('/lessons');
+              }}
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 
+                       text-white font-semibold rounded-xl shadow-lg"
+            >
+              <BookOpen className="w-5 h-5" />
+              Back to Lessons
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show no lesson state if data is invalid
+  if (!isLessonDataValid || !effectiveLesson) {
+    console.log('⚠️ [Render] No valid lesson data:', { isLessonDataValid, hasEffectiveLesson: !!effectiveLesson });
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
@@ -993,11 +1888,18 @@ const VRLessonPlayerInner = () => {
             <BookOpen className="w-10 h-10 text-cyan-400" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-3">No Lesson Selected</h1>
-          <p className="text-slate-400 mb-6">
-            Please select a lesson to start learning.
+          <p className="text-slate-400 mb-4">
+            Please select a lesson from the library to start learning.
+          </p>
+          <p className="text-xs text-slate-500 mb-6 font-mono">
+            Context: {activeLesson ? 'has data' : 'empty'} | 
+            Storage: {extraLessonData ? 'has data' : 'empty'}
           </p>
           <button
-            onClick={() => navigate('/lessons')}
+            onClick={() => {
+              console.log('🚪 Navigating to lessons...');
+              navigate('/lessons');
+            }}
             className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 
                      text-white font-semibold rounded-xl shadow-lg"
           >
@@ -1008,6 +1910,10 @@ const VRLessonPlayerInner = () => {
       </div>
     );
   }
+  
+  // Use effective lesson for all subsequent operations
+  console.log('✅ [Render] Lesson data valid, proceeding with render');
+  const currentLesson = effectiveLesson;
 
   const getPhaseLabel = () => {
     switch (lessonPhase) {
@@ -1027,6 +1933,15 @@ const VRLessonPlayerInner = () => {
     if (lessonPhase === 'quiz') currentStep = scripts.length + 1;
     if (lessonPhase === 'completed') currentStep = totalSteps;
     return Math.min((currentStep / Math.max(totalSteps, 1)) * 100, 100);
+  };
+
+  const getPlatformLabel = () => {
+    switch (platform) {
+      case 'android': return 'Quest/Android';
+      case 'ios': return 'iOS';
+      case 'web': return 'Web';
+      default: return 'Unknown';
+    }
   };
 
   const skyboxImageUrl = skyboxData?.imageUrl || skyboxData?.file_url;
@@ -1135,11 +2050,25 @@ const VRLessonPlayerInner = () => {
 
       {/* Top Right Controls */}
       <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+        {/* Stop Lesson Button - Only show when lesson is running */}
+        {lessonReady && !showWelcomeScreen && (
+          <button
+            onClick={handleStopLesson}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl transition-colors 
+                     bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30"
+            title="Stop lesson and return to start"
+          >
+            <Square className="w-4 h-4" />
+            <span className="text-sm font-medium hidden sm:inline">Stop</span>
+          </button>
+        )}
+        
         <button
           onClick={() => setIsMuted(!isMuted)}
           className={`p-2.5 rounded-xl transition-colors ${
             isMuted ? 'bg-red-500/20 text-red-400' : 'bg-black/60 text-white hover:bg-black/80'
           } border border-white/10`}
+          title={isMuted ? 'Unmute' : 'Mute'}
         >
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </button>
@@ -1149,63 +2078,14 @@ const VRLessonPlayerInner = () => {
           className={`p-2.5 rounded-xl transition-colors ${
             showChat ? 'bg-cyan-500/20 text-cyan-400' : 'bg-black/60 text-white hover:bg-black/80'
           } border border-white/10`}
+          title="Ask questions"
         >
           <MessageSquare className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Avatar Panel - Transparent Background with Gender Selection */}
+      {/* Avatar Panel - Transparent Background (No Gender Selection) */}
       <div className="absolute right-4 bottom-4 z-20 w-[180px] h-[270px] md:w-[220px] md:h-[330px]">
-        {/* Gender Selection Dropdown */}
-        <div className="absolute -top-12 right-0 z-30 gender-dropdown-container">
-          <div className="relative">
-            <button
-              onClick={() => setShowGenderDropdown(!showGenderDropdown)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-black/70 backdrop-blur-sm 
-                       text-white rounded-lg border border-white/20 hover:border-cyan-500/50 
-                       transition-all text-xs font-medium"
-            >
-              {avatarGender === 'male' ? <User className="w-3.5 h-3.5" /> : <Users className="w-3.5 h-3.5" />}
-              <span className="capitalize">{avatarGender} Teacher</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${showGenderDropdown ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {showGenderDropdown && (
-              <div className="absolute top-full right-0 mt-1 w-40 bg-black/90 backdrop-blur-xl rounded-lg 
-                            border border-white/20 shadow-xl overflow-hidden z-40">
-                <button
-                  onClick={() => {
-                    setAvatarGender('male');
-                    setShowGenderDropdown(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center gap-2 ${
-                    avatarGender === 'male' 
-                      ? 'bg-cyan-500/20 text-cyan-300' 
-                      : 'text-white hover:bg-white/10'
-                  }`}
-                >
-                  <User className="w-3.5 h-3.5" />
-                  Male Teacher
-                </button>
-                <button
-                  onClick={() => {
-                    setAvatarGender('female');
-                    setShowGenderDropdown(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs font-medium transition-colors flex items-center gap-2 ${
-                    avatarGender === 'female' 
-                      ? 'bg-cyan-500/20 text-cyan-300' 
-                      : 'text-white hover:bg-white/10'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  Female Teacher
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-        
         <div className="w-full h-full rounded-2xl overflow-hidden" style={{ background: 'transparent' }}>
           <Suspense fallback={
             <div className="w-full h-full flex items-center justify-center bg-black/20">
@@ -1215,14 +2095,15 @@ const VRLessonPlayerInner = () => {
             <TeacherAvatar
               ref={avatarRef}
               className="w-full h-full"
-              avatarModelUrl={avatarGender === 'male' ? '/models/avatar3.glb' : '/models/avatar3.glb'}
+              avatarModelUrl="/models/avatar3.glb"
               curriculum={activeLesson.chapter?.curriculum}
               class={activeLesson.chapter?.class_name}
               subject={activeLesson.chapter?.subject}
               useAvatarKey={true}
               externalThreadId={threadId}
               onReady={handleAvatarReady}
-              audioUrl={currentAudioUrl}
+              // Pass audio URL for lip sync - TeacherAvatar will animate lips
+              audioUrl={ttsStatus === 'playing' ? currentAudioUrl : null}
               visemes={currentVisemes}
             />
           </Suspense>
@@ -1236,73 +2117,298 @@ const VRLessonPlayerInner = () => {
         )}
       </div>
 
+      {/* Welcome Screen - Before Lesson Starts */}
+      <AnimatePresence>
+        {showWelcomeScreen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: -10 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-xl 
+                       rounded-3xl border border-white/10 p-8 max-w-md mx-4 text-center
+                       shadow-2xl shadow-black/50"
+            >
+              {/* Lesson Icon */}
+              <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 
+                            border border-cyan-500/30 flex items-center justify-center">
+                <GraduationCap className="w-10 h-10 text-cyan-400" />
+              </div>
+
+              {/* Lesson Info */}
+              <div className="mb-6">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    {activeLesson.chapter?.curriculum}
+                  </span>
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    {activeLesson.chapter?.class_name}
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-white mb-2">
+                  {activeLesson.topic?.topic_name || 'Lesson'}
+                </h2>
+                <p className="text-sm text-slate-400">
+                  {activeLesson.chapter?.subject} • Chapter {activeLesson.chapter?.chapter_number}
+                </p>
+              </div>
+
+              {/* Lesson Preview */}
+              <div className="mb-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 text-left">
+                <h3 className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-2">
+                  <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+                  What you'll learn
+                </h3>
+                <p className="text-xs text-slate-400 line-clamp-3">
+                  {activeLesson.topic?.learning_objective || 
+                   activeLesson.topic?.avatar_intro?.substring(0, 150) + '...' ||
+                   'Explore this interactive VR lesson with your AI teacher.'}
+                </p>
+              </div>
+
+              {/* Content Indicators */}
+              <div className="flex items-center justify-center gap-4 mb-6">
+                {scripts.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <Volume2 className="w-4 h-4 text-emerald-400" />
+                    <span>{scripts.length} sections</span>
+                  </div>
+                )}
+                {mcqs.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <HelpCircle className="w-4 h-4 text-amber-400" />
+                    <span>{mcqs.length} questions</span>
+                  </div>
+                )}
+                {skyboxData && (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <Sparkles className="w-4 h-4 text-purple-400" />
+                    <span>360° view</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Start Button */}
+              <motion.button
+                onClick={handleStartLesson}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full flex items-center justify-center gap-3 px-8 py-4 
+                         bg-gradient-to-r from-cyan-500 to-blue-600 
+                         hover:from-cyan-400 hover:to-blue-500
+                         text-white text-lg font-bold rounded-xl
+                         shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50
+                         transition-all duration-300"
+              >
+                <Play className="w-6 h-6" />
+                Start Lesson
+              </motion.button>
+
+              {/* Back button */}
+              <button
+                onClick={handleExit}
+                className="mt-4 text-sm text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                ← Back to lessons
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Content Panel - Minimal & Compact */}
       <div className="absolute left-4 bottom-4 right-[220px] md:right-[260px] z-20 max-w-md">
-        {/* TTS Progress Indicator - Compact */}
-        {ttsStatus !== 'idle' && (
+        {/* Voiceover Player - Simple Controls */}
+        <div className="mb-2">
+          <VoiceoverPlayer
+            audioUrl={currentAudioUrl}
+            isPlaying={ttsStatus === 'playing'}
+            isPaused={ttsStatus === 'paused'}
+            currentTime={audioCurrentTime}
+            duration={audioDuration}
+            onPlay={ttsStatus === 'paused' ? resumeTTS : playTTS}
+            onPause={pauseTTS}
+            onStop={stopTTS}
+            disabled={isMuted}
+            status={ttsStatus}
+          />
+        </div>
+        
+        {/* TTS Status Indicator */}
+        {ttsStatus === 'error' && (
           <div className="mb-2">
-            <TTSProgressBar status={ttsStatus} progress={ttsProgress} />
+            <TTSStatusIndicator status={ttsStatus} />
           </div>
         )}
         
         <AnimatePresence mode="wait">
-          {/* Script Display - Minimal Size */}
+          {/* Lesson Stage Display - Interactive Experience */}
           {['intro', 'explanation', 'outro', 'loading'].includes(lessonPhase) && (
             <motion.div
               key="script"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="bg-black/60 backdrop-blur-xl rounded-xl border border-white/10 p-3"
+              className="bg-black/70 backdrop-blur-xl rounded-xl border border-white/10 p-4"
             >
-              {/* Compact Header */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    lessonPhase === 'intro' ? 'bg-emerald-500/20 text-emerald-400' :
-                    lessonPhase === 'explanation' ? 'bg-cyan-500/20 text-cyan-400' :
-                    'bg-purple-500/20 text-purple-400'
-                  }`}>
-                    {lessonPhase === 'intro' && <Play className="w-3 h-3" />}
-                    {lessonPhase === 'explanation' && <Sparkles className="w-3 h-3" />}
-                    {lessonPhase === 'outro' && <CheckCircle className="w-3 h-3" />}
-                    {lessonPhase === 'loading' && <Loader2 className="w-3 h-3 animate-spin" />}
-                  </div>
-                  <h2 className="text-xs font-semibold text-white">{getPhaseLabel()}</h2>
-                  <span className="text-[10px] text-slate-500">
-                    {scripts.length > 0 ? `${currentScriptIndex + 1}/${scripts.length}` : ''}
-                  </span>
+              {/* Lesson Progress Indicator */}
+              <div className="flex items-center justify-center gap-1 mb-3">
+                {/* Step 1: Intro */}
+                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium transition-all ${
+                  lessonPhase === 'intro' 
+                    ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50' 
+                    : lessonPhase === 'explanation' || lessonPhase === 'outro'
+                      ? 'bg-emerald-500/10 text-emerald-400/60'
+                      : 'bg-slate-700/30 text-slate-500'
+                }`}>
+                  <span className={`w-3 h-3 rounded-full flex items-center justify-center text-[8px] ${
+                    lessonPhase === 'intro' ? 'bg-emerald-500 text-white' : 
+                    lessonPhase === 'explanation' || lessonPhase === 'outro' ? 'bg-emerald-500/50 text-white' : 'bg-slate-600'
+                  }`}>1</span>
+                  Intro
                 </div>
+                <ChevronRight className="w-3 h-3 text-slate-600" />
+                
+                {/* Step 2: Explanation */}
+                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium transition-all ${
+                  lessonPhase === 'explanation' 
+                    ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/50' 
+                    : lessonPhase === 'outro'
+                      ? 'bg-cyan-500/10 text-cyan-400/60'
+                      : 'bg-slate-700/30 text-slate-500'
+                }`}>
+                  <span className={`w-3 h-3 rounded-full flex items-center justify-center text-[8px] ${
+                    lessonPhase === 'explanation' ? 'bg-cyan-500 text-white' :
+                    lessonPhase === 'outro' ? 'bg-cyan-500/50 text-white' : 'bg-slate-600'
+                  }`}>2</span>
+                  Learn
+                </div>
+                <ChevronRight className="w-3 h-3 text-slate-600" />
+                
+                {/* Step 3: Outro */}
+                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium transition-all ${
+                  lessonPhase === 'outro' 
+                    ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50' 
+                    : 'bg-slate-700/30 text-slate-500'
+                }`}>
+                  <span className={`w-3 h-3 rounded-full flex items-center justify-center text-[8px] ${
+                    lessonPhase === 'outro' ? 'bg-purple-500 text-white' : 'bg-slate-600'
+                  }`}>3</span>
+                  Summary
+                </div>
+                
+                {/* Step 4: Quiz (if available) */}
+                {mcqs.length > 0 && (
+                  <>
+                    <ChevronRight className="w-3 h-3 text-slate-600" />
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium bg-slate-700/30 text-slate-500">
+                      <span className="w-3 h-3 rounded-full flex items-center justify-center text-[8px] bg-slate-600">4</span>
+                      Quiz
+                    </div>
+                  </>
+                )}
               </div>
 
-              {/* Compact Text - 2 lines max */}
-              <p className="text-xs text-slate-300 leading-relaxed line-clamp-2 mb-2 min-h-[2.5rem]">
-                {currentScript || 'No script available for this section.'}
-              </p>
+              {/* Stage Header */}
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  lessonPhase === 'intro' ? 'bg-emerald-500/20 text-emerald-400' :
+                  lessonPhase === 'explanation' ? 'bg-cyan-500/20 text-cyan-400' :
+                  lessonPhase === 'outro' ? 'bg-purple-500/20 text-purple-400' :
+                  'bg-slate-500/20 text-slate-400'
+                }`}>
+                  {lessonPhase === 'intro' && <Play className="w-3.5 h-3.5" />}
+                  {lessonPhase === 'explanation' && <Sparkles className="w-3.5 h-3.5" />}
+                  {lessonPhase === 'outro' && <CheckCircle className="w-3.5 h-3.5" />}
+                  {lessonPhase === 'loading' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-white">{getPhaseLabel()}</h2>
+                  <p className="text-[10px] text-slate-500">
+                    {lessonPhase === 'intro' && 'Welcome to the lesson'}
+                    {lessonPhase === 'explanation' && 'Main learning content'}
+                    {lessonPhase === 'outro' && 'Recap and key points'}
+                  </p>
+                </div>
+                
+                {/* Audio status indicator */}
+                {ttsStatus === 'playing' && (
+                  <div className="ml-auto flex items-center gap-1 px-2 py-1 bg-emerald-500/20 rounded-full">
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3].map((i) => (
+                        <motion.div
+                          key={i}
+                          className="w-0.5 bg-emerald-400 rounded-full"
+                          animate={{ height: [4, 10, 4] }}
+                          transition={{ duration: 0.4, repeat: Infinity, delay: i * 0.1 }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[9px] text-emerald-300 font-medium">Speaking</span>
+                  </div>
+                )}
+              </div>
 
-              {/* Compact Controls */}
-              <div className="flex items-center gap-1.5">
+              {/* Script Text - Larger and more readable */}
+              <div className="mb-3 p-3 bg-slate-800/40 rounded-lg border border-slate-700/30">
+                <p className="text-xs text-slate-200 leading-relaxed line-clamp-4">
+                  {currentScript || 'No script available for this section.'}
+                </p>
+              </div>
+
+              {/* Controls - Show "Continue" prominently when TTS ends */}
+              <div className="flex items-center gap-2">
                 <button
                   onClick={handleReplay}
-                  disabled={ttsStatus === 'generating' || !currentScript}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium
+                  disabled={isPlayingAudio || !currentScript}
+                  className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-medium
                            text-slate-300 bg-slate-800/50 hover:bg-slate-700/50
-                           rounded-md border border-slate-700 transition-colors disabled:opacity-50"
+                           rounded-lg border border-slate-700 transition-colors disabled:opacity-40"
                 >
                   <RefreshCw className="w-3 h-3" />
                   Replay
                 </button>
 
-                <button
-                  onClick={handleNext}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-1 text-[10px] font-semibold
-                           text-white bg-gradient-to-r from-emerald-500 to-teal-600
-                           hover:from-emerald-400 hover:to-teal-500
-                           rounded-md shadow-lg transition-all"
+                {/* Main Continue Button - Highlighted when waiting for user */}
+                <motion.button
+                  onClick={handleContinue}
+                  disabled={isPlayingAudio && !waitingForUser}
+                  animate={waitingForUser ? { scale: [1, 1.02, 1] } : {}}
+                  transition={{ duration: 1.5, repeat: waitingForUser ? Infinity : 0 }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold
+                           rounded-lg shadow-lg transition-all ${
+                    waitingForUser 
+                      ? 'text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 ring-2 ring-emerald-400/50'
+                      : isPlayingAudio
+                        ? 'text-slate-400 bg-slate-700/50 cursor-not-allowed'
+                        : 'text-white bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600'
+                  }`}
                 >
-                  {hasNextScript() ? 'Continue' : mcqs.length > 0 ? 'Quiz' : 'Done'}
-                  <ChevronRight className="w-3 h-3" />
-                </button>
+                  {waitingForUser ? (
+                    <>
+                      {lessonPhase === 'outro' && mcqs.length > 0 ? 'Start Quiz' : 
+                       lessonPhase === 'outro' ? 'Complete Lesson' : 'Continue'}
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  ) : isPlayingAudio ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Listening...
+                    </>
+                  ) : (
+                    <>
+                      {lessonPhase === 'outro' && mcqs.length > 0 ? 'Quiz' : 
+                       lessonPhase === 'outro' ? 'Done' : 'Continue'}
+                      <ChevronRight className="w-3 h-3" />
+                    </>
+                  )}
+                </motion.button>
               </div>
             </motion.div>
           )}
@@ -1526,13 +2632,101 @@ const VRLessonPlayerInner = () => {
 };
 
 // ============================================================================
+// Safe Initialization Check
+// ============================================================================
+
+const SafeVRLessonPlayer = () => {
+  console.log('🛡️ [SafeVRLessonPlayer] Checking safe initialization...');
+  
+  // Check if we're in a valid render context
+  const [isReady, setIsReady] = React.useState(false);
+  const [mountError, setMountError] = React.useState<string | null>(null);
+  
+  React.useEffect(() => {
+    console.log('🔍 [SafeVRLessonPlayer] Running mount check...');
+    
+    // Small delay to ensure all providers are ready
+    const checkMount = async () => {
+      try {
+        // Check if sessionStorage is available
+        if (typeof sessionStorage === 'undefined') {
+          throw new Error('SessionStorage not available');
+        }
+        
+        // Check if we have lesson data somewhere
+        const hasStorageData = !!sessionStorage.getItem('activeLesson');
+        console.log('  - SessionStorage data:', hasStorageData ? 'found' : 'not found');
+        
+        // Give context providers time to initialize
+        await new Promise(resolve => setTimeout(resolve, 150));
+        
+        console.log('✅ [SafeVRLessonPlayer] Mount check passed');
+        setIsReady(true);
+      } catch (err) {
+        console.error('❌ [SafeVRLessonPlayer] Mount check failed:', err);
+        setMountError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    };
+    
+    checkMount();
+  }, []);
+  
+  if (mountError) {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-6">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-red-500/20 to-orange-600/20 border border-red-500/30 flex items-center justify-center">
+            <AlertTriangle className="w-10 h-10 text-red-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">Initialization Error</h1>
+          <p className="text-slate-400 mb-4">{mountError}</p>
+          <button
+            onClick={() => window.location.href = '/lessons'}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 
+                     text-white font-semibold rounded-xl shadow-lg"
+          >
+            <BookOpen className="w-5 h-5" />
+            Back to Lessons
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  if (!isReady) {
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-6">
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 flex items-center justify-center">
+            <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-3">Preparing VR Experience...</h1>
+          <p className="text-slate-400">Initializing components...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  console.log('🎬 [SafeVRLessonPlayer] Rendering VRLessonPlayerInner...');
+  return <VRLessonPlayerInner />;
+};
+
+// ============================================================================
 // Wrapper with Error Boundary
 // ============================================================================
 
 const VRLessonPlayer = () => {
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('🎮 [VRLessonPlayer] Main component mounting...');
+  console.log('═══════════════════════════════════════════════════════');
+  
   return (
-    <VRPlayerErrorBoundary onReset={() => window.location.reload()}>
-      <VRLessonPlayerInner />
+    <VRPlayerErrorBoundary onReset={() => {
+      console.log('🔄 [VRLessonPlayer] Error boundary reset triggered');
+      sessionStorage.removeItem('activeLesson');
+      window.location.href = '/lessons';
+    }}>
+      <SafeVRLessonPlayer />
     </VRPlayerErrorBoundary>
   );
 };

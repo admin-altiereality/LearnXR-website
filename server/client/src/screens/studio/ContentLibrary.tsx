@@ -298,15 +298,16 @@ const ContentLibrary = () => {
       <div className="h-16" />
       
       <div className="flex">
-        {/* Left Sidebar - Filters */}
+        {/* Left Sidebar - Filters - Always visible on desktop */}
         <aside className={`w-72 min-h-[calc(100vh-64px)] bg-[#0d1424] border-r border-slate-700/50 p-5
-                        fixed sm:sticky top-16 left-0 z-30 transition-transform duration-300
-                        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}>
+                        fixed sm:sticky top-16 left-0 z-30 transition-transform duration-300 flex-shrink-0
+                        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
+               style={{ minWidth: '288px' }}>
           <div className="space-y-5">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2 text-slate-300">
-                <Filter className="w-4 h-4" />
-                <span className="font-medium text-sm tracking-wide uppercase">Filters</span>
+                <Filter className="w-4 h-4 text-cyan-400" />
+                <span className="font-semibold text-sm tracking-wide uppercase">Filters</span>
               </div>
               <button
                 onClick={() => setMobileMenuOpen(false)}
@@ -315,6 +316,27 @@ const ContentLibrary = () => {
                 <X className="w-4 h-4" />
               </button>
             </div>
+            
+            {/* Loading skeleton for filters */}
+            {loadingFilters && (
+              <div className="space-y-4 animate-pulse">
+                <div className="space-y-2">
+                  <div className="h-3 w-20 bg-slate-700 rounded" />
+                  <div className="h-10 bg-slate-700 rounded-lg" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-16 bg-slate-700 rounded" />
+                  <div className="h-10 bg-slate-700 rounded-lg" />
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 w-20 bg-slate-700 rounded" />
+                  <div className="h-10 bg-slate-700 rounded-lg" />
+                </div>
+              </div>
+            )}
+            
+            {!loadingFilters && (
+              <>
             
             {/* Curriculum Dropdown */}
             <div className="space-y-2">
@@ -432,6 +454,8 @@ const ContentLibrary = () => {
                 </span>
               </p>
             </div>
+            </>
+            )}
           </div>
         </aside>
         

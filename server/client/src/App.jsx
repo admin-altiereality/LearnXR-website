@@ -8,13 +8,13 @@ import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
-import { OnboardingGuard } from './Components/auth/OnboardingGuard';
+import { RoleGuard, TeacherGuard, AdminGuard, SuperAdminGuard } from './Components/auth/RoleGuard';
 import { Signup } from './Components/auth/Signup';
 import ErrorBoundary from './Components/ErrorBoundary';
-import Footer from './Components/Footer';
-import Header from './Components/Header';
+import MinimalFooter from './Components/MinimalFooter';
+import Sidebar from './Components/Sidebar';
 import MainSection from './Components/MainSection';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
@@ -44,6 +44,8 @@ import TeacherAvatarDemo from './pages/TeacherAvatarDemo';
 import { LearnXRLessonScene } from './Components/LearnXRLessonScene';
 import SystemStatus from './screens/SystemStatus';
 import Onboarding from './screens/Onboarding';
+import ApprovalPending from './screens/ApprovalPending';
+import Approvals from './screens/admin/Approvals';
 import HelpChat from './screens/HelpChat';
 // FloatingHelpButton removed - using integrated help instead
 import SmoothScroll from './Components/SmoothScroll';
@@ -53,36 +55,71 @@ import N8nWorkflows from './screens/N8nWorkflows';
 import ContentLibrary from './screens/studio/ContentLibrary';
 import ChapterEditor from './screens/studio/ChapterEditor';
 import VRLessonPlayer from './screens/VRLessonPlayer';
+import XRLessonPlayer from './screens/XRLessonPlayer';
 
-// Conditional Footer - hides on /main route
+// Conditional Footer - Shows minimal footer on all pages except VR player and studio
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/main', '/vrlessonplayer'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
   
-  if (hideFooterRoutes.includes(location.pathname)) {
-    return null;
-  }
-  
-  return (
-    <div className="relative z-50">
-      <Footer />
-    </div>
-  );
-};
-
-// Conditional Header - hides on /main route, teacher avatar pages, and studio pages
-const ConditionalHeader = () => {
-  const location = useLocation();
-  const hideHeaderRoutes = ['/main', '/teacher-avatar-demo', '/learnxr/lesson', '/vrlessonplayer'];
-  
-  // Hide header on specific routes or paths starting with certain prefixes
-  if (hideHeaderRoutes.includes(location.pathname) || 
-      location.pathname.startsWith('/learnxr/') ||
+  // Hide footer completely on immersive experiences
+  if (hideFooterRoutes.includes(location.pathname) || 
       location.pathname.startsWith('/studio/')) {
     return null;
   }
   
-  return <Header />;
+  // Show minimal footer everywhere
+  return (
+    <div className="relative z-40">
+      <MinimalFooter />
+    </div>
+  );
+};
+
+// Conditional Sidebar - Shows on authenticated pages only
+const ConditionalSidebar = () => {
+  const location = useLocation();
+  const { user } = useAuth();
+  
+  // Pages where sidebar should be hidden
+  const hideSidebarRoutes = [
+    '/login', '/signup', '/forgot-password', 
+    '/onboarding', '/approval-pending',
+    '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'
+  ];
+  
+  // Hide sidebar on auth pages, onboarding, and immersive experiences
+  if (!user || hideSidebarRoutes.some(route => location.pathname.startsWith(route))) {
+    return null;
+  }
+  
+  // Also hide on public pages
+  const publicPages = ['/', '/careers', '/blog', '/privacy-policy', '/terms-conditions', '/refund-policy', '/help'];
+  if (publicPages.includes(location.pathname) && !user) {
+    return null;
+  }
+  
+  return <Sidebar />;
+};
+
+// Smart Landing - redirects authenticated users to /lessons, shows Landing for guests
+const SmartLanding = () => {
+  const { user, loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
+        <div className="w-8 h-8 border-3 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  
+  // Redirect authenticated users to lessons
+  if (user) {
+    return <Navigate to="/lessons" replace />;
+  }
+  
+  return <Landing />;
 };
 
 const BackgroundSphere = ({ textureUrl }) => {
@@ -369,15 +406,14 @@ function App() {
                   <Router>
               <SmoothScroll>
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
-              {/* Main Content Layer */}
-              <div className="relative flex flex-col min-h-screen">
-                {/* Header - fixed height - Hidden on /main route */}
-                <div className="relative top-0 z-50 bg-black/30 backdrop-blur-sm border-b border-gray-800/50">
-                  <ConditionalHeader />
-                </div>
+              {/* Main Content Layer with Sidebar */}
+              <div className="relative flex min-h-screen">
+                {/* Sidebar Navigation */}
+                <ConditionalSidebar />
 
-                {/* Main content - scrollable */}
-                <main className="">
+                {/* Main content area */}
+                <div className="flex-1 flex flex-col min-h-screen">
+                <main className="flex-1">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -385,8 +421,8 @@ function App() {
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       
-                      {/* Landing page - accessible to all users */}
-                      <Route path="/" element={<Landing />} />
+                      {/* Landing page - redirects authenticated users to /lessons */}
+                      <Route path="/" element={<SmartLanding />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
                       {/* Pricing removed */}
@@ -402,184 +438,217 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
+                      {/* Approval pending page for teachers/schools */}
+                      <Route path="/approval-pending" element={
+                        <ProtectedRoute>
+                          <ApprovalPending />
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Admin/SuperAdmin Approvals Dashboard */}
+                      <Route path="/admin/approvals" element={
+                        <ProtectedRoute>
+                          <AdminGuard>
+                            <Approvals />
+                          </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ThreeDGenerate />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
 
-                      {/* Protected routes - require authentication and onboarding */}
+                      {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
                               className="w-full px-6"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
+                      {/* Explore routes - Teachers, Schools, Admin only */}
                       <Route path="/explore" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/gallery" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="gallery"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/styles" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="styles"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/tutorials" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="tutorials"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/community" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="community"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/trending" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="trending"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/skybox/:id" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <SkyboxFullScreen 
                               className="w-full h-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/history" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <History 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Lessons - All authenticated users can access */}
                       <Route path="/lessons" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <Lessons 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Profile - All authenticated users */}
                       <Route path="/profile" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <Profile />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Developer tools - Teachers and above */}
                       <Route path="/developer" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <DeveloperSettings />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/api" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ApiDocumentation />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/n8n" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <N8nWorkflows />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* Studio Content Editor Routes */}
+                      {/* Studio Content Editor Routes - Teachers and above */}
                       <Route path="/studio/content" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ContentLibrary />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/content/:chapterId" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ChapterEditor />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* VR Lesson Player */}
+                      {/* VR Lesson Player - All authenticated users */}
                       <Route path="/vrlessonplayer" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <VRLessonPlayer />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
+                      {/* XR Lesson Player (WebXR for Meta Quest) - All authenticated users */}
+                      <Route path="/xrlessonplayer" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <XRLessonPlayer />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Asset generation - Teachers and above */}
                       <Route path="/asset-generator" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <AssetGenerator />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/unified-prompt" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <div className="min-h-screen bg-gray-900 p-4">
                               <div className="max-w-4xl mx-auto">
                                 <PromptPanel 
@@ -591,33 +660,33 @@ function App() {
                                 />
                               </div>
                             </div>
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/preview/:jobId" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <PreviewScene />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/service-status" element={<ServiceStatusPanel />} />
                       <Route path="/test-panel" element={<MeshyTestPanel />} />
                       <Route path="/debug-panel" element={<MeshyDebugPanel />} />
                       
-                      {/* Teacher Avatar Routes */}
+                      {/* Teacher Avatar Routes - Teachers and above */}
                       <Route path="/teacher-avatar-demo" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <TeacherAvatarDemo />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/learnxr/lesson" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <LearnXRLessonScene />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -627,8 +696,9 @@ function App() {
                   </div>
                 </main>
 
-                {/* Footer - conditionally hidden on /main */}
+                {/* Footer - minimal footer everywhere */}
                 <ConditionalFooter />
+                </div>
               </div>
             </div>
             <ToastContainer
@@ -668,13 +738,14 @@ function App() {
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer - Only shows on /main and /history pages */}
               <ConditionalBackground backgroundSkybox={backgroundSkybox} backgroundKey={key} />
-              {/* Main Content Layer */}
-              <div className="relative flex flex-col min-h-screen">
-                {/* Header - fixed height - Hidden on /main route */}
-                <ConditionalHeader />
+              {/* Main Content Layer with Sidebar */}
+              <div className="relative flex min-h-screen">
+                {/* Sidebar Navigation */}
+                <ConditionalSidebar />
 
-                {/* Main content - scrollable */}
-                <main className="">
+                {/* Main content area */}
+                <div className="flex-1 flex flex-col min-h-screen">
+                <main className="flex-1">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -682,8 +753,8 @@ function App() {
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       
-                      {/* Landing page - accessible to all users */}
-                      <Route path="/" element={<Landing />} />
+                      {/* Landing page - redirects authenticated users to /lessons */}
+                      <Route path="/" element={<SmartLanding />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
                       {/* Pricing removed */}
@@ -699,184 +770,216 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
+                      {/* Approval pending page for teachers/schools */}
+                      <Route path="/approval-pending" element={
+                        <ProtectedRoute>
+                          <ApprovalPending />
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Admin/SuperAdmin Approvals Dashboard */}
+                      <Route path="/admin/approvals" element={
+                        <ProtectedRoute>
+                          <AdminGuard>
+                            <Approvals />
+                          </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ThreeDGenerate />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
 
-                      {/* Protected routes - require authentication and onboarding */}
+                      {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
                               className="w-full absolute inset-0 min-h-screen"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/gallery" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="gallery"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/styles" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="styles"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/tutorials" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="tutorials"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/community" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="community"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/trending" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               category="trending"
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/skybox/:id" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <SkyboxFullScreen 
                               className="w-full h-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/history" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <History 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Lessons - All authenticated users */}
                       <Route path="/lessons" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <Lessons 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Profile - All authenticated users */}
                       <Route path="/profile" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <Profile />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      
+                      {/* Developer tools - Teachers and above */}
                       <Route path="/developer" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <DeveloperSettings />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/api" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ApiDocumentation />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/n8n" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <N8nWorkflows />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* Studio Content Editor Routes */}
+                      {/* Studio Content Editor Routes - Teachers and above */}
                       <Route path="/studio/content" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ContentLibrary />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/content/:chapterId" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <ChapterEditor />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* VR Lesson Player */}
+                      {/* VR Lesson Player - All authenticated users */}
                       <Route path="/vrlessonplayer" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <VRLessonPlayer />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
+                      {/* XR Lesson Player (WebXR for Meta Quest) - All authenticated users */}
+                      <Route path="/xrlessonplayer" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <XRLessonPlayer />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Asset generation - Teachers and above */}
                       <Route path="/asset-generator" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <AssetGenerator />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/unified-prompt" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <div className="min-h-screen bg-gray-900 p-4">
                               <div className="max-w-4xl mx-auto">
                                 <PromptPanel 
@@ -888,31 +991,31 @@ function App() {
                                 />
                               </div>
                             </div>
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/preview/:jobId" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <PreviewScene />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/system-status" element={<SystemStatus />} />
                       
-                      {/* Teacher Avatar Routes */}
+                      {/* Teacher Avatar Routes - Teachers and above */}
                       <Route path="/teacher-avatar-demo" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <TeacherGuard>
                             <TeacherAvatarDemo />
-                          </OnboardingGuard>
+                          </TeacherGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/learnxr/lesson" element={
                         <ProtectedRoute>
-                          <OnboardingGuard>
+                          <RoleGuard>
                             <LearnXRLessonScene />
-                          </OnboardingGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -922,8 +1025,9 @@ function App() {
                   </div>
                 </main>
 
-                {/* Footer - conditionally hidden on /main */}
+                {/* Footer - minimal footer everywhere */}
                 <ConditionalFooter />
+                </div>
               </div>
             </ConditionalCanvas>
             <ToastContainer

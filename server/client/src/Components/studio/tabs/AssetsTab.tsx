@@ -8,14 +8,18 @@
  * - Replace assets
  * - 3D preview viewer
  * - Download links for all formats
+ * 
+ * Data Source: meshy_assets collection (NEW Firestore schema)
+ * This component now fetches from the meshy_assets collection instead of legacy locations.
  */
 
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { toast } from 'react-toastify';
-import { Generated3DAsset, get3DAssets } from '../../../lib/firestore/queries';
+import { getMeshyAssets } from '../../../lib/firestore/queries';
+import { MeshyAsset } from '../../../types/curriculum';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, db } from '../../../config/firebase';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import {
   Box,
   ExternalLink,
@@ -48,9 +52,10 @@ interface AssetsTabProps {
 const Lazy3DViewer = lazy(() => import('../../AssetViewerWithSkybox').then(m => ({ default: m.AssetViewerWithSkybox })));
 
 export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
-  const [assets, setAssets] = useState<Generated3DAsset[]>([]);
+  // Using MeshyAsset type from new meshy_assets collection
+  const [assets, setAssets] = useState<MeshyAsset[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedAsset, setSelectedAsset] = useState<Generated3DAsset | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState<MeshyAsset | null>(null);
   const [showViewer, setShowViewer] = useState(false);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -68,23 +73,25 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
   // Delete state
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [assetToDelete, setAssetToDelete] = useState<Generated3DAsset | null>(null);
+  const [assetToDelete, setAssetToDelete] = useState<MeshyAsset | null>(null);
   
   // Context menu
-  const [contextMenu, setContextMenu] = useState<{ asset: Generated3DAsset; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ asset: MeshyAsset; x: number; y: number } | null>(null);
 
-  // Load assets
+  // Load assets from meshy_assets collection (NEW schema)
   useEffect(() => {
     const loadAssets = async () => {
       setLoading(true);
       try {
-        const assetsData = await get3DAssets(chapterId, topicId);
+        // Fetch from meshy_assets collection (replaces legacy get3DAssets)
+        const assetsData = await getMeshyAssets(chapterId, topicId);
         setAssets(assetsData);
         if (assetsData.length > 0 && !selectedAsset) {
           setSelectedAsset(assetsData[0]);
         }
       } catch (error) {
-        console.error('Error loading 3D assets:', error);
+        console.error('Error loading Meshy assets from meshy_assets collection:', error);
+        toast.error('Failed to load 3D assets');
       } finally {
         setLoading(false);
       }
@@ -105,10 +112,13 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
   const handleRefresh = async () => {
     setLoading(true);
     try {
-      const assetsData = await get3DAssets(chapterId, topicId);
+      // Refresh from meshy_assets collection
+      const assetsData = await getMeshyAssets(chapterId, topicId);
       setAssets(assetsData);
+      toast.success('Assets refreshed');
     } catch (error) {
-      console.error('Error refreshing 3D assets:', error);
+      console.error('Error refreshing Meshy assets:', error);
+      toast.error('Failed to refresh assets');
     } finally {
       setLoading(false);
     }
@@ -186,21 +196,33 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
     
     const totalFiles = selectedFiles.length;
     let uploadedCount = 0;
-    const newAssets: Generated3DAsset[] = [];
+    const newAssets: MeshyAsset[] = [];
     
     try {
       for (const file of selectedFiles) {
         const name = assetNames[file.name] || file.name.replace(/\.[^/.]+$/, '');
         const timestamp = Date.now();
         const fileName = `${name.replace(/\s+/g, '_')}_${timestamp}${file.name.substring(file.name.lastIndexOf('.'))}`;
-        const storagePath = `3d_assets/${chapterId}/${topicId}/${fileName}`;
+        const storagePath = `meshy_assets/${chapterId}/${topicId}/${fileName}`;
         const storageRef = ref(storage, storagePath);
         
         await uploadBytes(storageRef, file);
         const downloadUrl = await getDownloadURL(storageRef);
         
-        const newAsset: Generated3DAsset = {
-          id: `manual_${timestamp}_${uploadedCount}`,
+        // Save to meshy_assets collection (NEW schema)
+        const assetDoc = await addDoc(collection(db, 'meshy_assets'), {
+          chapter_id: chapterId,
+          topic_id: topicId,
+          name,
+          glb_url: downloadUrl,
+          status: 'complete',
+          created_at: serverTimestamp(),
+        });
+        
+        const newAsset: MeshyAsset = {
+          id: assetDoc.id,
+          chapter_id: chapterId,
+          topic_id: topicId,
           name,
           glb_url: downloadUrl,
           status: 'complete',
@@ -234,14 +256,17 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
     }
   };
   
-  // Delete asset
+  // Delete asset from meshy_assets collection
   const handleDeleteAsset = async () => {
     if (!assetToDelete) return;
     
     setDeletingAssetId(assetToDelete.id);
     
     try {
-      // Try to delete from storage if it's a manual upload
+      // Delete from meshy_assets collection (NEW schema)
+      await deleteDoc(doc(db, 'meshy_assets', assetToDelete.id));
+      
+      // Try to delete from storage if it's a Firebase URL
       if (assetToDelete.glb_url?.includes('firebase')) {
         try {
           const storageRef = ref(storage, assetToDelete.glb_url);
@@ -271,13 +296,13 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
     }
   };
   
-  const openDeleteConfirm = (asset: Generated3DAsset) => {
+  const openDeleteConfirm = (asset: MeshyAsset) => {
     setAssetToDelete(asset);
     setShowDeleteConfirm(true);
     setContextMenu(null);
   };
   
-  const handleContextMenu = (e: React.MouseEvent, asset: Generated3DAsset) => {
+  const handleContextMenu = (e: React.MouseEvent, asset: MeshyAsset) => {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ asset, x: e.clientX, y: e.clientY });
@@ -288,7 +313,7 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <Loader2 className="w-8 h-8 text-cyan-500 animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Loading 3D assets...</p>
+          <p className="text-sm text-slate-400">Loading 3D assets from meshy_assets...</p>
         </div>
       </div>
     );

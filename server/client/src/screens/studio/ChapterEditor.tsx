@@ -12,6 +12,11 @@ import {
   getEditHistory,
   checkForFlattenedMCQs,
   EditHistoryEntry,
+  // New collection queries
+  getTopicResources,
+  getChapterMCQs,
+  getMeshyAssets,
+  getChapterImages,
 } from '../../lib/firestore/queries';
 import {
   updateTopic,
@@ -97,6 +102,17 @@ const ChapterEditor = () => {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [isReadOnly, setIsReadOnly] = useState(false);
   
+  // Content availability state
+  const [contentAvailability, setContentAvailability] = useState({
+    hasMCQs: false,
+    mcqCount: 0,
+    has3DAssets: false,
+    assetCount: 0,
+    hasImages: false,
+    imageCount: 0,
+    loading: false,
+  });
+  
   // Load chapter and versions
   useEffect(() => {
     if (!chapterId) return;
@@ -146,6 +162,41 @@ const ChapterEditor = () => {
     loadTopics();
   }, [chapterId, selectedVersionId]);
   
+  // Load content availability for the topic
+  const loadContentAvailability = useCallback(async (topicId: string) => {
+    if (!chapterId) return;
+    
+    setContentAvailability(prev => ({ ...prev, loading: true }));
+    
+    try {
+      // Fetch MCQs, assets, and images in parallel
+      const [mcqsData, assetsData, imagesData] = await Promise.all([
+        getChapterMCQs(chapterId, topicId).catch(() => []),
+        getMeshyAssets(chapterId, topicId).catch(() => []),
+        getChapterImages(chapterId, topicId).catch(() => []),
+      ]);
+      
+      setContentAvailability({
+        hasMCQs: mcqsData.length > 0,
+        mcqCount: mcqsData.length,
+        has3DAssets: assetsData.length > 0,
+        assetCount: assetsData.length,
+        hasImages: imagesData.length > 0,
+        imageCount: imagesData.length,
+        loading: false,
+      });
+      
+      console.log('📊 Content availability:', {
+        mcqs: mcqsData.length,
+        assets: assetsData.length,
+        images: imagesData.length,
+      });
+    } catch (error) {
+      console.error('Error loading content availability:', error);
+      setContentAvailability(prev => ({ ...prev, loading: false }));
+    }
+  }, [chapterId]);
+  
   // Load scene data when topic changes
   const loadTopicData = useCallback(async (topic: Topic) => {
     if (!chapterId || !selectedVersionId) return;
@@ -167,6 +218,9 @@ const ChapterEditor = () => {
       const flatInfo = await checkForFlattenedMCQs(chapterId, selectedVersionId, topic.id);
       setFlattenedMcqInfo(flatInfo);
       
+      // Load content availability in parallel
+      loadContentAvailability(topic.id);
+      
       // Reset dirty state
       setTopicDirty(false);
       setSceneDirty(false);
@@ -177,21 +231,45 @@ const ChapterEditor = () => {
     } finally {
       setLoadingTopic(false);
     }
-  }, [chapterId, selectedVersionId]);
+  }, [chapterId, selectedVersionId, loadContentAvailability]);
   
   // Track if MCQs have been loaded for current topic
   const [mcqsLoaded, setMcqsLoaded] = useState(false);
   
-  // Load MCQs only when MCQ tab is opened (cost optimization)
+  // Load MCQs from chapter_mcqs collection (NEW schema)
+  // Falls back to legacy getMCQs if new collection is empty
   const loadMCQs = useCallback(async () => {
     if (!chapterId || !selectedVersionId || !selectedTopic) return;
     
     try {
-      console.log('Loading MCQs for topic:', selectedTopic.id);
-      const mcqsData = await getMCQs(chapterId, selectedVersionId, selectedTopic.id);
-      console.log('Loaded MCQs:', mcqsData);
-      setMcqs(mcqsData);
-      setMcqFormState(mcqsData.map((m) => ({ ...m })));
+      console.log('Loading MCQs for topic from chapter_mcqs collection:', selectedTopic.id);
+      
+      // Try new collection first
+      const newMcqsData = await getChapterMCQs(chapterId, selectedTopic.id);
+      
+      if (newMcqsData.length > 0) {
+        console.log('✅ Loaded MCQs from chapter_mcqs collection:', newMcqsData.length);
+        // Convert ChapterMCQ to MCQ format for backwards compatibility
+        const mcqsConverted = newMcqsData.map((m) => ({
+          id: m.id,
+          question: m.question,
+          options: m.options,
+          correct_option_index: m.correct_option_index,
+          explanation: m.explanation || '',
+          difficulty: m.difficulty,
+          order: m.order,
+        }));
+        setMcqs(mcqsConverted);
+        setMcqFormState(mcqsConverted.map((m) => ({ ...m })));
+      } else {
+        // Fallback to legacy source
+        console.log('ℹ️ No MCQs in new collection, trying legacy source...');
+        const mcqsData = await getMCQs(chapterId, selectedVersionId, selectedTopic.id);
+        console.log('Loaded MCQs from legacy source:', mcqsData.length);
+        setMcqs(mcqsData);
+        setMcqFormState(mcqsData.map((m) => ({ ...m })));
+      }
+      
       setMcqsLoaded(true);
     } catch (error) {
       console.error('Error loading MCQs:', error);
@@ -605,6 +683,7 @@ const ChapterEditor = () => {
               versionId={selectedVersionId}
               flattenedMcqInfo={flattenedMcqInfo}
               onNormalizeMCQs={handleNormalizeMCQs}
+              contentAvailability={contentAvailability}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full py-20">

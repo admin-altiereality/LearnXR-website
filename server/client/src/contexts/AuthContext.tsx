@@ -8,11 +8,18 @@ import {
     signInWithPopup,
     signOut
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { createContext, ReactNode, useContext, useEffect, useState, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { auth, db } from '../config/firebase';
 import { createDefaultSubscription } from '../services/subscriptionService';
+import { 
+  UserRole, 
+  ApprovalStatus, 
+  UserProfile,
+  requiresApproval,
+  APPROVAL_REQUIRED_ROLES
+} from '../utils/rbac';
 
 export type ModalType = 'subscription' | 'upgrade' | null;
 
@@ -22,14 +29,23 @@ export interface ModalContextType {
   closeModal: () => void;
 }
 
+// Re-export types from rbac for convenience
+export type { UserRole, ApprovalStatus, UserProfile };
+
 interface AuthContextType {
   user: FirebaseUser | null;
+  profile: UserProfile | null;
   loading: boolean;
-  signup: (email: string, password: string, name: string) => Promise<any>;
+  profileLoading: boolean;
+  selectedRole: UserRole | null;
+  setSelectedRole: (role: UserRole | null) => void;
+  signup: (email: string, password: string, name: string, role?: UserRole) => Promise<any>;
   login: (email: string, password: string) => Promise<any>;
-  loginWithGoogle: () => Promise<any>;
+  loginWithGoogle: (role?: UserRole) => Promise<any>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  updateProfile: (data: Partial<UserProfile>) => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 interface AuthProviderProps {
@@ -53,8 +69,82 @@ export const useModal = () => {
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+
+  // Fetch user profile from Firestore
+  const fetchProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {
+    try {
+      const userDocRef = doc(db, 'users', uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        return {
+          uid,
+          email: data.email || '',
+          displayName: data.displayName || data.name || '',
+          name: data.name || data.displayName || '',
+          role: data.role || 'student',
+          approvalStatus: data.approvalStatus || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt,
+          age: data.age,
+          class: data.class,
+          curriculum: data.curriculum,
+          school: data.school,
+          onboardingCompleted: data.onboardingCompleted || false,
+          onboardingCompletedAt: data.onboardingCompletedAt,
+          userType: data.userType,
+          teamSize: data.teamSize,
+          usageType: data.usageType,
+          newsletterSubscription: data.newsletterSubscription,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+      return null;
+    }
+  }, []);
+
+  // Refresh profile manually
+  const refreshProfile = useCallback(async () => {
+    if (!user?.uid) return;
+    setProfileLoading(true);
+    const profileData = await fetchProfile(user.uid);
+    setProfile(profileData);
+    setProfileLoading(false);
+  }, [user, fetchProfile]);
+
+  // Update user profile
+  const updateProfile = useCallback(async (data: Partial<UserProfile>) => {
+    if (!user?.uid) {
+      throw new Error('No user logged in');
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      const updateData = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      await updateDoc(userDocRef, updateData);
+      
+      // Refresh local profile
+      await refreshProfile();
+      
+      return;
+    } catch (error: any) {
+      console.error('Error updating profile:', error);
+      toast.error('Failed to update profile');
+      throw error;
+    }
+  }, [user, refreshProfile]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !auth) {
@@ -65,47 +155,58 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     const unsubscribe = onAuthStateChanged(
       auth,
-      async (user) => {
-        if (user) {
+      async (firebaseUser) => {
+        if (firebaseUser) {
+          setUser(firebaseUser);
+          setProfileLoading(true);
+          
           try {
-            const userDocRef = doc(db, 'users', user.uid);
+            const userDocRef = doc(db, 'users', firebaseUser.uid);
             const userDoc = await getDoc(userDocRef);
             
             if (userDoc.exists()) {
-              setUser({
-                ...user,
-                ...userDoc.data()
-              });
-            } else {
-              const userData = {
-                name: user.displayName || '',
-                email: user.email,
-                role: 'user',
-                subscriptionStatus: 'free',
-                createdAt: new Date().toISOString()
+              const data = userDoc.data();
+              const profileData: UserProfile = {
+                uid: firebaseUser.uid,
+                email: data.email || firebaseUser.email || '',
+                displayName: data.displayName || data.name || firebaseUser.displayName || '',
+                name: data.name || data.displayName || firebaseUser.displayName || '',
+                role: data.role || 'student',
+                approvalStatus: data.approvalStatus || null,
+                createdAt: data.createdAt || new Date().toISOString(),
+                updatedAt: data.updatedAt,
+                age: data.age,
+                class: data.class,
+                curriculum: data.curriculum,
+                school: data.school,
+                onboardingCompleted: data.onboardingCompleted || false,
+                onboardingCompletedAt: data.onboardingCompletedAt,
+                userType: data.userType,
+                teamSize: data.teamSize,
+                usageType: data.usageType,
+                newsletterSubscription: data.newsletterSubscription,
               };
-              await setDoc(userDocRef, userData);
-              
-              // Create default subscription document for users without one
-              await createDefaultSubscription(user.uid);
-              
-              setUser({
-                ...user,
-                ...userData
-              });
+              setProfile(profileData);
+            } else {
+              // New user - profile will be created during signup
+              setProfile(null);
             }
           } catch (error) {
             console.error("Error fetching user data:", error);
-            setUser(user);
+            setProfile(null);
           }
+          
+          setProfileLoading(false);
         } else {
           setUser(null);
+          setProfile(null);
         }
         setLoading(false);
       },
       (error) => {
         console.error('Auth state change error:', error);
         setUser(null);
+        setProfile(null);
         setLoading(false);
       }
     );
@@ -113,26 +214,83 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return unsubscribe;
   }, []);
 
-  const signup = async (email: string, password: string, name: string) => {
+  // Subscribe to profile changes in real-time
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubscribe = onSnapshot(userDocRef, (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        const profileData: UserProfile = {
+          uid: user.uid,
+          email: data.email || user.email || '',
+          displayName: data.displayName || data.name || user.displayName || '',
+          name: data.name || data.displayName || user.displayName || '',
+          role: data.role || 'student',
+          approvalStatus: data.approvalStatus || null,
+          createdAt: data.createdAt || new Date().toISOString(),
+          updatedAt: data.updatedAt,
+          age: data.age,
+          class: data.class,
+          curriculum: data.curriculum,
+          school: data.school,
+          onboardingCompleted: data.onboardingCompleted || false,
+          onboardingCompletedAt: data.onboardingCompletedAt,
+          userType: data.userType,
+          teamSize: data.teamSize,
+          usageType: data.usageType,
+          newsletterSubscription: data.newsletterSubscription,
+        };
+        setProfile(profileData);
+      }
+    }, (error) => {
+      console.error('Profile snapshot error:', error);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  const signup = async (email: string, password: string, name: string, role: UserRole = 'student') => {
     if (!auth) {
       throw new Error('Authentication service is not available');
     }
     try {
-      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      const { user: newUser } = await createUserWithEmailAndPassword(auth, email, password);
       
-      // Create user document
-      await setDoc(doc(db, 'users', user.uid), {
+      // Determine approval status
+      const needsApproval = requiresApproval(role);
+      const approvalStatus: ApprovalStatus = needsApproval ? 'pending' : null;
+      const now = new Date().toISOString();
+      
+      // Create user document with role in main users collection
+      const userData = {
         name,
+        displayName: name,
         email,
-        role: 'user',
-        createdAt: new Date().toISOString()
-      });
+        role,
+        approvalStatus,
+        createdAt: now,
+        updatedAt: now,
+        onboardingCompleted: false,
+        newsletterSubscription: true,
+        userType: role,
+      };
+      
+      await setDoc(doc(db, 'users', newUser.uid), userData);
+      console.log('✅ Created user entry:', newUser.uid);
       
       // Create default subscription document
-      await createDefaultSubscription(user.uid);
+      await createDefaultSubscription(newUser.uid);
+      
+      // Set profile locally
+      setProfile({
+        uid: newUser.uid,
+        ...userData,
+      });
       
       toast.success('Account created successfully!');
-      return user;
+      return newUser;
     } catch (error: any) {
       console.error("Signup error:", error);
       toast.error(error.message);
@@ -140,57 +298,76 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const loginWithGoogle = async () => {
+  const loginWithGoogle = async (role?: UserRole) => {
     if (!auth) {
       throw new Error('Authentication service is not available');
     }
     try {
       const provider = new GoogleAuthProvider();
       
-      // Configure provider settings to reduce popup issues
       provider.setCustomParameters({
         prompt: 'select_account'
       });
       
-      // Try popup first, fallback to redirect if popup fails
       let result;
       try {
         result = await signInWithPopup(auth, provider);
       } catch (popupError: any) {
         console.warn('Popup failed, trying redirect:', popupError);
         
-        // If popup fails due to popup blocked or other issues, use redirect
         if (popupError.code === 'auth/popup-closed-by-user' || 
             popupError.code === 'auth/popup-blocked' ||
             popupError.code === 'auth/cancelled-popup-request') {
-          // For now, just throw the error and let the user try again
           throw new Error('Please allow popups for this site and try again');
         }
         throw popupError;
       }
       
-      const { user } = result;
+      const { user: googleUser } = result;
       
-      const userDocRef = doc(db, 'users', user.uid);
+      const userDocRef = doc(db, 'users', googleUser.uid);
       const userDoc = await getDoc(userDocRef);
       
       if (!userDoc.exists()) {
-        await setDoc(userDocRef, {
-          name: user.displayName,
-          email: user.email,
-          role: 'user',
-          createdAt: new Date().toISOString()
-        });
+        // New user - use selected role or default to student
+        const userRole = role || selectedRole || 'student';
+        const needsApproval = requiresApproval(userRole);
+        const approvalStatus: ApprovalStatus = needsApproval ? 'pending' : null;
+        const now = new Date().toISOString();
+        
+        const userData = {
+          name: googleUser.displayName,
+          displayName: googleUser.displayName,
+          email: googleUser.email,
+          role: userRole,
+          approvalStatus,
+          createdAt: now,
+          updatedAt: now,
+          onboardingCompleted: false,
+          newsletterSubscription: true,
+          userType: userRole,
+        };
+        
+        await setDoc(userDocRef, userData);
+        console.log('✅ Created user entry for Google user:', googleUser.uid);
         
         // Create default subscription document for new Google users
-        await createDefaultSubscription(user.uid);
+        await createDefaultSubscription(googleUser.uid);
+        
+        setProfile({
+          uid: googleUser.uid,
+          ...userData,
+        } as UserProfile);
       }
+      
+      // Clear selected role after login
+      setSelectedRole(null);
+      
       toast.success('Logged in successfully with Google!');
-      return user;
+      return googleUser;
     } catch (error: any) {
       console.error("Google login error:", error);
       
-      // Provide more user-friendly error messages
       let errorMessage = 'Login failed. Please try again.';
       if (error.code === 'auth/popup-closed-by-user') {
         errorMessage = 'Login was cancelled. Please try again.';
@@ -228,6 +405,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     try {
       await signOut(auth);
+      setProfile(null);
+      setSelectedRole(null);
       toast.success('Logged out successfully!');
       return Promise.resolve();
     } catch (error: any) {
@@ -260,12 +439,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   return (
     <AuthContext.Provider value={{
       user,
+      profile,
+      selectedRole,
+      setSelectedRole,
       signup,
       login,
       loginWithGoogle,
       logout,
       resetPassword,
-      loading
+      updateProfile,
+      refreshProfile,
+      loading,
+      profileLoading
     }}>
       <ModalContext.Provider value={modalContextValue}>
         {!loading && children}
@@ -280,4 +465,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within AuthProvider');
   }
   return context;
-}; 
+};

@@ -6,14 +6,19 @@
  * - Prominent skybox ID and remix ID display
  * - Style selector with preview
  * - Generation with progress tracking
+ * 
+ * Data Source: skybox_glb_urls collection (NEW Firestore schema)
+ * Skybox GLB URLs are now stored in the skybox_glb_urls collection
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
-import { Scene } from '../../../types/curriculum';
+import { Scene, SkyboxGLBUrl } from '../../../types/curriculum';
 import { skyboxApiService } from '../../../services/skyboxApiService';
-import { getTopicSkybox, SkyboxData } from '../../../lib/firestore/queries';
+import { getTopicSkybox, getSkyboxGLBUrls, SkyboxData } from '../../../lib/firestore/queries';
 import { AssetViewerWithSkybox } from '../../AssetViewerWithSkybox';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
 import {
   Sparkles,
   Image,
@@ -63,6 +68,10 @@ export const SceneTab = ({
   const [skyboxData, setSkyboxData] = useState<SkyboxData | null>(null);
   const [loadingSkybox, setLoadingSkybox] = useState(true);
   
+  // Skybox GLB URLs from new collection
+  const [skyboxGLBUrls, setSkyboxGLBUrls] = useState<SkyboxGLBUrl[]>([]);
+  const [selectedSkyboxGLB, setSelectedSkyboxGLB] = useState<SkyboxGLBUrl | null>(null);
+  
   // Skybox styles state
   const [skyboxStyles, setSkyboxStyles] = useState<SkyboxStyle[]>([]);
   const [selectedStyle, setSelectedStyle] = useState<SkyboxStyle | null>(null);
@@ -90,6 +99,7 @@ export const SceneTab = ({
   }, [sceneFormState.in3d_prompt]);
   
   // Load skybox data from Firestore
+  // Priority: skybox_glb_urls collection (NEW) -> legacy skybox data
   useEffect(() => {
     const loadSkyboxData = async () => {
       if (!chapterId || !topicId) return;
@@ -97,11 +107,39 @@ export const SceneTab = ({
       setLoadingSkybox(true);
       setImageLoaded(false);
       setViewer360Error(false);
+      
       try {
-        const data = await getTopicSkybox(chapterId, topicId);
-        console.log('🖼️ Loaded skybox data:', data);
-        setSkyboxData(data);
-        setImageLoadError(false);
+        // First, try to load from skybox_glb_urls collection (NEW schema)
+        console.log('🔍 Fetching skybox GLB URLs from skybox_glb_urls collection...');
+        const glbUrls = await getSkyboxGLBUrls(chapterId, topicId);
+        setSkyboxGLBUrls(glbUrls);
+        
+        if (glbUrls.length > 0) {
+          // Use the first skybox GLB URL
+          const primarySkybox = glbUrls[0];
+          setSelectedSkyboxGLB(primarySkybox);
+          
+          console.log('✅ Using skybox from skybox_glb_urls collection:', primarySkybox);
+          
+          // Convert to SkyboxData format for compatibility
+          setSkyboxData({
+            id: primarySkybox.skybox_id || primarySkybox.id,
+            imageUrl: primarySkybox.preview_url || primarySkybox.glb_url,
+            file_url: primarySkybox.glb_url,
+            promptUsed: primarySkybox.prompt_used || '',
+            styleId: primarySkybox.style_id,
+            styleName: primarySkybox.style_name,
+            status: primarySkybox.status,
+          });
+          setImageLoadError(false);
+        } else {
+          // Fallback: Try legacy skybox loading
+          console.log('ℹ️ No skybox GLB URLs found, trying legacy source...');
+          const data = await getTopicSkybox(chapterId, topicId);
+          console.log('🖼️ Loaded legacy skybox data:', data);
+          setSkyboxData(data);
+          setImageLoadError(false);
+        }
       } catch (error) {
         console.error('Error loading skybox:', error);
       } finally {
@@ -202,6 +240,30 @@ export const SceneTab = ({
             
             onSceneChange('skybox_id', generationId.toString());
             onSceneChange('skybox_url', skyboxUrl);
+            
+            // Save to skybox_glb_urls collection (NEW schema)
+            try {
+              const newSkyboxGLB: Omit<SkyboxGLBUrl, 'id'> = {
+                chapter_id: chapterId,
+                topic_id: topicId,
+                skybox_id: generationId.toString(),
+                glb_url: skyboxUrl,
+                preview_url: skyboxUrl,
+                prompt_used: localPrompt,
+                style_id: typeof selectedStyle.id === 'number' ? selectedStyle.id : parseInt(selectedStyle.id as string),
+                style_name: selectedStyle.name,
+                status: 'complete',
+                created_at: new Date().toISOString(),
+              };
+              
+              await addDoc(collection(db, 'skybox_glb_urls'), {
+                ...newSkyboxGLB,
+                created_at: serverTimestamp(),
+              });
+              console.log('✅ Saved to skybox_glb_urls collection');
+            } catch (saveError) {
+              console.warn('Could not save to skybox_glb_urls collection:', saveError);
+            }
             
             setSkyboxData({
               id: generationId.toString(),

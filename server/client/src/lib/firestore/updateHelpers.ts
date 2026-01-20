@@ -1,5 +1,6 @@
 // Firestore Update Helpers for Curriculum Content Editor
-// Optimized for minimal writes - works with existing curriculum_chapters collection
+// Updated to support NEW Firestore collections:
+// - meshy_assets, chapter_mcqs, chapter_tts, chapter_images, skybox_glb_urls
 
 import {
   doc,
@@ -11,6 +12,9 @@ import {
   getDoc,
   collection,
   addDoc,
+  query,
+  where,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import {
@@ -21,11 +25,23 @@ import {
   DocumentDiff,
   FieldDiff,
   FlattenedMCQ,
+  MeshyAsset,
+  ChapterMCQ,
+  ChapterTTS,
+  ChapterImage,
+  SkyboxGLBUrl,
 } from '../../types/curriculum';
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
 import { extractFlattenedMCQs } from './queries';
 
 const COLLECTION_NAME = 'curriculum_chapters';
+
+// New collection names
+const COLLECTION_MESHY_ASSETS = 'meshy_assets';
+const COLLECTION_CHAPTER_MCQS = 'chapter_mcqs';
+const COLLECTION_CHAPTER_TTS = 'chapter_tts';
+const COLLECTION_CHAPTER_IMAGES = 'chapter_images';
+const COLLECTION_SKYBOX_GLB_URLS = 'skybox_glb_urls';
 
 // ============================================
 // DIFF CALCULATION
@@ -524,4 +540,331 @@ export const createNewVersion = async (options: {
   // In the flat structure, versioning would require duplicating the document
   console.log('Version creation not implemented for flat structure');
   return { success: false, error: 'Not implemented' };
+};
+
+// ============================================
+// NEW COLLECTION UPDATE HELPERS
+// These functions work with the new Firestore schema
+// ============================================
+
+/**
+ * Add or update a Meshy asset in meshy_assets collection
+ */
+export const saveMeshyAsset = async (options: {
+  asset: Omit<MeshyAsset, 'id'> & { id?: string };
+  userId: string;
+}): Promise<{ success: boolean; id?: string; error?: string }> => {
+  const { asset, userId } = options;
+  
+  try {
+    if (asset.id) {
+      // Update existing
+      const assetRef = doc(db, COLLECTION_MESHY_ASSETS, asset.id);
+      await updateDoc(assetRef, {
+        ...asset,
+        updated_at: serverTimestamp(),
+      });
+      return { success: true, id: asset.id };
+    } else {
+      // Create new
+      const docRef = await addDoc(collection(db, COLLECTION_MESHY_ASSETS), {
+        ...asset,
+        created_at: serverTimestamp(),
+      });
+      return { success: true, id: docRef.id };
+    }
+  } catch (error) {
+    console.error('Error saving Meshy asset:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Delete a Meshy asset from meshy_assets collection
+ */
+export const deleteMeshyAsset = async (assetId: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await deleteDoc(doc(db, COLLECTION_MESHY_ASSETS, assetId));
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting Meshy asset:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Save MCQs to chapter_mcqs collection
+ */
+export const saveChapterMCQs = async (options: {
+  chapterId: string;
+  topicId: string;
+  mcqs: Omit<ChapterMCQ, 'id' | 'chapter_id' | 'topic_id'>[];
+  userId: string;
+}): Promise<{ success: boolean; count: number; error?: string }> => {
+  const { chapterId, topicId, mcqs, userId } = options;
+  
+  try {
+    const batch = writeBatch(db);
+    let count = 0;
+    
+    for (let i = 0; i < mcqs.length; i++) {
+      const mcq = mcqs[i];
+      const mcqRef = doc(collection(db, COLLECTION_CHAPTER_MCQS));
+      batch.set(mcqRef, {
+        chapter_id: chapterId,
+        topic_id: topicId,
+        question: mcq.question,
+        options: mcq.options,
+        correct_option_index: mcq.correct_option_index,
+        explanation: mcq.explanation || '',
+        difficulty: mcq.difficulty || 'medium',
+        order: i,
+        created_at: serverTimestamp(),
+        created_by: userId,
+      });
+      count++;
+    }
+    
+    await batch.commit();
+    await addHistoryEntry(chapterId, userId, `Added ${count} MCQs to chapter_mcqs collection`);
+    
+    return { success: true, count };
+  } catch (error) {
+    console.error('Error saving MCQs:', error);
+    return { success: false, count: 0, error: String(error) };
+  }
+};
+
+/**
+ * Update MCQs in chapter_mcqs collection
+ */
+export const updateChapterMCQs = async (options: {
+  chapterId: string;
+  topicId: string;
+  mcqs: (Partial<ChapterMCQ> & { id?: string; _isNew?: boolean; _isDeleted?: boolean })[];
+  userId: string;
+}): Promise<{ success: boolean; error?: string }> => {
+  const { chapterId, topicId, mcqs, userId } = options;
+  
+  try {
+    const batch = writeBatch(db);
+    
+    for (let i = 0; i < mcqs.length; i++) {
+      const mcq = mcqs[i];
+      
+      if (mcq._isDeleted && mcq.id) {
+        // Delete
+        batch.delete(doc(db, COLLECTION_CHAPTER_MCQS, mcq.id));
+      } else if (mcq._isNew || !mcq.id) {
+        // Create new
+        const mcqRef = doc(collection(db, COLLECTION_CHAPTER_MCQS));
+        batch.set(mcqRef, {
+          chapter_id: chapterId,
+          topic_id: topicId,
+          question: mcq.question || '',
+          options: mcq.options || [],
+          correct_option_index: mcq.correct_option_index ?? 0,
+          explanation: mcq.explanation || '',
+          difficulty: mcq.difficulty || 'medium',
+          order: i,
+          created_at: serverTimestamp(),
+          created_by: userId,
+        });
+      } else if (mcq.id) {
+        // Update existing
+        batch.update(doc(db, COLLECTION_CHAPTER_MCQS, mcq.id), {
+          question: mcq.question,
+          options: mcq.options,
+          correct_option_index: mcq.correct_option_index,
+          explanation: mcq.explanation,
+          difficulty: mcq.difficulty,
+          order: i,
+          updated_at: serverTimestamp(),
+        });
+      }
+    }
+    
+    await batch.commit();
+    await addHistoryEntry(chapterId, userId, 'Updated MCQs in chapter_mcqs collection');
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating MCQs:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Save TTS audio to chapter_tts collection
+ */
+export const saveChapterTTS = async (options: {
+  tts: Omit<ChapterTTS, 'id'> & { id?: string };
+  userId: string;
+}): Promise<{ success: boolean; id?: string; error?: string }> => {
+  const { tts, userId } = options;
+  
+  try {
+    if (tts.id) {
+      // Update existing
+      const ttsRef = doc(db, COLLECTION_CHAPTER_TTS, tts.id);
+      await updateDoc(ttsRef, {
+        ...tts,
+        updated_at: serverTimestamp(),
+      });
+      return { success: true, id: tts.id };
+    } else {
+      // Create new
+      const docRef = await addDoc(collection(db, COLLECTION_CHAPTER_TTS), {
+        ...tts,
+        created_at: serverTimestamp(),
+      });
+      return { success: true, id: docRef.id };
+    }
+  } catch (error) {
+    console.error('Error saving TTS:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Save image to chapter_images collection
+ */
+export const saveChapterImage = async (options: {
+  image: Omit<ChapterImage, 'id'> & { id?: string };
+  userId: string;
+}): Promise<{ success: boolean; id?: string; error?: string }> => {
+  const { image, userId } = options;
+  
+  try {
+    if (image.id) {
+      // Update existing
+      const imageRef = doc(db, COLLECTION_CHAPTER_IMAGES, image.id);
+      await updateDoc(imageRef, {
+        ...image,
+        updated_at: serverTimestamp(),
+      });
+      return { success: true, id: image.id };
+    } else {
+      // Create new
+      const docRef = await addDoc(collection(db, COLLECTION_CHAPTER_IMAGES), {
+        ...image,
+        created_at: serverTimestamp(),
+      });
+      return { success: true, id: docRef.id };
+    }
+  } catch (error) {
+    console.error('Error saving image:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Delete image from chapter_images collection
+ */
+export const deleteChapterImage = async (imageId: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await deleteDoc(doc(db, COLLECTION_CHAPTER_IMAGES, imageId));
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting image:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Save skybox GLB URL to skybox_glb_urls collection
+ */
+export const saveSkyboxGLBUrl = async (options: {
+  skybox: Omit<SkyboxGLBUrl, 'id'> & { id?: string };
+  userId: string;
+}): Promise<{ success: boolean; id?: string; error?: string }> => {
+  const { skybox, userId } = options;
+  
+  try {
+    if (skybox.id) {
+      // Update existing
+      const skyboxRef = doc(db, COLLECTION_SKYBOX_GLB_URLS, skybox.id);
+      await updateDoc(skyboxRef, {
+        ...skybox,
+        updated_at: serverTimestamp(),
+      });
+      return { success: true, id: skybox.id };
+    } else {
+      // Create new
+      const docRef = await addDoc(collection(db, COLLECTION_SKYBOX_GLB_URLS), {
+        ...skybox,
+        created_at: serverTimestamp(),
+      });
+      return { success: true, id: docRef.id };
+    }
+  } catch (error) {
+    console.error('Error saving skybox GLB URL:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Delete all resources for a topic from new collections
+ */
+export const deleteTopicResources = async (options: {
+  chapterId: string;
+  topicId: string;
+}): Promise<{ success: boolean; error?: string }> => {
+  const { chapterId, topicId } = options;
+  
+  try {
+    const batch = writeBatch(db);
+    
+    // Delete from meshy_assets
+    const meshyQuery = query(
+      collection(db, COLLECTION_MESHY_ASSETS),
+      where('chapter_id', '==', chapterId),
+      where('topic_id', '==', topicId)
+    );
+    const meshyDocs = await getDocs(meshyQuery);
+    meshyDocs.forEach(doc => batch.delete(doc.ref));
+    
+    // Delete from chapter_mcqs
+    const mcqsQuery = query(
+      collection(db, COLLECTION_CHAPTER_MCQS),
+      where('chapter_id', '==', chapterId),
+      where('topic_id', '==', topicId)
+    );
+    const mcqsDocs = await getDocs(mcqsQuery);
+    mcqsDocs.forEach(doc => batch.delete(doc.ref));
+    
+    // Delete from chapter_tts
+    const ttsQuery = query(
+      collection(db, COLLECTION_CHAPTER_TTS),
+      where('chapter_id', '==', chapterId),
+      where('topic_id', '==', topicId)
+    );
+    const ttsDocs = await getDocs(ttsQuery);
+    ttsDocs.forEach(doc => batch.delete(doc.ref));
+    
+    // Delete from chapter_images
+    const imagesQuery = query(
+      collection(db, COLLECTION_CHAPTER_IMAGES),
+      where('chapter_id', '==', chapterId),
+      where('topic_id', '==', topicId)
+    );
+    const imagesDocs = await getDocs(imagesQuery);
+    imagesDocs.forEach(doc => batch.delete(doc.ref));
+    
+    // Delete from skybox_glb_urls
+    const skyboxQuery = query(
+      collection(db, COLLECTION_SKYBOX_GLB_URLS),
+      where('chapter_id', '==', chapterId),
+      where('topic_id', '==', topicId)
+    );
+    const skyboxDocs = await getDocs(skyboxQuery);
+    skyboxDocs.forEach(doc => batch.delete(doc.ref));
+    
+    await batch.commit();
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting topic resources:', error);
+    return { success: false, error: String(error) };
+  }
 };
