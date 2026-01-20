@@ -1,4 +1,4 @@
-import { Topic, Scene, MCQ, MCQFormState, FlattenedMCQ } from '../../types/curriculum';
+import { Topic, Scene, MCQ, MCQFormState, FlattenedMCQ, TopicResources, MeshyAsset, ChapterImage } from '../../types/curriculum';
 import { EditHistoryEntry } from '../../lib/firestore/queries';
 import { OverviewTab } from './tabs/OverviewTab';
 import { SceneTab } from './tabs/SceneTab';
@@ -6,15 +6,27 @@ import { AvatarTab } from './tabs/AvatarTab';
 import { McqTab } from './tabs/McqTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import { AssetsTab } from './tabs/AssetsTab';
+import { ImagesTab } from './tabs/ImagesTab';
 import {
   FileText,
   Image,
+  ImageIcon,
   User,
   HelpCircle,
   History,
   Loader2,
   Package,
 } from 'lucide-react';
+
+interface ContentAvailability {
+  hasMCQs: boolean;
+  mcqCount: number;
+  has3DAssets: boolean;
+  assetCount: number;
+  hasImages: boolean;
+  imageCount: number;
+  loading: boolean;
+}
 
 interface TopicEditorProps {
   topic: Topic;
@@ -35,12 +47,14 @@ interface TopicEditorProps {
   versionId: string;
   flattenedMcqInfo: { hasFlattened: boolean; count: number };
   onNormalizeMCQs: () => void;
+  contentAvailability?: ContentAvailability;
 }
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: FileText },
   { id: 'scene', label: 'Scene & Skybox', icon: Image },
   { id: 'assets', label: '3D Assets', icon: Package },
+  { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'avatar', label: 'Avatar Scripts', icon: User },
   { id: 'mcqs', label: 'MCQs', icon: HelpCircle },
   { id: 'history', label: 'History', icon: History },
@@ -65,6 +79,7 @@ export const TopicEditor = ({
   versionId,
   flattenedMcqInfo,
   onNormalizeMCQs,
+  contentAvailability,
 }: TopicEditorProps) => {
   if (loading) {
     return (
@@ -114,6 +129,7 @@ export const TopicEditor = ({
             onTopicChange={onTopicChange}
             onSceneChange={onSceneChange}
             isReadOnly={isReadOnly}
+            contentAvailability={contentAvailability}
           />
         )}
         
@@ -135,11 +151,20 @@ export const TopicEditor = ({
           />
         )}
         
+        {activeTab === 'images' && (
+          <ImagesTab
+            chapterId={chapterId}
+            topicId={topic.id}
+          />
+        )}
+        
         {activeTab === 'avatar' && (
           <AvatarTab
             sceneFormState={sceneFormState}
             onSceneChange={onSceneChange}
             isReadOnly={isReadOnly}
+            chapterId={chapterId}
+            topicId={topic.id}
           />
         )}
         
@@ -151,6 +176,8 @@ export const TopicEditor = ({
             isReadOnly={isReadOnly}
             flattenedMcqInfo={flattenedMcqInfo}
             onNormalizeMCQs={onNormalizeMCQs}
+            chapterId={chapterId}
+            topicId={topic.id}
           />
         )}
         

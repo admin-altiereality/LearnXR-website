@@ -1,5 +1,17 @@
-import { useState } from 'react';
-import { MCQ, MCQFormState } from '../../../types/curriculum';
+/**
+ * McqTab - MCQ Management for Chapter
+ * 
+ * Data Source: chapter_mcqs collection (NEW Firestore schema)
+ * This component now fetches MCQs from the chapter_mcqs collection
+ * instead of legacy inline storage or subcollections.
+ */
+
+import { useState, useEffect } from 'react';
+import { toast } from 'react-toastify';
+import { MCQ, MCQFormState, ChapterMCQ } from '../../../types/curriculum';
+import { getChapterMCQs } from '../../../lib/firestore/queries';
+import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
 import {
   HelpCircle,
   Plus,
@@ -10,6 +22,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Wand2,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface McqTabProps {
@@ -19,6 +33,9 @@ interface McqTabProps {
   isReadOnly: boolean;
   flattenedMcqInfo: { hasFlattened: boolean; count: number };
   onNormalizeMCQs: () => void;
+  // New props for direct fetching from chapter_mcqs collection
+  chapterId?: string;
+  topicId?: string;
 }
 
 const difficultyOptions = [
@@ -34,8 +51,65 @@ export const McqTab = ({
   isReadOnly,
   flattenedMcqInfo,
   onNormalizeMCQs,
+  chapterId,
+  topicId,
 }: McqTabProps) => {
   const [expandedMcq, setExpandedMcq] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [localMcqs, setLocalMcqs] = useState<ChapterMCQ[]>([]);
+  
+  // Fetch MCQs from chapter_mcqs collection if chapterId and topicId are provided
+  useEffect(() => {
+    const loadMcqsFromCollection = async () => {
+      if (!chapterId || !topicId) return;
+      
+      setLoading(true);
+      try {
+        const mcqsData = await getChapterMCQs(chapterId, topicId);
+        setLocalMcqs(mcqsData);
+        
+        // Convert ChapterMCQ to MCQFormState for backwards compatibility
+        if (mcqsData.length > 0 && onMcqsChange) {
+          const formState: MCQFormState[] = mcqsData.map((mcq) => ({
+            id: mcq.id,
+            question: mcq.question,
+            options: mcq.options,
+            correct_option_index: mcq.correct_option_index,
+            explanation: mcq.explanation || '',
+            difficulty: mcq.difficulty,
+            order: mcq.order,
+          }));
+          onMcqsChange(formState);
+        }
+      } catch (error) {
+        console.error('Error loading MCQs from chapter_mcqs collection:', error);
+        toast.error('Failed to load MCQs');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    // Only fetch if props indicate direct loading is needed
+    if (chapterId && topicId && mcqs.length === 0) {
+      loadMcqsFromCollection();
+    }
+  }, [chapterId, topicId]);
+  
+  const handleRefresh = async () => {
+    if (!chapterId || !topicId) return;
+    
+    setLoading(true);
+    try {
+      const mcqsData = await getChapterMCQs(chapterId, topicId);
+      setLocalMcqs(mcqsData);
+      toast.success('MCQs refreshed');
+    } catch (error) {
+      console.error('Error refreshing MCQs:', error);
+      toast.error('Failed to refresh MCQs');
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const handleAddMcq = () => {
     const newMcq: MCQFormState = {
@@ -104,6 +178,17 @@ export const McqTab = ({
   
   const visibleMcqs = mcqFormState.filter((m) => !m._isDeleted);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 text-cyan-500 animate-spin mx-auto mb-3" />
+          <p className="text-sm text-slate-400">Loading MCQs from chapter_mcqs...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-4xl">
       <div className="space-y-6">
@@ -112,21 +197,36 @@ export const McqTab = ({
           <div>
             <h2 className="text-lg font-semibold text-white">Multiple Choice Questions</h2>
             <p className="text-sm text-slate-400 mt-1">
-              {visibleMcqs.length} question{visibleMcqs.length !== 1 ? 's' : ''}
+              {visibleMcqs.length} question{visibleMcqs.length !== 1 ? 's' : ''} 
+              <span className="text-cyan-400/60 ml-1">(from chapter_mcqs)</span>
             </p>
           </div>
-          <button
-            onClick={handleAddMcq}
-            disabled={isReadOnly}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                     text-white bg-gradient-to-r from-cyan-500 to-blue-600
-                     hover:from-cyan-400 hover:to-blue-500
-                     rounded-lg shadow-lg shadow-cyan-500/25
-                     transition-all duration-200 disabled:opacity-50"
-          >
-            <Plus className="w-4 h-4" />
-            Add Question
-          </button>
+          <div className="flex items-center gap-2">
+            {chapterId && topicId && (
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className="p-2 text-slate-400 hover:text-white
+                         bg-slate-800/50 hover:bg-slate-700/50
+                         rounded-lg border border-slate-600/50
+                         transition-all duration-200"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+            <button
+              onClick={handleAddMcq}
+              disabled={isReadOnly}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium
+                       text-white bg-gradient-to-r from-cyan-500 to-blue-600
+                       hover:from-cyan-400 hover:to-blue-500
+                       rounded-lg shadow-lg shadow-cyan-500/25
+                       transition-all duration-200 disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4" />
+              Add Question
+            </button>
+          </div>
         </div>
         
         {/* Flattened MCQ Warning */}

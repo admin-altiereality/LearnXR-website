@@ -1,5 +1,10 @@
 // Firestore Query Helpers for Curriculum Content Editor
-// Optimized for minimal reads - works with existing curriculum_chapters collection
+// Updated to use NEW Firestore collections:
+// - meshy_assets: 3D models from Meshy
+// - chapter_mcqs: MCQ question sets per chapter
+// - chapter_tts: TTS audio files per chapter
+// - chapter_images: Educational images per chapter
+// - skybox_glb_urls: Skybox GLB file URLs
 
 import {
   collection,
@@ -27,8 +32,26 @@ import {
   Class,
   Subject,
   FlattenedMCQ,
+  MeshyAsset,
+  ChapterMCQ,
+  ChapterTTS,
+  ChapterImage,
+  SkyboxGLBUrl,
+  TopicResources,
+  Image3DAsset,
+  ChapterResourceIds,
+  TopicResourceIds,
 } from '../../types/curriculum';
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
+
+// ============================================
+// NEW COLLECTION NAMES (must use these only)
+// ============================================
+const COLLECTION_MESHY_ASSETS = 'meshy_assets';
+const COLLECTION_CHAPTER_MCQS = 'chapter_mcqs';
+const COLLECTION_CHAPTER_TTS = 'chapter_tts';
+const COLLECTION_CHAPTER_IMAGES = 'chapter_images';
+const COLLECTION_SKYBOX_GLB_URLS = 'skybox_glb_urls';
 
 const PAGE_SIZE = 50;
 const COLLECTION_NAME = 'curriculum_chapters';
@@ -1011,3 +1034,798 @@ export const getRawTopicData = async (
     return null;
   }
 };
+
+// ============================================
+// CHAPTER RESOURCE IDS
+// Get the ID arrays from curriculum_chapters document
+// ============================================
+
+/**
+ * Get chapter resource IDs and inline data
+ * This fetches the mcq_ids, tts_ids, image_ids, meshy_asset_ids arrays
+ * as well as the inline image3dasset map
+ */
+export interface ChapterWithResourceIds {
+  chapter_id: string;
+  mcq_ids: string[];
+  tts_ids: string[];
+  image_ids: string[];
+  meshy_asset_ids: string[];
+  image3dasset?: Image3DAsset;
+  topics: Array<{
+    topic_id: string;
+    topic_name: string;
+    mcq_ids?: string[];
+    tts_ids?: string[];
+    meshy_asset_ids?: string[];
+  }>;
+}
+
+export const getChapterResourceIds = async (
+  chapterId: string
+): Promise<ChapterWithResourceIds | null> => {
+  try {
+    console.log('📦 Fetching chapter resource IDs:', chapterId);
+    
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const snapshot = await getDoc(chapterRef);
+    
+    if (!snapshot.exists()) {
+      console.warn('❌ Chapter not found:', chapterId);
+      return null;
+    }
+    
+    const data = snapshot.data();
+    
+    // Extract image3dasset if present
+    let image3dAsset: Image3DAsset | undefined;
+    if (data.image3dasset) {
+      const img3d = data.image3dasset;
+      image3dAsset = {
+        imageasset_id: img3d.imageasset_id || '',
+        imageasset_name: img3d.imageasset_name || 'image_to_3d_asset',
+        imageasset_url: img3d.imageasset_url || img3d.imagemodel_glb || '',
+        imagemodel_fbx: img3d.imagemodel_fbx,
+        imagemodel_glb: img3d.imagemodel_glb,
+        imagemodel_usdz: img3d.imagemodel_usdz,
+        ai_selection_reasoning: img3d.ai_selection_reasoning,
+        ai_selection_score: img3d.ai_selection_score,
+        completed: img3d.completed,
+        status: img3d.status,
+        source_image: img3d.source_image,
+      };
+    }
+    
+    const result: ChapterWithResourceIds = {
+      chapter_id: chapterId,
+      mcq_ids: data.mcq_ids || [],
+      tts_ids: data.tts_ids || [],
+      image_ids: data.image_ids || [],
+      meshy_asset_ids: data.meshy_asset_ids || [],
+      image3dasset: image3dAsset,
+      topics: (data.topics || []).map((t: FirebaseTopic) => ({
+        topic_id: t.topic_id,
+        topic_name: t.topic_name,
+        mcq_ids: t.mcq_ids || [],
+        tts_ids: t.tts_ids || [],
+        meshy_asset_ids: t.meshy_asset_ids || [],
+      })),
+    };
+    
+    console.log('✅ Chapter resource IDs loaded:', {
+      mcq_ids: result.mcq_ids.length,
+      tts_ids: result.tts_ids.length,
+      image_ids: result.image_ids.length,
+      meshy_asset_ids: result.meshy_asset_ids.length,
+      hasImage3d: !!result.image3dasset,
+      topics: result.topics.length,
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('❌ Error fetching chapter resource IDs:', error);
+    return null;
+  }
+};
+
+/**
+ * Get topic-specific resource IDs from the chapter document
+ */
+export const getTopicResourceIds = async (
+  chapterId: string,
+  topicId: string
+): Promise<TopicResourceIds & { image3dasset?: Image3DAsset } | null> => {
+  try {
+    const chapterData = await getChapterResourceIds(chapterId);
+    if (!chapterData) return null;
+    
+    // Find the topic
+    const topic = chapterData.topics.find((t) => t.topic_id === topicId);
+    
+    // Return topic-level IDs if they exist, otherwise fall back to chapter-level
+    return {
+      mcq_ids: topic?.mcq_ids?.length ? topic.mcq_ids : chapterData.mcq_ids,
+      tts_ids: topic?.tts_ids?.length ? topic.tts_ids : chapterData.tts_ids,
+      image_ids: chapterData.image_ids, // Always chapter-level
+      meshy_asset_ids: topic?.meshy_asset_ids?.length ? topic.meshy_asset_ids : chapterData.meshy_asset_ids,
+      image3dasset: chapterData.image3dasset,
+    };
+  } catch (error) {
+    console.error('Error fetching topic resource IDs:', error);
+    return null;
+  }
+};
+
+// ============================================
+// NEW COLLECTION QUERIES
+// These replace all legacy queries for resources
+// ============================================
+
+/**
+ * Helper to convert meshy_assets document data to MeshyAsset interface
+ * Handles various field naming conventions in the collection
+ */
+const mapMeshyDocToAsset = (docSnap: DocumentSnapshot, chapterId: string, topicId: string): MeshyAsset => {
+  const data = docSnap.data() || {};
+  
+  // Handle different field naming conventions
+  const glbUrl = data.glb_url || data.textured_model_glb || data.final_asset_url || data.asset_url || data.model_urls?.glb || '';
+  const fbxUrl = data.fbx_url || data.textured_model_fbx || data.model_urls?.fbx;
+  const usdzUrl = data.usdz_url || data.textured_model_usdz || data.model_urls?.usdz;
+  
+  return {
+    id: docSnap.id,
+    chapter_id: data.chapter_id || chapterId,
+    topic_id: data.topic_id || topicId,
+    name: data.name || data.prompt || 'Meshy 3D Asset',
+    prompt: data.prompt,
+    glb_url: glbUrl,
+    fbx_url: fbxUrl,
+    usdz_url: usdzUrl,
+    thumbnail_url: data.thumbnail_url || data.thumbnail || data.previewUrl,
+    meshy_id: data.meshy_id || data.meshyId || data.asset_id,
+    status: data.status === 'completed' ? 'complete' : (data.status || 'complete'),
+    created_at: data.created_at || data.createdAt,
+    updated_at: data.updated_at || data.updatedAt,
+    metadata: data.metadata,
+  };
+};
+
+/**
+ * Fetch 3D Meshy assets from meshy_assets collection using ID array
+ * IDs in meshy_asset_ids match the `asset_id` FIELD in meshy_assets documents
+ * Also includes inline image3dasset from chapter document
+ */
+export const getMeshyAssets = async (
+  chapterId: string,
+  topicId: string
+): Promise<MeshyAsset[]> => {
+  try {
+    console.log('🔍 Fetching Meshy assets for chapter/topic:', { chapterId, topicId });
+    
+    const assets: MeshyAsset[] = [];
+    
+    // Step 1: Get the resource IDs and inline image3dasset from the chapter
+    const resourceIds = await getTopicResourceIds(chapterId, topicId);
+    
+    // Step 2: Include inline image3dasset if present (image-to-3D converted models)
+    if (resourceIds?.image3dasset && resourceIds.image3dasset.imageasset_url) {
+      const img3d = resourceIds.image3dasset;
+      console.log('📦 Found inline image3dasset:', img3d.imageasset_id);
+      
+      assets.push({
+        id: img3d.imageasset_id || 'image3d_inline',
+        chapter_id: chapterId,
+        topic_id: topicId,
+        name: img3d.imageasset_name || 'Image to 3D Asset',
+        prompt: `Source: ${img3d.source_image?.url || 'PDF Image'}`,
+        glb_url: img3d.imagemodel_glb || img3d.imageasset_url || '',
+        fbx_url: img3d.imagemodel_fbx,
+        usdz_url: img3d.imagemodel_usdz,
+        thumbnail_url: img3d.source_image?.url,
+        meshy_id: img3d.imageasset_id,
+        status: img3d.status === 'SUCCEEDED' ? 'complete' : (img3d.completed ? 'complete' : 'pending'),
+        metadata: {
+          ai_selection_reasoning: img3d.ai_selection_reasoning,
+          ai_selection_score: img3d.ai_selection_score,
+          source: 'image3dasset',
+        },
+      });
+    }
+    
+    // Step 3: Fetch from meshy_assets collection by asset_id field
+    const meshyAssetIds = resourceIds?.meshy_asset_ids || [];
+    
+    if (meshyAssetIds.length > 0) {
+      console.log('🎨 Meshy asset IDs from chapter:', meshyAssetIds);
+      
+      // Query by asset_id field (not document ID) - Firestore 'in' query
+      // Note: 'in' query supports max 30 items, so we might need to batch
+      const batchSize = 10; // Use smaller batch for 'in' queries
+      
+      for (let i = 0; i < meshyAssetIds.length; i += batchSize) {
+        const batch = meshyAssetIds.slice(i, i + batchSize);
+        
+        try {
+          const assetsRef = collection(db, COLLECTION_MESHY_ASSETS);
+          const q = query(assetsRef, where('asset_id', 'in', batch));
+          const snapshot = await getDocs(q);
+          
+          console.log(`📦 Batch query for asset_ids returned ${snapshot.docs.length} results`);
+          
+          snapshot.docs.forEach((docSnap) => {
+            assets.push(mapMeshyDocToAsset(docSnap, chapterId, topicId));
+          });
+        } catch (batchErr) {
+          console.warn('⚠️ Batch query failed, trying individual fetches:', batchErr);
+          
+          // Fallback: Try fetching by document ID (in case asset_id IS the doc ID)
+          for (const assetId of batch) {
+            try {
+              const assetRef = doc(db, COLLECTION_MESHY_ASSETS, assetId);
+              const assetSnap = await getDoc(assetRef);
+              
+              if (assetSnap.exists()) {
+                assets.push(mapMeshyDocToAsset(assetSnap, chapterId, topicId));
+              }
+            } catch (err) {
+              console.warn(`⚠️ Could not fetch asset ${assetId}:`, err);
+            }
+          }
+        }
+      }
+    }
+    
+    // Step 4: Fallback - query by chapter_id/topic_id if no assets found yet
+    if (assets.length === 0) {
+      console.log('ℹ️ No assets from IDs, trying chapter_id/topic_id query...');
+      
+      const assetsRef = collection(db, COLLECTION_MESHY_ASSETS);
+      const q = query(
+        assetsRef,
+        where('chapter_id', '==', chapterId),
+        where('topic_id', '==', topicId)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        console.log('✅ Found Meshy assets via chapter_id/topic_id query:', snapshot.docs.length);
+        snapshot.docs.forEach((docSnap) => {
+          assets.push(mapMeshyDocToAsset(docSnap, chapterId, topicId));
+        });
+      }
+    }
+    
+    console.log('✅ Total Meshy assets loaded:', assets.length);
+    return assets;
+  } catch (error) {
+    console.error('❌ Error fetching Meshy assets:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch MCQs from chapter_mcqs collection using ID array
+ * First gets mcq_ids from chapter/topic, then fetches those documents
+ */
+export const getChapterMCQs = async (
+  chapterId: string,
+  topicId: string
+): Promise<ChapterMCQ[]> => {
+  try {
+    console.log('🔍 Fetching MCQs for chapter/topic:', { chapterId, topicId });
+    
+    // Step 1: Get the mcq_ids from the chapter document
+    const resourceIds = await getTopicResourceIds(chapterId, topicId);
+    
+    if (!resourceIds || !resourceIds.mcq_ids || resourceIds.mcq_ids.length === 0) {
+      console.log('ℹ️ No mcq_ids found in chapter/topic');
+      
+      // Fallback: Try query by chapter_id/topic_id (legacy approach)
+      const mcqsRef = collection(db, COLLECTION_CHAPTER_MCQS);
+      const q = query(
+        mcqsRef,
+        where('chapter_id', '==', chapterId),
+        where('topic_id', '==', topicId)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        console.log('✅ Found MCQs via chapter_id/topic_id query:', snapshot.docs.length);
+        return snapshot.docs.map((docSnap, index) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            question: data.question || '',
+            options: data.options || [],
+            correct_option_index: data.correct_option_index ?? 0,
+            explanation: data.explanation || '',
+            difficulty: data.difficulty || 'medium',
+            order: data.order ?? index,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+            created_by: data.created_by,
+          };
+        });
+      }
+      
+      return [];
+    }
+    
+    console.log('📋 MCQ IDs from chapter:', resourceIds.mcq_ids);
+    
+    // Step 2: Fetch each MCQ document by ID
+    const mcqs: ChapterMCQ[] = [];
+    
+    for (let i = 0; i < resourceIds.mcq_ids.length; i++) {
+      const mcqId = resourceIds.mcq_ids[i];
+      try {
+        const mcqRef = doc(db, COLLECTION_CHAPTER_MCQS, mcqId);
+        const mcqSnap = await getDoc(mcqRef);
+        
+        if (mcqSnap.exists()) {
+          const data = mcqSnap.data();
+          
+          // Handle various field name variations for options
+          let options: string[] = [];
+          if (Array.isArray(data.options) && data.options.length > 0) {
+            options = data.options;
+          } else if (Array.isArray(data.choices)) {
+            options = data.choices;
+          } else if (Array.isArray(data.answers)) {
+            options = data.answers;
+          } else {
+            // Try to extract options from individual fields (A, B, C, D format)
+            const extractedOptions: string[] = [];
+            ['option_a', 'option_b', 'option_c', 'option_d', 'optionA', 'optionB', 'optionC', 'optionD',
+             'option1', 'option2', 'option3', 'option4', 'a', 'b', 'c', 'd'].forEach(key => {
+              if (data[key]) extractedOptions.push(data[key]);
+            });
+            if (extractedOptions.length > 0) {
+              options = extractedOptions;
+            }
+          }
+          
+          // Handle various field name variations for correct answer index
+          let correctIndex = data.correct_option_index ?? data.correct_index ?? data.correctIndex ?? data.correct ?? 0;
+          if (typeof correctIndex !== 'number') {
+            correctIndex = parseInt(String(correctIndex), 10) || 0;
+          }
+          // Handle if correct answer is stored as a letter (A, B, C, D)
+          if (typeof data.correct_answer === 'string' && data.correct_answer.length === 1) {
+            const letterIndex = data.correct_answer.toUpperCase().charCodeAt(0) - 65;
+            if (letterIndex >= 0 && letterIndex < options.length) {
+              correctIndex = letterIndex;
+            }
+          }
+          
+          console.log(`📋 MCQ ${mcqId}:`, {
+            question: (data.question || data.question_text || '').substring(0, 50),
+            optionsCount: options.length,
+            correctIndex,
+          });
+          
+          mcqs.push({
+            id: mcqSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            question: data.question || data.question_text || '',
+            options: options,
+            correct_option_index: correctIndex,
+            explanation: data.explanation || data.explanation_text || '',
+            difficulty: data.difficulty || 'medium',
+            order: data.order ?? i,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+            created_by: data.created_by,
+          });
+        } else {
+          console.warn(`⚠️ MCQ document not found: ${mcqId}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Error fetching MCQ ${mcqId}:`, err);
+      }
+    }
+    
+    // Sort by order
+    mcqs.sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    console.log('✅ Loaded MCQs by ID:', mcqs.length);
+    return mcqs;
+  } catch (error) {
+    console.error('❌ Error fetching MCQs:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch TTS audio from chapter_tts collection using ID array
+ * First gets tts_ids from chapter/topic, then fetches those documents
+ */
+export const getChapterTTS = async (
+  chapterId: string,
+  topicId: string
+): Promise<ChapterTTS[]> => {
+  try {
+    console.log('🔍 Fetching TTS for chapter/topic:', { chapterId, topicId });
+    
+    // Step 1: Get the tts_ids from the chapter document
+    const resourceIds = await getTopicResourceIds(chapterId, topicId);
+    
+    if (!resourceIds || !resourceIds.tts_ids || resourceIds.tts_ids.length === 0) {
+      console.log('ℹ️ No tts_ids found in chapter/topic');
+      
+      // Fallback: Try query by chapter_id/topic_id (legacy approach)
+      const ttsRef = collection(db, COLLECTION_CHAPTER_TTS);
+      const q = query(
+        ttsRef,
+        where('chapter_id', '==', chapterId),
+        where('topic_id', '==', topicId)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        console.log('✅ Found TTS via chapter_id/topic_id query:', snapshot.docs.length);
+        return snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            script_type: data.script_type || 'full',
+            script_text: data.script_text || data.text || '',
+            audio_url: data.audio_url || data.url,
+            duration_seconds: data.duration_seconds || data.duration,
+            voice_id: data.voice_id,
+            voice_name: data.voice_name,
+            language: data.language || 'en',
+            status: data.status || 'complete',
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+          };
+        });
+      }
+      
+      return [];
+    }
+    
+    console.log('🎤 TTS IDs from chapter:', resourceIds.tts_ids);
+    
+    // Step 2: Fetch each TTS document by ID
+    const ttsData: ChapterTTS[] = [];
+    
+    for (const ttsId of resourceIds.tts_ids) {
+      try {
+        const ttsRef = doc(db, COLLECTION_CHAPTER_TTS, ttsId);
+        const ttsSnap = await getDoc(ttsRef);
+        
+        if (ttsSnap.exists()) {
+          const data = ttsSnap.data();
+          ttsData.push({
+            id: ttsSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            script_type: data.script_type || 'full',
+            script_text: data.script_text || data.text || '',
+            audio_url: data.audio_url || data.url,
+            duration_seconds: data.duration_seconds || data.duration,
+            voice_id: data.voice_id,
+            voice_name: data.voice_name,
+            language: data.language || 'en',
+            status: data.status || 'complete',
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+          });
+        } else {
+          console.warn(`⚠️ TTS document not found: ${ttsId}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Error fetching TTS ${ttsId}:`, err);
+      }
+    }
+    
+    console.log('✅ Loaded TTS by ID:', ttsData.length);
+    return ttsData;
+  } catch (error) {
+    console.error('❌ Error fetching TTS:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch images from chapter_images collection using ID array
+ * First gets image_ids from chapter, then fetches those documents
+ */
+export const getChapterImages = async (
+  chapterId: string,
+  topicId: string
+): Promise<ChapterImage[]> => {
+  try {
+    console.log('🔍 Fetching images for chapter/topic:', { chapterId, topicId });
+    
+    // Step 1: Get the image_ids from the chapter document
+    const resourceIds = await getTopicResourceIds(chapterId, topicId);
+    
+    if (!resourceIds || !resourceIds.image_ids || resourceIds.image_ids.length === 0) {
+      console.log('ℹ️ No image_ids found in chapter');
+      
+      // Fallback: Try query by chapter_id/topic_id (legacy approach)
+      const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
+      const q = query(
+        imagesRef,
+        where('chapter_id', '==', chapterId),
+        where('topic_id', '==', topicId)
+      );
+      
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        console.log('✅ Found images via chapter_id/topic_id query:', snapshot.docs.length);
+        return snapshot.docs.map((docSnap, index) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            name: data.name || `Image ${index + 1}`,
+            description: data.description,
+            image_url: data.image_url || data.url || '',
+            thumbnail_url: data.thumbnail_url,
+            type: data.type || 'other',
+            order: data.order ?? index,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+          };
+        });
+      }
+      
+      return [];
+    }
+    
+    console.log('🖼️ Image IDs from chapter:', resourceIds.image_ids);
+    
+    // Step 2: Fetch each image document by ID
+    const images: ChapterImage[] = [];
+    
+    for (let i = 0; i < resourceIds.image_ids.length; i++) {
+      const imageId = resourceIds.image_ids[i];
+      try {
+        const imageRef = doc(db, COLLECTION_CHAPTER_IMAGES, imageId);
+        const imageSnap = await getDoc(imageRef);
+        
+        if (imageSnap.exists()) {
+          const data = imageSnap.data();
+          images.push({
+            id: imageSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            name: data.name || `Image ${i + 1}`,
+            description: data.description,
+            image_url: data.image_url || data.url || '',
+            thumbnail_url: data.thumbnail_url,
+            type: data.type || 'other',
+            order: data.order ?? i,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+          });
+        } else {
+          console.warn(`⚠️ Image document not found: ${imageId}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Error fetching image ${imageId}:`, err);
+      }
+    }
+    
+    // Sort by order
+    images.sort((a, b) => (a.order || 0) - (b.order || 0));
+    
+    console.log('✅ Loaded images by ID:', images.length);
+    return images;
+  } catch (error) {
+    console.error('❌ Error fetching images:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch skybox GLB URLs from skybox_glb_urls collection
+ * NEW collection for skybox GLB file URLs
+ */
+export const getSkyboxGLBUrls = async (
+  chapterId: string,
+  topicId: string
+): Promise<SkyboxGLBUrl[]> => {
+  try {
+    console.log('🔍 Fetching skybox GLB URLs from new collection:', { chapterId, topicId });
+    
+    const skyboxRef = collection(db, COLLECTION_SKYBOX_GLB_URLS);
+    const q = query(
+      skyboxRef,
+      where('chapter_id', '==', chapterId),
+      where('topic_id', '==', topicId)
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      console.log('ℹ️ No skybox GLB URLs found in skybox_glb_urls collection');
+      return [];
+    }
+    
+    const skyboxUrls: SkyboxGLBUrl[] = snapshot.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        id: docSnap.id,
+        chapter_id: data.chapter_id || chapterId,
+        topic_id: data.topic_id || topicId,
+        skybox_id: data.skybox_id,
+        glb_url: data.glb_url || data.url || '',
+        preview_url: data.preview_url || data.imageUrl,
+        prompt_used: data.prompt_used || data.prompt,
+        style_id: data.style_id,
+        style_name: data.style_name,
+        status: data.status || 'complete',
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+      };
+    });
+    
+    console.log('✅ Loaded skybox GLB URLs:', skyboxUrls.length);
+    return skyboxUrls;
+  } catch (error) {
+    console.error('❌ Error fetching skybox GLB URLs:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch ALL resources for a topic from new collections
+ * This is the primary function to use in the editor
+ * Also fetches inline image3dAsset from the chapter document
+ */
+export const getTopicResources = async (
+  chapterId: string,
+  topicId: string
+): Promise<TopicResources> => {
+  console.log('📦 Fetching all topic resources from new collections:', { chapterId, topicId });
+  
+  try {
+    // First get the resource IDs (which also fetches image3dAsset)
+    const resourceIds = await getTopicResourceIds(chapterId, topicId);
+    
+    // Fetch all resources in parallel for performance
+    const [meshyAssets, mcqs, ttsAudio, images, skyboxGLBUrls] = await Promise.all([
+      getMeshyAssets(chapterId, topicId),
+      getChapterMCQs(chapterId, topicId),
+      getChapterTTS(chapterId, topicId),
+      getChapterImages(chapterId, topicId),
+      getSkyboxGLBUrls(chapterId, topicId),
+    ]);
+    
+    console.log('✅ All topic resources loaded:', {
+      meshyAssets: meshyAssets.length,
+      mcqs: mcqs.length,
+      ttsAudio: ttsAudio.length,
+      images: images.length,
+      skyboxGLBUrls: skyboxGLBUrls.length,
+      hasImage3dAsset: !!resourceIds?.image3dasset,
+    });
+    
+    return {
+      meshyAssets,
+      mcqs,
+      ttsAudio,
+      images,
+      skyboxGLBUrls,
+      image3dAsset: resourceIds?.image3dasset,
+      loading: false,
+    };
+  } catch (error) {
+    console.error('❌ Error fetching topic resources:', error);
+    return {
+      meshyAssets: [],
+      mcqs: [],
+      ttsAudio: [],
+      images: [],
+      skyboxGLBUrls: [],
+      loading: false,
+      error: error instanceof Error ? error.message : 'Failed to load resources',
+    };
+  }
+};
+
+/**
+ * Real-time subscription for topic resources
+ * Use this for live updates in the editor
+ */
+export const subscribeToTopicResources = (
+  chapterId: string,
+  topicId: string,
+  callback: (resources: TopicResources) => void
+): Unsubscribe => {
+  const resources: TopicResources = {
+    meshyAssets: [],
+    mcqs: [],
+    ttsAudio: [],
+    images: [],
+    skyboxGLBUrls: [],
+    loading: true,
+  };
+  
+  const unsubscribers: Unsubscribe[] = [];
+  
+  // Subscribe to meshy_assets
+  const meshyRef = collection(db, COLLECTION_MESHY_ASSETS);
+  const meshyQuery = query(meshyRef, where('chapter_id', '==', chapterId), where('topic_id', '==', topicId));
+  unsubscribers.push(
+    onSnapshot(meshyQuery, (snapshot) => {
+      resources.meshyAssets = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as MeshyAsset));
+      resources.loading = false;
+      callback({ ...resources });
+    })
+  );
+  
+  // Subscribe to chapter_mcqs
+  const mcqsRef = collection(db, COLLECTION_CHAPTER_MCQS);
+  const mcqsQuery = query(mcqsRef, where('chapter_id', '==', chapterId), where('topic_id', '==', topicId));
+  unsubscribers.push(
+    onSnapshot(mcqsQuery, (snapshot) => {
+      resources.mcqs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ChapterMCQ));
+      callback({ ...resources });
+    })
+  );
+  
+  // Subscribe to chapter_tts
+  const ttsRef = collection(db, COLLECTION_CHAPTER_TTS);
+  const ttsQuery = query(ttsRef, where('chapter_id', '==', chapterId), where('topic_id', '==', topicId));
+  unsubscribers.push(
+    onSnapshot(ttsQuery, (snapshot) => {
+      resources.ttsAudio = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ChapterTTS));
+      callback({ ...resources });
+    })
+  );
+  
+  // Subscribe to chapter_images
+  const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
+  const imagesQuery = query(imagesRef, where('chapter_id', '==', chapterId), where('topic_id', '==', topicId));
+  unsubscribers.push(
+    onSnapshot(imagesQuery, (snapshot) => {
+      resources.images = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as ChapterImage));
+      callback({ ...resources });
+    })
+  );
+  
+  // Subscribe to skybox_glb_urls
+  const skyboxRef = collection(db, COLLECTION_SKYBOX_GLB_URLS);
+  const skyboxQuery = query(skyboxRef, where('chapter_id', '==', chapterId), where('topic_id', '==', topicId));
+  unsubscribers.push(
+    onSnapshot(skyboxQuery, (snapshot) => {
+      resources.skyboxGLBUrls = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as SkyboxGLBUrl));
+      callback({ ...resources });
+    })
+  );
+  
+  // Return a function that unsubscribes from all listeners
+  return () => {
+    unsubscribers.forEach((unsub) => unsub());
+  };
+};
+
+// ============================================
+// LEGACY FUNCTION DEPRECATION NOTICE
+// The following functions now route to new collections
+// ============================================
+
+/**
+ * @deprecated Use getMeshyAssets instead
+ * Legacy get3DAssets now fetches from meshy_assets collection
+ */
+export const get3DAssetsLegacy = getMeshyAssets;
+
+/**
+ * @deprecated Use getChapterMCQs instead  
+ * Legacy getMCQs function - kept for backwards compatibility
+ * Now fetches from chapter_mcqs collection
+ */
+export const getMCQsNew = getChapterMCQs;

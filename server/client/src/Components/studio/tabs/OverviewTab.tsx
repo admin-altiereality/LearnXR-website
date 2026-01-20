@@ -1,5 +1,15 @@
 import { Topic, Scene } from '../../../types/curriculum';
-import { FileText, Hash, Tag, Target } from 'lucide-react';
+import { FileText, Hash, Tag, Target, HelpCircle, Box, Image, Loader2, CheckCircle, XCircle } from 'lucide-react';
+
+interface ContentAvailability {
+  hasMCQs: boolean;
+  mcqCount: number;
+  has3DAssets: boolean;
+  assetCount: number;
+  hasImages: boolean;
+  imageCount: number;
+  loading: boolean;
+}
 
 interface OverviewTabProps {
   topicFormState: Partial<Topic>;
@@ -7,6 +17,7 @@ interface OverviewTabProps {
   onTopicChange: (field: keyof Topic, value: unknown) => void;
   onSceneChange: (field: keyof Scene, value: unknown) => void;
   isReadOnly: boolean;
+  contentAvailability?: ContentAvailability;
 }
 
 const sceneTypes = [
@@ -22,7 +33,17 @@ export const OverviewTab = ({
   onTopicChange,
   onSceneChange,
   isReadOnly,
+  contentAvailability,
 }: OverviewTabProps) => {
+  const availability = contentAvailability || {
+    hasMCQs: false,
+    mcqCount: 0,
+    has3DAssets: false,
+    assetCount: 0,
+    hasImages: false,
+    imageCount: 0,
+    loading: false,
+  };
   return (
     <div className="p-6 max-w-4xl">
       <div className="space-y-6">
@@ -122,40 +143,134 @@ export const OverviewTab = ({
           </p>
         </div>
         
-        {/* Status Info Card */}
+        {/* Content Availability Card */}
         <div className="mt-8 p-5 bg-slate-800/30 rounded-xl border border-slate-700/30">
-          <h3 className="text-sm font-medium text-slate-300 mb-4">Status Information</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-xs text-slate-500 mb-1">Scene Status</p>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg
-                             ${sceneFormState.status === 'published'
-                               ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                               : 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
-                             }`}>
-                {sceneFormState.status || 'draft'}
-              </span>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+            Content Availability
+          </h3>
+          
+          {availability.loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+              <span className="ml-2 text-sm text-slate-400">Checking content...</span>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 mb-1">Has Scene</p>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg
-                             ${topicFormState.has_scene
-                               ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                               : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                             }`}>
-                {topicFormState.has_scene ? 'Yes' : 'No'}
-              </span>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Scene Status */}
+              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Scene Status</p>
+                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
+                               ${sceneFormState.status === 'published'
+                                 ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                                 : 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                               }`}>
+                  {sceneFormState.status === 'published' ? (
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  ) : (
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  )}
+                  {sceneFormState.status || 'Draft'}
+                </span>
+              </div>
+              
+              {/* MCQ Status */}
+              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <HelpCircle className="w-3 h-3 text-cyan-400" />
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">MCQs</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
+                                 ${availability.hasMCQs
+                                   ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                                   : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
+                                 }`}>
+                    {availability.hasMCQs ? (
+                      <CheckCircle className="w-3.5 h-3.5" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5" />
+                    )}
+                    {availability.hasMCQs ? `${availability.mcqCount} MCQs` : 'None'}
+                  </span>
+                </div>
+              </div>
+              
+              {/* 3D Assets Status */}
+              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Box className="w-3 h-3 text-violet-400" />
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">3D Assets</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
+                                 ${availability.has3DAssets
+                                   ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                                   : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
+                                 }`}>
+                    {availability.has3DAssets ? (
+                      <CheckCircle className="w-3.5 h-3.5" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5" />
+                    )}
+                    {availability.has3DAssets ? `${availability.assetCount} Assets` : 'None'}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Images Status */}
+              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Image className="w-3 h-3 text-amber-400" />
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Images</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
+                                 ${availability.hasImages
+                                   ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                                   : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
+                                 }`}>
+                    {availability.hasImages ? (
+                      <CheckCircle className="w-3.5 h-3.5" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5" />
+                    )}
+                    {availability.hasImages ? `${availability.imageCount} Images` : 'None'}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-slate-500 mb-1">Has MCQs</p>
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg
-                             ${topicFormState.has_mcqs
-                               ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                               : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                             }`}>
-                {topicFormState.has_mcqs ? 'Yes' : 'No'}
-              </span>
+          )}
+        </div>
+        
+        {/* Scene Status Card */}
+        <div className="mt-4 p-4 bg-slate-800/20 rounded-xl border border-slate-700/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center
+                            ${topicFormState.has_scene 
+                              ? 'bg-emerald-500/10 border border-emerald-500/20' 
+                              : 'bg-slate-700/30 border border-slate-600/30'}`}>
+                {topicFormState.has_scene ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-5 h-5 text-slate-500" />
+                )}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">Scene Configuration</p>
+                <p className="text-xs text-slate-400">
+                  {topicFormState.has_scene ? 'Scene is configured with skybox/assets' : 'No scene configured yet'}
+                </p>
+              </div>
             </div>
+            <span className={`px-3 py-1.5 text-xs font-semibold rounded-full
+                           ${topicFormState.has_scene
+                             ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                             : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
+                           }`}>
+              {topicFormState.has_scene ? 'Ready' : 'Pending'}
+            </span>
           </div>
         </div>
       </div>

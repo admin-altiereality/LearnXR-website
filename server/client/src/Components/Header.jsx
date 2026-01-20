@@ -30,6 +30,7 @@ const Header = () => {
   // Subscription removed
   const [profile, setProfile] = useState(null);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const lastScrollY = useRef(0);
 
   useEffect(() => {
@@ -152,9 +153,29 @@ const Header = () => {
 
   return (
     <>
+      {/* Collapsed Header - Small Toggle Button */}
+      {isHeaderCollapsed && (
+        <button
+          onClick={() => setIsHeaderCollapsed(false)}
+          className="fixed top-4 left-4 z-50 p-2 rounded-full bg-[#141414]/90 border border-[#262626] 
+                     backdrop-blur-xl shadow-lg hover:bg-[#1a1a1a] transition-all duration-300
+                     hover:scale-105 group"
+          aria-label="Show navigation"
+        >
+          <svg 
+            className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+      )}
+
       <header 
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isHeaderVisible 
+          isHeaderVisible && !isHeaderCollapsed
             ? 'translate-y-0 opacity-100' 
             : '-translate-y-full opacity-0 pointer-events-none'
         }`}
@@ -194,29 +215,6 @@ const Header = () => {
                 {user && (
                   <div className="hidden lg:flex items-center gap-1">
                     <NavLink
-                      to="/main"
-                      label="Create"
-                      isActive={isActivePath('/main')}
-                      activeColor="sky"
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                        </svg>
-                      }
-                    />
-                    
-                    <NavLink
-                      to="/explore"
-                      label="Explore"
-                      isActive={isExploreActive()}
-                      activeColor="purple"
-                      icon={
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                      }
-                    />
-                    <NavLink
                       to="/lessons"
                       label="Lessons"
                       isActive={isActivePath('/lessons')}
@@ -228,13 +226,24 @@ const Header = () => {
                       }
                     />
                     <NavLink
+                      to="/main"
+                      label="Create"
+                      isActive={isActivePath('/main')}
+                      activeColor="sky"
+                      icon={
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                      }
+                    />
+                    <NavLink
                       to="/studio/content"
                       label="Studio"
                       isActive={location.pathname.startsWith('/studio')}
                       activeColor="orange"
                       icon={
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
                         </svg>
                       }
                     />
@@ -495,6 +504,19 @@ const Header = () => {
                   </svg>
                 </button>
               </div>
+
+              {/* Collapse Header Button - Desktop */}
+              <button
+                onClick={() => setIsHeaderCollapsed(true)}
+                className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg 
+                         bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a]
+                         text-gray-500 hover:text-white transition-all duration-300"
+                title="Hide navigation bar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                </svg>
+              </button>
             </div>
 
             {/* Mobile Menu */}
@@ -537,6 +559,23 @@ const Header = () => {
                     
                     {/* Mobile Nav Links */}
                     <Link
+                      to="/lessons"
+                      className={` 
+                        flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
+                        ${isActivePath('/lessons') 
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                          : 'text-gray-300 hover:bg-white/[0.05]'
+                        }
+                      `}
+                      onClick={() => setShowMobileMenu(false)}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                      Lessons
+                    </Link>
+                    
+                    <Link
                       to="/main"
                       className={`
                         flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
@@ -554,10 +593,10 @@ const Header = () => {
                     </Link>
 
                     <Link
-                      to="/3d-generate"
-                      className={`
+                      to="/studio/content"
+                      className={` 
                         flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
-                        ${isActivePath('/3d-generate') 
+                        ${location.pathname.startsWith('/studio') 
                           ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' 
                           : 'text-gray-300 hover:bg-white/[0.05]'
                         }
@@ -565,43 +604,9 @@ const Header = () => {
                       onClick={() => setShowMobileMenu(false)}
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
                       </svg>
-                      3D Assets
-                    </Link>
-
-                    <Link
-                      to="/explore"
-                      className={`
-                        flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
-                        ${isExploreActive() 
-                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
-                          : 'text-gray-300 hover:bg-white/[0.05]'
-                        }
-                      `}
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      Explore
-                    </Link>
-
-                    <Link
-                      to="/lessons"
-                      className={` 
-                        flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
-                        ${isActivePath('/lessons') 
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
-                          : 'text-gray-300 hover:bg-white/[0.05]'
-                        }
-                      `}
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                      Lessons
+                      Content Studio
                     </Link>
 
                     {/* Pricing removed */}
@@ -621,23 +626,6 @@ const Header = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       Help & Support
-                    </Link>
-
-                    <Link
-                      to="/studio/content"
-                      className={` 
-                        flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
-                        ${location.pathname.startsWith('/studio') 
-                          ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' 
-                          : 'text-gray-300 hover:bg-white/[0.05]'
-                        }
-                      `}
-                      onClick={() => setShowMobileMenu(false)}
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                      Content Studio
                     </Link>
 
                     {/* Mobile User Info */}
