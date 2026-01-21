@@ -130,13 +130,15 @@ export class VRUISystem {
     
     console.log('[VRUISystem] Initializing with font:', this.config.fontFamily);
     
-    // Preload fonts before creating any UI - this is CRITICAL for three-mesh-ui
+    // Preload fonts through three-mesh-ui's font library
+    // This is CRITICAL - the font must be loaded BEFORE any Block with text is created
     try {
       await this.preloadFonts();
       console.log('[VRUISystem] Fonts preloaded successfully');
     } catch (error) {
-      console.error('[VRUISystem] Font preload failed, using fallback:', error);
-      // Continue anyway - three-mesh-ui may still work with default fonts
+      console.error('[VRUISystem] Font preload failed:', error);
+      // Don't continue - UI will break without fonts
+      throw new Error('Font loading failed - cannot create VR UI');
     }
     
     this.isInitialized = true;
@@ -144,8 +146,8 @@ export class VRUISystem {
   }
   
   /**
-   * Preload MSDF fonts to prevent "Cannot read properties of undefined (reading 'x')" errors
-   * This ensures the font JSON and texture are fully loaded before creating UI elements
+   * Preload MSDF fonts using three-mesh-ui's FontLibrary
+   * This ensures the font is registered with three-mesh-ui before creating any text
    */
   private async preloadFonts(): Promise<void> {
     const fontJsonUrl = this.config.fontFamily;
@@ -154,28 +156,139 @@ export class VRUISystem {
     console.log('[VRUISystem] Preloading font JSON:', fontJsonUrl);
     console.log('[VRUISystem] Preloading font texture:', fontTextureUrl);
     
-    // Load font JSON
+    // Method 1: Use three-mesh-ui's FontLibrary if available
+    // @ts-ignore - FontLibrary may exist on ThreeMeshUI
+    if (ThreeMeshUI.FontLibrary && typeof ThreeMeshUI.FontLibrary.addFont === 'function') {
+      console.log('[VRUISystem] Using FontLibrary.addFont()');
+      
+      // Fetch font JSON
+      const fontJsonResponse = await fetch(fontJsonUrl);
+      if (!fontJsonResponse.ok) {
+        throw new Error(`Failed to load font JSON: ${fontJsonResponse.status}`);
+      }
+      const fontJson = await fontJsonResponse.json();
+      
+      // Load texture as THREE.Texture
+      const textureLoader = new THREE.TextureLoader();
+      const texture = await new Promise<THREE.Texture>((resolve, reject) => {
+        textureLoader.load(
+          fontTextureUrl,
+          (tex) => {
+            tex.colorSpace = THREE.SRGBColorSpace;
+            resolve(tex);
+          },
+          undefined,
+          reject
+        );
+      });
+      
+      // Register font with three-mesh-ui
+      // @ts-ignore
+      ThreeMeshUI.FontLibrary.addFont('Roboto', fontJson, texture);
+      console.log('[VRUISystem] Font registered with FontLibrary');
+      return;
+    }
+    
+    // Method 2: Pre-cache font files and let three-mesh-ui load them
+    console.log('[VRUISystem] FontLibrary not available, pre-caching font files');
+    
+    // Load font JSON and verify structure
     const fontJsonResponse = await fetch(fontJsonUrl);
     if (!fontJsonResponse.ok) {
       throw new Error(`Failed to load font JSON: ${fontJsonResponse.status}`);
     }
     const fontJson = await fontJsonResponse.json();
-    console.log('[VRUISystem] Font JSON loaded, chars:', fontJson.chars?.length || 0);
     
-    // Preload font texture as image
-    await new Promise<void>((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        console.log('[VRUISystem] Font texture loaded:', img.width, 'x', img.height);
-        resolve();
-      };
-      img.onerror = (err) => {
-        console.error('[VRUISystem] Font texture load error:', err);
-        reject(err);
-      };
-      img.src = fontTextureUrl;
+    // Validate font JSON structure
+    if (!fontJson.chars || !Array.isArray(fontJson.chars)) {
+      throw new Error('Invalid font JSON: missing chars array');
+    }
+    if (!fontJson.common) {
+      throw new Error('Invalid font JSON: missing common object');
+    }
+    
+    console.log('[VRUISystem] Font JSON loaded:', {
+      chars: fontJson.chars.length,
+      pages: fontJson.pages?.length || 0,
+      common: fontJson.common,
     });
+    
+    // Preload font texture as THREE.Texture
+    const textureLoader = new THREE.TextureLoader();
+    await new Promise<void>((resolve, reject) => {
+      textureLoader.load(
+        fontTextureUrl,
+        (texture) => {
+          console.log('[VRUISystem] Font texture loaded:', texture.image?.width, 'x', texture.image?.height);
+          texture.colorSpace = THREE.SRGBColorSpace;
+          resolve();
+        },
+        undefined,
+        (err) => {
+          console.error('[VRUISystem] Font texture load error:', err);
+          reject(err);
+        }
+      );
+    });
+    
+    // Create a dummy Block to trigger three-mesh-ui's internal font loading
+    // This ensures the font is cached before we create real UI
+    console.log('[VRUISystem] Creating dummy block to trigger font cache...');
+    
+    try {
+      const dummyBlock = new ThreeMeshUI.Block({
+        width: 0.1,
+        height: 0.1,
+        fontFamily: fontJsonUrl,
+        fontTexture: fontTextureUrl,
+        backgroundOpacity: 0,
+      });
+      
+      // Add minimal text to force font loading
+      const dummyText = new ThreeMeshUI.Text({ content: 'X' });
+      dummyBlock.add(dummyText);
+      
+      // Add to UI container temporarily
+      this.uiContainer.add(dummyBlock);
+      
+      // Wait for three-mesh-ui to process the font with polling
+      await new Promise<void>((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 20; // 2 seconds max
+        
+        const checkFont = () => {
+          attempts++;
+          
+          // Call update to trigger font processing
+          ThreeMeshUI.update();
+          
+          // Check if the block has been processed (has geometry)
+          // @ts-ignore - Check internal state
+          const hasFont = dummyBlock.children?.[0]?.geometry?.attributes?.position;
+          
+          if (hasFont) {
+            console.log('[VRUISystem] Font successfully loaded after', attempts, 'attempts');
+            // Remove dummy block
+            this.uiContainer.remove(dummyBlock);
+            resolve();
+          } else if (attempts >= maxAttempts) {
+            console.warn('[VRUISystem] Font loading timed out, continuing anyway');
+            this.uiContainer.remove(dummyBlock);
+            resolve(); // Continue anyway - might still work
+          } else {
+            setTimeout(checkFont, 100);
+          }
+        };
+        
+        // Start checking after a short delay
+        setTimeout(checkFont, 100);
+      });
+    } catch (err) {
+      console.error('[VRUISystem] Error during font priming:', err);
+      // Continue anyway - the main UI creation might still work
+    }
+    
+    console.log('[VRUISystem] Font cache primed');
   }
   
   // ============================================================================
@@ -190,22 +303,30 @@ export class VRUISystem {
     topicName: string;
     learningObjective: string;
   }): void {
+    if (!this.isInitialized) {
+      console.error('[VRUISystem] Cannot create panel - not initialized. Call initialize() first.');
+      return;
+    }
+    
+    console.log('[VRUISystem] Creating info panel...');
+    
     // Remove existing panel
     if (this.infoPanel) {
       this.uiContainer.remove(this.infoPanel);
     }
     
-    // Create main container
-    this.infoPanel = new ThreeMeshUI.Block({
-      width: 1.4,
-      height: 0.8,
-      padding: 0.05,
-      borderRadius: 0.03,
-      fontFamily: this.config.fontFamily,
-      fontTexture: this.config.fontTexture,
-      backgroundColor: new THREE.Color(this.config.backgroundColor),
-      backgroundOpacity: this.config.panelOpacity,
-    });
+    try {
+      // Create main container
+      this.infoPanel = new ThreeMeshUI.Block({
+        width: 1.4,
+        height: 0.8,
+        padding: 0.05,
+        borderRadius: 0.03,
+        fontFamily: this.config.fontFamily,
+        fontTexture: this.config.fontTexture,
+        backgroundColor: new THREE.Color(this.config.backgroundColor),
+        backgroundOpacity: this.config.panelOpacity,
+      });
     
     // Title
     const titleBlock = new ThreeMeshUI.Block({
@@ -263,6 +384,9 @@ export class VRUISystem {
     
     this.uiContainer.add(this.infoPanel);
     console.log('[VRUISystem] Info panel created');
+    } catch (err) {
+      console.error('[VRUISystem] Error creating info panel:', err);
+    }
   }
   
   // ============================================================================
