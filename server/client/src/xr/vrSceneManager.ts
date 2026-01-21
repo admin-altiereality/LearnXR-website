@@ -449,63 +449,107 @@ export class VRSceneManager {
   // 3D Asset Loading
   // ============================================================================
   
+  /**
+   * Check if a URL is likely a 3D model (GLB/GLTF)
+   */
+  private is3DModelUrl(url: string): boolean {
+    if (!url) return false;
+    const urlLower = url.toLowerCase();
+    
+    // Explicit extensions
+    if (urlLower.includes('.glb') || urlLower.includes('.gltf')) return true;
+    
+    // Meshy.ai URLs are GLB files
+    if (url.includes('meshy.ai') || url.includes('assets.meshy')) return true;
+    
+    // Proxy URLs that contain meshy
+    if (url.includes('proxy-asset') && url.includes('meshy')) return true;
+    
+    // Firebase storage GLB files
+    if ((url.includes('firebasestorage') || url.includes('storage.googleapis')) && urlLower.includes('.glb')) return true;
+    
+    return false;
+  }
+  
   async loadAssets(assetUrls: string[], image3d?: { imagemodel_glb?: string; imageasset_url?: string }): Promise<void> {
     this.updateProgress('assets', 50, 'Loading 3D models...');
     
     const allUrls: { url: string; id: string }[] = [];
     
-    // Add topic asset URLs
+    console.log('[VRSceneManager] Asset loading input:', {
+      assetUrls: assetUrls?.length || 0,
+      image3d: image3d ? Object.keys(image3d) : null,
+    });
+    
+    // Add topic asset URLs - be more permissive with URL validation
     assetUrls.forEach((url, index) => {
-      if (url && (url.includes('.glb') || url.includes('.gltf'))) {
+      if (url && this.is3DModelUrl(url)) {
+        console.log(`[VRSceneManager] Adding asset URL [${index}]:`, url.substring(0, 80) + '...');
+        allUrls.push({ url, id: `asset-${index}` });
+      } else if (url) {
+        // Try to load anyway - might be a valid GLB URL without extension
+        console.log(`[VRSceneManager] Attempting to load non-standard URL [${index}]:`, url.substring(0, 80) + '...');
         allUrls.push({ url, id: `asset-${index}` });
       }
     });
     
     // Add image3d asset
     if (image3d?.imagemodel_glb) {
+      console.log('[VRSceneManager] Adding image3d GLB:', image3d.imagemodel_glb.substring(0, 80) + '...');
       allUrls.push({ url: image3d.imagemodel_glb, id: 'image3d-model' });
     } else if (image3d?.imageasset_url) {
+      console.log('[VRSceneManager] Adding image3d asset:', image3d.imageasset_url.substring(0, 80) + '...');
       allUrls.push({ url: image3d.imageasset_url, id: 'image3d-asset' });
     }
     
     if (allUrls.length === 0) {
-      console.log('[VRSceneManager] No assets to load');
+      console.log('[VRSceneManager] No 3D assets to load');
       this.updateProgress('ui', 80, 'Setting up interface...');
       return;
     }
     
-    console.log(`[VRSceneManager] Loading ${allUrls.length} assets`);
+    console.log(`[VRSceneManager] Loading ${allUrls.length} 3D assets...`);
     
     // Load assets in parallel with progress tracking
     let loadedCount = 0;
+    let failedCount = 0;
     
     await Promise.all(allUrls.map(async ({ url, id }, index) => {
       try {
+        console.log(`[VRSceneManager] Loading asset ${id}...`);
         const gltf = await this.loadGLTF(url);
         
-        // Calculate position (spread assets in front of user in a semi-circle)
-        const angle = ((index - (allUrls.length - 1) / 2) * 0.4); // Spread angle
-        const distance = 2.5; // Distance from user
+        // Calculate position - floating in front of user in a semi-circle
+        // Position at eye level (1.2m - 1.8m above ground)
+        const angle = ((index - (allUrls.length - 1) / 2) * 0.6); // Wider spread angle
+        const distance = 2.0; // Distance from user
         const x = Math.sin(angle) * distance;
         const z = -Math.cos(angle) * distance;
+        const y = 1.2 + (index % 2) * 0.4; // Alternate heights: 1.2m and 1.6m
         
-        // Auto-scale to reasonable size
+        // Auto-scale to reasonable size for VR viewing
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
+        const center = box.getCenter(new THREE.Vector3());
         
-        if (maxDim > 1.5) {
-          const scale = 1.5 / maxDim;
-          gltf.scene.scale.multiplyScalar(scale);
-        } else if (maxDim < 0.3) {
-          const scale = 0.5 / maxDim;
-          gltf.scene.scale.multiplyScalar(scale);
+        console.log(`[VRSceneManager] Asset ${id} - original size: (${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})`);
+        
+        // Scale to comfortable viewing size (0.5m - 1m)
+        let scale = 1;
+        if (maxDim > 0) {
+          const targetSize = 0.6; // Target 60cm max dimension
+          scale = targetSize / maxDim;
         }
         
-        // Center the model at its base
-        const centeredBox = new THREE.Box3().setFromObject(gltf.scene);
-        const center = centeredBox.getCenter(new THREE.Vector3());
-        gltf.scene.position.set(x - center.x, -centeredBox.min.y, z - center.z);
+        gltf.scene.scale.setScalar(scale);
+        
+        // Position floating in the air, centered
+        gltf.scene.position.set(
+          x - center.x * scale,
+          y - center.y * scale,
+          z - center.z * scale
+        );
         
         gltf.scene.name = id;
         this.scene.add(gltf.scene);
@@ -515,14 +559,15 @@ export class VRSceneManager {
         const progress = 50 + (loadedCount / allUrls.length) * 30;
         this.updateProgress('assets', progress, `Loaded ${loadedCount}/${allUrls.length} models`);
         
-        console.log(`[VRSceneManager] Asset ${id} loaded at (${x.toFixed(2)}, 0, ${z.toFixed(2)})`);
+        console.log(`[VRSceneManager] ✅ Asset ${id} loaded at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}), scale: ${scale.toFixed(3)}`);
         
       } catch (error) {
-        console.error(`[VRSceneManager] Failed to load asset ${id}:`, error);
-        loadedCount++;
+        console.error(`[VRSceneManager] ❌ Failed to load asset ${id}:`, error);
+        failedCount++;
       }
     }));
     
+    console.log(`[VRSceneManager] Asset loading complete: ${loadedCount} loaded, ${failedCount} failed`);
     this.updateProgress('ui', 80, 'Setting up interface...');
   }
   
