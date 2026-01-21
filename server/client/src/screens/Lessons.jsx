@@ -919,17 +919,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
     const hasAssetUrls = data?.topic?.asset_urls?.length > 0;
     const has3DAssets = hasMeshyAssets || hasImage3DAsset || hasAssetUrls;
     
-    // VR REQUIRES at least a skybox OR 3D assets - otherwise there's nothing to show
-    if (!hasSkybox && !has3DAssets) {
-      errors.push('VR lesson requires either a 360° skybox or 3D assets. This lesson has neither.');
-    } else {
-      // Log as warnings if only one is missing
-      if (!hasSkybox) {
-        warnings.push('No 360° skybox configured (will use fallback environment)');
-      }
-      if (!has3DAssets) {
-        warnings.push('No 3D assets found');
-      }
+    // VR REQUIRES a skybox - it's the core immersive environment
+    if (!hasSkybox) {
+      errors.push('VR lesson requires a 360° skybox environment. Please add a skybox to this lesson.');
+    }
+    
+    // 3D assets are optional but recommended
+    if (!has3DAssets) {
+      warnings.push('No 3D assets found (lesson will show skybox only)');
     }
     
     // Check for audio content (optional but recommended)
