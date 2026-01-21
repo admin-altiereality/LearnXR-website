@@ -128,11 +128,54 @@ export class VRUISystem {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
     
-    // Preload font (three-mesh-ui handles this internally)
     console.log('[VRUISystem] Initializing with font:', this.config.fontFamily);
+    
+    // Preload fonts before creating any UI - this is CRITICAL for three-mesh-ui
+    try {
+      await this.preloadFonts();
+      console.log('[VRUISystem] Fonts preloaded successfully');
+    } catch (error) {
+      console.error('[VRUISystem] Font preload failed, using fallback:', error);
+      // Continue anyway - three-mesh-ui may still work with default fonts
+    }
     
     this.isInitialized = true;
     console.log('[VRUISystem] Initialized');
+  }
+  
+  /**
+   * Preload MSDF fonts to prevent "Cannot read properties of undefined (reading 'x')" errors
+   * This ensures the font JSON and texture are fully loaded before creating UI elements
+   */
+  private async preloadFonts(): Promise<void> {
+    const fontJsonUrl = this.config.fontFamily;
+    const fontTextureUrl = this.config.fontTexture;
+    
+    console.log('[VRUISystem] Preloading font JSON:', fontJsonUrl);
+    console.log('[VRUISystem] Preloading font texture:', fontTextureUrl);
+    
+    // Load font JSON
+    const fontJsonResponse = await fetch(fontJsonUrl);
+    if (!fontJsonResponse.ok) {
+      throw new Error(`Failed to load font JSON: ${fontJsonResponse.status}`);
+    }
+    const fontJson = await fontJsonResponse.json();
+    console.log('[VRUISystem] Font JSON loaded, chars:', fontJson.chars?.length || 0);
+    
+    // Preload font texture as image
+    await new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        console.log('[VRUISystem] Font texture loaded:', img.width, 'x', img.height);
+        resolve();
+      };
+      img.onerror = (err) => {
+        console.error('[VRUISystem] Font texture load error:', err);
+        reject(err);
+      };
+      img.src = fontTextureUrl;
+    });
   }
   
   // ============================================================================
