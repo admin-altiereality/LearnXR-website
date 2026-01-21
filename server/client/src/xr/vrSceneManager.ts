@@ -14,6 +14,26 @@ import * as THREE from 'three';
 import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { XRManager } from './xrManager';
+import { getApiBaseUrl } from '../utils/apiConfig';
+
+// ============================================================================
+// URL Proxy Helper (for CORS-blocked assets like meshy.ai)
+// ============================================================================
+
+/**
+ * Get a proxied URL for CORS-blocked assets
+ * Uses the Firebase Functions proxy endpoint
+ */
+function getProxiedUrl(url: string): string {
+  // Check if URL needs proxying (meshy.ai assets don't have CORS headers)
+  if (url.includes('assets.meshy.ai') || url.includes('meshy.ai')) {
+    const apiBaseUrl = getApiBaseUrl();
+    const proxiedUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(url)}`;
+    console.log('[VRSceneManager] Using proxy for URL:', url.substring(0, 60) + '...');
+    return proxiedUrl;
+  }
+  return url;
+}
 
 // ============================================================================
 // Types & Interfaces
@@ -432,25 +452,45 @@ export class VRSceneManager {
   // ============================================================================
   
   private loadGLTF(url: string): Promise<GLTF> {
+    // Use proxied URL for CORS-blocked assets
+    const loadUrl = getProxiedUrl(url);
+    
     return new Promise((resolve, reject) => {
+      console.log('[VRSceneManager] Loading GLTF from:', loadUrl.substring(0, 80) + '...');
       this.gltfLoader.load(
-        url,
-        (gltf) => resolve(gltf),
+        loadUrl,
+        (gltf) => {
+          console.log('[VRSceneManager] GLTF loaded successfully');
+          resolve(gltf);
+        },
         (progress) => {
           // Optional: track individual file progress
         },
-        (error) => reject(error)
+        (error) => {
+          console.error('[VRSceneManager] GLTF load error:', error);
+          reject(error);
+        }
       );
     });
   }
   
   private loadTexture(url: string): Promise<THREE.Texture> {
+    // Use proxied URL for CORS-blocked assets
+    const loadUrl = getProxiedUrl(url);
+    
     return new Promise((resolve, reject) => {
+      console.log('[VRSceneManager] Loading texture from:', loadUrl.substring(0, 80) + '...');
       this.textureLoader.load(
-        url,
-        (texture) => resolve(texture),
+        loadUrl,
+        (texture) => {
+          console.log('[VRSceneManager] Texture loaded successfully');
+          resolve(texture);
+        },
         undefined,
-        (error) => reject(error)
+        (error) => {
+          console.error('[VRSceneManager] Texture load error:', error);
+          reject(error);
+        }
       );
     });
   }
