@@ -289,21 +289,26 @@ export class VRSceneManager {
     // Check for:
     // 1. Explicit .glb/.gltf extension
     // 2. Meshy.ai URLs (which serve GLB files but without extension in URL)
-    // 3. Content-type hint in URL (rare but possible)
+    // 3. Firebase Storage URLs with .glb
+    // 4. Content-type hint in URL (rare but possible)
     const urlLower = url.toLowerCase();
     const isExplicitGLB = urlLower.includes('.glb') || urlLower.includes('.gltf');
     const isMeshyUrl = url.includes('meshy.ai') || url.includes('assets.meshy');
+    const isFirebaseStorageGLB = url.includes('firebasestorage') && urlLower.includes('.glb');
+    const isGoogleStorageGLB = url.includes('storage.googleapis.com') && urlLower.includes('.glb');
     const isImageUrl = urlLower.includes('.jpg') || urlLower.includes('.jpeg') || 
                        urlLower.includes('.png') || urlLower.includes('.webp') ||
                        urlLower.includes('.hdr') || urlLower.includes('.exr');
     
-    // Meshy URLs without image extension are GLB files
-    const isGLB = isExplicitGLB || (isMeshyUrl && !isImageUrl);
+    // GLB detection: explicit extension, or Meshy URLs without image extension, or Firebase/Google Storage GLB
+    const isGLB = isExplicitGLB || isFirebaseStorageGLB || isGoogleStorageGLB || (isMeshyUrl && !isImageUrl);
     
     console.log('[VRSceneManager] Skybox URL analysis:', {
-      url: url.substring(0, 80) + '...',
+      url: url.substring(0, 100) + (url.length > 100 ? '...' : ''),
       isExplicitGLB,
       isMeshyUrl,
+      isFirebaseStorageGLB,
+      isGoogleStorageGLB,
       isImageUrl,
       treatingAsGLB: isGLB
     });
