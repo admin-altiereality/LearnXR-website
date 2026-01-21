@@ -1068,6 +1068,27 @@ const Lessons = ({ setBackgroundSkybox }) => {
       setDataError('Failed to prepare VR lesson');
     }
   }, [lessonData, navigate, closeLessonModal, validateVRLessonData, contextStartLesson]);
+
+  // Launch V3 (minimal immersive - skybox only) - for testing
+  const launchV3Lesson = useCallback(async () => {
+    console.log('🥽 [Lessons] LAUNCH VR LESSON V3 (Minimal Immersive)');
+    
+    if (!lessonData) {
+      console.error('❌ No lesson data for V3 launch');
+      return;
+    }
+    
+    // Store full lesson data in sessionStorage
+    sessionStorage.setItem('activeLesson', JSON.stringify(lessonData));
+    
+    // Close modal and navigate
+    closeLessonModal();
+    
+    setTimeout(() => {
+      console.log('🚀 Navigating to /xrlessonplayerv3');
+      navigate('/xrlessonplayerv3');
+    }, 100);
+  }, [lessonData, navigate, closeLessonModal]);
   
   // Check if launch is safe - requires countdown finished AND data ready
   const canLaunchLesson = useMemo(() => {
@@ -1352,6 +1373,19 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     {vrValidationError}
                   </p>
                 )}
+                
+                {/* V3 Test Button - Minimal Immersive (Skybox Only) */}
+                <button
+                  onClick={launchV3Lesson}
+                  disabled={!canLaunchVRLesson || !isVRAvailable}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all mt-2 ${
+                    canLaunchVRLesson && isVRAvailable
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  🧪 Test V3 (Skybox Only)
+                </button>
               </div>
             </div>
 
