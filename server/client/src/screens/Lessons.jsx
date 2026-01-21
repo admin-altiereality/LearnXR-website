@@ -886,9 +886,74 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
   }, [lessonData, navigate, closeLessonModal, contextStartLesson, validateLessonData]);
   
-  // Launch lesson in VR mode (opens /xrlessonplayer)
+  // Validate VR lesson data - stricter check for XRLessonPlayerV2
+  const validateVRLessonData = useCallback((data) => {
+    const errors = [];
+    const warnings = [];
+    
+    // Check chapter data
+    if (!data?.chapter) {
+      errors.push('Missing chapter data');
+    } else {
+      if (!data.chapter.chapter_id) errors.push('Missing chapter_id');
+      if (!data.chapter.chapter_name) errors.push('Missing chapter_name');
+    }
+    
+    // Check topic data
+    if (!data?.topic) {
+      errors.push('Missing topic data');
+    } else {
+      if (!data.topic.topic_id) errors.push('Missing topic_id');
+      if (!data.topic.topic_name) errors.push('Missing topic_name');
+    }
+    
+    // VR-specific checks - need skybox_id to fetch GLB from skyboxes collection
+    const hasSkyboxId = data?.topic?.skybox_id || data?.topic?.skybox_remix_id;
+    const hasSkyboxUrl = data?.topic?.skybox_url || data?.topic?.skybox_glb_url;
+    
+    if (!hasSkyboxId && !hasSkyboxUrl) {
+      warnings.push('No skybox configured (will use fallback environment)');
+    }
+    
+    // Check for 3D assets - either from meshy_asset_ids, image3dasset, or asset_urls
+    const hasMeshyAssets = data?._meta?.meshy_asset_ids?.length > 0;
+    const hasImage3DAsset = data?.image3dasset?.imagemodel_glb || data?.image3dasset?.imageasset_url;
+    const hasAssetUrls = data?.topic?.asset_urls?.length > 0;
+    
+    if (!hasMeshyAssets && !hasImage3DAsset && !hasAssetUrls) {
+      warnings.push('No 3D assets found');
+    }
+    
+    // Check for audio content
+    const hasTTS = data?.topic?.avatar_intro || data?.topic?.avatar_explanation || data?.topic?.avatar_outro;
+    if (!hasTTS) {
+      warnings.push('No TTS narration available');
+    }
+    
+    // Log warnings but don't fail
+    if (warnings.length > 0) {
+      console.warn('⚠️ VR Lesson warnings:', warnings);
+    }
+    
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+      assets: {
+        hasSkybox: hasSkyboxId || hasSkyboxUrl,
+        skyboxId: data?.topic?.skybox_id || data?.topic?.skybox_remix_id || null,
+        has3DAssets: hasMeshyAssets || hasImage3DAsset || hasAssetUrls,
+        hasTTS,
+        hasMCQ: data?._meta?.mcq_ids?.length > 0 || data?.topic?.mcq_ids?.length > 0,
+      },
+    };
+  }, []);
+
+  // Launch lesson in VR mode (opens /xrlessonplayerv2)
   const launchVRLesson = useCallback(async () => {
-    console.log('🥽 [Lessons] LAUNCH VR LESSON');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('🥽 [Lessons] LAUNCH VR LESSON (XRLessonPlayerV2)');
+    console.log('═══════════════════════════════════════════════════════');
     
     if (!lessonData) {
       console.error('❌ No lesson data for VR launch');
@@ -896,13 +961,23 @@ const Lessons = ({ setBackgroundSkybox }) => {
       return;
     }
     
-    // Validate data first
-    const validation = validateLessonData(lessonData);
+    // Validate data with VR-specific checks
+    console.log('📋 Validating VR lesson data...');
+    const validation = validateVRLessonData(lessonData);
+    
     if (!validation.isValid) {
       console.error('❌ Validation failed for VR:', validation.errors);
       setDataError(`Lesson not ready: ${validation.errors.join(', ')}`);
       return;
     }
+    
+    console.log('✅ Validation passed:', {
+      hasSkybox: validation.assets.hasSkybox,
+      skyboxId: validation.assets.skyboxId,
+      has3DAssets: validation.assets.has3DAssets,
+      hasTTS: validation.assets.hasTTS,
+      hasMCQ: validation.assets.hasMCQ,
+    });
     
     // Prepare and save to sessionStorage
     try {
@@ -920,23 +995,49 @@ const Lessons = ({ setBackgroundSkybox }) => {
         topic_name: String(lessonData.topic?.topic_name ?? 'Untitled Topic'),
         topic_priority: Number(lessonData.topic?.topic_priority) || 1,
         learning_objective: String(lessonData.topic?.learning_objective ?? ''),
+        // Skybox - include ID for fetching GLB from skyboxes collection
+        skybox_id: lessonData.topic?.skybox_id ?? null,
+        skybox_remix_id: lessonData.topic?.skybox_remix_id ?? null,
         skybox_url: String(lessonData.topic?.skybox_url ?? ''),
+        skybox_glb_url: String(lessonData.topic?.skybox_glb_url ?? ''),
+        // Narration
         avatar_intro: String(lessonData.topic?.avatar_intro ?? ''),
         avatar_explanation: String(lessonData.topic?.avatar_explanation ?? ''),
         avatar_outro: String(lessonData.topic?.avatar_outro ?? ''),
+        // Assets
         asset_urls: Array.isArray(lessonData.topic?.asset_urls) ? [...lessonData.topic.asset_urls] : [],
+        asset_ids: Array.isArray(lessonData.topic?.asset_ids) ? [...lessonData.topic.asset_ids] : [],
+        // MCQ
+        mcq_ids: Array.isArray(lessonData.topic?.mcq_ids) ? [...lessonData.topic.mcq_ids] : [],
+        // TTS
+        tts_ids: Array.isArray(lessonData.topic?.tts_ids) ? [...lessonData.topic.tts_ids] : [],
+        tts_audio_url: String(lessonData.topic?.tts_audio_url ?? ''),
       };
       
       const fullLessonData = {
         chapter: cleanChapter,
         topic: cleanTopic,
         image3dasset: lessonData.image3dasset ?? null,
+        // Include meshy assets info
+        meshy_asset_ids: lessonData._meta?.meshy_asset_ids ?? [],
         startedAt: new Date().toISOString(),
         _meta: lessonData._meta ?? null,
       };
       
+      // Save to sessionStorage
       sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-      console.log('✅ Saved lesson for VR');
+      console.log('✅ Saved lesson for VR:', {
+        chapterId: cleanChapter.chapter_id,
+        topicId: cleanTopic.topic_id,
+        skyboxId: cleanTopic.skybox_id,
+        assetCount: cleanTopic.asset_urls.length,
+        meshyAssetCount: fullLessonData.meshy_asset_ids?.length || 0,
+      });
+      
+      // Update context
+      if (typeof contextStartLesson === 'function') {
+        contextStartLesson(cleanChapter, cleanTopic);
+      }
       
       // Close modal
       closeLessonModal();
@@ -948,7 +1049,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       });
       
       setTimeout(() => {
-        // Navigate to XRLessonPlayerV2 (Flowerbed pattern - immersive VR)
+        console.log('🚀 Navigating to /xrlessonplayerv2');
         navigate(`/xrlessonplayerv2?${params.toString()}`);
       }, 100);
       
@@ -956,7 +1057,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       console.error('❌ Failed to prepare VR lesson:', err);
       setDataError('Failed to prepare VR lesson');
     }
-  }, [lessonData, navigate, closeLessonModal, validateLessonData]);
+  }, [lessonData, navigate, closeLessonModal, validateVRLessonData, contextStartLesson]);
   
   // Check if launch is safe - requires countdown finished AND data ready
   const canLaunchLesson = useMemo(() => {

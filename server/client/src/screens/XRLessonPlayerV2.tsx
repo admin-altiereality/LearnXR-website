@@ -81,6 +81,7 @@ const XRLessonPlayerV2: React.FC = () => {
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [skyboxGlbUrl, setSkyboxGlbUrl] = useState<string | null>(null);
+  const [assetUrls, setAssetUrls] = useState<string[]>([]);
   
   // Get lesson identifiers
   const lessonId = searchParams.get('lessonId') || activeLesson?.chapter?.chapter_id;
@@ -286,6 +287,89 @@ const XRLessonPlayerV2: React.FC = () => {
   }, [lessonData]);
   
   // ============================================================================
+  // Load 3D Assets from Firestore (meshy_assets collection)
+  // ============================================================================
+  
+  useEffect(() => {
+    const load3DAssets = async () => {
+      if (!lessonData) return;
+      
+      const collectedUrls: string[] = [];
+      
+      // 1. Check for asset URLs directly in topic
+      if (lessonData.topic?.asset_urls?.length > 0) {
+        console.log('[XRLessonPlayerV2] Found asset_urls in topic:', lessonData.topic.asset_urls.length);
+        collectedUrls.push(...lessonData.topic.asset_urls);
+      }
+      
+      // 2. Check for image3dasset
+      if (lessonData.image3dasset?.imagemodel_glb) {
+        console.log('[XRLessonPlayerV2] Found image3dasset GLB');
+        collectedUrls.push(lessonData.image3dasset.imagemodel_glb);
+      } else if (lessonData.image3dasset?.imageasset_url) {
+        console.log('[XRLessonPlayerV2] Found image3dasset URL');
+        collectedUrls.push(lessonData.image3dasset.imageasset_url);
+      }
+      
+      // 3. Fetch from meshy_assets collection if we have asset IDs
+      const meshyAssetIds = lessonData.meshy_asset_ids || lessonData._meta?.meshy_asset_ids || [];
+      
+      if (meshyAssetIds.length > 0) {
+        console.log('[XRLessonPlayerV2] Fetching from meshy_assets:', meshyAssetIds);
+        
+        for (const assetId of meshyAssetIds) {
+          try {
+            const assetRef = doc(db, 'meshy_assets', String(assetId));
+            const assetSnap = await getDoc(assetRef);
+            
+            if (assetSnap.exists()) {
+              const assetData = assetSnap.data();
+              // Priority: glb_url > fbx_url > model_url
+              const modelUrl = assetData.glb_url || assetData.fbx_url || assetData.model_url;
+              
+              if (modelUrl) {
+                console.log('[XRLessonPlayerV2] Found meshy asset:', modelUrl.substring(0, 60) + '...');
+                collectedUrls.push(modelUrl);
+              }
+            }
+          } catch (error) {
+            console.error('[XRLessonPlayerV2] Failed to fetch meshy asset:', assetId, error);
+          }
+        }
+      }
+      
+      // 4. Also check chapter-level meshy_asset_ids
+      if (lessonData._meta?.meshy_asset_ids?.length > 0 && meshyAssetIds.length === 0) {
+        console.log('[XRLessonPlayerV2] Fetching chapter-level meshy assets');
+        
+        for (const assetId of lessonData._meta.meshy_asset_ids) {
+          try {
+            const assetRef = doc(db, 'meshy_assets', String(assetId));
+            const assetSnap = await getDoc(assetRef);
+            
+            if (assetSnap.exists()) {
+              const assetData = assetSnap.data();
+              const modelUrl = assetData.glb_url || assetData.fbx_url || assetData.model_url;
+              
+              if (modelUrl && !collectedUrls.includes(modelUrl)) {
+                console.log('[XRLessonPlayerV2] Found chapter meshy asset:', modelUrl.substring(0, 60) + '...');
+                collectedUrls.push(modelUrl);
+              }
+            }
+          } catch (error) {
+            console.error('[XRLessonPlayerV2] Failed to fetch chapter meshy asset:', assetId, error);
+          }
+        }
+      }
+      
+      console.log('[XRLessonPlayerV2] Total 3D asset URLs collected:', collectedUrls.length);
+      setAssetUrls(collectedUrls);
+    };
+    
+    load3DAssets();
+  }, [lessonData]);
+  
+  // ============================================================================
   // Load Skybox GLB from Firestore
   // ============================================================================
   
@@ -396,8 +480,11 @@ const XRLessonPlayerV2: React.FC = () => {
         sceneManager.loadSkybox('');
       }
       
-      // Load 3D assets
-      const assetUrls = lessonData.topic?.asset_urls || [];
+      // Load 3D assets - use the collected asset URLs from all sources
+      console.log('[XRLessonPlayerV2] Loading 3D assets:', {
+        collectedUrls: assetUrls.length,
+        image3dasset: lessonData.image3dasset ? 'yes' : 'no',
+      });
       await sceneManager.loadAssets(assetUrls, lessonData.image3dasset);
       
       // Create VR UI
@@ -462,7 +549,7 @@ const XRLessonPlayerV2: React.FC = () => {
       sceneManagerRef.current?.dispose();
       vrUIRef.current?.dispose();
     };
-  }, [lessonData, xrCapabilities, ttsData, mcqData, skyboxGlbUrl, navigate]);
+  }, [lessonData, xrCapabilities, ttsData, mcqData, skyboxGlbUrl, assetUrls, navigate]);
   
   // ============================================================================
   // Render Loop
