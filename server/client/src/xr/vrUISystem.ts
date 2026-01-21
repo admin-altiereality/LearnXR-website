@@ -52,9 +52,9 @@ export interface VRUIConfig {
 // Default Font URLs (Roboto MSDF)
 // ============================================================================
 
-// Using CDN-hosted MSDF fonts for Roboto
-const DEFAULT_FONT_FAMILY = 'https://unpkg.com/three-mesh-ui/examples/assets/Roboto-msdf.json';
-const DEFAULT_FONT_TEXTURE = 'https://unpkg.com/three-mesh-ui/examples/assets/Roboto-msdf.png';
+// Using locally hosted MSDF fonts to avoid CORS issues
+const DEFAULT_FONT_FAMILY = '/fonts/Roboto-msdf.json';
+const DEFAULT_FONT_TEXTURE = '/fonts/Roboto-msdf.png';
 
 // ============================================================================
 // VR UI System Class
