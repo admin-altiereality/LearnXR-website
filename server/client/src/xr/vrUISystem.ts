@@ -8,12 +8,44 @@
  * - MCQ question display and answer selection
  * - Explanation text panels
  * 
+ * PANEL POSITIONS (user at 0, 1.6, 0):
+ * - Info Panel: Above, slightly tilted down (0, 2.4, -2)
+ * - TTS Panel: Front-center, at eye level (0, 1.6, -2)
+ * - MCQ Panel: Same position as TTS (shown after TTS completes)
+ * 
+ * FLOW: TTS plays first -> when finished, MCQ appears in same spot
+ * 
  * @see https://github.com/meta-quest/ProjectFlowerbed
  * @see https://github.com/felixmariotto/three-mesh-ui
  */
 
 import * as THREE from 'three';
 import ThreeMeshUI from 'three-mesh-ui';
+
+// ============================================================================
+// UI POSITION CONSTANTS - All panels inside skybox, visible from camera
+// ============================================================================
+
+const UI_CONSTANTS = {
+  // Camera/user position
+  CAMERA_HEIGHT: 1.6,
+  
+  // Panel distances from user
+  PANEL_DISTANCE: 2.0,     // meters
+  
+  // Info panel (curriculum/topic) - above eye level
+  INFO_PANEL_Y: 2.4,       // meters
+  INFO_PANEL_Z: -2.0,      // in front
+  INFO_TILT: -0.15,        // radians - tilt down toward user
+  
+  // TTS panel - at eye level, directly in front
+  TTS_PANEL_Y: 1.5,
+  TTS_PANEL_Z: -2.0,
+  
+  // MCQ panel - same as TTS (shown after TTS completes)
+  MCQ_PANEL_Y: 1.5,
+  MCQ_PANEL_Z: -2.0,
+};
 
 // ============================================================================
 // Types & Interfaces
@@ -83,6 +115,7 @@ export class VRUISystem {
   // Callbacks
   private onTTSPlay: (() => void) | null = null;
   private onTTSPause: (() => void) | null = null;
+  private onTTSComplete: (() => void) | null = null; // Called when TTS finishes
   private onMCQAnswer: ((questionId: string, answerIndex: number) => void) | null = null;
   private onExit: (() => void) | null = null;
   
@@ -118,7 +151,17 @@ export class VRUISystem {
     this.audioElement = document.createElement('audio');
     this.audioElement.preload = 'metadata';
     
-    console.log('[VRUISystem] Created');
+    // Listen for audio end to trigger MCQ
+    this.audioElement.addEventListener('ended', () => {
+      console.log('[VRUISystem] TTS audio ended');
+      this.isPlaying = false;
+      if (this.onTTSComplete) {
+        console.log('[VRUISystem] Triggering TTS complete callback (show MCQ)');
+        this.onTTSComplete();
+      }
+    });
+    
+    console.log('[VRUISystem] Created with UI constants:', UI_CONSTANTS);
   }
   
   // ============================================================================
@@ -378,12 +421,12 @@ export class VRUISystem {
     
     this.infoPanel.add(titleBlock, topicBlock, objectiveBlock);
     
-    // Position above user's view
-    this.infoPanel.position.set(0, 2.2, -2);
-    this.infoPanel.rotation.x = -0.1; // Slight tilt toward user
+    // Position above user's view (user is at 0, CAMERA_HEIGHT, 0)
+    this.infoPanel.position.set(0, UI_CONSTANTS.INFO_PANEL_Y, UI_CONSTANTS.INFO_PANEL_Z);
+    this.infoPanel.rotation.x = UI_CONSTANTS.INFO_TILT; // Tilt toward user
     
     this.uiContainer.add(this.infoPanel);
-    console.log('[VRUISystem] Info panel created');
+    console.log(`[VRUISystem] Info panel at (0, ${UI_CONSTANTS.INFO_PANEL_Y}, ${UI_CONSTANTS.INFO_PANEL_Z})`);
     } catch (err) {
       console.error('[VRUISystem] Error creating info panel:', err);
     }
@@ -458,12 +501,13 @@ export class VRUISystem {
     
     this.ttsPanel.add(labelBlock, buttonContainer);
     
-    // Position to the left of user
-    this.ttsPanel.position.set(-0.8, 1.2, -1.5);
-    this.ttsPanel.rotation.y = 0.3;
+    // Position directly in front of user at eye level
+    // TTS shows first, then MCQ replaces it in the same spot
+    this.ttsPanel.position.set(0, UI_CONSTANTS.TTS_PANEL_Y, UI_CONSTANTS.TTS_PANEL_Z);
+    this.ttsPanel.rotation.y = 0; // Face user directly
     
     this.uiContainer.add(this.ttsPanel);
-    console.log('[VRUISystem] TTS panel created');
+    console.log(`[VRUISystem] TTS panel at (0, ${UI_CONSTANTS.TTS_PANEL_Y}, ${UI_CONSTANTS.TTS_PANEL_Z})`);
   }
   
   // ============================================================================
@@ -537,12 +581,15 @@ export class VRUISystem {
       this.mcqPanel!.add(optionButton);
     });
     
-    // Position to the right of user
-    this.mcqPanel.position.set(0.8, 1.4, -1.5);
-    this.mcqPanel.rotation.y = -0.3;
+    // Position directly in front of user (same spot as TTS, shown after TTS completes)
+    this.mcqPanel.position.set(0, UI_CONSTANTS.MCQ_PANEL_Y, UI_CONSTANTS.MCQ_PANEL_Z);
+    this.mcqPanel.rotation.y = 0; // Face user directly
+    
+    // MCQ starts hidden - will be shown after TTS completes
+    this.mcqPanel.visible = false;
     
     this.uiContainer.add(this.mcqPanel);
-    console.log('[VRUISystem] MCQ panel created');
+    console.log(`[VRUISystem] MCQ panel at (0, ${UI_CONSTANTS.MCQ_PANEL_Y}, ${UI_CONSTANTS.MCQ_PANEL_Z}) - hidden until TTS completes`);
   }
   
   private createMCQOption(text: string, onClick: () => void): ThreeMeshUI.Block {
@@ -815,6 +862,15 @@ export class VRUISystem {
     this.onTTSPause = callback;
   }
   
+  /**
+   * Set callback for when TTS audio finishes playing
+   * This is used to trigger showing the MCQ panel
+   */
+  setOnTTSComplete(callback: () => void): void {
+    this.onTTSComplete = callback;
+    console.log('[VRUISystem] TTS complete callback registered');
+  }
+  
   setOnMCQAnswer(callback: (questionId: string, answerIndex: number) => void): void {
     this.onMCQAnswer = callback;
   }
@@ -828,15 +884,43 @@ export class VRUISystem {
   // ============================================================================
   
   showPanel(panel: 'info' | 'tts' | 'mcq' | 'all'): void {
-    if (panel === 'info' || panel === 'all') this.infoPanel?.visible === true;
-    if (panel === 'tts' || panel === 'all') this.ttsPanel?.visible === true;
-    if (panel === 'mcq' || panel === 'all') this.mcqPanel?.visible === true;
+    if ((panel === 'info' || panel === 'all') && this.infoPanel) {
+      this.infoPanel.visible = true;
+      console.log('[VRUISystem] Info panel shown');
+    }
+    if ((panel === 'tts' || panel === 'all') && this.ttsPanel) {
+      this.ttsPanel.visible = true;
+      console.log('[VRUISystem] TTS panel shown');
+    }
+    if ((panel === 'mcq' || panel === 'all') && this.mcqPanel) {
+      this.mcqPanel.visible = true;
+      console.log('[VRUISystem] MCQ panel shown');
+    }
   }
   
   hidePanel(panel: 'info' | 'tts' | 'mcq' | 'all'): void {
-    if (panel === 'info' || panel === 'all' && this.infoPanel) this.infoPanel.visible = false;
-    if (panel === 'tts' || panel === 'all' && this.ttsPanel) this.ttsPanel.visible = false;
-    if (panel === 'mcq' || panel === 'all' && this.mcqPanel) this.mcqPanel.visible = false;
+    if ((panel === 'info' || panel === 'all') && this.infoPanel) {
+      this.infoPanel.visible = false;
+      console.log('[VRUISystem] Info panel hidden');
+    }
+    if ((panel === 'tts' || panel === 'all') && this.ttsPanel) {
+      this.ttsPanel.visible = false;
+      console.log('[VRUISystem] TTS panel hidden');
+    }
+    if ((panel === 'mcq' || panel === 'all') && this.mcqPanel) {
+      this.mcqPanel.visible = false;
+      console.log('[VRUISystem] MCQ panel hidden');
+    }
+  }
+  
+  /**
+   * Transition from TTS to MCQ - hide TTS panel, show MCQ panel
+   * Called when TTS audio finishes playing
+   */
+  transitionToMCQ(): void {
+    console.log('[VRUISystem] Transitioning from TTS to MCQ');
+    this.hidePanel('tts');
+    this.showPanel('mcq');
   }
   
   // ============================================================================
