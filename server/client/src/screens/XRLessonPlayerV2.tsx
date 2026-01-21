@@ -503,16 +503,35 @@ const XRLessonPlayerV2: React.FC = () => {
       });
       
       // Create TTS panel if audio available
+      // TTS plays first, then MCQ appears when TTS completes
       if (ttsData.length > 0) {
         vrUI.createTTSPanel(ttsData[0].audioUrl, ttsData[0].section);
         vrUI.setOnTTSPlay(() => setIsAudioPlaying(true));
         vrUI.setOnTTSPause(() => setIsAudioPlaying(false));
+        
+        // When TTS finishes, show MCQ panel
+        vrUI.setOnTTSComplete(() => {
+          console.log('[XRLessonPlayerV2] TTS complete - showing MCQ panel');
+          setIsAudioPlaying(false);
+          vrUI.transitionToMCQ();
+        });
+        
+        // Auto-play TTS after a short delay (let scene settle)
+        setTimeout(() => {
+          console.log('[XRLessonPlayerV2] Auto-playing TTS narration');
+          vrUI.playTTS();
+        }, 2000);
       }
       
-      // Create MCQ panel if questions available
+      // Create MCQ panel if questions available (hidden by default, shown after TTS)
       if (mcqData.length > 0) {
         vrUI.createMCQPanel(mcqData[0]);
         vrUI.setOnMCQAnswer(handleMCQAnswer);
+        // MCQ panel starts hidden - will be shown when TTS completes
+        // If no TTS available, show MCQ immediately
+        if (ttsData.length === 0) {
+          vrUI.showPanel('mcq');
+        }
       }
       
       // Set exit callback

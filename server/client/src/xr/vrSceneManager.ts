@@ -7,6 +7,13 @@
  * - Asset loading and placement
  * - Performance optimization for Quest
  * 
+ * SCENE LAYOUT:
+ * - Skybox: Large sphere (radius ~100m) centered at origin
+ * - Camera: At origin (0, 1.6, 0) - eye height inside skybox
+ * - Ground plane: Flat circle at y=0, inside skybox
+ * - 3D Assets: Floating in front of user at eye level (1.0-2.0m height)
+ * - UI Panels: Positioned around user within comfortable viewing distance
+ * 
  * @see https://github.com/meta-quest/ProjectFlowerbed
  */
 
@@ -15,6 +22,32 @@ import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { XRManager } from './xrManager';
 import { getApiBaseUrl } from '../utils/apiConfig';
+
+// ============================================================================
+// SCENE CONSTANTS - All objects positioned relative to camera at origin
+// ============================================================================
+
+const SCENE_CONSTANTS = {
+  // Camera position (user's eye height)
+  CAMERA_HEIGHT: 1.6,  // meters
+  
+  // Skybox configuration
+  SKYBOX_RADIUS: 100,  // meters - large enough to encompass everything
+  
+  // Ground plane
+  GROUND_RADIUS: 15,   // meters - circular ground plane
+  GROUND_Y: 0,         // At floor level
+  
+  // 3D Assets placement (inside skybox, in front of user)
+  ASSET_DISTANCE: 2.5,     // meters from camera
+  ASSET_HEIGHT_MIN: 1.0,   // minimum height
+  ASSET_HEIGHT_MAX: 1.8,   // maximum height  
+  ASSET_TARGET_SIZE: 0.5,  // target max dimension in meters
+  ASSET_SPREAD_ANGLE: 0.5, // radians between assets
+  
+  // UI Panel distances (comfortable reading distance)
+  UI_DISTANCE: 2.0,  // meters from camera
+};
 
 // ============================================================================
 // URL Proxy Helper (for CORS-blocked assets like meshy.ai)
@@ -126,13 +159,16 @@ export class VRSceneManager {
     // Merge config
     this.config = { ...this.config, ...config };
     
-    // Create scene
+    // Create scene - no background color, skybox will provide the environment
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(this.config.backgroundColor!);
+    this.scene.background = null; // Will be filled by skybox
     
-    // Create camera (positioned at standing height)
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
-    this.camera.position.set(0, 1.6, 0); // Eye height
+    // Create camera at CENTER of skybox sphere (eye height above ground)
+    // All content (ground, assets, UI) is placed INSIDE the skybox sphere
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, SCENE_CONSTANTS.SKYBOX_RADIUS * 2);
+    this.camera.position.set(0, SCENE_CONSTANTS.CAMERA_HEIGHT, 0);
+    
+    console.log(`[VRSceneManager] Camera at center: (0, ${SCENE_CONSTANTS.CAMERA_HEIGHT}, 0)`);
     
     // Setup loaders
     this.gltfLoader = new GLTFLoader();
@@ -145,7 +181,10 @@ export class VRSceneManager {
     this.textureLoader = new THREE.TextureLoader();
     this.audioLoader = new THREE.AudioLoader();
     
-    console.log('[VRSceneManager] Created');
+    console.log('[VRSceneManager] Created - Scene layout:');
+    console.log(`  - Skybox radius: ${SCENE_CONSTANTS.SKYBOX_RADIUS}m`);
+    console.log(`  - Ground radius: ${SCENE_CONSTANTS.GROUND_RADIUS}m at y=${SCENE_CONSTANTS.GROUND_Y}`);
+    console.log(`  - Assets at ${SCENE_CONSTANTS.ASSET_DISTANCE}m distance, height ${SCENE_CONSTANTS.ASSET_HEIGHT_MIN}-${SCENE_CONSTANTS.ASSET_HEIGHT_MAX}m`);
   }
   
   // ============================================================================
@@ -253,23 +292,25 @@ export class VRSceneManager {
   // ============================================================================
   
   private setupGroundPlane(): void {
-    const geometry = new THREE.CircleGeometry(20, 64);
+    // Ground plane is INSIDE the skybox sphere, at floor level
+    const geometry = new THREE.CircleGeometry(SCENE_CONSTANTS.GROUND_RADIUS, 64);
     const material = new THREE.MeshStandardMaterial({
       color: 0x2a2a4a,
       roughness: 0.9,
       metalness: 0.1,
       transparent: true,
-      opacity: 0.5,
+      opacity: 0.3, // Semi-transparent so skybox shows through a bit
     });
     
     this.groundPlane = new THREE.Mesh(geometry, material);
-    this.groundPlane.rotation.x = -Math.PI / 2;
-    this.groundPlane.position.y = 0;
+    this.groundPlane.rotation.x = -Math.PI / 2; // Lay flat
+    this.groundPlane.position.y = SCENE_CONSTANTS.GROUND_Y; // At floor level inside skybox
     this.groundPlane.receiveShadow = true;
     this.groundPlane.name = 'ground-plane';
+    this.groundPlane.renderOrder = 1; // Render after skybox
     
     this.scene.add(this.groundPlane);
-    console.log('[VRSceneManager] Ground plane added');
+    console.log(`[VRSceneManager] Ground plane added: radius=${SCENE_CONSTANTS.GROUND_RADIUS}m at y=${SCENE_CONSTANTS.GROUND_Y}`);
   }
   
   // ============================================================================
@@ -315,7 +356,7 @@ export class VRSceneManager {
     
     try {
       if (isGLB) {
-        // Load GLB skybox
+        // Load GLB skybox (e.g., from Blockade Labs)
         console.log('[VRSceneManager] Loading as GLB skybox...');
         const gltf = await this.loadGLTF(url);
         
@@ -338,33 +379,38 @@ export class VRSceneManager {
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
-        console.log(`[VRSceneManager] GLB bounds - size: (${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}), center: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
+        console.log(`[VRSceneManager] GLB original bounds - size: (${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}), center: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
         
-        // Blockade Labs skyboxes are typically spheres centered at origin
-        // Scale to ensure the sphere is large enough to encompass the viewer
+        // Scale skybox to our target radius (diameter = radius * 2)
         const maxDim = Math.max(size.x, size.y, size.z);
-        const targetSize = 500; // Large enough sphere
-        const scaleFactor = maxDim > 0 ? targetSize / maxDim : 100;
+        const targetDiameter = SCENE_CONSTANTS.SKYBOX_RADIUS * 2;
+        const scaleFactor = maxDim > 0 ? targetDiameter / maxDim : 1;
         
-        console.log(`[VRSceneManager] Applying scale factor: ${scaleFactor.toFixed(2)}`);
+        console.log(`[VRSceneManager] Scaling skybox: ${maxDim.toFixed(2)}m -> ${targetDiameter}m (factor: ${scaleFactor.toFixed(2)})`);
         gltf.scene.scale.setScalar(scaleFactor);
         
-        // Center the skybox at origin (camera is at 0, 1.6, 0)
-        gltf.scene.position.set(-center.x * scaleFactor, -center.y * scaleFactor, -center.z * scaleFactor);
+        // CENTER the skybox at origin (0, 0, 0)
+        // Camera is at (0, CAMERA_HEIGHT, 0) which is INSIDE the sphere
+        // The skybox center should be at world origin so camera is at center
+        gltf.scene.position.set(
+          -center.x * scaleFactor,
+          -center.y * scaleFactor,
+          -center.z * scaleFactor
+        );
         
-        // For Blockade Labs skyboxes, we need to render the INSIDE of the sphere
-        // The GLB may already have correct normals, but we ensure BackSide rendering
+        console.log(`[VRSceneManager] Skybox centered at origin, camera at (0, ${SCENE_CONSTANTS.CAMERA_HEIGHT}, 0) is INSIDE`);
+        
+        // For skybox GLBs, we view from INSIDE - need BackSide rendering
         gltf.scene.traverse((child) => {
           if (child instanceof THREE.Mesh && child.material) {
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.forEach((mat) => {
               if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
-                mat.side = THREE.BackSide;
-                mat.depthWrite = false;
-                // Ensure texture is visible
+                mat.side = THREE.BackSide; // View inside of sphere
+                mat.depthWrite = false;    // Don't occlude other objects
                 if (mat.map) {
                   mat.map.colorSpace = THREE.SRGBColorSpace;
-                  console.log('[VRSceneManager] Material has texture map');
+                  console.log('[VRSceneManager] Skybox material has texture map');
                 }
               }
             });
@@ -372,18 +418,15 @@ export class VRSceneManager {
         });
         
         gltf.scene.name = 'skybox-glb';
-        gltf.scene.renderOrder = -1; // Render first (behind everything)
-        
-        // IMPORTANT: Remove scene background color when using skybox mesh
-        this.scene.background = null;
+        gltf.scene.renderOrder = -1000; // Render FIRST (far behind everything)
         
         this.skyboxMesh = gltf.scene;
         this.scene.add(gltf.scene);
         
-        console.log('[VRSceneManager] GLB skybox loaded and added to scene');
+        console.log(`[VRSceneManager] ✅ GLB skybox loaded - radius: ${SCENE_CONSTANTS.SKYBOX_RADIUS}m, centered at origin`);
         
       } else {
-        // Load equirectangular image as skybox
+        // Load equirectangular image as skybox sphere
         console.log('[VRSceneManager] Loading as equirectangular image skybox...');
         const texture = await this.loadTexture(url);
         texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -391,8 +434,9 @@ export class VRSceneManager {
         
         console.log(`[VRSceneManager] Texture loaded: ${texture.image?.width || 0}x${texture.image?.height || 0}`);
         
-        const geometry = new THREE.SphereGeometry(500, 60, 40);
-        geometry.scale(-1, 1, 1); // Inside-out
+        // Create sphere centered at origin with target radius
+        const geometry = new THREE.SphereGeometry(SCENE_CONSTANTS.SKYBOX_RADIUS, 60, 40);
+        geometry.scale(-1, 1, 1); // Invert so texture is visible from inside
         
         const material = new THREE.MeshBasicMaterial({
           map: texture,
@@ -401,15 +445,13 @@ export class VRSceneManager {
         });
         
         this.skyboxMesh = new THREE.Mesh(geometry, material);
+        this.skyboxMesh.position.set(0, 0, 0); // Centered at origin
         this.skyboxMesh.name = 'skybox-equirect';
-        this.skyboxMesh.renderOrder = -1; // Render first (behind everything)
-        
-        // Remove scene background when using skybox
-        this.scene.background = null;
+        this.skyboxMesh.renderOrder = -1000; // Render FIRST
         
         this.scene.add(this.skyboxMesh);
         
-        console.log('[VRSceneManager] Equirectangular skybox loaded and added to scene');
+        console.log(`[VRSceneManager] ✅ Equirectangular skybox loaded - radius: ${SCENE_CONSTANTS.SKYBOX_RADIUS}m, centered at origin`);
       }
       
       this.updateProgress('skybox', 40, 'Environment loaded');
@@ -422,11 +464,10 @@ export class VRSceneManager {
   }
   
   private createFallbackSkybox(): void {
-    // Create gradient sphere as fallback with a nice space-like appearance
-    const geometry = new THREE.SphereGeometry(500, 32, 32);
-    geometry.scale(-1, 1, 1);
+    // Create gradient sphere as fallback - centered at origin
+    const geometry = new THREE.SphereGeometry(SCENE_CONSTANTS.SKYBOX_RADIUS, 32, 32);
+    geometry.scale(-1, 1, 1); // Invert for inside view
     
-    // Create gradient material using vertex colors
     const material = new THREE.MeshBasicMaterial({
       color: 0x0a0a1e,
       side: THREE.BackSide,
@@ -434,15 +475,13 @@ export class VRSceneManager {
     });
     
     this.skyboxMesh = new THREE.Mesh(geometry, material);
+    this.skyboxMesh.position.set(0, 0, 0); // Centered at origin
     this.skyboxMesh.name = 'skybox-fallback';
-    this.skyboxMesh.renderOrder = -1;
-    
-    // Remove scene background
-    this.scene.background = null;
+    this.skyboxMesh.renderOrder = -1000;
     
     this.scene.add(this.skyboxMesh);
     
-    console.log('[VRSceneManager] Fallback skybox created');
+    console.log(`[VRSceneManager] Fallback skybox created - radius: ${SCENE_CONSTANTS.SKYBOX_RADIUS}m`);
   }
   
   // ============================================================================
@@ -519,15 +558,33 @@ export class VRSceneManager {
         console.log(`[VRSceneManager] Loading asset ${id}...`);
         const gltf = await this.loadGLTF(url);
         
-        // Calculate position - floating in front of user in a semi-circle
-        // Position at eye level (1.2m - 1.8m above ground)
-        const angle = ((index - (allUrls.length - 1) / 2) * 0.6); // Wider spread angle
-        const distance = 2.0; // Distance from user
-        const x = Math.sin(angle) * distance;
-        const z = -Math.cos(angle) * distance;
-        const y = 1.2 + (index % 2) * 0.4; // Alternate heights: 1.2m and 1.6m
+        // ========================================================================
+        // POSITION: Assets float in front of user, INSIDE the skybox sphere
+        // User/camera is at (0, CAMERA_HEIGHT, 0)
+        // Assets arranged in a semi-circle in front (negative Z direction)
+        // ========================================================================
         
-        // Auto-scale to reasonable size for VR viewing
+        const totalAssets = allUrls.length;
+        
+        // Calculate angle spread - more assets = wider arc
+        const spreadAngle = Math.min(SCENE_CONSTANTS.ASSET_SPREAD_ANGLE * totalAssets, Math.PI * 0.6);
+        const angleStep = totalAssets > 1 ? spreadAngle / (totalAssets - 1) : 0;
+        const startAngle = -spreadAngle / 2;
+        const angle = startAngle + (index * angleStep);
+        
+        // Position in front of user at specified distance
+        const distance = SCENE_CONSTANTS.ASSET_DISTANCE;
+        const x = Math.sin(angle) * distance;
+        const z = -Math.cos(angle) * distance; // Negative Z = in front of user
+        
+        // Alternate heights for visual interest
+        const heightRange = SCENE_CONSTANTS.ASSET_HEIGHT_MAX - SCENE_CONSTANTS.ASSET_HEIGHT_MIN;
+        const y = SCENE_CONSTANTS.ASSET_HEIGHT_MIN + (index % 3) * (heightRange / 2);
+        
+        // ========================================================================
+        // SCALE: Auto-scale to comfortable viewing size
+        // ========================================================================
+        
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
@@ -535,23 +592,25 @@ export class VRSceneManager {
         
         console.log(`[VRSceneManager] Asset ${id} - original size: (${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})`);
         
-        // Scale to comfortable viewing size (0.5m - 1m)
         let scale = 1;
         if (maxDim > 0) {
-          const targetSize = 0.6; // Target 60cm max dimension
-          scale = targetSize / maxDim;
+          scale = SCENE_CONSTANTS.ASSET_TARGET_SIZE / maxDim;
         }
         
         gltf.scene.scale.setScalar(scale);
         
-        // Position floating in the air, centered
+        // Position with center offset so object's center is at the target position
         gltf.scene.position.set(
           x - center.x * scale,
-          y - center.y * scale,
+          y - center.y * scale + (SCENE_CONSTANTS.ASSET_TARGET_SIZE / 2), // Lift slightly
           z - center.z * scale
         );
         
+        // Make asset face the user (rotate to look at camera position)
+        gltf.scene.lookAt(0, y, 0);
+        
         gltf.scene.name = id;
+        gltf.scene.renderOrder = 10; // Render after skybox and ground
         this.scene.add(gltf.scene);
         this.loadedAssets.set(id, gltf.scene);
         
@@ -559,7 +618,7 @@ export class VRSceneManager {
         const progress = 50 + (loadedCount / allUrls.length) * 30;
         this.updateProgress('assets', progress, `Loaded ${loadedCount}/${allUrls.length} models`);
         
-        console.log(`[VRSceneManager] ✅ Asset ${id} loaded at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}), scale: ${scale.toFixed(3)}`);
+        console.log(`[VRSceneManager] ✅ Asset ${id} loaded at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}), scale: ${scale.toFixed(3)}, inside skybox`);
         
       } catch (error) {
         console.error(`[VRSceneManager] ❌ Failed to load asset ${id}:`, error);
