@@ -285,11 +285,33 @@ export class VRSceneManager {
       return;
     }
     
-    const isGLB = url.toLowerCase().includes('.glb') || url.toLowerCase().includes('.gltf');
+    // Detect if URL is a GLB/GLTF file
+    // Check for:
+    // 1. Explicit .glb/.gltf extension
+    // 2. Meshy.ai URLs (which serve GLB files but without extension in URL)
+    // 3. Content-type hint in URL (rare but possible)
+    const urlLower = url.toLowerCase();
+    const isExplicitGLB = urlLower.includes('.glb') || urlLower.includes('.gltf');
+    const isMeshyUrl = url.includes('meshy.ai') || url.includes('assets.meshy');
+    const isImageUrl = urlLower.includes('.jpg') || urlLower.includes('.jpeg') || 
+                       urlLower.includes('.png') || urlLower.includes('.webp') ||
+                       urlLower.includes('.hdr') || urlLower.includes('.exr');
+    
+    // Meshy URLs without image extension are GLB files
+    const isGLB = isExplicitGLB || (isMeshyUrl && !isImageUrl);
+    
+    console.log('[VRSceneManager] Skybox URL analysis:', {
+      url: url.substring(0, 80) + '...',
+      isExplicitGLB,
+      isMeshyUrl,
+      isImageUrl,
+      treatingAsGLB: isGLB
+    });
     
     try {
       if (isGLB) {
         // Load GLB skybox
+        console.log('[VRSceneManager] Loading as GLB skybox...');
         const gltf = await this.loadGLTF(url);
         
         // Scale the skybox to encompass the scene
@@ -315,10 +337,11 @@ export class VRSceneManager {
         this.skyboxMesh = gltf.scene;
         this.scene.add(gltf.scene);
         
-        console.log('[VRSceneManager] GLB skybox loaded');
+        console.log('[VRSceneManager] GLB skybox loaded successfully');
         
       } else {
         // Load equirectangular image as skybox
+        console.log('[VRSceneManager] Loading as equirectangular image skybox...');
         const texture = await this.loadTexture(url);
         texture.mapping = THREE.EquirectangularReflectionMapping;
         texture.colorSpace = THREE.SRGBColorSpace;
@@ -336,13 +359,14 @@ export class VRSceneManager {
         this.skyboxMesh.name = 'skybox-equirect';
         this.scene.add(this.skyboxMesh);
         
-        console.log('[VRSceneManager] Equirectangular skybox loaded');
+        console.log('[VRSceneManager] Equirectangular skybox loaded successfully');
       }
       
       this.updateProgress('skybox', 40, 'Environment loaded');
       
     } catch (error) {
       console.error('[VRSceneManager] Skybox load error:', error);
+      console.log('[VRSceneManager] Using fallback skybox');
       this.createFallbackSkybox();
     }
   }
