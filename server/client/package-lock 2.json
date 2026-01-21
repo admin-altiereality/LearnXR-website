@@ -15,7 +15,7 @@
         "@react-three/fiber": "^8.15.0",
         "@types/three": "^0.159.0",
         "@types/uuid": "^10.0.0",
-        "axios": "^1.6.2",
+        "axios": "^1.13.2",
         "clsx": "^2.1.1",
         "firebase": "^12.6.0",
         "firebase-admin": "^13.6.0",
@@ -35,7 +35,6 @@
         "tailwind-merge": "^3.4.0",
         "terser": "^5.24.0",
         "three": "^0.159.0",
-        "three-mesh-ui": "^6.5.4",
         "uuid": "^11.1.0"
       },
       "devDependencies": {
@@ -8112,18 +8111,6 @@
       "license": "MIT",
       "peerDependencies": {
         "three": ">= 0.151.0"
-      }
-    },
-    "node_modules/three-mesh-ui": {
-      "version": "6.5.4",
-      "resolved": "https://registry.npmjs.org/three-mesh-ui/-/three-mesh-ui-6.5.4.tgz",
-      "integrity": "sha512-QA2KlHrbj7zGjKqpNXcwvini8g5gOXb44ExdupVpxCqmHln/sWNGOmN0yIa/HjnMGYJWP4M+NchTHvwUp+MWIw==",
-      "license": "MIT",
-      "engines": {
-        "node": "x.x.x"
-      },
-      "peerDependencies": {
-        "three": ">=0.144.0"
       }
     },
     "node_modules/three-stdlib": {
