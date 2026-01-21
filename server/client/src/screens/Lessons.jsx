@@ -959,10 +959,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
     };
   }, []);
 
-  // Launch lesson in VR mode (opens /xrlessonplayerv2)
+  // Launch lesson in VR mode (opens /xrlessonplayer)
   const launchVRLesson = useCallback(async () => {
     console.log('═══════════════════════════════════════════════════════');
-    console.log('🥽 [Lessons] LAUNCH VR LESSON (XRLessonPlayerV2)');
+    console.log('🥽 [Lessons] LAUNCH VR LESSON (XRLessonPlayer)');
     console.log('═══════════════════════════════════════════════════════');
     
     if (!lessonData) {
@@ -1052,15 +1052,12 @@ const Lessons = ({ setBackgroundSkybox }) => {
       // Close modal
       closeLessonModal();
       
-      // Navigate to XR lesson player with query params
-      const params = new URLSearchParams({
-        lessonId: cleanChapter.chapter_id,
-        topicId: cleanTopic.topic_id,
-      });
+      // Store lesson data in sessionStorage (XRLessonPlayer reads from here)
+      sessionStorage.setItem('activeLesson', JSON.stringify(lessonData));
       
       setTimeout(() => {
-        console.log('🚀 Navigating to /xrlessonplayerv2');
-        navigate(`/xrlessonplayerv2?${params.toString()}`);
+        console.log('🚀 Navigating to /xrlessonplayer');
+        navigate('/xrlessonplayer');
       }, 100);
       
     } catch (err) {
@@ -1069,26 +1066,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
   }, [lessonData, navigate, closeLessonModal, validateVRLessonData, contextStartLesson]);
 
-  // Launch V3 (minimal immersive - skybox only) - for testing
-  const launchV3Lesson = useCallback(async () => {
-    console.log('🥽 [Lessons] LAUNCH VR LESSON V3 (Minimal Immersive)');
-    
-    if (!lessonData) {
-      console.error('❌ No lesson data for V3 launch');
-      return;
-    }
-    
-    // Store full lesson data in sessionStorage
-    sessionStorage.setItem('activeLesson', JSON.stringify(lessonData));
-    
-    // Close modal and navigate
-    closeLessonModal();
-    
-    setTimeout(() => {
-      console.log('🚀 Navigating to /xrlessonplayerv3');
-      navigate('/xrlessonplayerv3');
-    }, 100);
-  }, [lessonData, navigate, closeLessonModal]);
   
   // Check if launch is safe - requires countdown finished AND data ready
   const canLaunchLesson = useMemo(() => {
@@ -1374,18 +1351,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   </p>
                 )}
                 
-                {/* V3 Test Button - Minimal Immersive (Skybox Only) */}
-                <button
-                  onClick={launchV3Lesson}
-                  disabled={!canLaunchVRLesson || !isVRAvailable}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all mt-2 ${
-                    canLaunchVRLesson && isVRAvailable
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  }`}
-                >
-                  🧪 Test V3 (Skybox Only)
-                </button>
               </div>
             </div>
 

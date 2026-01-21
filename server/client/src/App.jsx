@@ -55,14 +55,12 @@ import N8nWorkflows from './screens/N8nWorkflows';
 import ContentLibrary from './screens/studio/ContentLibrary';
 import ChapterEditor from './screens/studio/ChapterEditor';
 import VRLessonPlayer from './screens/VRLessonPlayer';
-import XRLessonPlayer from './screens/XRLessonPlayer';
-import XRLessonPlayerV2 from './screens/XRLessonPlayerV2';
 import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 
 // Conditional Footer - Shows minimal footer on all pages except VR player and studio
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/vrlessonplayer', '/xrlessonplayer', '/xrlessonplayerv2', '/xrlessonplayerv3', '/learnxr/lesson'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
   
   // Hide footer completely on immersive experiences
   if (hideFooterRoutes.includes(location.pathname) || 
@@ -635,24 +633,6 @@ function App() {
                       <Route path="/xrlessonplayer" element={
                         <ProtectedRoute>
                           <RoleGuard>
-                            <XRLessonPlayer />
-                          </RoleGuard>
-                        </ProtectedRoute>
-                      } />
-                      
-                      {/* XR Lesson Player V2 (Flowerbed Pattern - Immersive VR) - All authenticated users */}
-                      <Route path="/xrlessonplayerv2" element={
-                        <ProtectedRoute>
-                          <RoleGuard>
-                            <XRLessonPlayerV2 />
-                          </RoleGuard>
-                        </ProtectedRoute>
-                      } />
-                      
-                      {/* XR Lesson Player V3 (Minimal WebXR - Skybox Only) - All authenticated users */}
-                      <Route path="/xrlessonplayerv3" element={
-                        <ProtectedRoute>
-                          <RoleGuard>
                             <XRLessonPlayerV3 />
                           </RoleGuard>
                         </ProtectedRoute>
@@ -982,24 +962,6 @@ function App() {
                       
                       {/* XR Lesson Player (WebXR for Meta Quest) - All authenticated users */}
                       <Route path="/xrlessonplayer" element={
-                        <ProtectedRoute>
-                          <RoleGuard>
-                            <XRLessonPlayer />
-                          </RoleGuard>
-                        </ProtectedRoute>
-                      } />
-                      
-                      {/* XR Lesson Player V2 (Flowerbed Pattern - Immersive VR) - All authenticated users */}
-                      <Route path="/xrlessonplayerv2" element={
-                        <ProtectedRoute>
-                          <RoleGuard>
-                            <XRLessonPlayerV2 />
-                          </RoleGuard>
-                        </ProtectedRoute>
-                      } />
-                      
-                      {/* XR Lesson Player V3 (Minimal WebXR - Skybox Only) - All authenticated users */}
-                      <Route path="/xrlessonplayerv3" element={
                         <ProtectedRoute>
                           <RoleGuard>
                             <XRLessonPlayerV3 />
