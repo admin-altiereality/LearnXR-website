@@ -80,6 +80,7 @@ const XRLessonPlayerV2: React.FC = () => {
   const [mcqData, setMcqData] = useState<MCQQuestion[]>([]);
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [skyboxGlbUrl, setSkyboxGlbUrl] = useState<string | null>(null);
   
   // Get lesson identifiers
   const lessonId = searchParams.get('lessonId') || activeLesson?.chapter?.chapter_id;
@@ -285,6 +286,73 @@ const XRLessonPlayerV2: React.FC = () => {
   }, [lessonData]);
   
   // ============================================================================
+  // Load Skybox GLB from Firestore
+  // ============================================================================
+  
+  useEffect(() => {
+    const loadSkyboxGlb = async () => {
+      if (!lessonData?.topic) return;
+      
+      const topic = lessonData.topic;
+      
+      // Priority order for skybox:
+      // 1. Direct skybox_glb_url on topic
+      // 2. Fetch stored_glb_url from skyboxes collection using skybox_id
+      // 3. Fallback to skybox_url (might be image)
+      
+      if (topic.skybox_glb_url) {
+        console.log('[XRLessonPlayerV2] Using direct skybox_glb_url:', topic.skybox_glb_url);
+        setSkyboxGlbUrl(topic.skybox_glb_url);
+        return;
+      }
+      
+      // Try to get skybox_id from topic
+      const skyboxId = topic.skybox_id || topic.skybox_remix_id;
+      
+      if (skyboxId) {
+        try {
+          console.log('[XRLessonPlayerV2] Fetching skybox from collection, id:', skyboxId);
+          const skyboxRef = doc(db, 'skyboxes', String(skyboxId));
+          const skyboxSnap = await getDoc(skyboxRef);
+          
+          if (skyboxSnap.exists()) {
+            const skyboxData = skyboxSnap.data();
+            
+            // Use stored_glb_url which contains the actual GLB file
+            const glbUrl = skyboxData.stored_glb_url;
+            
+            if (glbUrl) {
+              console.log('[XRLessonPlayerV2] Found stored_glb_url:', glbUrl);
+              setSkyboxGlbUrl(glbUrl);
+              return;
+            } else {
+              console.warn('[XRLessonPlayerV2] Skybox found but no stored_glb_url, available fields:', Object.keys(skyboxData));
+              // Fallback to imageUrl for equirectangular
+              if (skyboxData.fileUrl || skyboxData.imageUrl) {
+                console.log('[XRLessonPlayerV2] Falling back to image URL');
+                setSkyboxGlbUrl(skyboxData.fileUrl || skyboxData.imageUrl);
+                return;
+              }
+            }
+          } else {
+            console.warn('[XRLessonPlayerV2] Skybox not found in collection:', skyboxId);
+          }
+        } catch (error) {
+          console.error('[XRLessonPlayerV2] Failed to fetch skybox:', error);
+        }
+      }
+      
+      // Final fallback to skybox_url
+      if (topic.skybox_url) {
+        console.log('[XRLessonPlayerV2] Using fallback skybox_url:', topic.skybox_url);
+        setSkyboxGlbUrl(topic.skybox_url);
+      }
+    };
+    
+    loadSkyboxGlb();
+  }, [lessonData]);
+  
+  // ============================================================================
   // Initialize Scene
   // ============================================================================
   
@@ -312,10 +380,12 @@ const XRLessonPlayerV2: React.FC = () => {
         await xrManagerRef.current.initialize(renderer);
       }
       
-      // Load skybox
-      const skyboxUrl = lessonData.topic?.skybox_url || lessonData.topic?.skybox_glb_url;
-      if (skyboxUrl) {
-        await sceneManager.loadSkybox(skyboxUrl);
+      // Load skybox - use the resolved GLB URL from skyboxes collection
+      if (skyboxGlbUrl) {
+        console.log('[XRLessonPlayerV2] Loading skybox from resolved URL:', skyboxGlbUrl);
+        await sceneManager.loadSkybox(skyboxGlbUrl);
+      } else {
+        console.log('[XRLessonPlayerV2] No skybox URL available, using fallback');
       }
       
       // Load 3D assets
@@ -377,7 +447,7 @@ const XRLessonPlayerV2: React.FC = () => {
       sceneManagerRef.current?.dispose();
       vrUIRef.current?.dispose();
     };
-  }, [lessonData, xrCapabilities, ttsData, mcqData, navigate]);
+  }, [lessonData, xrCapabilities, ttsData, mcqData, skyboxGlbUrl, navigate]);
   
   // ============================================================================
   // Render Loop
