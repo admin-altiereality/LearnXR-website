@@ -248,12 +248,21 @@ const XRLessonPlayerV3: React.FC = () => {
     }
     
     // Setup lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    // High ambient light since skybox uses MeshBasicMaterial (self-illuminating)
+    // These lights are mainly for future 3D assets inside the skybox
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
     scene.add(ambientLight);
     
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(5, 10, 5);
     scene.add(directionalLight);
+    
+    // Add hemisphere light for natural lighting (sky/ground gradient)
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+    
+    console.log('[XRLessonPlayerV3] Lights added: Ambient, Directional, Hemisphere');
     
     // Load skybox
     loadSkybox(scene, skyboxUrl);
@@ -348,14 +357,33 @@ const XRLessonPlayerV3: React.FC = () => {
         );
         
         // Configure materials for inside-out viewing
+        // Skybox should be self-illuminating (not affected by scene lights)
         gltf.scene.traverse((child: any) => {
           if (child instanceof THREE.Mesh && child.material) {
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.forEach((mat: any) => {
-              mat.side = THREE.BackSide; // View from inside
-              mat.depthWrite = false;
-              if (mat.map) {
-                mat.map.colorSpace = THREE.SRGBColorSpace;
+              // Get the texture from the original material
+              const texture = mat.map;
+              
+              // Replace with MeshBasicMaterial for self-illumination
+              // MeshBasicMaterial ignores lights - perfect for skybox
+              if (texture) {
+                child.material = new THREE.MeshBasicMaterial({
+                  map: texture,
+                  side: THREE.BackSide,
+                  depthWrite: false,
+                });
+                texture.colorSpace = THREE.SRGBColorSpace;
+                console.log('[XRLessonPlayerV3] Converted to MeshBasicMaterial with texture');
+              } else {
+                // If no texture, just set BackSide on existing material
+                mat.side = THREE.BackSide;
+                mat.depthWrite = false;
+                // Make it emissive if it's a standard material
+                if (mat.emissive) {
+                  mat.emissive.setHex(0xffffff);
+                  mat.emissiveIntensity = 0.5;
+                }
               }
             });
           }
