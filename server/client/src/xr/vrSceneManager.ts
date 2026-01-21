@@ -319,30 +319,68 @@ export class VRSceneManager {
         console.log('[VRSceneManager] Loading as GLB skybox...');
         const gltf = await this.loadGLTF(url);
         
-        // Scale the skybox to encompass the scene
-        gltf.scene.scale.set(100, 100, 100);
+        // Log what we received
+        console.log('[VRSceneManager] GLB loaded, analyzing structure...');
+        let meshCount = 0;
+        let materialCount = 0;
         
-        // Ensure materials render on inside (backface)
+        gltf.scene.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            meshCount++;
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materialCount += materials.length;
+            console.log(`[VRSceneManager] Mesh found: ${child.name || 'unnamed'}, geometry vertices: ${child.geometry?.attributes?.position?.count || 0}`);
+          }
+        });
+        console.log(`[VRSceneManager] GLB contains ${meshCount} meshes, ${materialCount} materials`);
+        
+        // Get the bounding box to determine appropriate scale
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        console.log(`[VRSceneManager] GLB bounds - size: (${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}), center: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
+        
+        // Blockade Labs skyboxes are typically spheres centered at origin
+        // Scale to ensure the sphere is large enough to encompass the viewer
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const targetSize = 500; // Large enough sphere
+        const scaleFactor = maxDim > 0 ? targetSize / maxDim : 100;
+        
+        console.log(`[VRSceneManager] Applying scale factor: ${scaleFactor.toFixed(2)}`);
+        gltf.scene.scale.setScalar(scaleFactor);
+        
+        // Center the skybox at origin (camera is at 0, 1.6, 0)
+        gltf.scene.position.set(-center.x * scaleFactor, -center.y * scaleFactor, -center.z * scaleFactor);
+        
+        // For Blockade Labs skyboxes, we need to render the INSIDE of the sphere
+        // The GLB may already have correct normals, but we ensure BackSide rendering
         gltf.scene.traverse((child) => {
           if (child instanceof THREE.Mesh && child.material) {
             const materials = Array.isArray(child.material) ? child.material : [child.material];
             materials.forEach((mat) => {
-              if (mat instanceof THREE.Material) {
+              if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshBasicMaterial) {
                 mat.side = THREE.BackSide;
                 mat.depthWrite = false;
+                // Ensure texture is visible
+                if (mat.map) {
+                  mat.map.colorSpace = THREE.SRGBColorSpace;
+                  console.log('[VRSceneManager] Material has texture map');
+                }
               }
             });
           }
         });
         
-        // Position at center
-        gltf.scene.position.set(0, 0, 0);
         gltf.scene.name = 'skybox-glb';
+        gltf.scene.renderOrder = -1; // Render first (behind everything)
+        
+        // IMPORTANT: Remove scene background color when using skybox mesh
+        this.scene.background = null;
         
         this.skyboxMesh = gltf.scene;
         this.scene.add(gltf.scene);
         
-        console.log('[VRSceneManager] GLB skybox loaded successfully');
+        console.log('[VRSceneManager] GLB skybox loaded and added to scene');
         
       } else {
         // Load equirectangular image as skybox
@@ -350,6 +388,8 @@ export class VRSceneManager {
         const texture = await this.loadTexture(url);
         texture.mapping = THREE.EquirectangularReflectionMapping;
         texture.colorSpace = THREE.SRGBColorSpace;
+        
+        console.log(`[VRSceneManager] Texture loaded: ${texture.image?.width || 0}x${texture.image?.height || 0}`);
         
         const geometry = new THREE.SphereGeometry(500, 60, 40);
         geometry.scale(-1, 1, 1); // Inside-out
@@ -362,9 +402,14 @@ export class VRSceneManager {
         
         this.skyboxMesh = new THREE.Mesh(geometry, material);
         this.skyboxMesh.name = 'skybox-equirect';
+        this.skyboxMesh.renderOrder = -1; // Render first (behind everything)
+        
+        // Remove scene background when using skybox
+        this.scene.background = null;
+        
         this.scene.add(this.skyboxMesh);
         
-        console.log('[VRSceneManager] Equirectangular skybox loaded successfully');
+        console.log('[VRSceneManager] Equirectangular skybox loaded and added to scene');
       }
       
       this.updateProgress('skybox', 40, 'Environment loaded');
@@ -377,19 +422,24 @@ export class VRSceneManager {
   }
   
   private createFallbackSkybox(): void {
-    // Create gradient sphere as fallback
+    // Create gradient sphere as fallback with a nice space-like appearance
     const geometry = new THREE.SphereGeometry(500, 32, 32);
     geometry.scale(-1, 1, 1);
     
     // Create gradient material using vertex colors
     const material = new THREE.MeshBasicMaterial({
-      color: 0x1a1a2e,
+      color: 0x0a0a1e,
       side: THREE.BackSide,
       depthWrite: false,
     });
     
     this.skyboxMesh = new THREE.Mesh(geometry, material);
     this.skyboxMesh.name = 'skybox-fallback';
+    this.skyboxMesh.renderOrder = -1;
+    
+    // Remove scene background
+    this.scene.background = null;
+    
     this.scene.add(this.skyboxMesh);
     
     console.log('[VRSceneManager] Fallback skybox created');
