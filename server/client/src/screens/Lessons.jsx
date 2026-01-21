@@ -887,6 +887,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
   }, [lessonData, navigate, closeLessonModal, contextStartLesson, validateLessonData]);
   
   // Validate VR lesson data - stricter check for XRLessonPlayerV2
+  // VR lessons REQUIRE either a skybox OR 3D assets to be meaningful
   const validateVRLessonData = useCallback((data) => {
     const errors = [];
     const warnings = [];
@@ -910,29 +911,41 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // VR-specific checks - need skybox_id to fetch GLB from skyboxes collection
     const hasSkyboxId = data?.topic?.skybox_id || data?.topic?.skybox_remix_id;
     const hasSkyboxUrl = data?.topic?.skybox_url || data?.topic?.skybox_glb_url;
-    
-    if (!hasSkyboxId && !hasSkyboxUrl) {
-      warnings.push('No skybox configured (will use fallback environment)');
-    }
+    const hasSkybox = hasSkyboxId || hasSkyboxUrl;
     
     // Check for 3D assets - either from meshy_asset_ids, image3dasset, or asset_urls
     const hasMeshyAssets = data?._meta?.meshy_asset_ids?.length > 0;
     const hasImage3DAsset = data?.image3dasset?.imagemodel_glb || data?.image3dasset?.imageasset_url;
     const hasAssetUrls = data?.topic?.asset_urls?.length > 0;
+    const has3DAssets = hasMeshyAssets || hasImage3DAsset || hasAssetUrls;
     
-    if (!hasMeshyAssets && !hasImage3DAsset && !hasAssetUrls) {
-      warnings.push('No 3D assets found');
+    // VR REQUIRES at least a skybox OR 3D assets - otherwise there's nothing to show
+    if (!hasSkybox && !has3DAssets) {
+      errors.push('VR lesson requires either a 360° skybox or 3D assets. This lesson has neither.');
+    } else {
+      // Log as warnings if only one is missing
+      if (!hasSkybox) {
+        warnings.push('No 360° skybox configured (will use fallback environment)');
+      }
+      if (!has3DAssets) {
+        warnings.push('No 3D assets found');
+      }
     }
     
-    // Check for audio content
+    // Check for audio content (optional but recommended)
     const hasTTS = data?.topic?.avatar_intro || data?.topic?.avatar_explanation || data?.topic?.avatar_outro;
     if (!hasTTS) {
       warnings.push('No TTS narration available');
     }
     
-    // Log warnings but don't fail
+    // Log warnings but don't fail for those
     if (warnings.length > 0) {
       console.warn('⚠️ VR Lesson warnings:', warnings);
+    }
+    
+    // Log errors
+    if (errors.length > 0) {
+      console.error('❌ VR Lesson validation errors:', errors);
     }
     
     return {
@@ -940,9 +953,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
       errors,
       warnings,
       assets: {
-        hasSkybox: hasSkyboxId || hasSkyboxUrl,
+        hasSkybox,
         skyboxId: data?.topic?.skybox_id || data?.topic?.skybox_remix_id || null,
-        has3DAssets: hasMeshyAssets || hasImage3DAsset || hasAssetUrls,
+        has3DAssets,
         hasTTS,
         hasMCQ: data?._meta?.mcq_ids?.length > 0 || data?.topic?.mcq_ids?.length > 0,
       },
@@ -1069,6 +1082,25 @@ const Lessons = ({ setBackgroundSkybox }) => {
     const validation = validateLessonData(lessonData);
     return validation.isValid;
   }, [countdown, dataReady, dataError, lessonData, validateLessonData]);
+
+  // Check if VR launch is possible - stricter validation requiring skybox OR 3D assets
+  const canLaunchVRLesson = useMemo(() => {
+    // First check basic launch requirements
+    if (!canLaunchLesson) return false;
+    // Then check VR-specific requirements (must have skybox OR 3D assets)
+    const vrValidation = validateVRLessonData(lessonData);
+    return vrValidation.isValid;
+  }, [canLaunchLesson, lessonData, validateVRLessonData]);
+
+  // Get VR validation error message for display
+  const vrValidationError = useMemo(() => {
+    if (!lessonData) return null;
+    const vrValidation = validateVRLessonData(lessonData);
+    if (!vrValidation.isValid && vrValidation.errors.length > 0) {
+      return vrValidation.errors[0];
+    }
+    return null;
+  }, [lessonData, validateVRLessonData]);
 
   // Check if VR is available
   const isVRAvailable = useMemo(() => {
@@ -1300,20 +1332,29 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 
                 <button
                   onClick={launchVRLesson}
-                  disabled={!canLaunchLesson || !isVRAvailable}
+                  disabled={!canLaunchVRLesson || !isVRAvailable}
+                  title={vrValidationError || (!isVRAvailable ? 'VR headset not detected' : '')}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    canLaunchLesson && isVRAvailable
+                    canLaunchVRLesson && isVRAvailable
                       ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-lg'
                       : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   }`}
                 >
                   <Glasses className="w-4 h-4" />
                   {!isVRAvailable 
-                    ? 'No VR Detected' 
-                    : countdown > 0 
-                      ? `Ready in ${countdown}s...`
-                      : 'Launch in VR'}
+                    ? 'No VR Detected'
+                    : vrValidationError
+                      ? 'No VR Assets'
+                      : countdown > 0 
+                        ? `Ready in ${countdown}s...`
+                        : 'Launch in VR'}
                 </button>
+                {/* Show error tooltip if VR assets missing */}
+                {vrValidationError && isVRAvailable && countdown === 0 && (
+                  <p className="text-xs text-amber-400 mt-1">
+                    {vrValidationError}
+                  </p>
+                )}
               </div>
             </div>
 
