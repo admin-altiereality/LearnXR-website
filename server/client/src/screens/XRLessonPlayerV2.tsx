@@ -381,11 +381,19 @@ const XRLessonPlayerV2: React.FC = () => {
       }
       
       // Load skybox - use the resolved GLB URL from skyboxes collection
+      // Priority: stored_glb_url from skyboxes collection (GLB works best with Three.js)
       if (skyboxGlbUrl) {
-        console.log('[XRLessonPlayerV2] Loading skybox from resolved URL:', skyboxGlbUrl);
-        await sceneManager.loadSkybox(skyboxGlbUrl);
+        console.log('[XRLessonPlayerV2] Loading skybox GLB from:', skyboxGlbUrl);
+        try {
+          await sceneManager.loadSkybox(skyboxGlbUrl);
+          console.log('[XRLessonPlayerV2] Skybox loaded successfully');
+        } catch (skyboxError) {
+          console.error('[XRLessonPlayerV2] Skybox load failed:', skyboxError);
+        }
       } else {
         console.log('[XRLessonPlayerV2] No skybox URL available, using fallback');
+        // Create fallback skybox
+        sceneManager.loadSkybox('');
       }
       
       // Load 3D assets
@@ -436,7 +444,14 @@ const XRLessonPlayerV2: React.FC = () => {
       // Mark complete
       sceneManager.setComplete();
       
-      console.log('[XRLessonPlayerV2] Scene initialized');
+      // Debug: Log scene contents
+      const scene = sceneManager.getScene();
+      console.log('[XRLessonPlayerV2] Scene initialized with', scene.children.length, 'children:');
+      scene.children.forEach((child, idx) => {
+        console.log(`  [${idx}] ${child.type}: ${child.name || 'unnamed'}`);
+      });
+      console.log('[XRLessonPlayerV2] Camera position:', sceneManager.getCamera().position);
+      console.log('[XRLessonPlayerV2] Scene background:', scene.background);
     };
     
     initializeScene();
