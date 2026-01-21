@@ -948,7 +948,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       });
       
       setTimeout(() => {
-        navigate(`/xrlessonplayer?${params.toString()}`);
+        // Navigate to XRLessonPlayerV2 (Flowerbed pattern - immersive VR)
+        navigate(`/xrlessonplayerv2?${params.toString()}`);
       }, 100);
       
     } catch (err) {
