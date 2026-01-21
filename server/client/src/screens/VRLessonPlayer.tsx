@@ -1534,6 +1534,39 @@ const VRLessonPlayerInner = () => {
     setTimeout(() => playTTS(), 200);
   }, [stopTTS, playTTS]);
 
+  // Save lesson completion without quiz (when lesson ends without MCQs)
+  // IMPORTANT: This must be defined BEFORE handleContinue which uses it
+  const saveLessonCompletionToFirestore = useCallback(async () => {
+    if (!user || !activeLesson) return;
+    
+    const chapterId = activeLesson.chapter?.chapter_id;
+    const topicId = activeLesson.topic?.topic_id;
+    
+    try {
+      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
+      await setDoc(progressRef, {
+        userId: user.uid,
+        chapterId,
+        topicId,
+        curriculum: activeLesson.chapter?.curriculum,
+        className: activeLesson.chapter?.class_name,
+        subject: activeLesson.chapter?.subject,
+        chapterName: activeLesson.chapter?.chapter_name,
+        chapterNumber: activeLesson.chapter?.chapter_number,
+        topicName: activeLesson.topic?.topic_name,
+        completed: true,
+        quizCompleted: false,
+        quizScore: null,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
+      log('✅', 'Lesson completion saved (no quiz)');
+    } catch (error) {
+      console.error('Failed to save lesson completion:', error);
+    }
+  }, [user, activeLesson]);
+
   // ============================================================================
   // Lesson Navigation - Progress through stages in order
   // ============================================================================
@@ -1726,38 +1759,6 @@ const VRLessonPlayerInner = () => {
       log('❌', 'Failed to save results:', error);
     }
   }, [user, activeLesson, lessonId]);
-  
-  // Save lesson completion without quiz (when lesson ends without MCQs)
-  const saveLessonCompletionToFirestore = useCallback(async () => {
-    if (!user || !activeLesson) return;
-    
-    const chapterId = activeLesson.chapter?.chapter_id;
-    const topicId = activeLesson.topic?.topic_id;
-    
-    try {
-      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
-      await setDoc(progressRef, {
-        userId: user.uid,
-        chapterId,
-        topicId,
-        curriculum: activeLesson.chapter?.curriculum,
-        className: activeLesson.chapter?.class_name,
-        subject: activeLesson.chapter?.subject,
-        chapterName: activeLesson.chapter?.chapter_name,
-        chapterNumber: activeLesson.chapter?.chapter_number,
-        topicName: activeLesson.topic?.topic_name,
-        completed: true,
-        quizCompleted: false,
-        quizScore: null,
-        completedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      
-      log('✅', 'Lesson completion saved (no quiz)');
-    } catch (error) {
-      console.error('Failed to save lesson completion:', error);
-    }
-  }, [user, activeLesson]);
 
   const handleMcqNext = () => {
     setShowMcqResult(false);

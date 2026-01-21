@@ -6,11 +6,12 @@
  * - Lesson detail modal with background data fetching
  * - Launch button enabled only when data is ready
  * - Clean, professional UX transitions
+ * - Memoized components to prevent flickering
  */
 
 import { collection, onSnapshot, query, where, doc, getDoc, getDocs } from 'firebase/firestore';
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from '../config/firebase';
 import { useLesson } from '../contexts/LessonContext';
@@ -37,9 +38,282 @@ import {
   Trophy,
   Star,
   Glasses,
-  Monitor
+  Monitor,
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import { getVRCapabilities, getVRRecommendation } from '../utils/vrDetection';
+
+// Content indicators (simple badges) - Memoized
+const ContentBadges = memo(({ chapter }) => (
+  <div className="flex items-center gap-1.5">
+    {chapter.hasSkybox && (
+      <div className="w-6 h-6 rounded bg-purple-500/20 border border-purple-500/30 flex items-center justify-center" title="360° Skybox">
+        <Sparkles className="w-3 h-3 text-purple-400" />
+      </div>
+    )}
+    {chapter.hasScript && (
+      <div className="w-6 h-6 rounded bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center" title="Voice Script">
+        <Volume2 className="w-3 h-3 text-emerald-400" />
+      </div>
+    )}
+    {chapter.hasAssets && (
+      <div className="w-6 h-6 rounded bg-blue-500/20 border border-blue-500/30 flex items-center justify-center" title="3D Assets">
+        <Box className="w-3 h-3 text-blue-400" />
+      </div>
+    )}
+    {chapter.hasMcqs && (
+      <div className="w-6 h-6 rounded bg-amber-500/20 border border-amber-500/30 flex items-center justify-center" title="Quiz Questions">
+        <HelpCircle className="w-3 h-3 text-amber-400" />
+      </div>
+    )}
+  </div>
+));
+
+// GRID VIEW - Chapter Card - Memoized to prevent flickering
+const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail }) => {
+  const thumbnail = getThumbnail(chapter);
+  const firstTopic = chapter.topics?.find(t => t.skybox_url || t.topic_avatar_intro) || chapter.topics?.[0];
+  const isCompleted = completedLessons[chapter.id];
+  const quizScore = isCompleted?.quizScore;
+
+  return (
+    <div
+      className={`bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm 
+                 rounded-2xl border overflow-hidden
+                 hover:shadow-lg transition-all duration-300 cursor-pointer group
+                 transform hover:-translate-y-1
+                 ${isCompleted 
+                   ? 'border-emerald-500/50 hover:border-emerald-400/60 hover:shadow-emerald-500/10' 
+                   : 'border-slate-700/50 hover:border-cyan-500/50 hover:shadow-cyan-500/10'}`}
+      onClick={() => onOpenModal(chapter, firstTopic)}
+    >
+      {/* Thumbnail */}
+      <div className="relative aspect-video overflow-hidden bg-slate-800">
+        {thumbnail ? (
+          <img
+            src={thumbnail}
+            alt={chapter.chapter_name}
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
+            <BookOpen className="w-12 h-12 text-slate-600" />
+          </div>
+        )}
+        
+        {/* Completed Overlay */}
+        {isCompleted && (
+          <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
+        )}
+        
+        {/* Badges */}
+        <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+          <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 backdrop-blur-sm">
+            {chapter.curriculum}
+          </span>
+          <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 backdrop-blur-sm">
+            Class {chapter.class}
+          </span>
+        </div>
+        
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          {isCompleted && (
+            <span className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-500/90 text-white backdrop-blur-sm">
+              <Trophy className="w-3 h-3" />
+              {quizScore ? `${quizScore.percentage}%` : 'Done'}
+            </span>
+          )}
+          <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-black/50 text-white border border-white/20 backdrop-blur-sm">
+            Ch {chapter.chapter_number}
+          </span>
+        </div>
+        
+        {/* Play overlay */}
+        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+          <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg ${
+            isCompleted ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-cyan-500 shadow-cyan-500/50'
+          }`}>
+            <Play className="w-8 h-8 text-white ml-1" />
+          </div>
+        </div>
+      </div>
+      
+      {/* Content */}
+      <div className="p-4">
+        <div className="flex items-start gap-2">
+          <h3 className={`text-sm font-semibold mb-2 line-clamp-2 transition-colors flex-1 ${
+            isCompleted ? 'text-emerald-300 group-hover:text-emerald-200' : 'text-white group-hover:text-cyan-300'
+          }`}>
+            {chapter.chapter_name}
+          </h3>
+          {isCompleted && (
+            <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+          )}
+        </div>
+        
+        <p className="text-xs text-slate-400 mb-3">{chapter.subject}</p>
+        
+        {/* Stats */}
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] text-slate-500">
+            {chapter.topicCount} topic{chapter.topicCount !== 1 ? 's' : ''}
+          </div>
+          <ContentBadges chapter={chapter} />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// LIST VIEW - Topic Row - Memoized
+const TopicRow = memo(({ topic, chapter, index, onOpenModal }) => {
+  const hasSkybox = !!topic.skybox_url || !!topic.skybox_id;
+  const hasScript = !!(topic.topic_avatar_intro || topic.topic_avatar_explanation);
+
+  return (
+    <div
+      className="flex items-center gap-4 px-4 py-3 ml-4 border-l-2 border-slate-700 
+                 hover:border-cyan-500 bg-slate-800/30 hover:bg-slate-800/50 
+                 transition-all duration-200 cursor-pointer"
+      onClick={() => onOpenModal(chapter, topic)}
+    >
+      <div className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-xs font-mono text-slate-400">
+        {topic.topic_priority || index + 1}
+      </div>
+      
+      <div className="flex-1 min-w-0">
+        <h4 className="text-sm font-medium text-white truncate hover:text-cyan-300 transition-colors">
+          {topic.topic_name || `Topic ${index + 1}`}
+        </h4>
+        {topic.learning_objective && (
+          <p className="text-xs text-slate-500 truncate">{topic.learning_objective}</p>
+        )}
+      </div>
+      
+      <div className="flex items-center gap-1.5">
+        {hasSkybox && <Sparkles className="w-3.5 h-3.5 text-purple-400" />}
+        {hasScript && <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
+      </div>
+      
+      <button 
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg 
+                 bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-medium
+                 hover:bg-cyan-500/30 hover:border-cyan-400 transition-all"
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpenModal(chapter, topic);
+        }}
+      >
+        <Play className="w-3 h-3" />
+        View
+      </button>
+    </div>
+  );
+});
+
+// LIST VIEW - Chapter Item - Memoized
+const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onOpenModal, onToggleChapter }) => {
+  const isExpanded = expandedChapters.has(chapter.id);
+  const topics = chapter.topics || [];
+  const firstTopic = topics.find(t => t.skybox_url || t.topic_avatar_intro) || topics[0];
+  const isCompleted = completedLessons[chapter.id];
+  const quizScore = isCompleted?.quizScore;
+
+  return (
+    <div
+      className={`bg-slate-900/50 backdrop-blur-sm rounded-xl border overflow-hidden ${
+        isCompleted ? 'border-emerald-500/40' : 'border-slate-800/50'
+      }`}
+    >
+      <div 
+        className={`flex items-center gap-4 p-4 cursor-pointer transition-colors ${
+          isCompleted ? 'hover:bg-emerald-900/10' : 'hover:bg-slate-800/30'
+        }`}
+        onClick={() => topics.length > 1 ? onToggleChapter(chapter.id) : onOpenModal(chapter, firstTopic)}
+      >
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+          isCompleted 
+            ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30' 
+            : 'bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/30'
+        }`}>
+          {isCompleted ? (
+            <Trophy className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <span className="text-lg font-bold text-cyan-300">{chapter.chapter_number || '?'}</span>
+          )}
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="text-[10px] font-semibold text-cyan-400 uppercase">{chapter.curriculum}</span>
+            <span className="text-slate-600">•</span>
+            <span className="text-[10px] font-medium text-purple-400">Class {chapter.class}</span>
+            <span className="text-slate-600">•</span>
+            <span className="text-[10px] font-medium text-slate-400">{chapter.subject}</span>
+            {isCompleted && (
+              <>
+                <span className="text-slate-600">•</span>
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
+                  <CheckCircle className="w-3 h-3" />
+                  {quizScore ? `${quizScore.percentage}%` : 'Completed'}
+                </span>
+              </>
+            )}
+          </div>
+          <h3 className={`text-base font-semibold truncate ${
+            isCompleted ? 'text-emerald-300' : 'text-white'
+          }`}>{chapter.chapter_name}</h3>
+        </div>
+        
+        <ContentBadges chapter={chapter} />
+        
+        {topics.length > 1 ? (
+          <div
+            className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center transition-transform ${
+              isExpanded ? 'rotate-180' : ''
+            }`}
+          >
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          </div>
+        ) : (
+          <button 
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold shadow-lg ${
+              isCompleted 
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 shadow-emerald-500/20'
+                : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-cyan-500/20'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenModal(chapter, firstTopic);
+            }}
+          >
+            <Play className="w-4 h-4" />
+            {isCompleted ? 'Replay' : 'View'}
+          </button>
+        )}
+      </div>
+      
+      {/* Expanded Topics */}
+      {isExpanded && topics.length > 0 && (
+        <div className="border-t border-slate-800/50">
+          <div className="py-2">
+            {topics.map((topic, index) => (
+              <TopicRow 
+                key={topic.topic_id || index} 
+                topic={topic} 
+                chapter={chapter}
+                index={index}
+                onOpenModal={onOpenModal}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
 
 const Lessons = ({ setBackgroundSkybox }) => {
   const [chapters, setChapters] = useState([]);
@@ -54,6 +328,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState(null);
   const [dataReady, setDataReady] = useState(false);
+  
+  // Countdown state for data preparation (10 seconds)
+  const [countdown, setCountdown] = useState(0);
+  const countdownRef = React.useRef(null);
   
   // Completed lessons tracking
   const [completedLessons, setCompletedLessons] = useState({});
@@ -271,11 +549,26 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
   // Close lesson modal
   const closeLessonModal = useCallback(() => {
+    // Clear countdown timer
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(0);
     setSelectedLesson(null);
     setLessonData(null);
     setDataLoading(false);
     setDataError(null);
     setDataReady(false);
+  }, []);
+  
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
   }, []);
 
   // Fetch lesson data in background (defined before openLessonModal)
@@ -390,6 +683,22 @@ const Lessons = ({ setBackgroundSkybox }) => {
     setDataLoading(true);
     setDataError(null);
     setDataReady(false);
+    
+    // Start 10-second countdown for data preparation
+    setCountdown(10);
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     
     // Start fetching data in background
     fetchLessonData(chapter, topicInput);
@@ -648,46 +957,30 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
   }, [lessonData, navigate, closeLessonModal, validateLessonData]);
   
-  // Check if launch is safe
+  // Check if launch is safe - requires countdown finished AND data ready
   const canLaunchLesson = useMemo(() => {
+    // Must wait for countdown to finish
+    if (countdown > 0) return false;
+    // Must have data ready
     if (!dataReady || dataError || !lessonData) return false;
+    // Validate data
     const validation = validateLessonData(lessonData);
     return validation.isValid;
-  }, [dataReady, dataError, lessonData, validateLessonData]);
+  }, [countdown, dataReady, dataError, lessonData, validateLessonData]);
+
+  // Check if VR is available
+  const isVRAvailable = useMemo(() => {
+    return vrCapabilities?.isVRSupported === true;
+  }, [vrCapabilities]);
 
   // Get thumbnail
-  const getThumbnail = (chapter) => {
+  const getThumbnail = useCallback((chapter) => {
     return chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
-  };
-
-  // Content indicators (simple badges)
-  const ContentBadges = ({ chapter }) => (
-    <div className="flex items-center gap-1.5">
-      {chapter.hasSkybox && (
-        <div className="w-6 h-6 rounded bg-purple-500/20 border border-purple-500/30 flex items-center justify-center" title="360° Skybox">
-          <Sparkles className="w-3 h-3 text-purple-400" />
-        </div>
-      )}
-      {chapter.hasScript && (
-        <div className="w-6 h-6 rounded bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center" title="Voice Script">
-          <Volume2 className="w-3 h-3 text-emerald-400" />
-        </div>
-      )}
-      {chapter.hasAssets && (
-        <div className="w-6 h-6 rounded bg-blue-500/20 border border-blue-500/30 flex items-center justify-center" title="3D Assets">
-          <Box className="w-3 h-3 text-blue-400" />
-        </div>
-      )}
-      {chapter.hasMcqs && (
-        <div className="w-6 h-6 rounded bg-amber-500/20 border border-amber-500/30 flex items-center justify-center" title="Quiz Questions">
-          <HelpCircle className="w-3 h-3 text-amber-400" />
-        </div>
-      )}
-    </div>
-  );
+  }, []);
 
   // Lesson Detail Modal - Shows lesson info while loading data
-  const LessonDetailModal = () => {
+  // Rendered as a stable component to prevent flickering
+  const renderModal = () => {
     if (!selectedLesson) return null;
     
     const { chapter, topicInput } = selectedLesson;
@@ -698,18 +991,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
     const quizScore = isCompleted?.quizScore;
     
     return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+      <div
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
         onClick={closeLessonModal}
       >
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0, y: 30 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.95, opacity: 0, y: 10 }}
-          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        <div
           className={`relative w-full max-w-2xl bg-gradient-to-br from-slate-900 to-slate-800 
                      rounded-3xl border shadow-2xl overflow-hidden ${
                        isCompleted ? 'border-emerald-500/40' : 'border-slate-700/50'
@@ -881,51 +1167,68 @@ const Lessons = ({ setBackgroundSkybox }) => {
               </div>
             )}
 
-            {/* VR Launch Option */}
-            {vrCapabilities && (
-              <div className={`mb-4 p-4 rounded-xl border ${
-                vrCapabilities.isVRSupported 
-                  ? 'bg-purple-500/10 border-purple-500/30' 
-                  : 'bg-slate-800/50 border-slate-700/50'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {vrCapabilities.isVRSupported ? (
-                      <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                        <Glasses className="w-5 h-5 text-purple-400" />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 rounded-xl bg-slate-700/50 flex items-center justify-center">
-                        <Monitor className="w-5 h-5 text-slate-400" />
-                      </div>
-                    )}
-                    <div>
-                      <p className={`text-sm font-medium ${vrCapabilities.isVRSupported ? 'text-purple-300' : 'text-slate-300'}`}>
-                        {vrCapabilities.isVRSupported ? 'VR Mode Available' : '2D Mode'}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {vrCapabilities.isVRSupported 
-                          ? `Ready for ${vrCapabilities.deviceType.replace('-', ' ')}`
-                          : getVRRecommendation(vrCapabilities).message}
-                      </p>
+            {/* VR Status Section */}
+            <div className={`mb-4 p-4 rounded-xl border ${
+              isVRAvailable 
+                ? 'bg-purple-500/10 border-purple-500/30' 
+                : 'bg-amber-500/10 border-amber-500/30'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {isVRAvailable ? (
+                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                      <Glasses className="w-5 h-5 text-purple-400" />
                     </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                      <AlertTriangle className="w-5 h-5 text-amber-400" />
+                    </div>
+                  )}
+                  <div>
+                    <p className={`text-sm font-medium ${isVRAvailable ? 'text-purple-300' : 'text-amber-300'}`}>
+                      {isVRAvailable ? 'VR Device Detected' : 'No VR Detected'}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {isVRAvailable 
+                        ? `Ready for ${vrCapabilities.deviceType?.replace('-', ' ') || 'VR'}`
+                        : 'Connect a VR headset for immersive experience'}
+                    </p>
                   </div>
-                  
-                  <button
-                    onClick={launchVRLesson}
-                    disabled={!canLaunchLesson}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      canLaunchLesson && vrCapabilities.isVRSupported
-                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-lg'
-                        : canLaunchLesson
-                          ? 'bg-slate-700 hover:bg-slate-600 text-white'
-                          : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <Glasses className="w-4 h-4" />
-                    {vrCapabilities.isVRSupported ? 'Launch in VR' : 'Preview in 3D'}
-                  </button>
                 </div>
+                
+                <button
+                  onClick={launchVRLesson}
+                  disabled={!canLaunchLesson || !isVRAvailable}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    canLaunchLesson && isVRAvailable
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-lg'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Glasses className="w-4 h-4" />
+                  {!isVRAvailable 
+                    ? 'No VR Detected' 
+                    : countdown > 0 
+                      ? `Ready in ${countdown}s...`
+                      : 'Launch in VR'}
+                </button>
+              </div>
+            </div>
+
+            {/* Countdown Progress */}
+            {countdown > 0 && (
+              <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-cyan-500/30">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-cyan-300">Preparing lesson data...</span>
+                  <span className="text-lg font-bold text-cyan-400">{countdown}s</span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-1000 ease-linear"
+                    style={{ width: `${((10 - countdown) / 10) * 100}%` }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-2">Loading skybox, assets, and lesson content...</p>
               </div>
             )}
 
@@ -952,7 +1255,12 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 }`}
               >
-                {dataLoading ? (
+                {countdown > 0 ? (
+                  <>
+                    <Clock className="w-4 h-4" />
+                    Ready in {countdown}s...
+                  </>
+                ) : dataLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Preparing Lesson...
@@ -975,7 +1283,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 ) : (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Validating...
+                    Finalizing...
                   </>
                 )}
               </button>
@@ -996,269 +1304,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
               </div>
             )}
           </div>
-        </motion.div>
-      </motion.div>
-    );
-  };
-
-  // GRID VIEW - Chapter Card
-  const ChapterCard = ({ chapter }) => {
-    const thumbnail = getThumbnail(chapter);
-    const firstTopic = chapter.topics?.find(t => t.skybox_url || t.topic_avatar_intro) || chapter.topics?.[0];
-    const isCompleted = completedLessons[chapter.id];
-    const quizScore = isCompleted?.quizScore;
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        whileHover={{ y: -4 }}
-        className={`bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm 
-                   rounded-2xl border overflow-hidden
-                   hover:shadow-lg transition-all duration-300 cursor-pointer group
-                   ${isCompleted 
-                     ? 'border-emerald-500/50 hover:border-emerald-400/60 hover:shadow-emerald-500/10' 
-                     : 'border-slate-700/50 hover:border-cyan-500/50 hover:shadow-cyan-500/10'}`}
-        onClick={() => openLessonModal(chapter, firstTopic)}
-      >
-        {/* Thumbnail */}
-        <div className="relative aspect-video overflow-hidden bg-slate-800">
-          {thumbnail ? (
-            <img
-              src={thumbnail}
-              alt={chapter.chapter_name}
-              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-              <BookOpen className="w-12 h-12 text-slate-600" />
-            </div>
-          )}
-          
-          {/* Completed Overlay */}
-          {isCompleted && (
-            <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
-          )}
-          
-          {/* Badges */}
-          <div className="absolute top-3 left-3 flex flex-wrap gap-2">
-            <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 backdrop-blur-sm">
-              {chapter.curriculum}
-            </span>
-            <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 backdrop-blur-sm">
-              Class {chapter.class}
-            </span>
-          </div>
-          
-          <div className="absolute top-3 right-3 flex items-center gap-2">
-            {isCompleted && (
-              <span className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-500/90 text-white backdrop-blur-sm">
-                <Trophy className="w-3 h-3" />
-                {quizScore ? `${quizScore.percentage}%` : 'Done'}
-              </span>
-            )}
-            <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-black/50 text-white border border-white/20 backdrop-blur-sm">
-              Ch {chapter.chapter_number}
-            </span>
-          </div>
-          
-          {/* Play overlay */}
-          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg ${
-              isCompleted ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-cyan-500 shadow-cyan-500/50'
-            }`}>
-              {isCompleted ? (
-                <Play className="w-8 h-8 text-white ml-1" />
-              ) : (
-                <Play className="w-8 h-8 text-white ml-1" />
-              )}
-            </div>
-          </div>
         </div>
-        
-        {/* Content */}
-        <div className="p-4">
-          <div className="flex items-start gap-2">
-            <h3 className={`text-sm font-semibold mb-2 line-clamp-2 transition-colors flex-1 ${
-              isCompleted ? 'text-emerald-300 group-hover:text-emerald-200' : 'text-white group-hover:text-cyan-300'
-            }`}>
-              {chapter.chapter_name}
-            </h3>
-            {isCompleted && (
-              <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-            )}
-          </div>
-          
-          <p className="text-xs text-slate-400 mb-3">{chapter.subject}</p>
-          
-          {/* Stats */}
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] text-slate-500">
-              {chapter.topicCount} topic{chapter.topicCount !== 1 ? 's' : ''}
-            </div>
-            <ContentBadges chapter={chapter} />
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
-  // LIST VIEW - Topic Row
-  const TopicRow = ({ topic, chapter, index }) => {
-    const hasSkybox = !!topic.skybox_url || !!topic.skybox_id;
-    const hasScript = !!(topic.topic_avatar_intro || topic.topic_avatar_explanation);
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: index * 0.03 }}
-        className="flex items-center gap-4 px-4 py-3 ml-4 border-l-2 border-slate-700 
-                   hover:border-cyan-500 bg-slate-800/30 hover:bg-slate-800/50 
-                   transition-all duration-200 cursor-pointer"
-        onClick={() => openLessonModal(chapter, topic)}
-      >
-        <div className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-xs font-mono text-slate-400">
-          {topic.topic_priority || index + 1}
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-medium text-white truncate hover:text-cyan-300 transition-colors">
-            {topic.topic_name || `Topic ${index + 1}`}
-          </h4>
-          {topic.learning_objective && (
-            <p className="text-xs text-slate-500 truncate">{topic.learning_objective}</p>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-1.5">
-          {hasSkybox && <Sparkles className="w-3.5 h-3.5 text-purple-400" />}
-          {hasScript && <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
-        </div>
-        
-        <button 
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg 
-                   bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-medium
-                   hover:bg-cyan-500/30 hover:border-cyan-400 transition-all"
-          onClick={(e) => {
-            e.stopPropagation();
-            openLessonModal(chapter, topic);
-          }}
-        >
-          <Play className="w-3 h-3" />
-          View
-        </button>
-      </motion.div>
-    );
-  };
-
-  // LIST VIEW - Chapter Item
-  const ChapterListItem = ({ chapter }) => {
-    const isExpanded = expandedChapters.has(chapter.id);
-    const topics = chapter.topics || [];
-    const firstTopic = topics.find(t => t.skybox_url || t.topic_avatar_intro) || topics[0];
-    const isCompleted = completedLessons[chapter.id];
-    const quizScore = isCompleted?.quizScore;
-
-    return (
-      <motion.div
-        layout
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`bg-slate-900/50 backdrop-blur-sm rounded-xl border overflow-hidden ${
-          isCompleted ? 'border-emerald-500/40' : 'border-slate-800/50'
-        }`}
-      >
-        <div 
-          className={`flex items-center gap-4 p-4 cursor-pointer transition-colors ${
-            isCompleted ? 'hover:bg-emerald-900/10' : 'hover:bg-slate-800/30'
-          }`}
-          onClick={() => topics.length > 1 ? toggleChapter(chapter.id) : openLessonModal(chapter, firstTopic)}
-        >
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            isCompleted 
-              ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30' 
-              : 'bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/30'
-          }`}>
-            {isCompleted ? (
-              <Trophy className="w-5 h-5 text-emerald-400" />
-            ) : (
-              <span className="text-lg font-bold text-cyan-300">{chapter.chapter_number || '?'}</span>
-            )}
-          </div>
-          
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-[10px] font-semibold text-cyan-400 uppercase">{chapter.curriculum}</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-[10px] font-medium text-purple-400">Class {chapter.class}</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-[10px] font-medium text-slate-400">{chapter.subject}</span>
-              {isCompleted && (
-                <>
-                  <span className="text-slate-600">•</span>
-                  <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
-                    <CheckCircle className="w-3 h-3" />
-                    {quizScore ? `${quizScore.percentage}%` : 'Completed'}
-                  </span>
-                </>
-              )}
-            </div>
-            <h3 className={`text-base font-semibold truncate ${
-              isCompleted ? 'text-emerald-300' : 'text-white'
-            }`}>{chapter.chapter_name}</h3>
-          </div>
-          
-          <ContentBadges chapter={chapter} />
-          
-          {topics.length > 1 ? (
-            <motion.div
-              animate={{ rotate: isExpanded ? 180 : 0 }}
-              className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center"
-            >
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </motion.div>
-          ) : (
-            <button 
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold shadow-lg ${
-                isCompleted 
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 shadow-emerald-500/20'
-                  : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-cyan-500/20'
-              }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                openLessonModal(chapter, firstTopic);
-              }}
-            >
-              <Play className="w-4 h-4" />
-              {isCompleted ? 'Replay' : 'View'}
-            </button>
-          )}
-        </div>
-        
-        <AnimatePresence>
-          {isExpanded && topics.length > 0 && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="border-t border-slate-800/50"
-            >
-              <div className="py-2">
-                {topics.map((topic, index) => (
-                  <TopicRow 
-                    key={topic.topic_id || index} 
-                    topic={topic} 
-                    chapter={chapter}
-                    index={index}
-                  />
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+      </div>
     );
   };
 
@@ -1266,12 +1313,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <motion.div 
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mb-6"
-        >
+        {/* Header - No animation to prevent flicker */}
+        <div className="mb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 
@@ -1299,15 +1342,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
               </button>
             </div>
           </div>
-        </motion.div>
+        </div>
 
-        {/* Filters */}
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="mb-6 p-3 bg-slate-900/50 backdrop-blur-sm rounded-xl border border-slate-800/50"
-        >
+        {/* Filters - No animation to prevent flicker */}
+        <div className="mb-6 p-3 bg-slate-900/50 backdrop-blur-sm rounded-xl border border-slate-800/50">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -1376,9 +1414,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
               <span className="text-sm text-slate-500 ml-1">lessons</span>
             </div>
           </div>
-        </motion.div>
+        </div>
 
-        {/* Content */}
+        {/* Content - No layout animation */}
         {error ? (
           <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-xl">
             <div className="flex items-center gap-4">
@@ -1404,24 +1442,35 @@ const Lessons = ({ setBackgroundSkybox }) => {
             <p className="text-sm text-slate-400">Try adjusting your filters</p>
           </div>
         ) : viewMode === 'grid' ? (
-          <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredChapters.map(chapter => (
-              <ChapterCard key={chapter.id} chapter={chapter} />
+              <ChapterCard 
+                key={chapter.id} 
+                chapter={chapter}
+                completedLessons={completedLessons}
+                onOpenModal={openLessonModal}
+                getThumbnail={getThumbnail}
+              />
             ))}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div layout className="space-y-3">
+          <div className="space-y-3">
             {filteredChapters.map(chapter => (
-              <ChapterListItem key={chapter.id} chapter={chapter} />
+              <ChapterListItem 
+                key={chapter.id} 
+                chapter={chapter}
+                completedLessons={completedLessons}
+                expandedChapters={expandedChapters}
+                onOpenModal={openLessonModal}
+                onToggleChapter={toggleChapter}
+              />
             ))}
-          </motion.div>
+          </div>
         )}
       </div>
 
-      {/* Lesson Detail Modal */}
-      <AnimatePresence>
-        <LessonDetailModal />
-      </AnimatePresence>
+      {/* Lesson Detail Modal - Rendered outside AnimatePresence to prevent flicker */}
+      {selectedLesson && renderModal()}
     </div>
   );
 };
