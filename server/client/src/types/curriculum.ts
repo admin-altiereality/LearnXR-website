@@ -1,6 +1,145 @@
 // Curriculum Content Editor Types
 // Updated to support new Firestore collections:
 // - meshy_assets, chapter_mcqs, chapter_tts, chapter_images, skybox_glb_urls
+// - Multi-language support (EN/HI)
+// - Admin approval gating
+
+// ============================================
+// LANGUAGE TYPES (NEW)
+// ============================================
+
+/**
+ * Supported language codes
+ */
+export type LanguageCode = 'en' | 'hi';
+
+/**
+ * Avatar scripts for a specific language
+ */
+export interface AvatarScripts {
+  intro: string;
+  explanation: string;
+  outro: string;
+}
+
+/**
+ * Map of language code to avatar scripts
+ */
+export interface AvatarScriptsByLanguage {
+  en?: AvatarScripts;
+  hi?: AvatarScripts;
+}
+
+/**
+ * Map of language code to ID arrays (MCQs, TTS)
+ */
+export interface IdsByLanguage {
+  en?: string[];
+  hi?: string[];
+}
+
+// ============================================
+// NORMALIZED TYPES (for UI consumption)
+// ============================================
+
+/**
+ * Normalized topic structure for UI - language-specific content already resolved
+ */
+export interface NormalizedTopic {
+  topicId: string;
+  topicName: string;
+  topicPriority: number;
+  learningObjective: string;
+  in3dPrompt: string;
+  sceneType: 'mesh' | 'skybox' | 'mixed';
+  cameraGuidance: string;
+  
+  // Language-specific content (resolved based on selected language)
+  scripts: AvatarScripts;
+  
+  // Language-specific IDs (resolved based on selected language)
+  mcqIds: string[];
+  ttsIds: string[];
+  
+  // Common assets (not language-specific)
+  skyboxId: string | null;
+  skyboxUrl: string;
+  skyboxRemixId: number | null;
+  assetList: string[];
+  assetUrls: string[];
+  assetIds: string[];
+  meshyAssetIds: string[];
+  
+  // Status
+  status: 'pending' | 'generated' | 'failed';
+  generatedAt: string | null;
+}
+
+/**
+ * Normalized chapter structure for UI - with approval status
+ */
+export interface NormalizedChapter {
+  id: string;
+  
+  // Approval status (NEW)
+  approved: boolean;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  
+  // Curriculum info
+  curriculum: string;
+  classNumber: number;
+  subject: string;
+  chapterName: string;
+  chapterNumber: number;
+  
+  // Language support
+  supportedLanguages: LanguageCode[];
+  
+  // Assets (common across languages)
+  skyboxGlbUrls: string[];
+  meshyGlbUrls: string[];
+  meshyAssetIds: string[];
+  imageIds: string[];
+  
+  // Topics (already normalized with language-specific content)
+  topics: NormalizedTopic[];
+  
+  // Resource counts by language (for display)
+  mcqCountByLanguage: { en: number; hi: number };
+  ttsCountByLanguage: { en: number; hi: number };
+  
+  // Timestamps
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Parameters for fetching curriculum chapters
+ */
+export interface FetchChaptersParams {
+  curriculum?: string;
+  classNumber?: number;
+  subject?: string;
+  approvedOnly?: boolean;  // true for /lessons, false for studio
+  searchTerm?: string;
+  pageSize?: number;
+  startAfterDoc?: unknown;
+}
+
+/**
+ * Result from fetching chapters
+ */
+export interface FetchChaptersResult {
+  chapters: NormalizedChapter[];
+  lastDoc: unknown | null;
+  hasMore: boolean;
+  total: number;
+}
+
+// ============================================
+// BASIC TYPES
+// ============================================
 
 export interface Curriculum {
   id: string;

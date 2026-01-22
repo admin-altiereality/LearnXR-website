@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "learnxr-evoneuralai"
-  }
+  },
+  "targets": {
+    "learnxr-evoneuralai": {
+      "hosting": {
+        "learnxr-evoneuralai": [
+          "learnxr-evoneuralai"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

@@ -43,6 +43,14 @@ import {
   Clock
 } from 'lucide-react';
 import { getVRCapabilities, getVRRecommendation } from '../utils/vrDetection';
+import { LanguageToggle } from '../Components/LanguageSelector';
+import { 
+  chapterHasContentForLanguage,
+  getChapterNameByLanguage,
+  getTopicNameByLanguage,
+  getLearningObjectiveByLanguage,
+  getSubjectNameByLanguage
+} from '../lib/firebase/utils/languageAvailability';
 
 // Content indicators (simple badges) - Memoized
 const ContentBadges = memo(({ chapter }) => (
@@ -71,11 +79,14 @@ const ContentBadges = memo(({ chapter }) => (
 ));
 
 // GRID VIEW - Chapter Card - Memoized to prevent flickering
-const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail }) => {
+const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en' }) => {
   const thumbnail = getThumbnail(chapter);
   const firstTopic = chapter.topics?.find(t => t.skybox_url || t.topic_avatar_intro) || chapter.topics?.[0];
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
+  
+  // Get language-specific chapter name
+  const chapterName = getChapterNameByLanguage(chapter._rawData || chapter, selectedLanguage) || chapter.chapter_name;
 
   return (
     <div
@@ -93,7 +104,7 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
         {thumbnail ? (
           <img
             src={thumbnail}
-            alt={chapter.chapter_name}
+            alt={chapterName}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
@@ -146,14 +157,14 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
           <h3 className={`text-sm font-semibold mb-2 line-clamp-2 transition-colors flex-1 ${
             isCompleted ? 'text-emerald-300 group-hover:text-emerald-200' : 'text-white group-hover:text-cyan-300'
           }`}>
-            {chapter.chapter_name}
+            {chapterName}
           </h3>
           {isCompleted && (
             <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
           )}
         </div>
         
-        <p className="text-xs text-slate-400 mb-3">{chapter.subject}</p>
+        <p className="text-xs text-slate-400 mb-3">{getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}</p>
         
         {/* Stats */}
         <div className="flex items-center justify-between">
@@ -168,9 +179,13 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
 });
 
 // LIST VIEW - Topic Row - Memoized
-const TopicRow = memo(({ topic, chapter, index, onOpenModal }) => {
+const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 'en' }) => {
   const hasSkybox = !!topic.skybox_url || !!topic.skybox_id;
   const hasScript = !!(topic.topic_avatar_intro || topic.topic_avatar_explanation);
+  
+  // Get language-specific names
+  const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || `Topic ${index + 1}`;
+  const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective;
 
   return (
     <div
@@ -185,10 +200,10 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal }) => {
       
       <div className="flex-1 min-w-0">
         <h4 className="text-sm font-medium text-white truncate hover:text-cyan-300 transition-colors">
-          {topic.topic_name || `Topic ${index + 1}`}
+          {topicName}
         </h4>
-        {topic.learning_objective && (
-          <p className="text-xs text-slate-500 truncate">{topic.learning_objective}</p>
+        {learningObjective && (
+          <p className="text-xs text-slate-500 truncate">{learningObjective}</p>
         )}
       </div>
       
@@ -214,7 +229,7 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal }) => {
 });
 
 // LIST VIEW - Chapter Item - Memoized
-const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onOpenModal, onToggleChapter }) => {
+const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onOpenModal, onToggleChapter, selectedLanguage = 'en' }) => {
   const isExpanded = expandedChapters.has(chapter.id);
   const topics = chapter.topics || [];
   const firstTopic = topics.find(t => t.skybox_url || t.topic_avatar_intro) || topics[0];
@@ -251,7 +266,7 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
             <span className="text-slate-600">•</span>
             <span className="text-[10px] font-medium text-purple-400">Class {chapter.class}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-[10px] font-medium text-slate-400">{chapter.subject}</span>
+            <span className="text-[10px] font-medium text-slate-400">{getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}</span>
             {isCompleted && (
               <>
                 <span className="text-slate-600">•</span>
@@ -264,7 +279,7 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
           </div>
           <h3 className={`text-base font-semibold truncate ${
             isCompleted ? 'text-emerald-300' : 'text-white'
-          }`}>{chapter.chapter_name}</h3>
+          }`}>{getChapterNameByLanguage(chapter, selectedLanguage) || chapter.chapter_name}</h3>
         </div>
         
         <ContentBadges chapter={chapter} />
@@ -306,6 +321,7 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
                 chapter={chapter}
                 index={index}
                 onOpenModal={onOpenModal}
+                selectedLanguage={selectedLanguage}
               />
             ))}
           </div>
@@ -344,6 +360,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const [selectedCurriculum, setSelectedCurriculum] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState('en');
   
   // Expanded topics state
   const [expandedChapters, setExpandedChapters] = useState(new Set());
@@ -393,6 +410,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
+    // CRITICAL: Only show approved lessons on /lessons page
+    constraints.push(where('approved', '==', true));
+    
     const chaptersRef = collection(db, 'curriculum_chapters');
     const chaptersQuery = constraints.length > 0 
       ? query(chaptersRef, ...constraints)
@@ -400,31 +420,46 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const unsubscribe = onSnapshot(
       chaptersQuery,
-      (snapshot) => {
+      async (snapshot) => {
         try {
-          const chaptersData = snapshot.docs.map(docSnap => {
-            const data = docSnap.data();
-            return {
-              id: docSnap.id,
-              ...data,
-              topicCount: data.topics?.length || 0,
-              // Basic content indicators (no deep validation)
-              hasSkybox: data.topics?.some(t => t.skybox_url || t.skybox_id),
-              hasScript: data.topics?.some(t => t.topic_avatar_intro || t.topic_avatar_explanation),
-              hasAssets: data.meshy_asset_ids?.length > 0 || !!data.image3dasset?.imageasset_url,
-              hasMcqs: data.mcq_ids?.length > 0,
-            };
-          });
+          // Import language availability checker
+          const { chapterHasContentForLanguage } = await import('../lib/firebase/utils/languageAvailability');
+          
+          const chaptersData = await Promise.all(
+              snapshot.docs.map(async (docSnap) => {
+                const data = docSnap.data();
+                const chapterData = data;
+              
+              // Check language availability
+              const hasContentForLanguage = chapterHasContentForLanguage(chapterData, selectedLanguage);
+              
+              return {
+                id: docSnap.id,
+                ...data,
+                topicCount: data.topics?.length || 0,
+                // Basic content indicators (no deep validation)
+                hasSkybox: data.topics?.some(t => t.skybox_url || t.skybox_id),
+                hasScript: data.topics?.some(t => t.topic_avatar_intro || t.topic_avatar_explanation),
+                hasAssets: data.meshy_asset_ids?.length > 0 || !!data.image3dasset?.imageasset_url,
+                hasMcqs: data.mcq_ids?.length > 0,
+                hasContentForSelectedLanguage: hasContentForLanguage,
+                _rawData: chapterData, // Store raw data for language checking
+              };
+            })
+          );
+          
+          // Filter by language availability
+          const filteredChapters = chaptersData.filter(ch => ch.hasContentForSelectedLanguage !== false);
           
           // Sort
-          chaptersData.sort((a, b) => {
+          filteredChapters.sort((a, b) => {
             if (a.curriculum !== b.curriculum) return (a.curriculum || '').localeCompare(b.curriculum || '');
             if (a.class !== b.class) return (a.class || 0) - (b.class || 0);
             if (a.subject !== b.subject) return (a.subject || '').localeCompare(b.subject || '');
             return (a.chapter_number || 0) - (b.chapter_number || 0);
           });
           
-          setChapters(chaptersData);
+          setChapters(filteredChapters);
           setLoading(false);
           setError(null);
         } catch (err) {
@@ -441,7 +476,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -521,19 +556,24 @@ const Lessons = ({ setBackgroundSkybox }) => {
     return unique.sort();
   }, [chapters, selectedCurriculum, selectedClass]);
 
-  // Search/filter
+  // Search/filter - use language-specific names
   const filteredChapters = useMemo(() => {
     let result = chapters;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(chapter => 
-        chapter.chapter_name?.toLowerCase().includes(q) ||
-        chapter.subject?.toLowerCase().includes(q) ||
-        chapter.topics?.some(t => t.topic_name?.toLowerCase().includes(q))
-      );
+      result = result.filter(chapter => {
+        const chapterName = getChapterNameByLanguage(chapter._rawData || chapter, selectedLanguage) || chapter.chapter_name || '';
+        const matchesChapterName = chapterName.toLowerCase().includes(q);
+        const matchesSubject = chapter.subject?.toLowerCase().includes(q);
+        const matchesTopic = chapter.topics?.some(t => {
+          const topicName = getTopicNameByLanguage(t, selectedLanguage) || t.topic_name || '';
+          return topicName.toLowerCase().includes(q);
+        });
+        return matchesChapterName || matchesSubject || matchesTopic;
+      });
     }
     return result;
-  }, [chapters, searchQuery]);
+  }, [chapters, searchQuery, selectedLanguage]);
 
   const toggleChapter = useCallback((chapterId) => {
     setExpandedChapters(prev => {
@@ -571,17 +611,19 @@ const Lessons = ({ setBackgroundSkybox }) => {
     };
   }, []);
 
-  // Fetch lesson data in background (defined before openLessonModal)
+  // Fetch lesson data in background using unified bundle pipeline
   const fetchLessonData = useCallback(async (chapter, topicInput) => {
     try {
-      const chapterRef = doc(db, 'curriculum_chapters', chapter.id);
-      const chapterSnap = await getDoc(chapterRef);
+      // Use unified getLessonBundle function
+      const { getLessonBundle } = await import('../services/firestore/getLessonBundle');
       
-      if (!chapterSnap.exists()) {
-        throw new Error('Lesson not found in database');
-      }
-      
-      const fullData = chapterSnap.data();
+      // Fetch complete lesson bundle for selected language
+      const bundle = await getLessonBundle({
+        chapterId: chapter.id,
+        lang: selectedLanguage,
+      });
+
+      const fullData = bundle.chapter;
       
       // Find the best topic
       const topic = topicInput 
@@ -593,9 +635,19 @@ const Lessons = ({ setBackgroundSkybox }) => {
         throw new Error('No content available for this lesson');
       }
 
-      // Build asset URLs
+      // Build asset URLs from bundle
       let assetUrls = topic.asset_urls || [];
       let assetIds = topic.asset_ids || [];
+      
+      // Include 3D assets from bundle
+      if (bundle.assets3d && bundle.assets3d.length > 0) {
+        bundle.assets3d.forEach(asset => {
+          if (asset.glb_url && !assetUrls.includes(asset.glb_url)) {
+            assetUrls.push(asset.glb_url);
+            assetIds.push(asset.id);
+          }
+        });
+      }
       
       // Include image3dasset if available
       if (fullData.image3dasset?.imageasset_url || fullData.image3dasset?.imagemodel_glb) {
@@ -607,11 +659,87 @@ const Lessons = ({ setBackgroundSkybox }) => {
         }
       }
 
-      // Build lesson data
+      // Use avatar scripts from bundle
+      const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+      console.log(`📝 Using ${selectedLanguage} avatar scripts from bundle:`, {
+        hasIntro: !!scripts.intro,
+        hasExplanation: !!scripts.explanation,
+        hasOutro: !!scripts.outro,
+      });
+
+      // Use MCQs from bundle (already language-filtered)
+      const mcqs = bundle.mcqs.map(m => ({
+        id: m.id,
+        question: m.question || m.question_text || '',
+        options: m.options || [],
+        correct_option_index: m.correct_option_index ?? 0,
+        explanation: m.explanation || '',
+      }));
+      console.log(`✅ Using ${mcqs.length} MCQs from bundle for language ${selectedLanguage}`);
+
+      // Use TTS from bundle (already language-filtered)
+      // Transform TTS to expected format with language field and double-check filtering
+      const ttsAudio = (bundle.tts || [])
+        .map((tts) => {
+          // Determine language from TTS data
+          let ttsLanguage = tts.language || tts.lang || selectedLanguage;
+          
+          // If no explicit language field, check ID pattern
+          if (!tts.language && !tts.lang && tts.id) {
+            const idLower = String(tts.id).toLowerCase();
+            if (idLower.includes('_hi') || idLower.includes('_hindi') || idLower.includes('hi_') || idLower.endsWith('_hi')) {
+              ttsLanguage = 'hi';
+            } else {
+              ttsLanguage = 'en';
+            }
+          }
+          
+          return {
+            id: tts.id || '',
+            script_type: tts.script_type || tts.section || 'full',
+            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+            language: ttsLanguage, // Explicitly set language field
+            text: tts.script_text || tts.text || tts.content || '',
+          };
+        })
+        .filter((tts) => {
+          // Double-check language filtering (strict match)
+          const ttsLang = (tts.language || 'en').toLowerCase().trim();
+          const targetLang = selectedLanguage.toLowerCase().trim();
+          const matches = ttsLang === targetLang;
+          
+          if (!matches) {
+            console.warn(`[Lessons] Filtered out TTS with language mismatch:`, {
+              ttsId: tts.id,
+              ttsLanguage: tts.language,
+              selectedLanguage: selectedLanguage,
+              script_type: tts.script_type,
+            });
+          }
+          
+          return matches;
+        });
+      
+      console.log(`✅ Using ${ttsAudio.length} TTS audio files from bundle for language ${selectedLanguage}`, {
+        totalInBundle: bundle.tts?.length || 0,
+        filtered: ttsAudio.length,
+        language: selectedLanguage,
+        ttsDetails: ttsAudio.map(t => ({ id: t.id, script_type: t.script_type, language: t.language })),
+      });
+
+      // Get language-specific names
+      const chapterName = getChapterNameByLanguage(fullData, selectedLanguage) || fullData.chapter_name || chapter.chapter_name;
+      const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || chapterName;
+      const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective || '';
+
+      // Get skybox URL from bundle or topic
+      const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+
+      // Build lesson data with language-specific content from bundle
       const preparedData = {
         chapter: {
           chapter_id: chapter.id,
-          chapter_name: fullData.chapter_name || chapter.chapter_name,
+          chapter_name: chapterName,
           chapter_number: fullData.chapter_number || chapter.chapter_number,
           curriculum: fullData.curriculum || chapter.curriculum,
           class_name: `Class ${fullData.class || chapter.class}`,
@@ -623,40 +751,46 @@ const Lessons = ({ setBackgroundSkybox }) => {
         },
         topic: {
           topic_id: topic.topic_id || `topic_${chapter.id}_1`,
-          topic_name: topic.topic_name || fullData.chapter_name,
+          topic_name: topicName,
           topic_priority: topic.topic_priority || 1,
-          learning_objective: topic.learning_objective || '',
+          learning_objective: learningObjective,
           in3d_prompt: topic.in3d_prompt || '',
           scene_type: topic.scene_type || 'narrative',
           status: topic.status || 'generated',
-          skybox_id: topic.skybox_id || null,
-          skybox_url: topic.skybox_url || '',
+          skybox_id: bundle.skybox?.id || topic.skybox_id || null,
+          skybox_url: skyboxUrl,
           skybox_remix_id: topic.skybox_remix_id || null,
-          avatar_intro: topic.topic_avatar_intro || topic.avatar_intro || '',
-          avatar_explanation: topic.topic_avatar_explanation || topic.avatar_explanation || '',
-          avatar_outro: topic.topic_avatar_outro || topic.avatar_outro || '',
+          // Use language-specific scripts from bundle
+          avatar_intro: scripts.intro || '',
+          avatar_explanation: scripts.explanation || '',
+          avatar_outro: scripts.outro || '',
           asset_list: topic.asset_list || [],
           asset_urls: assetUrls,
           asset_ids: assetIds,
           mcq_ids: topic.mcq_ids || [],
           tts_ids: topic.tts_ids || [],
           meshy_asset_ids: topic.meshy_asset_ids || [],
-          mcqs: [],
+          mcqs: mcqs, // Include MCQs from bundle
         },
         image3dasset: fullData.image3dasset || null,
+        ttsAudio: ttsAudio, // Include TTS from bundle
+        language: selectedLanguage, // Store selected language
         startedAt: new Date().toISOString(),
         // Extra metadata for the modal
         _meta: {
-          hasSkybox: !!topic.skybox_url,
-          hasScript: !!(topic.topic_avatar_intro || topic.topic_avatar_explanation),
+          hasSkybox: !!skyboxUrl,
+          hasScript: !!(scripts.intro || scripts.explanation || scripts.outro),
           hasAssets: assetUrls.length > 0 || !!fullData.image3dasset,
-          hasMcqs: (fullData.mcq_ids?.length || 0) > 0 || (topic.mcq_ids?.length || 0) > 0,
+          hasMcqs: mcqs.length > 0,
           topicCount: fullData.topics?.length || 1,
           scriptSections: [
-            topic.topic_avatar_intro || topic.avatar_intro,
-            topic.topic_avatar_explanation || topic.avatar_explanation,
-            topic.topic_avatar_outro || topic.avatar_outro,
+            scripts.intro,
+            scripts.explanation,
+            scripts.outro,
           ].filter(Boolean).length,
+          // Include 3D assets from bundle for lesson players
+          assets3d: bundle.assets3d || [],
+          meshy_asset_ids: fullData.meshy_asset_ids || [],
         }
       };
 
@@ -674,7 +808,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       setDataError(err.message);
       setDataLoading(false);
     }
-  }, []);
+  }, [selectedLanguage]);
 
   // Open lesson detail modal and start fetching data
   const openLessonModal = useCallback((chapter, topicInput) => {
@@ -1017,11 +1151,27 @@ const Lessons = ({ setBackgroundSkybox }) => {
         // Assets
         asset_urls: Array.isArray(lessonData.topic?.asset_urls) ? [...lessonData.topic.asset_urls] : [],
         asset_ids: Array.isArray(lessonData.topic?.asset_ids) ? [...lessonData.topic.asset_ids] : [],
-        // MCQ
+        // MCQ - Include both IDs and the actual MCQs array from bundle
         mcq_ids: Array.isArray(lessonData.topic?.mcq_ids) ? [...lessonData.topic.mcq_ids] : [],
+        mcqs: Array.isArray(lessonData.topic?.mcqs) ? lessonData.topic.mcqs.map(m => ({
+          id: m.id || '',
+          question: m.question || '',
+          options: Array.isArray(m.options) ? [...m.options] : [],
+          correct_option_index: m.correct_option_index ?? 0,
+          explanation: m.explanation || '',
+        })) : [],
         // TTS
         tts_ids: Array.isArray(lessonData.topic?.tts_ids) ? [...lessonData.topic.tts_ids] : [],
         tts_audio_url: String(lessonData.topic?.tts_audio_url ?? ''),
+        // Include TTS audio array from bundle
+        ttsAudio: Array.isArray(lessonData.ttsAudio) ? lessonData.ttsAudio.map(t => ({
+          id: t.id || '',
+          script_type: t.script_type || 'full',
+          audio_url: t.audio_url || t.url || '',
+          language: t.language || lessonData.language || 'en',
+        })) : [],
+        // Language
+        language: String(lessonData.language || 'en'),
       };
       
       const fullLessonData = {
@@ -1030,8 +1180,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
         image3dasset: lessonData.image3dasset ?? null,
         // Include meshy assets info
         meshy_asset_ids: lessonData._meta?.meshy_asset_ids ?? [],
+        // Include 3D assets from bundle
+        assets3d: lessonData._meta?.assets3d || [],
         startedAt: new Date().toISOString(),
         _meta: lessonData._meta ?? null,
+        // Include language and TTS audio array
+        language: lessonData.language || 'en',
+        ttsAudio: lessonData.ttsAudio || [],
       };
       
       // Save to sessionStorage
@@ -1053,7 +1208,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       closeLessonModal();
       
       // Store lesson data in sessionStorage (XRLessonPlayer reads from here)
-      sessionStorage.setItem('activeLesson', JSON.stringify(lessonData));
+      // Use fullLessonData which includes MCQs and TTS from bundle
+      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
       
       setTimeout(() => {
         console.log('🚀 Navigating to /xrlessonplayer');
@@ -1114,8 +1270,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const { chapter, topicInput } = selectedLesson;
     const thumbnail = chapter.topics?.find(t => t.skybox_url)?.skybox_url;
-    const topicName = topicInput?.topic_name || chapter.topics?.[0]?.topic_name || chapter.chapter_name;
-    const learningObjective = topicInput?.learning_objective || chapter.topics?.[0]?.learning_objective || '';
+    const topic = topicInput || chapter.topics?.[0];
+    const topicName = topic 
+      ? (getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || chapter.chapter_name)
+      : (getChapterNameByLanguage(chapter, selectedLanguage) || chapter.chapter_name);
+    const learningObjective = topic 
+      ? (getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective || '')
+      : '';
     const isCompleted = completedLessons[chapter.id];
     const quizScore = isCompleted?.quizScore;
     
@@ -1184,7 +1345,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
             {/* Title - Positioned at bottom */}
             <div className="absolute bottom-4 left-6 right-6">
-              <p className={`text-sm font-medium mb-1 ${isCompleted ? 'text-emerald-400' : 'text-cyan-400'}`}>{chapter.subject}</p>
+              <p className={`text-sm font-medium mb-1 ${isCompleted ? 'text-emerald-400' : 'text-cyan-400'}`}>{getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}</p>
               <h2 className="text-2xl font-bold text-white leading-tight">{topicName}</h2>
             </div>
           </div>
@@ -1533,6 +1694,17 @@ const Lessons = ({ setBackgroundSkybox }) => {
               <option value="">All Subjects</option>
               {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            
+            {/* Language Toggle */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg">
+              <span className="text-xs text-slate-400">Language:</span>
+              <LanguageToggle
+                value={selectedLanguage}
+                onChange={setSelectedLanguage}
+                size="sm"
+                showFlags={true}
+              />
+            </div>
 
             {(selectedCurriculum || selectedClass || selectedSubject || searchQuery) && (
               <button
@@ -1589,13 +1761,15 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 completedLessons={completedLessons}
                 onOpenModal={openLessonModal}
                 getThumbnail={getThumbnail}
+                selectedLanguage={selectedLanguage}
               />
             ))}
           </div>
         ) : (
           <div className="space-y-3">
             {filteredChapters.map(chapter => (
-              <ChapterListItem 
+              <ChapterListItem
+                selectedLanguage={selectedLanguage} 
                 key={chapter.id} 
                 chapter={chapter}
                 completedLessons={completedLessons}

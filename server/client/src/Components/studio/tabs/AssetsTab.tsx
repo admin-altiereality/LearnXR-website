@@ -19,7 +19,9 @@ import { getMeshyAssets } from '../../../lib/firestore/queries';
 import { MeshyAsset } from '../../../types/curriculum';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, db } from '../../../config/firebase';
-import { collection, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
+import { linkMeshyAssetsToTopic, unlinkMeshyAssetFromTopic } from '../../../lib/firestore/updateHelpers';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
   Box,
   ExternalLink,
@@ -52,6 +54,8 @@ interface AssetsTabProps {
 const Lazy3DViewer = lazy(() => import('../../AssetViewerWithSkybox').then(m => ({ default: m.AssetViewerWithSkybox })));
 
 export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
+  const { user, profile } = useAuth();
+  
   // Using MeshyAsset type from new meshy_assets collection
   const [assets, setAssets] = useState<MeshyAsset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,6 +244,28 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
         setSelectedAsset(newAssets[0]);
       }
       
+      // Link asset IDs to topic so they're fetchable via lesson bundle
+      if (newAssets.length > 0 && user?.email) {
+        try {
+          const assetIds = newAssets.map(a => a.id);
+          const result = await linkMeshyAssetsToTopic({
+            chapterId,
+            topicId,
+            assetIds,
+            userId: user.email,
+          });
+          
+          if (result.success) {
+            console.log(`✅ Linked ${assetIds.length} asset IDs to topic ${topicId}`);
+          } else {
+            console.warn('⚠️ Failed to link asset IDs to topic:', result.error);
+          }
+        } catch (linkError) {
+          console.warn('⚠️ Error linking assets to topic:', linkError);
+          // Don't fail the upload if linking fails
+        }
+      }
+      
       toast.success(`${uploadedCount} asset${uploadedCount > 1 ? 's' : ''} uploaded successfully!`);
       
       // Reset and close
@@ -273,6 +299,22 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
           await deleteObject(storageRef);
         } catch (storageError) {
           console.warn('Could not delete from storage:', storageError);
+        }
+      }
+      
+      // Unlink asset ID from topic
+      if (user?.email) {
+        try {
+          await unlinkMeshyAssetFromTopic({
+            chapterId,
+            topicId,
+            assetId: assetToDelete.id,
+            userId: user.email,
+          });
+          console.log(`✅ Unlinked asset ID ${assetToDelete.id} from topic ${topicId}`);
+        } catch (unlinkError) {
+          console.warn('⚠️ Error unlinking asset from topic:', unlinkError);
+          // Don't fail the delete if unlinking fails
         }
       }
       

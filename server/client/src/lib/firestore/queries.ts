@@ -41,6 +41,8 @@ import {
   Image3DAsset,
   ChapterResourceIds,
   TopicResourceIds,
+  LanguageCode,
+  AvatarScripts,
 } from '../../types/curriculum';
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
 
@@ -1829,3 +1831,355 @@ export const get3DAssetsLegacy = getMeshyAssets;
  * Now fetches from chapter_mcqs collection
  */
 export const getMCQsNew = getChapterMCQs;
+
+// ============================================
+// LANGUAGE-SPECIFIC QUERY FUNCTIONS
+// ============================================
+
+/**
+ * Extract MCQ IDs for a specific language from topic or chapter
+ * Handles inline MCQs in mcqs_by_language and language-specific ID arrays
+ * Note: If inline MCQs are full objects (not IDs), this returns empty array
+ * as getChapterMCQsByLanguage will handle them directly
+ */
+function extractMcqIdsForLanguage(
+  topic: FirebaseTopic,
+  chapter: CurriculumChapter,
+  language: LanguageCode
+): string[] {
+  // Priority 1: Check for inline MCQs in topic.mcqs_by_language[language]
+  // If they are full objects (have 'question' field), return empty - they'll be handled directly
+  const inlineMcqs = (topic as any).mcqs_by_language?.[language];
+  if (inlineMcqs && Array.isArray(inlineMcqs) && inlineMcqs.length > 0) {
+    // If first item is a full MCQ object (has 'question'), return empty - handled directly
+    if (typeof inlineMcqs[0] === 'object' && inlineMcqs[0].question) {
+      return []; // Full objects are handled in getChapterMCQsByLanguage
+    }
+    // If first item is a string (ID), return the IDs
+    if (typeof inlineMcqs[0] === 'string') {
+      return inlineMcqs;
+    }
+    // If first item has question_id but no question, extract IDs
+    if (typeof inlineMcqs[0] === 'object' && inlineMcqs[0].question_id) {
+      return inlineMcqs.map((mcq: any) => mcq.question_id || mcq.id).filter(Boolean);
+    }
+  }
+  
+  // Priority 2: Check topic-level language-specific IDs
+  if (topic.mcq_ids_by_language?.[language]?.length) {
+    return topic.mcq_ids_by_language[language];
+  }
+  
+  // Priority 3: Check chapter-level language-specific IDs
+  if (chapter.mcq_ids_by_language?.[language]?.length) {
+    return chapter.mcq_ids_by_language[language];
+  }
+  
+  // Priority 4: Filter legacy IDs by language pattern (for English, use all; for Hindi, filter _hi)
+  if (language === 'hi') {
+    const allIds = [...(topic.mcq_ids || []), ...(chapter.mcq_ids || [])];
+    return allIds.filter(id => id.includes('_hi') || id.includes('_HI'));
+  }
+  
+  // For English, return all non-Hindi IDs
+  const allIds = [...(topic.mcq_ids || []), ...(chapter.mcq_ids || [])];
+  return allIds.filter(id => !id.includes('_hi') && !id.includes('_HI'));
+}
+
+/**
+ * Extract avatar scripts for a specific language from topic
+ */
+export function extractTopicScriptsForLanguage(
+  topic: FirebaseTopic,
+  language: LanguageCode
+): AvatarScripts {
+  // Priority 1: topic_avatar_scripts[language] (NEW schema - matches mock data)
+  const topicAvatarScripts = (topic as any).topic_avatar_scripts?.[language];
+  if (topicAvatarScripts && typeof topicAvatarScripts === 'object') {
+    return {
+      intro: topicAvatarScripts.intro || '',
+      explanation: topicAvatarScripts.explanation || '',
+      outro: topicAvatarScripts.outro || '',
+    };
+  }
+  
+  // Priority 2: avatar_scripts_by_language[language] (alternative naming)
+  if (topic.avatar_scripts_by_language?.[language]) {
+    const scripts = topic.avatar_scripts_by_language[language];
+    return {
+      intro: scripts.intro || '',
+      explanation: scripts.explanation || '',
+      outro: scripts.outro || '',
+    };
+  }
+  
+  // Priority 3: Legacy fields (only for English)
+  if (language === 'en') {
+    return {
+      intro: topic.topic_avatar_intro || '',
+      explanation: topic.topic_avatar_explanation || '',
+      outro: topic.topic_avatar_outro || '',
+    };
+  }
+  
+  return { intro: '', explanation: '', outro: '' };
+}
+
+/**
+ * Fetch language-specific MCQs for a chapter/topic
+ * Handles inline MCQs in mcqs_by_language and language-specific ID arrays
+ */
+export const getChapterMCQsByLanguage = async (
+  chapterId: string,
+  topicId: string,
+  language: LanguageCode
+): Promise<ChapterMCQ[]> => {
+  try {
+    console.log(`🔍 Fetching MCQs for ${language} language:`, { chapterId, topicId });
+    
+    // Fetch chapter document to check for inline MCQs
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const chapterSnap = await getDoc(chapterRef);
+    
+    if (!chapterSnap.exists()) {
+      console.warn('❌ Chapter not found:', chapterId);
+      return [];
+    }
+    
+    const chapterData = chapterSnap.data() as CurriculumChapter;
+    const topic = chapterData.topics?.find(t => t.topic_id === topicId);
+    
+    if (!topic) {
+      console.warn('❌ Topic not found:', topicId);
+      return [];
+    }
+    
+    // Priority 1: Check for inline MCQs in mcqs_by_language[language]
+    const inlineMcqs = (topic as any).mcqs_by_language?.[language];
+    if (inlineMcqs && Array.isArray(inlineMcqs) && inlineMcqs.length > 0) {
+      // Check if first item is a full MCQ object (has 'question' field)
+      const firstItem = inlineMcqs[0];
+      if (typeof firstItem === 'object' && firstItem !== null && 'question' in firstItem) {
+        console.log(`✅ Found ${inlineMcqs.length} inline MCQs for ${language}`);
+        return inlineMcqs.map((mcq: any, index: number) => {
+          // Comprehensive options extraction (matching bundle logic)
+          let options: string[] = [];
+          // Priority 1: Check for options array
+          if (Array.isArray(mcq.options) && mcq.options.length > 0) {
+            options = mcq.options;
+          }
+          // Priority 2: Check for choices array
+          else if (Array.isArray(mcq.choices) && mcq.choices.length > 0) {
+            options = mcq.choices;
+          }
+          // Priority 3: Check for answers array
+          else if (Array.isArray(mcq.answers) && mcq.answers.length > 0) {
+            options = mcq.answers;
+          }
+          // Priority 4: Extract from individual fields (option_a, option_b, etc.)
+          else {
+            const extractedOptions: string[] = [];
+            const optionFields = [
+              'option_a', 'option_b', 'option_c', 'option_d',
+              'optionA', 'optionB', 'optionC', 'optionD',
+              'option1', 'option2', 'option3', 'option4',
+              'a', 'b', 'c', 'd',
+              'option_1', 'option_2', 'option_3', 'option_4',
+            ];
+            optionFields.forEach(key => {
+              if (mcq[key]) extractedOptions.push(String(mcq[key]));
+            });
+            if (extractedOptions.length > 0) {
+              options = extractedOptions;
+            }
+          }
+          
+          // Comprehensive correct index extraction (matching bundle logic)
+          let correctIndex = mcq.correct_option_index ?? mcq.correct_index ?? mcq.correctIndex ?? mcq.correct ?? 0;
+          if (typeof correctIndex !== 'number') {
+            const parsed = parseInt(String(correctIndex), 10);
+            if (!isNaN(parsed)) {
+              correctIndex = parsed;
+            } else {
+              // Check if correct answer is stored as a letter (A, B, C, D)
+              if (typeof mcq.correct_answer === 'string' && mcq.correct_answer.length === 1) {
+                const letterIndex = mcq.correct_answer.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
+                if (letterIndex >= 0 && letterIndex < options.length) {
+                  correctIndex = letterIndex;
+                }
+              }
+              // Check correct_option_text and find matching index
+              else if (mcq.correct_option_text && options.length > 0) {
+                const index = options.findIndex(opt => opt === mcq.correct_option_text);
+                if (index >= 0) {
+                  correctIndex = index;
+                }
+              }
+            }
+          }
+          // Ensure correctIndex is within bounds
+          if (options.length > 0) {
+            if (correctIndex < 0) correctIndex = 0;
+            if (correctIndex >= options.length) correctIndex = options.length - 1;
+          }
+          
+          return {
+            id: mcq.question_id || mcq.id || `inline_${language}_${index}`,
+            chapter_id: chapterId,
+            topic_id: topicId,
+            question: mcq.question || mcq.question_text || '',
+            options: options,
+            correct_option_index: correctIndex,
+            explanation: mcq.explanation || mcq.explanation_text || '',
+            difficulty: (mcq.difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+            order: mcq.order ?? index,
+            created_at: mcq.created_at,
+            updated_at: mcq.updated_at,
+          };
+        });
+      }
+    }
+    
+    // Priority 2: Extract language-specific MCQ IDs
+    const mcqIds = extractMcqIdsForLanguage(topic, chapterData, language);
+    
+    if (mcqIds.length === 0) {
+      console.log(`ℹ️ No MCQ IDs found for ${language}`);
+      return [];
+    }
+    
+    console.log(`📋 MCQ IDs for ${language}:`, mcqIds);
+    
+    // Fetch each MCQ document by ID
+    const mcqs: ChapterMCQ[] = [];
+    
+    for (const mcqId of mcqIds) {
+      try {
+        const mcqRef = doc(db, COLLECTION_CHAPTER_MCQS, mcqId);
+        const mcqSnap = await getDoc(mcqRef);
+        
+        if (mcqSnap.exists()) {
+          const data = mcqSnap.data();
+          
+          // Comprehensive options extraction (matching bundle logic)
+          let options: string[] = [];
+          // Priority 1: Check for options array
+          if (Array.isArray(data.options) && data.options.length > 0) {
+            options = data.options;
+          }
+          // Priority 2: Check for choices array
+          else if (Array.isArray(data.choices) && data.choices.length > 0) {
+            options = data.choices;
+          }
+          // Priority 3: Check for answers array
+          else if (Array.isArray(data.answers) && data.answers.length > 0) {
+            options = data.answers;
+          }
+          // Priority 4: Extract from individual fields (option_a, option_b, etc.)
+          else {
+            const extractedOptions: string[] = [];
+            const optionFields = [
+              'option_a', 'option_b', 'option_c', 'option_d',
+              'optionA', 'optionB', 'optionC', 'optionD',
+              'option1', 'option2', 'option3', 'option4',
+              'a', 'b', 'c', 'd',
+              'option_1', 'option_2', 'option_3', 'option_4',
+            ];
+            optionFields.forEach(key => {
+              if (data[key]) extractedOptions.push(String(data[key]));
+            });
+            if (extractedOptions.length > 0) {
+              options = extractedOptions;
+            }
+          }
+          
+          // Comprehensive correct index extraction (matching bundle logic)
+          let correctIndex = data.correct_option_index ?? data.correct_index ?? data.correctIndex ?? data.correct ?? 0;
+          if (typeof correctIndex !== 'number') {
+            const parsed = parseInt(String(correctIndex), 10);
+            if (!isNaN(parsed)) {
+              correctIndex = parsed;
+            } else {
+              // Check if correct answer is stored as a letter (A, B, C, D)
+              if (typeof data.correct_answer === 'string' && data.correct_answer.length === 1) {
+                const letterIndex = data.correct_answer.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
+                if (letterIndex >= 0 && letterIndex < options.length) {
+                  correctIndex = letterIndex;
+                }
+              }
+              // Check correct_option_text and find matching index
+              else if (data.correct_option_text && options.length > 0) {
+                const index = options.findIndex(opt => opt === data.correct_option_text);
+                if (index >= 0) {
+                  correctIndex = index;
+                }
+              }
+            }
+          }
+          // Ensure correctIndex is within bounds
+          if (options.length > 0) {
+            if (correctIndex < 0) correctIndex = 0;
+            if (correctIndex >= options.length) correctIndex = options.length - 1;
+          }
+          
+          mcqs.push({
+            id: mcqSnap.id,
+            chapter_id: data.chapter_id || chapterId,
+            topic_id: data.topic_id || topicId,
+            question: data.question || data.question_text || '',
+            options: options,
+            correct_option_index: correctIndex,
+            explanation: data.explanation || data.explanation_text || '',
+            difficulty: data.difficulty || 'medium',
+            order: data.order ?? mcqs.length,
+            created_at: data.created_at,
+            updated_at: data.updated_at,
+            created_by: data.created_by,
+          });
+        }
+      } catch (err) {
+        console.warn(`⚠️ Error fetching MCQ ${mcqId}:`, err);
+      }
+    }
+    
+    mcqs.sort((a, b) => (a.order || 0) - (b.order || 0));
+    console.log(`✅ Loaded ${mcqs.length} MCQs for ${language}`);
+    return mcqs;
+  } catch (error) {
+    console.error(`❌ Error fetching MCQs for ${language}:`, error);
+    return [];
+  }
+};
+
+/**
+ * Fetch language-specific TTS audio for a chapter/topic
+ * Filters TTS by language field
+ */
+export const getChapterTTSByLanguage = async (
+  chapterId: string,
+  topicId: string,
+  language: LanguageCode
+): Promise<ChapterTTS[]> => {
+  try {
+    console.log(`🔍 Fetching TTS for ${language} language:`, { chapterId, topicId });
+    
+    // Get all TTS first
+    const allTTS = await getChapterTTS(chapterId, topicId);
+    
+    // Filter by language
+    const filteredTTS = allTTS.filter(tts => {
+      // If language field exists, use it
+      if (tts.language) {
+        return tts.language === language;
+      }
+      // For legacy data without language field, assume English
+      return language === 'en';
+    });
+    
+    console.log(`✅ Loaded ${filteredTTS.length} TTS files for ${language} (from ${allTTS.length} total)`);
+    return filteredTTS;
+  } catch (error) {
+    console.error(`❌ Error fetching TTS for ${language}:`, error);
+    return [];
+  }
+};

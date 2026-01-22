@@ -163,6 +163,7 @@ export interface UpdateSceneOptions {
   updated: Partial<Scene>;
   userId: string;
   changeSummary?: string;
+  language?: 'en' | 'hi'; // Language for saving avatar scripts in new format
 }
 
 export const updateScene = async (options: UpdateSceneOptions): Promise<void> => {
@@ -200,21 +201,42 @@ export const updateScene = async (options: UpdateSceneOptions): Promise<void> =>
   // Update the topic with scene data
   const updatedTopics = [...chapter.topics];
   const currentTopic = updatedTopics[topicIndex];
+  const language = (options as any).language || 'en'; // Default to 'en' for backward compatibility
   
-  // Map avatar_* fields to topic_avatar_* fields for storage
-  updatedTopics[topicIndex] = {
+  // Prepare updated topic
+  const updatedTopic: any = {
     ...currentTopic,
     learning_objective: (changes.learning_objective as string) ?? currentTopic.learning_objective,
     in3d_prompt: (changes.in3d_prompt as string) ?? currentTopic.in3d_prompt,
     asset_list: (changes.asset_list as string[]) ?? currentTopic.asset_list,
     camera_guidance: (changes.camera_guidance as string) ?? currentTopic.camera_guidance,
     skybox_id: (changes.skybox_id as string) ?? currentTopic.skybox_id,
-    // Map avatar fields to topic_avatar_* format
-    topic_avatar_intro: (changes.avatar_intro as string) ?? currentTopic.topic_avatar_intro,
-    topic_avatar_explanation: (changes.avatar_explanation as string) ?? currentTopic.topic_avatar_explanation,
-    topic_avatar_outro: (changes.avatar_outro as string) ?? currentTopic.topic_avatar_outro,
     generatedAt: new Date().toISOString(),
   };
+  
+  // Save avatar scripts in new language-specific format (topic_avatar_scripts[language])
+  if (changes.avatar_intro !== undefined || changes.avatar_explanation !== undefined || changes.avatar_outro !== undefined) {
+    // Initialize topic_avatar_scripts if it doesn't exist
+    if (!updatedTopic.topic_avatar_scripts) {
+      updatedTopic.topic_avatar_scripts = {};
+    }
+    
+    // Update language-specific scripts
+    updatedTopic.topic_avatar_scripts[language] = {
+      intro: (changes.avatar_intro as string) ?? (updatedTopic.topic_avatar_scripts[language]?.intro ?? currentTopic.topic_avatar_intro ?? ''),
+      explanation: (changes.avatar_explanation as string) ?? (updatedTopic.topic_avatar_scripts[language]?.explanation ?? currentTopic.topic_avatar_explanation ?? ''),
+      outro: (changes.avatar_outro as string) ?? (updatedTopic.topic_avatar_scripts[language]?.outro ?? currentTopic.topic_avatar_outro ?? ''),
+    };
+    
+    // Also keep legacy fields for backward compatibility (only for English)
+    if (language === 'en') {
+      updatedTopic.topic_avatar_intro = updatedTopic.topic_avatar_scripts[language].intro;
+      updatedTopic.topic_avatar_explanation = updatedTopic.topic_avatar_scripts[language].explanation;
+      updatedTopic.topic_avatar_outro = updatedTopic.topic_avatar_scripts[language].outro;
+    }
+  }
+  
+  updatedTopics[topicIndex] = updatedTopic;
   
   await updateDoc(chapterRef, {
     topics: updatedTopics,
@@ -232,6 +254,7 @@ export const createScene = async (options: {
   topicId: string;
   scene: Partial<Scene>;
   userId: string;
+  language?: 'en' | 'hi'; // Language for saving avatar scripts in new format
 }): Promise<void> => {
   // In the flat structure, scene data is part of the topic
   // Just update the topic with scene fields
@@ -243,6 +266,7 @@ export const createScene = async (options: {
     updated: options.scene,
     userId: options.userId,
     changeSummary: 'Created scene',
+    language: options.language || 'en',
   });
 };
 
@@ -865,6 +889,115 @@ export const deleteTopicResources = async (options: {
     return { success: true };
   } catch (error) {
     console.error('Error deleting topic resources:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Link meshy asset IDs to a topic's meshy_asset_ids array
+ * This ensures assets added via AssetsTab are fetchable via lesson bundle
+ */
+export const linkMeshyAssetsToTopic = async (options: {
+  chapterId: string;
+  topicId: string;
+  assetIds: string[];
+  userId: string;
+}): Promise<{ success: boolean; error?: string }> => {
+  const { chapterId, topicId, assetIds, userId } = options;
+  
+  try {
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const chapterSnap = await getDoc(chapterRef);
+    
+    if (!chapterSnap.exists()) {
+      throw new Error('Chapter not found');
+    }
+    
+    const chapter = chapterSnap.data() as CurriculumChapter;
+    const topicIndex = chapter.topics?.findIndex((t) => t.topic_id === topicId);
+    
+    if (topicIndex === undefined || topicIndex === -1) {
+      throw new Error('Topic not found');
+    }
+    
+    const updatedTopics = [...chapter.topics];
+    const currentTopic = updatedTopics[topicIndex];
+    
+    // Merge new asset IDs with existing ones (remove duplicates)
+    const existingIds = currentTopic.meshy_asset_ids || [];
+    const allIds = [...new Set([...existingIds, ...assetIds])];
+    
+    updatedTopics[topicIndex] = {
+      ...currentTopic,
+      meshy_asset_ids: allIds,
+    };
+    
+    await updateDoc(chapterRef, {
+      topics: updatedTopics,
+      updatedAt: serverTimestamp(),
+    });
+    
+    await addHistoryEntry(chapterId, userId, `Linked ${assetIds.length} 3D asset(s) to topic`);
+    
+    console.log(`✅ Linked ${assetIds.length} asset IDs to topic ${topicId}:`, assetIds);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error linking meshy assets to topic:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Unlink meshy asset ID from a topic's meshy_asset_ids array
+ */
+export const unlinkMeshyAssetFromTopic = async (options: {
+  chapterId: string;
+  topicId: string;
+  assetId: string;
+  userId: string;
+}): Promise<{ success: boolean; error?: string }> => {
+  const { chapterId, topicId, assetId, userId } = options;
+  
+  try {
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const chapterSnap = await getDoc(chapterRef);
+    
+    if (!chapterSnap.exists()) {
+      throw new Error('Chapter not found');
+    }
+    
+    const chapter = chapterSnap.data() as CurriculumChapter;
+    const topicIndex = chapter.topics?.findIndex((t) => t.topic_id === topicId);
+    
+    if (topicIndex === undefined || topicIndex === -1) {
+      throw new Error('Topic not found');
+    }
+    
+    const updatedTopics = [...chapter.topics];
+    const currentTopic = updatedTopics[topicIndex];
+    
+    // Remove the asset ID from the array
+    const existingIds = currentTopic.meshy_asset_ids || [];
+    const filteredIds = existingIds.filter((id: string) => id !== assetId);
+    
+    updatedTopics[topicIndex] = {
+      ...currentTopic,
+      meshy_asset_ids: filteredIds,
+    };
+    
+    await updateDoc(chapterRef, {
+      topics: updatedTopics,
+      updatedAt: serverTimestamp(),
+    });
+    
+    await addHistoryEntry(chapterId, userId, `Unlinked 3D asset from topic`);
+    
+    console.log(`✅ Unlinked asset ID ${assetId} from topic ${topicId}`);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error unlinking meshy asset from topic:', error);
     return { success: false, error: String(error) };
   }
 };

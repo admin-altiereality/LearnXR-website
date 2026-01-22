@@ -248,31 +248,74 @@ const XRLessonPlayerV3: React.FC = () => {
     const fetchTTSData = async () => {
       if (!lessonData) return;
       
+      const lessonLanguage = (lessonData as any).language || 'en';
+      
+      // Priority 1: Check if TTS audio is already in lessonData (from bundle)
+      const ttsAudioFromStorage = (lessonData as any).ttsAudio;
+      if (ttsAudioFromStorage && Array.isArray(ttsAudioFromStorage)) {
+        // Filter by language (strict match)
+        const languageFilteredTTS = ttsAudioFromStorage.filter((tts: any) => {
+          const ttsLang = (tts.language || 'en').toLowerCase().trim();
+          const targetLang = lessonLanguage.toLowerCase().trim();
+          return ttsLang === targetLang;
+        });
+        
+        if (languageFilteredTTS.length > 0) {
+          const convertedTTS: TTSData[] = languageFilteredTTS.map((tts: any) => ({
+            id: tts.id || '',
+            section: tts.script_type || tts.section || 'full',
+            audioUrl: tts.audio_url || tts.audioUrl || tts.url || '',
+            text: tts.text || tts.script_text || '',
+          }));
+          
+          setTtsData(convertedTTS);
+          addDebug(`✅ Loaded ${convertedTTS.length} TTS entries from bundle (language: ${lessonLanguage})`, {
+            ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, hasAudio: !!t.audioUrl })),
+          });
+          return;
+        } else {
+          addDebug(`⚠️ No TTS found in bundle for language ${lessonLanguage}`, {
+            totalTTS: ttsAudioFromStorage.length,
+            sampleLanguages: ttsAudioFromStorage.slice(0, 3).map((t: any) => t.language || 'none'),
+          });
+        }
+      }
+      
+      // Priority 2: Fetch from Firestore using IDs
       const ttsIds = lessonData.topic?.tts_ids || lessonData.chapter?.tts_ids || [];
       if (ttsIds.length === 0) {
         addDebug('No TTS IDs found');
         return;
       }
       
-      addDebug(`Fetching ${ttsIds.length} TTS entries...`);
+      addDebug(`Fetching ${ttsIds.length} TTS entries for language: ${lessonLanguage}...`);
       const ttsResults: TTSData[] = [];
       
-      // Only fetch English TTS (skip Hindi for now)
-      const englishTtsIds = ttsIds.filter(id => !id.includes('_hi_'));
+      // Filter IDs by language (check if ID contains language indicator)
+      const languageTtsIds = ttsIds.filter(id => {
+        if (lessonLanguage === 'hi') {
+          return id.includes('_hi') || id.includes('_hindi');
+        } else {
+          return !id.includes('_hi') && !id.includes('_hindi');
+        }
+      });
       
-      for (const ttsId of englishTtsIds.slice(0, 3)) { // Max 3 for intro/explanation/outro
+      for (const ttsId of languageTtsIds.slice(0, 3)) { // Max 3 for intro/explanation/outro
         try {
           const ttsDoc = await getDoc(doc(db, 'chapter_tts', ttsId));
           if (ttsDoc.exists()) {
             const data = ttsDoc.data();
-            if (data.audio_url || data.audioUrl) {
+            const ttsLang = data.language || 'en';
+            
+            // Only include if language matches
+            if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
               ttsResults.push({
                 id: ttsId,
                 section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
                 audioUrl: data.audio_url || data.audioUrl,
                 text: data.text || data.content || '',
               });
-              addDebug(`TTS loaded: ${ttsId.substring(0, 40)}...`);
+              addDebug(`TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
             }
           }
         } catch (err) {
@@ -281,7 +324,7 @@ const XRLessonPlayerV3: React.FC = () => {
       }
       
       setTtsData(ttsResults);
-      addDebug(`✅ Loaded ${ttsResults.length} TTS entries`);
+      addDebug(`✅ Loaded ${ttsResults.length} TTS entries (language: ${lessonLanguage})`);
     };
     
     fetchTTSData();
@@ -295,31 +338,64 @@ const XRLessonPlayerV3: React.FC = () => {
     const fetchMCQData = async () => {
       if (!lessonData) return;
       
+      const lessonLanguage = (lessonData as any).language || 'en';
+      
+      // Priority 1: Check if MCQs are already in lessonData (from bundle)
+      if ((lessonData as any).topic?.mcqs && Array.isArray((lessonData as any).topic.mcqs)) {
+        const mcqs = (lessonData as any).topic.mcqs;
+        if (mcqs.length > 0) {
+          // Convert to MCQData format
+          const convertedMCQs: MCQData[] = mcqs.map((mcq: any) => ({
+            id: mcq.id || '',
+            question: mcq.question || '',
+            options: Array.isArray(mcq.options) ? mcq.options : [],
+            correctAnswer: mcq.correct_option_index ?? 0,
+            explanation: mcq.explanation || '',
+          }));
+          
+          setMcqData(convertedMCQs);
+          addDebug(`✅ Loaded ${convertedMCQs.length} MCQs from bundle (language: ${lessonLanguage})`);
+          return;
+        }
+      }
+      
+      // Priority 2: Fetch from Firestore using IDs
       const mcqIds = lessonData.topic?.mcq_ids || lessonData.chapter?.mcq_ids || [];
       if (mcqIds.length === 0) {
         addDebug('No MCQ IDs found');
         return;
       }
       
-      addDebug(`Fetching ${mcqIds.length} MCQ entries...`);
+      addDebug(`Fetching ${mcqIds.length} MCQ entries for language: ${lessonLanguage}...`);
       const mcqResults: MCQData[] = [];
       
-      // Only fetch English MCQs (skip Hindi)
-      const englishMcqIds = mcqIds.filter(id => !id.includes('_hi'));
+      // Filter IDs by language (check if ID contains language indicator)
+      const languageMcqIds = mcqIds.filter(id => {
+        if (lessonLanguage === 'hi') {
+          return id.includes('_hi') || id.includes('_hindi');
+        } else {
+          return !id.includes('_hi') && !id.includes('_hindi');
+        }
+      });
       
-      for (const mcqId of englishMcqIds.slice(0, 5)) { // Max 5 questions
+      for (const mcqId of languageMcqIds.slice(0, 5)) { // Max 5 questions
         try {
           const mcqDoc = await getDoc(doc(db, 'chapter_mcqs', mcqId));
           if (mcqDoc.exists()) {
             const data = mcqDoc.data();
-            mcqResults.push({
-              id: mcqId,
-              question: data.question || data.question_text || '',
-              options: data.options || [],
-              correctAnswer: data.correct_answer ?? data.correctAnswer ?? 0,
-              explanation: data.explanation || '',
-            });
-            addDebug(`MCQ loaded: ${mcqId}`);
+            const mcqLang = data.language || 'en';
+            
+            // Only include if language matches
+            if (mcqLang === lessonLanguage) {
+              mcqResults.push({
+                id: mcqId,
+                question: data.question || data.question_text || '',
+                options: data.options || [],
+                correctAnswer: data.correct_answer ?? data.correctAnswer ?? 0,
+                explanation: data.explanation || '',
+              });
+              addDebug(`MCQ loaded: ${mcqId} (${mcqLang})`);
+            }
           }
         } catch (err) {
           addDebug(`MCQ error for ${mcqId}: ${err}`);
@@ -327,7 +403,7 @@ const XRLessonPlayerV3: React.FC = () => {
       }
       
       setMcqData(mcqResults);
-      addDebug(`✅ Loaded ${mcqResults.length} MCQs`);
+      addDebug(`✅ Loaded ${mcqResults.length} MCQs (language: ${lessonLanguage})`);
     };
     
     fetchMCQData();
@@ -341,13 +417,66 @@ const XRLessonPlayerV3: React.FC = () => {
     const fetchMeshyAssets = async () => {
       if (!lessonData) return;
       
+      // Priority 1: Check if 3D assets are already in lessonData (from bundle)
+      if ((lessonData as any).assets3d && Array.isArray((lessonData as any).assets3d) && (lessonData as any).assets3d.length > 0) {
+        const bundleAssets = (lessonData as any).assets3d;
+        addDebug(`Using ${bundleAssets.length} 3D assets from bundle`);
+        
+        // Convert bundle assets to MeshyAsset format
+        const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
+          id: asset.id || '',
+          glbUrl: asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
+          name: asset.name || asset.prompt || 'Asset',
+          thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
+        })).filter((asset: MeshyAsset) => asset.glbUrl); // Only include assets with URLs
+        
+        setMeshyAssets(convertedAssets);
+        addDebug(`✅ Loaded ${convertedAssets.length} 3D assets from bundle`);
+        return;
+      }
+      
+      // Priority 2: Check topic asset_urls from lessonData
+      if (lessonData.topic?.asset_urls && Array.isArray(lessonData.topic.asset_urls) && lessonData.topic.asset_urls.length > 0) {
+        const assetUrls = lessonData.topic.asset_urls;
+        addDebug(`Using ${assetUrls.length} asset URLs from topic`);
+        
+        const convertedAssets: MeshyAsset[] = assetUrls.map((url: string, index: number) => ({
+          id: `asset_${index}`,
+          glbUrl: url,
+          name: `Asset ${index + 1}`,
+        }));
+        
+        setMeshyAssets(convertedAssets);
+        addDebug(`✅ Loaded ${convertedAssets.length} 3D assets from topic URLs`);
+        return;
+      }
+      
+      // Priority 3: Check image3dasset
+      if ((lessonData as any).image3dasset) {
+        const img3d = (lessonData as any).image3dasset;
+        const glbUrl = img3d.imagemodel_glb || img3d.imageasset_url;
+        
+        if (glbUrl) {
+          const convertedAssets: MeshyAsset[] = [{
+            id: img3d.imageasset_id || 'image3d_asset',
+            glbUrl: glbUrl,
+            name: 'Image 3D Asset',
+          }];
+          
+          setMeshyAssets(convertedAssets);
+          addDebug(`✅ Loaded image3dasset: ${glbUrl.substring(0, 60)}`);
+          return;
+        }
+      }
+      
+      // Priority 4: Fallback to Firestore fetch using IDs
       const meshyIds = lessonData.topic?.meshy_asset_ids || lessonData.chapter?.meshy_asset_ids || [];
       if (meshyIds.length === 0) {
         addDebug('No Meshy asset IDs found');
         return;
       }
       
-      addDebug(`Fetching ${meshyIds.length} 3D assets...`);
+      addDebug(`Fetching ${meshyIds.length} 3D assets from Firestore...`);
       const assetResults: MeshyAsset[] = [];
       
       for (const assetId of meshyIds) {
@@ -373,7 +502,7 @@ const XRLessonPlayerV3: React.FC = () => {
       }
       
       setMeshyAssets(assetResults);
-      addDebug(`✅ Found ${assetResults.length} 3D assets to load`);
+      addDebug(`✅ Found ${assetResults.length} 3D assets from Firestore`);
     };
     
     fetchMeshyAssets();

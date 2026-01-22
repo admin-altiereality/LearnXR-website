@@ -7,8 +7,12 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { Scene, ChapterTTS } from '../../../types/curriculum';
-import { getChapterTTS } from '../../../lib/firestore/queries';
+import { Scene, ChapterTTS, LanguageCode } from '../../../types/curriculum';
+import { getChapterTTS, getChapterTTSByLanguage, extractTopicScriptsForLanguage } from '../../../lib/firestore/queries';
+import type { CurriculumChapter, Topic as FirebaseTopic } from '../../../types/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
+import { LanguageToggle } from '../../../Components/LanguageSelector';
 import {
   MessageSquare,
   BookOpen,
@@ -28,6 +32,8 @@ interface AvatarTabProps {
   isReadOnly: boolean;
   chapterId?: string;
   topicId?: string;
+  language?: LanguageCode;
+  onLanguageChange?: (language: LanguageCode) => void;
 }
 
 export const AvatarTab = ({
@@ -36,44 +42,160 @@ export const AvatarTab = ({
   isReadOnly,
   chapterId,
   topicId,
+  language = 'en',
+  onLanguageChange,
 }: AvatarTabProps) => {
   // TTS audio from chapter_tts collection
   const [ttsData, setTtsData] = useState<ChapterTTS[]>([]);
   const [loadingTTS, setLoadingTTS] = useState(false);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
+  const [languageScripts, setLanguageScripts] = useState<{
+    intro: string;
+    explanation: string;
+    outro: string;
+  } | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
   
-  // Load TTS data from chapter_tts collection
+  // Sync with parent language prop and reload data when it changes
+  useEffect(() => {
+    if (language !== selectedLanguage) {
+      console.log(`[AvatarTab] Syncing language from parent: ${language} (was ${selectedLanguage})`);
+      setSelectedLanguage(language);
+      // Data will reload automatically via useEffect dependencies on selectedLanguage
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
+  
+  const handleLanguageChange = (lang: LanguageCode) => {
+    console.log(`[AvatarTab] Language changed to: ${lang}`);
+    setSelectedLanguage(lang);
+    if (onLanguageChange) {
+      onLanguageChange(lang);
+    }
+    // Scripts and TTS will reload automatically via useEffect dependencies
+  };
+  
+  // Load language-specific scripts using bundle for consistency
+  useEffect(() => {
+    const loadLanguageScripts = async () => {
+      if (!chapterId || !topicId) return;
+      
+      try {
+        console.log(`[AvatarTab] Loading ${selectedLanguage} scripts for topic ${topicId}...`);
+        
+        // Use bundle to get scripts (consistent with other tabs)
+        const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId,
+          lang: selectedLanguage,
+          topicId,
+        });
+        
+        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+        setLanguageScripts(scripts);
+        
+        console.log(`[AvatarTab] Loaded ${selectedLanguage} scripts:`, {
+          hasIntro: !!scripts.intro,
+          hasExplanation: !!scripts.explanation,
+          hasOutro: !!scripts.outro,
+        });
+        
+        // Update scene form state with language-specific scripts
+        onSceneChange('avatar_intro', scripts.intro || '');
+        onSceneChange('avatar_explanation', scripts.explanation || '');
+        onSceneChange('avatar_outro', scripts.outro || '');
+      } catch (error) {
+        console.error(`[AvatarTab] Error loading ${selectedLanguage} scripts:`, error);
+        // Fallback to direct chapter fetch
+        try {
+          const chapterRef = doc(db, 'curriculum_chapters', chapterId);
+          const chapterSnap = await getDoc(chapterRef);
+          
+          if (chapterSnap.exists()) {
+            const chapterData = chapterSnap.data() as CurriculumChapter;
+            const topic = chapterData.topics?.find(t => t.topic_id === topicId);
+            
+            if (topic) {
+              const scripts = extractTopicScriptsForLanguage(topic, selectedLanguage);
+              setLanguageScripts(scripts);
+              onSceneChange('avatar_intro', scripts.intro || '');
+              onSceneChange('avatar_explanation', scripts.explanation || '');
+              onSceneChange('avatar_outro', scripts.outro || '');
+            }
+          }
+        } catch (fallbackError) {
+          console.error(`[AvatarTab] Fallback also failed:`, fallbackError);
+        }
+      }
+    };
+    
+    loadLanguageScripts();
+  }, [chapterId, topicId, selectedLanguage, onSceneChange]);
+  
+  // Load TTS data from bundle (language-specific)
   useEffect(() => {
     const loadTTSData = async () => {
       if (!chapterId || !topicId) return;
       
       setLoadingTTS(true);
       try {
-        const data = await getChapterTTS(chapterId, topicId);
-        setTtsData(data);
-        console.log('✅ Loaded TTS data from chapter_tts collection:', data.length);
+        console.log(`[AvatarTab] Loading ${selectedLanguage} TTS for topic ${topicId}...`);
+        
+        // Use bundle to get TTS (consistent with other tabs)
+        const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId,
+          lang: selectedLanguage,
+          topicId,
+        });
+        
+        setTtsData(bundle.tts || []);
+        console.log(`[AvatarTab] ✅ Loaded ${bundle.tts.length} ${selectedLanguage} TTS files from bundle`);
       } catch (error) {
-        console.error('Error loading TTS data:', error);
+        console.error(`[AvatarTab] Error loading ${selectedLanguage} TTS from bundle:`, error);
+        // Fallback to direct query
+        try {
+          const data = await getChapterTTSByLanguage(chapterId, topicId, selectedLanguage);
+          setTtsData(data);
+          console.log(`[AvatarTab] Fallback: Loaded ${data.length} ${selectedLanguage} TTS files`);
+        } catch (fallbackError) {
+          console.error(`[AvatarTab] Fallback also failed:`, fallbackError);
+          setTtsData([]);
+        }
       } finally {
         setLoadingTTS(false);
       }
     };
     
     loadTTSData();
-  }, [chapterId, topicId]);
+  }, [chapterId, topicId, selectedLanguage]);
   
   const handleRefreshTTS = async () => {
     if (!chapterId || !topicId) return;
     
     setLoadingTTS(true);
     try {
-      const data = await getChapterTTS(chapterId, topicId);
-      setTtsData(data);
-      toast.success('TTS data refreshed');
+      // Use bundle to refresh TTS
+      const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
+      const bundle = await getLessonBundle({
+        chapterId,
+        lang: selectedLanguage,
+        topicId,
+      });
+      
+      setTtsData(bundle.tts || []);
+      toast.success(`${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS data refreshed`);
     } catch (error) {
-      console.error('Error refreshing TTS:', error);
-      toast.error('Failed to refresh TTS');
+      console.error(`[AvatarTab] Error refreshing ${selectedLanguage} TTS:`, error);
+      // Fallback to direct query
+      try {
+        const data = await getChapterTTSByLanguage(chapterId, topicId, selectedLanguage);
+        setTtsData(data);
+        toast.success(`${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS data refreshed`);
+      } catch (fallbackError) {
+        toast.error(`Failed to refresh ${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS`);
+      }
     } finally {
       setLoadingTTS(false);
     }
@@ -167,14 +289,27 @@ export const AvatarTab = ({
             <h2 className="text-lg font-semibold text-white">Avatar Scripts</h2>
             <p className="text-sm text-slate-400 mt-1">
               Write the dialogue for the teaching avatar in each phase of the lesson
+              <span className="text-cyan-400/60 ml-1">
+                ({selectedLanguage === 'en' ? 'English' : 'Hindi'})
+              </span>
               {ttsData.length > 0 && (
                 <span className="text-cyan-400/60 ml-1">
-                  ({ttsData.length} TTS audio{ttsData.length !== 1 ? 's' : ''} from chapter_tts)
+                  • {ttsData.length} {selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audio{ttsData.length !== 1 ? 's' : ''} from chapter_tts
                 </span>
               )}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Language Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Language:</span>
+              <LanguageToggle
+                value={selectedLanguage}
+                onChange={handleLanguageChange}
+                size="sm"
+                showFlags={true}
+              />
+            </div>
             {chapterId && topicId && (
               <button
                 onClick={handleRefreshTTS}
@@ -252,7 +387,13 @@ export const AvatarTab = ({
         {scriptSections.map((section) => {
           const Icon = section.icon;
           const colors = getColorClasses(section.color);
-          const value = (sceneFormState[section.id as keyof Scene] as string) || '';
+          // Use languageScripts if available, otherwise fall back to sceneFormState
+          const scriptValue = languageScripts 
+            ? (section.id === 'avatar_intro' ? languageScripts.intro
+               : section.id === 'avatar_explanation' ? languageScripts.explanation
+               : languageScripts.outro)
+            : (sceneFormState[section.id as keyof Scene] as string) || '';
+          const value = scriptValue;
           const wordCount = countWords(value);
           const readTime = estimateReadTime(value);
           
@@ -273,7 +414,19 @@ export const AvatarTab = ({
               
               <textarea
                 value={value}
-                onChange={(e) => onSceneChange(section.id as keyof Scene, e.target.value)}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  // Update both languageScripts state and sceneFormState
+                  if (languageScripts) {
+                    setLanguageScripts({
+                      ...languageScripts,
+                      [section.id === 'avatar_intro' ? 'intro'
+                       : section.id === 'avatar_explanation' ? 'explanation'
+                       : 'outro']: newValue,
+                    });
+                  }
+                  onSceneChange(section.id as keyof Scene, newValue);
+                }}
                 disabled={isReadOnly}
                 placeholder={section.placeholder}
                 rows={6}
@@ -316,7 +469,12 @@ export const AvatarTab = ({
         {/* Total Stats */}
         <div className="grid grid-cols-3 gap-4 p-4 bg-slate-800/20 rounded-xl border border-slate-700/20">
           {scriptSections.map((section) => {
-            const value = (sceneFormState[section.id as keyof Scene] as string) || '';
+            // Use languageScripts if available, otherwise fall back to sceneFormState
+            const value = languageScripts 
+              ? (section.id === 'avatar_intro' ? languageScripts.intro
+                 : section.id === 'avatar_explanation' ? languageScripts.explanation
+                 : languageScripts.outro)
+              : (sceneFormState[section.id as keyof Scene] as string) || '';
             const wordCount = countWords(value);
             const colors = getColorClasses(section.color);
             

@@ -1,13 +1,31 @@
-import { Topic, Scene } from '../../../types/curriculum';
-import { FileText, Hash, Tag, Target, HelpCircle, Box, Image, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Topic, Scene, LanguageCode } from '../../../types/curriculum';
+import { FileText, Hash, Tag, Target, HelpCircle, Box, Image, Loader2, CheckCircle, XCircle, Volume2, Globe } from 'lucide-react';
+import { LanguageToggle } from '../../../Components/LanguageSelector';
+import {
+  getChapterNameByLanguage,
+  getTopicNameByLanguage,
+  getLearningObjectiveByLanguage,
+} from '../../../lib/firebase/utils/languageAvailability';
+import type { CurriculumChapter, Topic as FirebaseTopic } from '../../../types/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../../config/firebase';
+import { useState, useEffect, useCallback } from 'react';
+import { getChapterImages } from '../../../lib/firestore/queries';
 
 interface ContentAvailability {
   hasMCQs: boolean;
   mcqCount: number;
+  mcqsWithOptions: number;
   has3DAssets: boolean;
   assetCount: number;
   hasImages: boolean;
   imageCount: number;
+  hasTTS: boolean;
+  ttsCount: number;
+  ttsWithAudio: number;
+  hasSkybox: boolean;
+  hasAvatarScripts: boolean;
+  sceneStatus: 'published' | 'draft' | 'pending';
   loading: boolean;
 }
 
@@ -18,6 +36,10 @@ interface OverviewTabProps {
   onSceneChange: (field: keyof Scene, value: unknown) => void;
   isReadOnly: boolean;
   contentAvailability?: ContentAvailability;
+  chapterId?: string;
+  topicId?: string;
+  language?: LanguageCode;
+  selectedLanguage?: LanguageCode;
 }
 
 const sceneTypes = [
@@ -34,37 +56,236 @@ export const OverviewTab = ({
   onSceneChange,
   isReadOnly,
   contentAvailability,
+  chapterId,
+  topicId,
+  selectedLanguage: propLanguage,
 }: OverviewTabProps) => {
-  const availability = contentAvailability || {
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(propLanguage || 'en');
+  const [chapterData, setChapterData] = useState<CurriculumChapter | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [bundleAvailability, setBundleAvailability] = useState<ContentAvailability>({
     hasMCQs: false,
     mcqCount: 0,
+    mcqsWithOptions: 0,
     has3DAssets: false,
     assetCount: 0,
     hasImages: false,
     imageCount: 0,
-    loading: false,
-  };
+    hasTTS: false,
+    ttsCount: 0,
+    ttsWithAudio: 0,
+    hasSkybox: false,
+    hasAvatarScripts: false,
+    sceneStatus: 'pending',
+    loading: true,
+  });
+  
+  // Sync with prop language
+  useEffect(() => {
+    if (propLanguage) {
+      setSelectedLanguage(propLanguage);
+    }
+  }, [propLanguage]);
+
+  // Load chapter data and bundle-based content availability
+  useEffect(() => {
+    const loadData = async () => {
+      if (!chapterId || !topicId) return;
+      
+      setLoading(true);
+      setBundleAvailability(prev => ({ ...prev, loading: true }));
+      
+      try {
+        // Load chapter data
+        const chapterRef = doc(db, 'curriculum_chapters', chapterId);
+        const chapterSnap = await getDoc(chapterRef);
+        
+        if (chapterSnap.exists()) {
+          setChapterData(chapterSnap.data() as CurriculumChapter);
+        }
+        
+        // Load bundle for content availability check
+        const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId,
+          lang: selectedLanguage,
+          topicId,
+        });
+        
+        // Check images separately (not in bundle yet)
+        const images = await getChapterImages(chapterId, topicId).catch(() => []);
+        
+        // Analyze bundle content
+        const mcqsWithOptions = (bundle.mcqs || []).filter(
+          (m: any) => m.options && Array.isArray(m.options) && m.options.length > 0
+        );
+        
+        const ttsWithAudio = (bundle.tts || []).filter(
+          (t: any) => t.audio_url || t.audioUrl || t.url
+        );
+        
+        // Determine scene status
+        let sceneStatus: 'published' | 'draft' | 'pending' = 'pending';
+        if (sceneFormState.status === 'published') {
+          sceneStatus = 'published';
+        } else if (sceneFormState.skybox_url || bundle.skybox) {
+          sceneStatus = 'draft';
+        }
+        
+        setBundleAvailability({
+          hasMCQs: mcqsWithOptions.length > 0,
+          mcqCount: bundle.mcqs?.length || 0,
+          mcqsWithOptions: mcqsWithOptions.length,
+          has3DAssets: (bundle.assets3d?.length || 0) > 0,
+          assetCount: bundle.assets3d?.length || 0,
+          hasImages: images.length > 0,
+          imageCount: images.length,
+          hasTTS: ttsWithAudio.length > 0,
+          ttsCount: bundle.tts?.length || 0,
+          ttsWithAudio: ttsWithAudio.length,
+          hasSkybox: !!(bundle.skybox || sceneFormState.skybox_url),
+          hasAvatarScripts: !!(bundle.avatarScripts && (
+            bundle.avatarScripts.intro || 
+            bundle.avatarScripts.explanation || 
+            bundle.avatarScripts.outro
+          )),
+          sceneStatus,
+          loading: false,
+        });
+        
+        console.log('📊 [OverviewTab] Bundle-based content availability:', {
+          language: selectedLanguage,
+          mcqs: {
+            total: bundle.mcqs?.length || 0,
+            withOptions: mcqsWithOptions.length,
+          },
+          tts: {
+            total: bundle.tts?.length || 0,
+            withAudio: ttsWithAudio.length,
+          },
+          assets: bundle.assets3d?.length || 0,
+          images: images.length,
+          skybox: !!bundle.skybox,
+          avatarScripts: !!bundle.avatarScripts,
+          sceneStatus,
+        });
+      } catch (error) {
+        console.error('Error loading content availability:', error);
+        setBundleAvailability(prev => ({ ...prev, loading: false }));
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+  }, [chapterId, topicId, selectedLanguage, sceneFormState.status, sceneFormState.skybox_url]);
+  
+  // Get language-specific names
+  const topic = chapterData?.topics?.find(t => t.topic_id === topicId);
+  const chapterNameEn = chapterData ? getChapterNameByLanguage(chapterData, 'en') : '';
+  const chapterNameHi = chapterData ? getChapterNameByLanguage(chapterData, 'hi') : '';
+  const topicNameEn = topic ? getTopicNameByLanguage(topic, 'en') : '';
+  const topicNameHi = topic ? getTopicNameByLanguage(topic, 'hi') : '';
+  const learningObjectiveEn = topic ? getLearningObjectiveByLanguage(topic, 'en') : '';
+  const learningObjectiveHi = topic ? getLearningObjectiveByLanguage(topic, 'hi') : '';
+  
+  // Use bundle-based availability (more accurate) or fallback to prop
+  const availability = bundleAvailability.loading === false ? bundleAvailability : (contentAvailability || bundleAvailability);
+  
   return (
     <div className="p-6 max-w-4xl">
       <div className="space-y-6">
+        {/* Language Toggle */}
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-medium text-slate-400">Content Language</h3>
+          <LanguageToggle
+            value={selectedLanguage}
+            onChange={setSelectedLanguage}
+            size="sm"
+            showFlags={true}
+          />
+        </div>
+        
+        {/* Chapter Name */}
+        {(chapterNameEn || chapterNameHi) && (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+              <FileText className="w-4 h-4 text-cyan-400" />
+              Chapter Name
+            </label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <div className="text-xs text-slate-500 flex items-center gap-1">
+                  <span>🇬🇧</span> English
+                </div>
+                <div className="bg-slate-800/50 border border-slate-600/50 rounded-xl px-4 py-3 text-white">
+                  {chapterNameEn || 'Not available'}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-slate-500 flex items-center gap-1">
+                  <span>🇮🇳</span> Hindi
+                </div>
+                <div className="bg-slate-800/50 border border-slate-600/50 rounded-xl px-4 py-3 text-white">
+                  {chapterNameHi || 'Not available'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         {/* Topic Name */}
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
             <FileText className="w-4 h-4 text-cyan-400" />
             Topic Name
           </label>
-          <input
-            type="text"
-            value={topicFormState.topic_name || ''}
-            onChange={(e) => onTopicChange('topic_name', e.target.value)}
-            disabled={isReadOnly}
-            placeholder="Enter topic name..."
-            className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                     px-4 py-3 text-white placeholder:text-slate-500
-                     focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                     disabled:opacity-50 disabled:cursor-not-allowed
-                     transition-all duration-200"
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <span>🇬🇧</span> English
+              </div>
+              <input
+                type="text"
+                value={selectedLanguage === 'en' ? (topicNameEn || topicFormState.topic_name || '') : topicNameEn || ''}
+                onChange={(e) => {
+                  if (selectedLanguage === 'en') {
+                    onTopicChange('topic_name', e.target.value);
+                  }
+                }}
+                disabled={isReadOnly || selectedLanguage !== 'en'}
+                placeholder="Enter topic name (English)..."
+                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
+                         px-4 py-3 text-white placeholder:text-slate-500
+                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         transition-all duration-200"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <span>🇮🇳</span> Hindi
+              </div>
+              <input
+                type="text"
+                value={selectedLanguage === 'hi' ? (topicNameHi || '') : topicNameHi || ''}
+                onChange={(e) => {
+                  if (selectedLanguage === 'hi') {
+                    // For Hindi, we'd need to update topic_name_by_language
+                    // This is a simplified version - full implementation would update the nested structure
+                    onTopicChange('topic_name', e.target.value);
+                  }
+                }}
+                disabled={isReadOnly || selectedLanguage !== 'hi'}
+                placeholder="Enter topic name (Hindi)..."
+                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
+                         px-4 py-3 text-white placeholder:text-slate-500
+                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
+                         disabled:opacity-50 disabled:cursor-not-allowed
+                         transition-all duration-200"
+              />
+            </div>
+          </div>
         </div>
         
         {/* Priority & Scene Type Row */}
@@ -126,117 +347,342 @@ export const OverviewTab = ({
             <Target className="w-4 h-4 text-cyan-400" />
             Learning Objective
           </label>
-          <textarea
-            value={sceneFormState.learning_objective || ''}
-            onChange={(e) => onSceneChange('learning_objective', e.target.value)}
-            disabled={isReadOnly}
-            placeholder="What should students learn from this topic?"
-            rows={4}
-            className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                     px-4 py-3 text-white placeholder:text-slate-500
-                     focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                     disabled:opacity-50 disabled:cursor-not-allowed resize-none
-                     transition-all duration-200"
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <span>🇬🇧</span> English
+              </div>
+              <textarea
+                value={selectedLanguage === 'en' ? (learningObjectiveEn || sceneFormState.learning_objective || '') : learningObjectiveEn || ''}
+                onChange={(e) => {
+                  if (selectedLanguage === 'en') {
+                    onSceneChange('learning_objective', e.target.value);
+                  }
+                }}
+                disabled={isReadOnly || selectedLanguage !== 'en'}
+                placeholder="What should students learn from this topic? (English)"
+                rows={4}
+                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
+                         px-4 py-3 text-white placeholder:text-slate-500
+                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
+                         disabled:opacity-50 disabled:cursor-not-allowed resize-none
+                         transition-all duration-200"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500 flex items-center gap-1">
+                <span>🇮🇳</span> Hindi
+              </div>
+              <textarea
+                value={selectedLanguage === 'hi' ? (learningObjectiveHi || '') : learningObjectiveHi || ''}
+                onChange={(e) => {
+                  if (selectedLanguage === 'hi') {
+                    // For Hindi, we'd need to update learning_objective_by_language
+                    // This is a simplified version
+                    onSceneChange('learning_objective', e.target.value);
+                  }
+                }}
+                disabled={isReadOnly || selectedLanguage !== 'hi'}
+                placeholder="What should students learn from this topic? (Hindi)"
+                rows={4}
+                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
+                         px-4 py-3 text-white placeholder:text-slate-500
+                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
+                         disabled:opacity-50 disabled:cursor-not-allowed resize-none
+                         transition-all duration-200"
+              />
+            </div>
+          </div>
           <p className="text-xs text-slate-500">
             A clear statement of what learners will be able to do after completing this topic
           </p>
         </div>
         
-        {/* Content Availability Card */}
-        <div className="mt-8 p-5 bg-slate-800/30 rounded-xl border border-slate-700/30">
-          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-            Content Availability
-          </h3>
+        {/* Content Availability Card - Revamped with Bundle Approach */}
+        <div className="mt-8 p-6 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-xl border border-slate-700/50 shadow-lg">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                <Globe className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-white">Content Availability</h3>
+                <p className="text-xs text-slate-400">Language: {selectedLanguage === 'en' ? 'English 🇬🇧' : 'Hindi 🇮🇳'}</p>
+              </div>
+            </div>
+            {availability.loading && (
+              <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+            )}
+          </div>
           
           {availability.loading ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-              <span className="ml-2 text-sm text-slate-400">Checking content...</span>
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+              <span className="ml-3 text-sm text-slate-400">Analyzing content from bundle...</span>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Scene Status */}
-              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Scene Status</p>
-                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
-                               ${sceneFormState.status === 'published'
-                                 ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                                 : 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
-                               }`}>
-                  {sceneFormState.status === 'published' ? (
-                    <CheckCircle className="w-3.5 h-3.5" />
-                  ) : (
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <div className="space-y-4">
+              {/* Scene Status - Enhanced */}
+              <div className={`p-4 rounded-lg border-2 transition-all ${
+                availability.sceneStatus === 'published'
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : availability.sceneStatus === 'draft'
+                  ? 'bg-amber-500/10 border-amber-500/30'
+                  : 'bg-slate-700/30 border-slate-600/30'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                      availability.sceneStatus === 'published'
+                        ? 'bg-emerald-500/20'
+                        : availability.sceneStatus === 'draft'
+                        ? 'bg-amber-500/20'
+                        : 'bg-slate-700/50'
+                    }`}>
+                      {availability.sceneStatus === 'published' ? (
+                        <CheckCircle className="w-5 h-5 text-emerald-400" />
+                      ) : availability.sceneStatus === 'draft' ? (
+                        <Loader2 className="w-5 h-5 text-amber-400" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-slate-500" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">Scene Status</p>
+                      <p className="text-xs text-slate-400">
+                        {availability.sceneStatus === 'published' 
+                          ? 'Published and ready' 
+                          : availability.sceneStatus === 'draft'
+                          ? 'Draft - needs publishing'
+                          : 'Pending configuration'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {availability.hasSkybox && (
+                      <span className="px-2.5 py-1 text-xs font-medium text-emerald-400 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                        Skybox ✓
+                      </span>
+                    )}
+                    <span className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${
+                      availability.sceneStatus === 'published'
+                        ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                        : availability.sceneStatus === 'draft'
+                        ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
+                        : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
+                    }`}>
+                      {availability.sceneStatus === 'published' ? 'Published' : availability.sceneStatus === 'draft' ? 'Draft' : 'Pending'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Content Grid - Enhanced */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* MCQs */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.hasMCQs && availability.mcqsWithOptions > 0
+                    ? 'bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <HelpCircle className={`w-4 h-4 ${
+                      availability.hasMCQs && availability.mcqsWithOptions > 0 ? 'text-emerald-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">MCQs</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    {availability.hasMCQs && availability.mcqsWithOptions > 0 ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        <span className="text-lg font-bold text-emerald-400">{availability.mcqsWithOptions}</span>
+                        <span className="text-xs text-slate-400">/ {availability.mcqCount} total</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">None</span>
+                      </>
+                    )}
+                  </div>
+                  {availability.mcqCount > 0 && availability.mcqsWithOptions === 0 && (
+                    <p className="text-[10px] text-amber-400 mt-1">⚠️ Missing options</p>
                   )}
-                  {sceneFormState.status || 'Draft'}
-                </span>
-              </div>
-              
-              {/* MCQ Status */}
-              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <HelpCircle className="w-3 h-3 text-cyan-400" />
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">MCQs</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
-                                 ${availability.hasMCQs
-                                   ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                                   : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                                 }`}>
-                    {availability.hasMCQs ? (
-                      <CheckCircle className="w-3.5 h-3.5" />
+                
+                {/* TTS */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.hasTTS && availability.ttsWithAudio > 0
+                    ? 'bg-blue-500/10 border-blue-500/30 hover:border-blue-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Volume2 className={`w-4 h-4 ${
+                      availability.hasTTS && availability.ttsWithAudio > 0 ? 'text-blue-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">TTS Audio</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    {availability.hasTTS && availability.ttsWithAudio > 0 ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                        <span className="text-lg font-bold text-blue-400">{availability.ttsWithAudio}</span>
+                        <span className="text-xs text-slate-400">/ {availability.ttsCount} total</span>
+                      </>
                     ) : (
-                      <XCircle className="w-3.5 h-3.5" />
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">None</span>
+                      </>
                     )}
-                    {availability.hasMCQs ? `${availability.mcqCount} MCQs` : 'None'}
-                  </span>
+                  </div>
                 </div>
-              </div>
-              
-              {/* 3D Assets Status */}
-              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Box className="w-3 h-3 text-violet-400" />
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">3D Assets</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
-                                 ${availability.has3DAssets
-                                   ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                                   : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                                 }`}>
+                
+                {/* 3D Assets */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.has3DAssets
+                    ? 'bg-violet-500/10 border-violet-500/30 hover:border-violet-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Box className={`w-4 h-4 ${
+                      availability.has3DAssets ? 'text-violet-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">3D Assets</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
                     {availability.has3DAssets ? (
-                      <CheckCircle className="w-3.5 h-3.5" />
+                      <>
+                        <CheckCircle className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                        <span className="text-lg font-bold text-violet-400">{availability.assetCount}</span>
+                        <span className="text-xs text-slate-400">assets</span>
+                      </>
                     ) : (
-                      <XCircle className="w-3.5 h-3.5" />
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">None</span>
+                      </>
                     )}
-                    {availability.has3DAssets ? `${availability.assetCount} Assets` : 'None'}
-                  </span>
+                  </div>
+                </div>
+                
+                {/* Images */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.hasImages
+                    ? 'bg-amber-500/10 border-amber-500/30 hover:border-amber-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Image className={`w-4 h-4 ${
+                      availability.hasImages ? 'text-amber-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">Images</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    {availability.hasImages ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                        <span className="text-lg font-bold text-amber-400">{availability.imageCount}</span>
+                        <span className="text-xs text-slate-400">images</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">None</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Avatar Scripts */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.hasAvatarScripts
+                    ? 'bg-cyan-500/10 border-cyan-500/30 hover:border-cyan-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className={`w-4 h-4 ${
+                      availability.hasAvatarScripts ? 'text-cyan-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">Avatar Scripts</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    {availability.hasAvatarScripts ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+                        <span className="text-sm font-bold text-cyan-400">Available</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">None</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Skybox */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.hasSkybox
+                    ? 'bg-indigo-500/10 border-indigo-500/30 hover:border-indigo-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Globe className={`w-4 h-4 ${
+                      availability.hasSkybox ? 'text-indigo-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">Skybox</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    {availability.hasSkybox ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                        <span className="text-sm font-bold text-indigo-400">Configured</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">Missing</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
               
-              {/* Images Status */}
-              <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <Image className="w-3 h-3 text-amber-400" />
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Images</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg
-                                 ${availability.hasImages
-                                   ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                                   : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                                 }`}>
-                    {availability.hasImages ? (
-                      <CheckCircle className="w-3.5 h-3.5" />
-                    ) : (
-                      <XCircle className="w-3.5 h-3.5" />
-                    )}
-                    {availability.hasImages ? `${availability.imageCount} Images` : 'None'}
-                  </span>
+              {/* Summary Bar */}
+              <div className="mt-4 pt-4 border-t border-slate-700/50">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Content Readiness:</span>
+                  <div className="flex items-center gap-4">
+                    <span className={`px-2 py-1 rounded ${
+                      availability.hasMCQs && availability.mcqsWithOptions > 0 
+                        ? 'text-emerald-400 bg-emerald-500/10' 
+                        : 'text-slate-500 bg-slate-700/30'
+                    }`}>
+                      MCQs {availability.hasMCQs && availability.mcqsWithOptions > 0 ? '✓' : '✗'}
+                    </span>
+                    <span className={`px-2 py-1 rounded ${
+                      availability.hasTTS && availability.ttsWithAudio > 0 
+                        ? 'text-blue-400 bg-blue-500/10' 
+                        : 'text-slate-500 bg-slate-700/30'
+                    }`}>
+                      TTS {availability.hasTTS && availability.ttsWithAudio > 0 ? '✓' : '✗'}
+                    </span>
+                    <span className={`px-2 py-1 rounded ${
+                      availability.hasSkybox 
+                        ? 'text-indigo-400 bg-indigo-500/10' 
+                        : 'text-slate-500 bg-slate-700/30'
+                    }`}>
+                      Skybox {availability.hasSkybox ? '✓' : '✗'}
+                    </span>
+                    <span className={`px-2 py-1 rounded ${
+                      availability.sceneStatus === 'published' 
+                        ? 'text-emerald-400 bg-emerald-500/10' 
+                        : 'text-amber-400 bg-amber-500/10'
+                    }`}>
+                      {availability.sceneStatus === 'published' ? 'Published' : 'Not Published'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

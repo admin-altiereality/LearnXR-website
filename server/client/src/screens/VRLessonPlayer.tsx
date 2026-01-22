@@ -1009,14 +1009,50 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchMCQs = async () => {
-      if (!activeLesson?.chapter?.chapter_id || !activeLesson?.topic?.topic_id) {
-        log('⚠️', 'Cannot fetch MCQs: missing chapter or topic ID');
+      const lessonLanguage = extraLessonData?.language || activeLesson?.topic?.language || 'en';
+      
+      // Priority 1: Check sessionStorage for embedded MCQs (from bundle)
+      if (extraLessonData?.topic?.mcqs && Array.isArray(extraLessonData.topic.mcqs)) {
+        const mcqs = extraLessonData.topic.mcqs;
+        if (mcqs.length > 0) {
+          // Convert to ChapterMCQ format
+          const convertedMCQs: ChapterMCQ[] = mcqs.map((mcq: any) => ({
+            id: mcq.id || '',
+            question: mcq.question || '',
+            options: Array.isArray(mcq.options) ? mcq.options : [],
+            correct_option_index: mcq.correct_option_index ?? 0,
+            explanation: mcq.explanation || '',
+            language: lessonLanguage,
+          }));
+          
+          log('✅', `Using ${convertedMCQs.length} embedded MCQs from sessionStorage (language: ${lessonLanguage})`);
+          setFetchedMCQs(convertedMCQs);
+          setMcqsLoading(false);
+          return;
+        }
+      }
+      
+      // Priority 2: Check activeLesson context for embedded MCQs
+      if (activeLesson?.topic?.mcqs && Array.isArray(activeLesson.topic.mcqs) && activeLesson.topic.mcqs.length > 0) {
+        const convertedMCQs: ChapterMCQ[] = activeLesson.topic.mcqs.map((mcq: any) => ({
+          id: mcq.id || '',
+          question: mcq.question || '',
+          options: Array.isArray(mcq.options) ? mcq.options : [],
+          correct_option_index: mcq.correct_option_index ?? 0,
+          explanation: mcq.explanation || '',
+          language: lessonLanguage,
+        }));
+        
+        log('✅', `Using ${convertedMCQs.length} embedded MCQs from context (language: ${lessonLanguage})`);
+        setFetchedMCQs(convertedMCQs);
+        setMcqsLoading(false);
         return;
       }
       
-      // Skip if we already have embedded MCQs
-      if (activeLesson.topic.mcqs && activeLesson.topic.mcqs.length > 0) {
-        log('ℹ️', `Using ${activeLesson.topic.mcqs.length} embedded MCQs from lesson data`);
+      // Priority 3: Fetch from Firestore
+      if (!activeLesson?.chapter?.chapter_id || !activeLesson?.topic?.topic_id) {
+        log('⚠️', 'Cannot fetch MCQs: missing chapter or topic ID');
+        setMcqsLoading(false);
         return;
       }
       
@@ -1026,26 +1062,34 @@ const VRLessonPlayerInner = () => {
         const chapterId = activeLesson.chapter.chapter_id;
         const topicId = activeLesson.topic.topic_id;
         
-        log('📝', 'Fetching MCQs from Firestore...', { chapterId, topicId });
+        log('📝', 'Fetching MCQs from Firestore...', { chapterId, topicId, language: lessonLanguage });
         
         const mcqData = await getChapterMCQs(chapterId, topicId);
         
-        if (mcqData.length > 0) {
-          log('✅', `Loaded ${mcqData.length} MCQs from chapter_mcqs collection`);
-          setFetchedMCQs(mcqData);
+        // Filter by language if language field exists
+        const filteredMCQs = mcqData.filter((mcq: any) => {
+          const mcqLang = mcq.language || 'en';
+          return mcqLang === lessonLanguage;
+        });
+        
+        if (filteredMCQs.length > 0) {
+          log('✅', `Loaded ${filteredMCQs.length} MCQs from chapter_mcqs collection (language: ${lessonLanguage})`);
+          setFetchedMCQs(filteredMCQs);
         } else {
-          log('⚠️', 'No MCQs found in Firestore for this lesson');
+          log('⚠️', `No MCQs found in Firestore for language: ${lessonLanguage}`);
+          setFetchedMCQs([]);
         }
       } catch (error) {
         console.error('Failed to fetch MCQs:', error);
         log('❌', 'MCQ fetch error:', error);
+        setFetchedMCQs([]);
       } finally {
         setMcqsLoading(false);
       }
     };
     
     fetchMCQs();
-  }, [activeLesson]);
+  }, [activeLesson, extraLessonData]);
 
   // ============================================================================
   // Fetch Skybox
@@ -1251,6 +1295,44 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchTTSData = async () => {
+      // First, check if we have TTS audio in sessionStorage (from bundle)
+      const lessonLanguage = extraLessonData?.language || 'en';
+      
+      // Priority 1: Check ttsAudio directly from extraLessonData (from sessionStorage)
+      const ttsAudioFromStorage = extraLessonData?.ttsAudio || extraLessonData?.topic?.ttsAudio;
+      if (ttsAudioFromStorage && Array.isArray(ttsAudioFromStorage)) {
+        // Filter TTS by language (strict match)
+        const languageFilteredTTS = ttsAudioFromStorage.filter((tts: any) => {
+          const ttsLang = (tts.language || 'en').toLowerCase().trim();
+          const targetLang = lessonLanguage.toLowerCase().trim();
+          return ttsLang === targetLang;
+        });
+        
+        if (languageFilteredTTS.length > 0) {
+          // Convert to ChapterTTS format
+          const convertedTTS: ChapterTTS[] = languageFilteredTTS.map((tts: any) => ({
+            id: tts.id || '',
+            section: tts.script_type || tts.section || 'full',
+            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+            text: tts.text || tts.script_text || '',
+            language: tts.language || lessonLanguage, // Explicitly set language
+          }));
+          
+          setTtsData(convertedTTS);
+          setTtsStatus('ready');
+          log('✅', `Loaded ${convertedTTS.length} TTS entries from sessionStorage (language: ${lessonLanguage})`, {
+            ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, language: t.language, hasAudio: !!t.audio_url })),
+          });
+          return;
+        } else {
+          log('⚠️', `No TTS found in sessionStorage for language ${lessonLanguage}`, {
+            totalTTS: ttsAudioFromStorage.length,
+            sampleLanguages: ttsAudioFromStorage.slice(0, 3).map((t: any) => t.language || 'none'),
+          });
+        }
+      }
+      
+      // Fallback to Firestore if no TTS in sessionStorage
       if (!activeLesson?.topic?.topic_id || !activeLesson?.chapter?.chapter_id) {
         log('⚠️', 'Missing chapter/topic ID for TTS fetch');
         return;
@@ -1262,17 +1344,23 @@ const VRLessonPlayerInner = () => {
         const chapterId = activeLesson.chapter.chapter_id;
         const topicId = activeLesson.topic.topic_id;
         
-        log('🔍', 'Fetching pre-generated TTS from Firestore...', { chapterId, topicId });
+        log('🔍', 'Fetching pre-generated TTS from Firestore...', { chapterId, topicId, language: lessonLanguage });
         const data = await getCachedTTS(chapterId, topicId);
         
-        if (data.length > 0) {
-          setTtsData(data);
+        // Filter by language if language field exists
+        const filteredData = data.filter((tts: any) => {
+          const ttsLang = tts.language || 'en';
+          return ttsLang === lessonLanguage;
+        });
+        
+        if (filteredData.length > 0) {
+          setTtsData(filteredData);
           setTtsStatus('ready');
-          log('✅', `Loaded ${data.length} TTS entries from Firestore`);
+          log('✅', `Loaded ${filteredData.length} TTS entries from Firestore (language: ${lessonLanguage})`);
         } else {
           setTtsData([]);
           setTtsStatus('error');
-          log('⚠️', 'No TTS data found in Firestore');
+          log('⚠️', `No TTS data found in Firestore for language: ${lessonLanguage}`);
         }
       } catch (error) {
         console.error('Failed to fetch TTS data:', error);
@@ -1282,7 +1370,7 @@ const VRLessonPlayerInner = () => {
     };
     
     fetchTTSData();
-  }, [activeLesson]);
+  }, [activeLesson, extraLessonData]);
 
   // ============================================================================
   // Fetch 3D Assets from Firestore (Platform-aware)
@@ -1290,7 +1378,64 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchAssets = async () => {
+      // Priority 1: Check sessionStorage for 3D assets from bundle
+      if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d) && extraLessonData.assets3d.length > 0) {
+        const bundleAssets = extraLessonData.assets3d;
+        log('📦', `Using ${bundleAssets.length} 3D assets from bundle`);
+        
+        // Convert bundle assets to MeshyAsset format
+        const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
+          id: asset.id || '',
+          glbUrl: asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
+          name: asset.name || asset.prompt || 'Asset',
+          thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
+          fbx_url: asset.fbx_url || asset.model_urls?.fbx,
+          usdz_url: asset.usdz_url || asset.model_urls?.usdz,
+        })).filter((asset: MeshyAsset) => asset.glbUrl); // Only include assets with URLs
+        
+        if (convertedAssets.length > 0) {
+          setMeshyAssets(convertedAssets);
+          const firstAssetUrl = selectPlatformAssetUrl(convertedAssets[0], platform);
+          setAssetUrl(firstAssetUrl);
+          log('✅', `Loaded ${convertedAssets.length} 3D assets from bundle, selected format for ${platform}`);
+          setAssetLoading(false);
+          return;
+        }
+      }
+      
+      // Priority 2: Check topic asset_urls from sessionStorage
+      const effectiveTopic = extraLessonData?.topic || activeLesson?.topic;
+      if (effectiveTopic?.asset_urls && Array.isArray(effectiveTopic.asset_urls) && effectiveTopic.asset_urls.length > 0) {
+        log('📦', `Using ${effectiveTopic.asset_urls.length} asset URLs from topic`);
+        setAssetUrl(effectiveTopic.asset_urls[0]);
+        setAssetLoading(false);
+        return;
+      }
+      
+      // Priority 3: Check image3dasset from sessionStorage
+      if (extraLessonData?.image3dasset) {
+        const img3d = extraLessonData.image3dasset;
+        let selectedUrl: string | null = null;
+        
+        if (platform === 'android') {
+          selectedUrl = img3d.imagemodel_fbx || img3d.imagemodel_glb || img3d.imageasset_url;
+        } else if (platform === 'ios') {
+          selectedUrl = img3d.imagemodel_usdz || img3d.imagemodel_glb || img3d.imageasset_url;
+        } else {
+          selectedUrl = img3d.imagemodel_glb || img3d.imageasset_url;
+        }
+        
+        if (selectedUrl) {
+          log('✅', `Using image3dasset for ${platform}:`, selectedUrl.substring(0, 60));
+          setAssetUrl(selectedUrl);
+          setAssetLoading(false);
+          return;
+        }
+      }
+      
+      // Priority 4: Fallback to Firestore fetch
       if (!activeLesson?.topic?.topic_id || !activeLesson?.chapter?.chapter_id) {
+        setAssetLoading(false);
         return;
       }
       
@@ -1300,35 +1445,27 @@ const VRLessonPlayerInner = () => {
         const chapterId = activeLesson.chapter.chapter_id;
         const topicId = activeLesson.topic.topic_id;
         
-        log('📦', 'Fetching 3D assets for platform:', platform);
+        log('📦', 'Fetching 3D assets from Firestore for platform:', platform);
         const assets = await getMeshyAssets(chapterId, topicId);
         
         if (assets.length > 0) {
           setMeshyAssets(assets);
-          // Select first asset with platform-appropriate URL
           const firstAssetUrl = selectPlatformAssetUrl(assets[0], platform);
           setAssetUrl(firstAssetUrl);
-          log('✅', `Loaded ${assets.length} 3D assets, selected format for ${platform}`);
+          log('✅', `Loaded ${assets.length} 3D assets from Firestore, selected format for ${platform}`);
         } else {
-          // Fallback to topic asset_urls if available
-          if (activeLesson.topic.asset_urls?.[0]) {
-            setAssetUrl(activeLesson.topic.asset_urls[0]);
-            log('📦', 'Using fallback asset URL from topic');
-          }
+          log('⚠️', 'No 3D assets found in Firestore');
         }
       } catch (error) {
         console.error('Failed to fetch 3D assets:', error);
-        // Fallback to topic asset_urls
-        if (activeLesson?.topic?.asset_urls?.[0]) {
-          setAssetUrl(activeLesson.topic.asset_urls[0]);
-        }
+        log('❌', 'Error fetching 3D assets from Firestore');
       } finally {
         setAssetLoading(false);
       }
     };
     
     fetchAssets();
-  }, [activeLesson, platform]);
+  }, [activeLesson, extraLessonData, platform]);
 
   // ============================================================================
   // Get TTS Audio URL for Current Script Type

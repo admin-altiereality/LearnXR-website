@@ -1,10 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check if user is admin
+    // Helper function to check if user is admin (safe - handles missing user doc)
     function isAdmin() {
       return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
     }
     
     // Helper function to check if user owns the document
@@ -128,6 +134,37 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if isAdmin();
+    }
+    
+    // Chapter MCQs collection - read access for authenticated users
+    // Note: 'read' covers both 'get' (single doc) and 'list' (collection queries)
+    match /chapter_mcqs/{mcqId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Chapter TTS collection - read access for authenticated users
+    match /chapter_tts/{ttsId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Chapter Avatar Scripts collection - read access for authenticated users
+    match /chapter_avatar_scripts/{scriptId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // PDFs collection - read access for authenticated users
+    match /pdfs/{pdfId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Text to 3D Assets collection - read access for authenticated users
+    match /text_to_3d_assets/{assetId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
     
     // API Keys collection - users can read their own keys, no direct write access

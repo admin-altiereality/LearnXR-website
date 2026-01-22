@@ -15,6 +15,9 @@ import {
   // New collection queries
   getTopicResources,
   getChapterMCQs,
+  getChapterMCQsByLanguage,
+  getChapterTTSByLanguage,
+  extractTopicScriptsForLanguage,
   getMeshyAssets,
   getChapterImages,
 } from '../../lib/firestore/queries';
@@ -29,6 +32,7 @@ import {
 import { TopicList } from '../../Components/studio/TopicList';
 import { TopicEditor } from '../../Components/studio/TopicEditor';
 import { LaunchLessonButton } from '../../Components/studio/LaunchLessonButton';
+import { LanguageSelector } from '../../Components/LanguageSelector';
 import {
   Chapter,
   ChapterVersion,
@@ -37,7 +41,16 @@ import {
   MCQ,
   MCQFormState,
   FlattenedMCQ,
+  LanguageCode,
 } from '../../types/curriculum';
+import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { 
+  getChapterNameByLanguage,
+  getTopicNameByLanguage,
+  getLearningObjectiveByLanguage
+} from '../../lib/firebase/utils/languageAvailability';
 import {
   ArrowLeft,
   BookOpen,
@@ -56,14 +69,20 @@ const ChapterEditor = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   
   // Context from navigation
   const navState = location.state as {
     curriculumId?: string;
     classId?: string;
     subjectId?: string;
+    language?: LanguageCode;
   } | null;
+  
+  // Language state
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(
+    navState?.language || 'en'
+  );
   
   // Chapter data
   const [chapter, setChapter] = useState<Chapter | null>(null);
@@ -127,7 +146,10 @@ const ChapterEditor = () => {
         
         if (result.currentVersion) {
           setSelectedVersionId(result.currentVersion.id);
-          setIsReadOnly(result.currentVersion.status !== 'active');
+          // Admin and superadmin can always edit, regardless of version status
+          const canEdit = result.currentVersion.status === 'active' || 
+                         (profile?.role === 'admin' || profile?.role === 'superadmin');
+          setIsReadOnly(!canEdit);
         }
       } catch (error) {
         console.error('Error loading chapter:', error);
@@ -162,23 +184,53 @@ const ChapterEditor = () => {
     loadTopics();
   }, [chapterId, selectedVersionId]);
   
-  // Load content availability for the topic
-  const loadContentAvailability = useCallback(async (topicId: string) => {
+  // Load content availability for the topic - using bundle data for accuracy
+  const loadContentAvailability = useCallback(async (topicId: string, bundle?: any) => {
     if (!chapterId) return;
     
     setContentAvailability(prev => ({ ...prev, loading: true }));
     
     try {
-      // Fetch MCQs, assets, and images in parallel
-      const [mcqsData, assetsData, imagesData] = await Promise.all([
-        getChapterMCQs(chapterId, topicId).catch(() => []),
-        getMeshyAssets(chapterId, topicId).catch(() => []),
-        getChapterImages(chapterId, topicId).catch(() => []),
-      ]);
+      let mcqsData: any[] = [];
+      let ttsData: any[] = [];
+      let assetsData: any[] = [];
+      let imagesData: any[] = [];
+      
+      // If bundle is provided, use it (more accurate and language-filtered)
+      if (bundle && bundle.lang === selectedLanguage) {
+        // Bundle is already filtered for the selected language
+        mcqsData = bundle.mcqs || [];
+        ttsData = bundle.tts || [];
+        assetsData = bundle.assets3d || [];
+        // Images still need separate fetch (not in bundle yet)
+        imagesData = await getChapterImages(chapterId, topicId).catch(() => []);
+        
+        console.log('📊 Using bundle data for content availability:', {
+          language: bundle.lang,
+          mcqs: mcqsData.length,
+          tts: ttsData.length,
+          assets: assetsData.length,
+        });
+      } else {
+        // Fallback to individual queries if bundle not available or language mismatch
+        console.log('📊 Using individual queries for content availability (bundle not available or language mismatch)');
+        [mcqsData, ttsData, assetsData, imagesData] = await Promise.all([
+          getChapterMCQsByLanguage(chapterId, topicId, selectedLanguage).catch(() => []),
+          getChapterTTSByLanguage(chapterId, topicId, selectedLanguage).catch(() => []),
+          getMeshyAssets(chapterId, topicId).catch(() => []),
+          getChapterImages(chapterId, topicId).catch(() => []),
+        ]);
+      }
+      
+      // Check if MCQs have options (for proper availability check)
+      const mcqsWithOptions = mcqsData.filter(m => m.options && Array.isArray(m.options) && m.options.length > 0);
+      
+      // Check if TTS entries have audio URLs
+      const ttsWithAudio = ttsData.filter(t => t.audio_url || t.audioUrl || t.url);
       
       setContentAvailability({
-        hasMCQs: mcqsData.length > 0,
-        mcqCount: mcqsData.length,
+        hasMCQs: mcqsWithOptions.length > 0, // Only count MCQs with options
+        mcqCount: mcqsWithOptions.length,
         has3DAssets: assetsData.length > 0,
         assetCount: assetsData.length,
         hasImages: imagesData.length > 0,
@@ -186,40 +238,108 @@ const ChapterEditor = () => {
         loading: false,
       });
       
-      console.log('📊 Content availability:', {
-        mcqs: mcqsData.length,
+      console.log('📊 Content availability result:', {
+        language: selectedLanguage,
+        mcqs: {
+          total: mcqsData.length,
+          withOptions: mcqsWithOptions.length,
+        },
+        tts: {
+          total: ttsData.length,
+          withAudio: ttsWithAudio.length,
+        },
         assets: assetsData.length,
         images: imagesData.length,
+        usingBundle: !!(bundle && bundle.lang === selectedLanguage),
       });
     } catch (error) {
       console.error('Error loading content availability:', error);
       setContentAvailability(prev => ({ ...prev, loading: false }));
     }
-  }, [chapterId]);
+  }, [chapterId, selectedLanguage]);
   
-  // Load scene data when topic changes
+  // Load scene data when topic changes - using unified bundle
   const loadTopicData = useCallback(async (topic: Topic) => {
     if (!chapterId || !selectedVersionId) return;
     
     setLoadingTopic(true);
     try {
-      // Load scene
+      // Use unified bundle to fetch ALL data (MCQs, TTS, avatar scripts, images, etc.)
+      const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+      const bundle = await getLessonBundle({
+        chapterId,
+        lang: selectedLanguage,
+        topicId: topic.id, // Pass specific topic ID
+      });
+      
+      console.log('📦 Loaded lesson bundle:', {
+        lang: bundle.lang,
+        mcqs: bundle.mcqs.length,
+        tts: bundle.tts.length,
+        hasAvatarScripts: !!bundle.avatarScripts,
+        hasSkybox: !!bundle.skybox,
+        assets3d: bundle.assets3d.length,
+      });
+      
+      // Load scene (still use getCurrentScene for scene-specific data)
       const sceneData = await getCurrentScene(chapterId, selectedVersionId, topic.id);
       console.log('📋 Loaded scene data:', {
-        skybox_url: sceneData?.skybox_url,
-        skybox_id: sceneData?.skybox_id,
+        skybox_url: sceneData?.skybox_url || bundle.skybox?.imageUrl,
+        skybox_id: sceneData?.skybox_id || bundle.skybox?.id,
         in3d_prompt: sceneData?.in3d_prompt?.substring(0, 50),
-        avatar_intro: sceneData?.avatar_intro?.substring(0, 50),
       });
       setScene(sceneData);
-      setSceneFormState(sceneData || {});
       
-      // Check for flattened MCQs
+      // Populate scene form state with bundle data (avatar scripts from bundle)
+      const avatarScripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+      setSceneFormState({
+        ...sceneData,
+        avatar_intro: avatarScripts.intro || sceneData?.avatar_intro || '',
+        avatar_explanation: avatarScripts.explanation || sceneData?.avatar_explanation || '',
+        avatar_outro: avatarScripts.outro || sceneData?.avatar_outro || '',
+        skybox_url: bundle.skybox?.imageUrl || bundle.skybox?.file_url || sceneData?.skybox_url || '',
+        skybox_id: bundle.skybox?.id || sceneData?.skybox_id || '',
+      });
+      
+      // Populate MCQs from bundle (already language-filtered and options extracted)
+      const mcqsFromBundle = bundle.mcqs.map((m) => {
+        // Ensure options is always an array (bundle already extracted them)
+        const options = Array.isArray(m.options) && m.options.length > 0 
+          ? m.options 
+          : [];
+        
+        return {
+          id: m.id,
+          question: m.question || m.question_text || '',
+          options: options,
+          correct_option_index: m.correct_option_index ?? 0,
+          explanation: m.explanation || m.explanation_text || '',
+          difficulty: m.difficulty || 'medium',
+          order: m.order ?? 0,
+        };
+      });
+      
+      console.log(`✅ Loaded ${mcqsFromBundle.length} ${selectedLanguage} MCQs from bundle:`, {
+        total: mcqsFromBundle.length,
+        withOptions: mcqsFromBundle.filter(m => m.options && m.options.length > 0).length,
+        sampleMcq: mcqsFromBundle.length > 0 ? {
+          id: mcqsFromBundle[0].id,
+          question: mcqsFromBundle[0].question?.substring(0, 50),
+          optionsCount: mcqsFromBundle[0].options?.length || 0,
+          options: mcqsFromBundle[0].options,
+          correctIndex: mcqsFromBundle[0].correct_option_index,
+        } : null,
+      });
+      
+      setMcqs(mcqsFromBundle);
+      setMcqFormState(mcqsFromBundle.map((m) => ({ ...m })));
+      
+      // Check for flattened MCQs (for legacy support)
       const flatInfo = await checkForFlattenedMCQs(chapterId, selectedVersionId, topic.id);
       setFlattenedMcqInfo(flatInfo);
       
-      // Load content availability in parallel
-      loadContentAvailability(topic.id);
+      // Load content availability using bundle data (more accurate)
+      loadContentAvailability(topic.id, bundle);
       
       // Reset dirty state
       setTopicDirty(false);
@@ -231,51 +351,9 @@ const ChapterEditor = () => {
     } finally {
       setLoadingTopic(false);
     }
-  }, [chapterId, selectedVersionId, loadContentAvailability]);
+  }, [chapterId, selectedVersionId, selectedLanguage, loadContentAvailability]);
   
-  // Track if MCQs have been loaded for current topic
-  const [mcqsLoaded, setMcqsLoaded] = useState(false);
-  
-  // Load MCQs from chapter_mcqs collection (NEW schema)
-  // Falls back to legacy getMCQs if new collection is empty
-  const loadMCQs = useCallback(async () => {
-    if (!chapterId || !selectedVersionId || !selectedTopic) return;
-    
-    try {
-      console.log('Loading MCQs for topic from chapter_mcqs collection:', selectedTopic.id);
-      
-      // Try new collection first
-      const newMcqsData = await getChapterMCQs(chapterId, selectedTopic.id);
-      
-      if (newMcqsData.length > 0) {
-        console.log('✅ Loaded MCQs from chapter_mcqs collection:', newMcqsData.length);
-        // Convert ChapterMCQ to MCQ format for backwards compatibility
-        const mcqsConverted = newMcqsData.map((m) => ({
-          id: m.id,
-          question: m.question,
-          options: m.options,
-          correct_option_index: m.correct_option_index,
-          explanation: m.explanation || '',
-          difficulty: m.difficulty,
-          order: m.order,
-        }));
-        setMcqs(mcqsConverted);
-        setMcqFormState(mcqsConverted.map((m) => ({ ...m })));
-      } else {
-        // Fallback to legacy source
-        console.log('ℹ️ No MCQs in new collection, trying legacy source...');
-        const mcqsData = await getMCQs(chapterId, selectedVersionId, selectedTopic.id);
-        console.log('Loaded MCQs from legacy source:', mcqsData.length);
-        setMcqs(mcqsData);
-        setMcqFormState(mcqsData.map((m) => ({ ...m })));
-      }
-      
-      setMcqsLoaded(true);
-    } catch (error) {
-      console.error('Error loading MCQs:', error);
-      toast.error('Failed to load MCQs');
-    }
-  }, [chapterId, selectedVersionId, selectedTopic]);
+  // MCQs are now loaded via the bundle in loadTopicData - no separate function needed
   
   // Load edit history only when History tab is opened
   const loadHistory = useCallback(async () => {
@@ -291,12 +369,18 @@ const ChapterEditor = () => {
   
   // Handle tab change - lazy load data
   useEffect(() => {
-    if (activeTab === 'mcqs' && !mcqsLoaded && selectedTopic) {
-      loadMCQs();
-    } else if (activeTab === 'history') {
+    if (activeTab === 'history' && selectedTopic) {
       loadHistory();
     }
-  }, [activeTab, selectedTopic, mcqsLoaded, loadMCQs, loadHistory]);
+  }, [activeTab, selectedTopic, loadHistory]);
+  
+  // Reload data when language changes - bundle will reload everything
+  useEffect(() => {
+    if (selectedTopic) {
+      loadTopicData(selectedTopic);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLanguage]);
   
   const handleSelectTopic = (topic: Topic) => {
     // Warn about unsaved changes
@@ -318,7 +402,10 @@ const ChapterEditor = () => {
     const version = versions.find((v) => v.id === versionId);
     setSelectedVersionId(versionId);
     setCurrentVersion(version || null);
-    setIsReadOnly(version?.status !== 'active');
+    // Admin and superadmin can always edit, regardless of version status
+    const canEdit = version?.status === 'active' || 
+                   (profile?.role === 'admin' || profile?.role === 'superadmin');
+    setIsReadOnly(!canEdit);
     setSelectedTopic(null);
     setScene(null);
     setMcqs([]);
@@ -380,6 +467,7 @@ const ChapterEditor = () => {
             original: scene,
             updated: sceneFormState,
             userId: user.email,
+            language: selectedLanguage, // Pass language for new format
           });
         } else {
           await createScene({
@@ -388,6 +476,7 @@ const ChapterEditor = () => {
             topicId: selectedTopic.id,
             scene: sceneFormState,
             userId: user.email,
+            language: selectedLanguage, // Pass language for new format
           });
         }
         
@@ -407,7 +496,8 @@ const ChapterEditor = () => {
         });
         
         // Refresh MCQs
-        await loadMCQs();
+        // MCQs are loaded via bundle in loadTopicData
+        await loadTopicData(selectedTopic);
         setMcqDirty(false);
       }
       
@@ -536,14 +626,14 @@ const ChapterEditor = () => {
                 </div>
                 <div>
                   <h1 className="text-lg font-semibold text-white">
-                    Chapter {chapter.chapter_number}: {chapter.chapter_name}
+                    Chapter {chapter.chapter_number}: {getChapterNameByLanguage(chapter, selectedLanguage) || chapter.chapter_name}
                   </h1>
                   <div className="flex items-center gap-2 text-xs text-slate-400">
                     <span>{topics.length} topics</span>
                     {selectedTopic && (
                       <>
                         <span>•</span>
-                        <span className="text-cyan-400">{selectedTopic.topic_name}</span>
+                        <span className="text-cyan-400">{getTopicNameByLanguage(selectedTopic, selectedLanguage) || selectedTopic.topic_name}</span>
                       </>
                     )}
                   </div>
@@ -551,7 +641,7 @@ const ChapterEditor = () => {
               </div>
             </div>
             
-            {/* Center: Version Selector */}
+            {/* Center: Version Selector and Language Selector */}
             <div className="flex items-center gap-3">
               <div className="relative">
                 <select
@@ -569,6 +659,11 @@ const ChapterEditor = () => {
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
+              
+              <LanguageSelector
+                selectedLanguage={selectedLanguage}
+                onLanguageChange={setSelectedLanguage}
+              />
               
               {isReadOnly && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
@@ -641,6 +736,7 @@ const ChapterEditor = () => {
                   skyboxId={sceneFormState.skybox_id as string}
                   skyboxUrl={sceneFormState.skybox_url as string}
                   assetList={sceneFormState.asset_list as string[]}
+                  language={selectedLanguage}
                   size="md"
                 />
               )}
@@ -684,6 +780,8 @@ const ChapterEditor = () => {
               flattenedMcqInfo={flattenedMcqInfo}
               onNormalizeMCQs={handleNormalizeMCQs}
               contentAvailability={contentAvailability}
+              selectedLanguage={selectedLanguage}
+              language={selectedLanguage}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full py-20">
