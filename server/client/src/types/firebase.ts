@@ -1,3 +1,5 @@
+import type { LanguageCode, AvatarScripts, AvatarScriptsByLanguage, IdsByLanguage } from './curriculum';
+
 export interface User {
   uid: string;
   email: string;
@@ -56,6 +58,8 @@ export interface Image3DAsset {
  * Represents a chapter within a curriculum, class, and subject
  * Document ID format: {curriculum}_{class}_{subject}_ch{chapter_number}
  * Example: "CBSE_8_Science_ch3"
+ * 
+ * UPDATED: Now includes multi-language support and approval gating
  */
 export interface CurriculumChapter {
   curriculum: string; // e.g., "CBSE", "RBSE"
@@ -67,11 +71,39 @@ export interface CurriculumChapter {
   createdAt?: string; // Firestore timestamp
   updatedAt?: string; // Firestore timestamp
   
+  // ============================================
+  // APPROVAL FIELDS (NEW)
+  // ============================================
+  approved?: boolean; // Default false - only admin/superadmin can set true
+  approvedAt?: string | null; // Timestamp when approved
+  approvedBy?: string | null; // UID of admin who approved
+  
+  // ============================================
+  // MULTI-LANGUAGE SUPPORT (NEW)
+  // ============================================
+  supported_languages?: LanguageCode[]; // e.g., ["en", "hi"]
+  
+  // Language-specific MCQ IDs
+  mcq_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
+  
+  // Language-specific TTS IDs
+  tts_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
+  
+  // Language-specific avatar scripts (chapter-level fallback)
+  avatar_scripts_by_language?: AvatarScriptsByLanguage;
+  
+  // ============================================
+  // LEGACY FIELDS (kept for backwards compatibility)
+  // ============================================
   // Resource ID arrays - reference documents in separate collections
-  mcq_ids?: string[];
-  tts_ids?: string[];
+  mcq_ids?: string[]; // Legacy: contains both languages mixed
+  tts_ids?: string[]; // Legacy: contains both languages mixed
   image_ids?: string[];
   meshy_asset_ids?: string[];
+  
+  // Skybox GLB URLs (NEW - from skybox_glb_urls collection or inline)
+  skybox_glb_urls?: string[];
+  meshy_glb_urls?: string[];
   
   // Inline 3D asset from Meshy (generated from image)
   image3dasset?: Image3DAsset;
@@ -86,6 +118,8 @@ export interface CurriculumChapter {
 /**
  * Topic Schema
  * Represents a topic within a chapter
+ * 
+ * UPDATED: Now includes multi-language avatar scripts and resource IDs
  */
 export interface Topic {
   topic_id: string; // Auto-generated UUID
@@ -105,12 +139,23 @@ export interface Topic {
   status?: 'pending' | 'generated' | 'failed'; // Generation status
   generatedAt?: string; // When skybox/assets were generated
   
-  // Avatar scripts
+  // ============================================
+  // MULTI-LANGUAGE AVATAR SCRIPTS (NEW)
+  // ============================================
+  avatar_scripts_by_language?: AvatarScriptsByLanguage; // { en: {intro, explanation, outro}, hi: {...} }
+  
+  // Language-specific resource IDs (NEW)
+  mcq_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
+  tts_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
+  
+  // ============================================
+  // LEGACY AVATAR SCRIPTS (kept for backwards compatibility)
+  // ============================================
   topic_avatar_intro?: string; // Introduction script for the avatar
   topic_avatar_explanation?: string; // Main explanation script
   topic_avatar_outro?: string; // Conclusion/outro script
   
-  // Resource ID arrays - reference documents in separate collections
+  // Legacy resource ID arrays (may contain mixed languages)
   mcq_ids?: string[];
   tts_ids?: string[];
   meshy_asset_ids?: string[];

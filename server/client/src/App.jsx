@@ -54,6 +54,7 @@ import ApiDocumentation from './screens/ApiDocumentation';
 import N8nWorkflows from './screens/N8nWorkflows';
 import ContentLibrary from './screens/studio/ContentLibrary';
 import ChapterEditor from './screens/studio/ChapterEditor';
+import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
 import VRLessonPlayer from './screens/VRLessonPlayer';
 import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 
@@ -619,6 +620,13 @@ function App() {
                           </TeacherGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/studio/firestore-debug" element={
+                        <ProtectedRoute>
+                          <TeacherGuard>
+                            <FirestoreDebugScreen />
+                          </TeacherGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* VR Lesson Player - All authenticated users */}
                       <Route path="/vrlessonplayer" element={
@@ -947,6 +955,13 @@ function App() {
                         <ProtectedRoute>
                           <TeacherGuard>
                             <ChapterEditor />
+                          </TeacherGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/studio/firestore-debug" element={
+                        <ProtectedRoute>
+                          <TeacherGuard>
+                            <FirestoreDebugScreen />
                           </TeacherGuard>
                         </ProtectedRoute>
                       } />

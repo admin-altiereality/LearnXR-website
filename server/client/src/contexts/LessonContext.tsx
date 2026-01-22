@@ -34,6 +34,16 @@ export interface LessonTopic {
   
   // MCQs (flattened format)
   mcqs?: LessonMCQ[];
+  
+  // TTS Audio (language-specific)
+  ttsAudio?: Array<{
+    script_type: string;
+    audio_url: string;
+    language: string;
+  }>;
+  
+  // Language code
+  language?: string;
 }
 
 export interface LessonMCQ {

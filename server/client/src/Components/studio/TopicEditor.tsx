@@ -1,4 +1,4 @@
-import { Topic, Scene, MCQ, MCQFormState, FlattenedMCQ, TopicResources, MeshyAsset, ChapterImage } from '../../types/curriculum';
+import { Topic, Scene, MCQ, MCQFormState, FlattenedMCQ, TopicResources, MeshyAsset, ChapterImage, LanguageCode } from '../../types/curriculum';
 import { EditHistoryEntry } from '../../lib/firestore/queries';
 import { OverviewTab } from './tabs/OverviewTab';
 import { SceneTab } from './tabs/SceneTab';
@@ -48,6 +48,7 @@ interface TopicEditorProps {
   flattenedMcqInfo: { hasFlattened: boolean; count: number };
   onNormalizeMCQs: () => void;
   contentAvailability?: ContentAvailability;
+  language?: LanguageCode;
 }
 
 const tabs = [
@@ -80,6 +81,7 @@ export const TopicEditor = ({
   flattenedMcqInfo,
   onNormalizeMCQs,
   contentAvailability,
+  language = 'en',
 }: TopicEditorProps) => {
   if (loading) {
     return (
@@ -130,6 +132,8 @@ export const TopicEditor = ({
             onSceneChange={onSceneChange}
             isReadOnly={isReadOnly}
             contentAvailability={contentAvailability}
+            chapterId={chapterId}
+            topicId={topic.id}
           />
         )}
         
@@ -165,6 +169,7 @@ export const TopicEditor = ({
             isReadOnly={isReadOnly}
             chapterId={chapterId}
             topicId={topic.id}
+            language={language}
           />
         )}
         
@@ -178,6 +183,7 @@ export const TopicEditor = ({
             onNormalizeMCQs={onNormalizeMCQs}
             chapterId={chapterId}
             topicId={topic.id}
+            language={language}
           />
         )}
         

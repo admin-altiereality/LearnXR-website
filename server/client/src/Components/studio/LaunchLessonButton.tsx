@@ -9,7 +9,16 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useLesson, LessonChapter, LessonTopic, LessonMCQ } from '../../contexts/LessonContext';
-import { getTopicSkybox, getMCQs, get3DAssets } from '../../lib/firestore/queries';
+import { getTopicSkybox, getMCQs, get3DAssets, getChapterMCQsByLanguage, getChapterTTSByLanguage, extractTopicScriptsForLanguage } from '../../lib/firestore/queries';
+import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { LanguageCode } from '../../types/curriculum';
+import { 
+  getChapterNameByLanguage,
+  getTopicNameByLanguage,
+  getLearningObjectiveByLanguage
+} from '../../lib/firebase/utils/languageAvailability';
 import { Play, Loader2, Rocket, CheckCircle } from 'lucide-react';
 
 interface LaunchLessonButtonProps {
@@ -32,6 +41,7 @@ interface LaunchLessonButtonProps {
   assetList?: string[];
   assetUrls?: string[];
   assetIds?: string[];
+  language?: LanguageCode;
   size?: 'sm' | 'md' | 'lg';
   variant?: 'primary' | 'secondary' | 'icon';
   disabled?: boolean;
@@ -57,6 +67,7 @@ export const LaunchLessonButton = ({
   assetList = [],
   assetUrls = [],
   assetIds = [],
+  language = 'en',
   size = 'md',
   variant = 'primary',
   disabled = false,
@@ -100,10 +111,10 @@ export const LaunchLessonButton = ({
         return;
       }
       
-      // Build chapter data
+      // Build chapter data (use language-specific name)
       const chapter: LessonChapter = {
         chapter_id: chapterId,
-        chapter_name: chapterName,
+        chapter_name: finalChapterName,
         chapter_number: chapterNumber,
         curriculum,
         class_name: className,
@@ -132,12 +143,12 @@ export const LaunchLessonButton = ({
         }
       }
       
-      // Fetch MCQs
+      // Fetch language-specific MCQs
       if (chapterId && topicId) {
-        console.log('🔍 [LaunchLesson] Fetching MCQs...');
+        console.log(`🔍 [LaunchLesson] Fetching ${language} MCQs...`);
         try {
-          const mcqData = await getMCQs(chapterId, 'current', topicId);
-          console.log('📦 [LaunchLesson] MCQ fetch result:', mcqData);
+          const mcqData = await getChapterMCQsByLanguage(chapterId, topicId, language);
+          console.log(`📦 [LaunchLesson] ${language} MCQ fetch result:`, mcqData);
           mcqs = mcqData.map(m => ({
             id: m.id,
             question: m.question,
@@ -145,9 +156,63 @@ export const LaunchLessonButton = ({
             correct_option_index: m.correct_option_index,
             explanation: m.explanation,
           }));
-          console.log('✅ [LaunchLesson] Got MCQs count:', mcqs.length);
+          console.log(`✅ [LaunchLesson] Got ${mcqs.length} ${language} MCQs`);
         } catch (e) {
-          console.warn('⚠️ [LaunchLesson] Could not fetch MCQs:', e);
+          console.warn(`⚠️ [LaunchLesson] Could not fetch ${language} MCQs:`, e);
+        }
+      }
+      
+      // Fetch chapter data to get language-specific names and scripts
+      let finalChapterName = chapterName;
+      let finalTopicName = topicName;
+      let finalLearningObjective = learningObjective;
+      let finalAvatarIntro = avatarIntro;
+      let finalAvatarExplanation = avatarExplanation;
+      let finalAvatarOutro = avatarOutro;
+      
+      if (chapterId && topicId) {
+        console.log(`🔍 [LaunchLesson] Fetching ${language} chapter data...`);
+        try {
+          const chapterRef = doc(db, 'curriculum_chapters', chapterId);
+          const chapterSnap = await getDoc(chapterRef);
+          
+          if (chapterSnap.exists()) {
+            const chapterData = chapterSnap.data() as CurriculumChapter;
+            const firebaseTopic = chapterData.topics?.find(t => t.topic_id === topicId);
+            
+            if (firebaseTopic) {
+              // Get language-specific names
+              finalChapterName = getChapterNameByLanguage(chapterData, language) || chapterName;
+              finalTopicName = getTopicNameByLanguage(firebaseTopic, language) || topicName;
+              finalLearningObjective = getLearningObjectiveByLanguage(firebaseTopic, language) || learningObjective;
+              
+              // Get language-specific avatar scripts
+              const scripts = extractTopicScriptsForLanguage(firebaseTopic, language);
+              finalAvatarIntro = scripts.intro || finalAvatarIntro || '';
+              finalAvatarExplanation = scripts.explanation || finalAvatarExplanation || '';
+              finalAvatarOutro = scripts.outro || finalAvatarOutro || '';
+              console.log(`✅ [LaunchLesson] Got ${language} chapter data and scripts`);
+            }
+          }
+        } catch (e) {
+          console.warn(`⚠️ [LaunchLesson] Could not fetch ${language} chapter data:`, e);
+        }
+      }
+      
+      // Fetch language-specific TTS
+      let ttsAudio: { script_type: string; audio_url: string; language: string }[] = [];
+      if (chapterId && topicId) {
+        console.log(`🔍 [LaunchLesson] Fetching ${language} TTS...`);
+        try {
+          const ttsData = await getChapterTTSByLanguage(chapterId, topicId, language);
+          ttsAudio = ttsData.map(tts => ({
+            script_type: tts.script_type,
+            audio_url: tts.audio_url || '',
+            language: tts.language || language,
+          }));
+          console.log(`✅ [LaunchLesson] Got ${ttsAudio.length} ${language} TTS files`);
+        } catch (e) {
+          console.warn(`⚠️ [LaunchLesson] Could not fetch ${language} TTS:`, e);
         }
       }
       
@@ -164,22 +229,24 @@ export const LaunchLessonButton = ({
         }
       }
       
-      // Build topic data
+      // Build topic data (use language-specific names)
       const topic: LessonTopic = {
         topic_id: topicId,
-        topic_name: topicName,
+        topic_name: finalTopicName,
         topic_priority: topicPriority,
-        learning_objective: learningObjective,
+        learning_objective: finalLearningObjective,
         in3d_prompt: in3dPrompt,
         skybox_id: skyboxId,
         skybox_url: finalSkyboxUrl,
-        avatar_intro: avatarIntro,
-        avatar_explanation: avatarExplanation,
-        avatar_outro: avatarOutro,
+        avatar_intro: finalAvatarIntro,
+        avatar_explanation: finalAvatarExplanation,
+        avatar_outro: finalAvatarOutro,
         asset_list: assetList,
         asset_urls: finalAssetUrls,
         asset_ids: assetIds,
         mcqs,
+        ttsAudio,
+        language,
       };
       
       console.log('📚 [LaunchLesson] Topic built:', {
@@ -222,7 +289,7 @@ export const LaunchLessonButton = ({
     loading, disabled, chapterId, chapterName, chapterNumber, curriculum, className, subject,
     topicId, topicName, topicPriority, learningObjective, in3dPrompt,
     avatarIntro, avatarExplanation, avatarOutro, skyboxId, skyboxUrl,
-    assetList, assetUrls, assetIds, startLesson, navigate
+    assetList, assetUrls, assetIds, language, startLesson, navigate
   ]);
   
   // Size classes

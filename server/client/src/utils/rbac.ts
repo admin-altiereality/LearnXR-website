@@ -74,6 +74,11 @@ export const APPROVAL_REQUIRED_ROLES: UserRole[] = ['teacher', 'school'];
 export const CAN_APPROVE_ROLES: UserRole[] = ['admin', 'superadmin'];
 
 /**
+ * Roles that can approve chapters/content (admin and superadmin)
+ */
+export const CAN_APPROVE_CHAPTERS_ROLES: UserRole[] = ['admin', 'superadmin'];
+
+/**
  * Roles that require student onboarding
  */
 export const STUDENT_ONBOARDING_ROLES: UserRole[] = ['student'];
@@ -115,6 +120,7 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   // Lesson routes (student can access)
   '/lessons': 'lessons',
   '/vrlessonplayer': 'lessons',
+  '/xrlessonplayer': 'lessons',
   
   // Create/Studio routes (teacher, school, admin, superadmin)
   '/main': 'create',
@@ -134,8 +140,9 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   '/admin': 'admin',
   '/system-status': 'admin',
   
-  // Superadmin routes
+  // Superadmin routes (admin can also access)
   '/admin/approvals': 'superadmin',
+  '/admin/chapter-approvals': 'superadmin', // NEW: Chapter/content approval
 };
 
 // ============================================================================
@@ -383,6 +390,14 @@ export function canAccess(
 export function canApproveUsers(profile: UserProfile | null): boolean {
   if (!profile) return false;
   return CAN_APPROVE_ROLES.includes(profile.role);
+}
+
+/**
+ * Check if user can approve chapters/content
+ */
+export function canApproveChapters(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return CAN_APPROVE_CHAPTERS_ROLES.includes(profile.role);
 }
 
 /**

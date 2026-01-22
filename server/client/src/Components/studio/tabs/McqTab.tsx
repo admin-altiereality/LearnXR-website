@@ -8,10 +8,11 @@
 
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
-import { MCQ, MCQFormState, ChapterMCQ } from '../../../types/curriculum';
-import { getChapterMCQs } from '../../../lib/firestore/queries';
+import { MCQ, MCQFormState, ChapterMCQ, LanguageCode } from '../../../types/curriculum';
+import { getChapterMCQs, getChapterMCQsByLanguage } from '../../../lib/firestore/queries';
 import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { LanguageToggle } from '../../../Components/LanguageSelector';
 import {
   HelpCircle,
   Plus,
@@ -36,6 +37,8 @@ interface McqTabProps {
   // New props for direct fetching from chapter_mcqs collection
   chapterId?: string;
   topicId?: string;
+  language?: LanguageCode;
+  onLanguageChange?: (language: LanguageCode) => void;
 }
 
 const difficultyOptions = [
@@ -53,10 +56,25 @@ export const McqTab = ({
   onNormalizeMCQs,
   chapterId,
   topicId,
+  language = 'en',
+  onLanguageChange,
 }: McqTabProps) => {
   const [expandedMcq, setExpandedMcq] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [localMcqs, setLocalMcqs] = useState<ChapterMCQ[]>([]);
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
+  
+  // Sync with parent language prop
+  useEffect(() => {
+    setSelectedLanguage(language);
+  }, [language]);
+  
+  const handleLanguageChange = (lang: LanguageCode) => {
+    setSelectedLanguage(lang);
+    if (onLanguageChange) {
+      onLanguageChange(lang);
+    }
+  };
   
   // Fetch MCQs from chapter_mcqs collection if chapterId and topicId are provided
   useEffect(() => {
@@ -65,7 +83,7 @@ export const McqTab = ({
       
       setLoading(true);
       try {
-        const mcqsData = await getChapterMCQs(chapterId, topicId);
+        const mcqsData = await getChapterMCQsByLanguage(chapterId, topicId, selectedLanguage);
         setLocalMcqs(mcqsData);
         
         // Convert ChapterMCQ to MCQFormState for backwards compatibility
@@ -82,8 +100,8 @@ export const McqTab = ({
           onMcqsChange(formState);
         }
       } catch (error) {
-        console.error('Error loading MCQs from chapter_mcqs collection:', error);
-        toast.error('Failed to load MCQs');
+        console.error(`Error loading ${selectedLanguage} MCQs from chapter_mcqs collection:`, error);
+        toast.error(`Failed to load ${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs`);
       } finally {
         setLoading(false);
       }
@@ -93,19 +111,19 @@ export const McqTab = ({
     if (chapterId && topicId && mcqs.length === 0) {
       loadMcqsFromCollection();
     }
-  }, [chapterId, topicId]);
+  }, [chapterId, topicId, selectedLanguage]);
   
   const handleRefresh = async () => {
     if (!chapterId || !topicId) return;
     
     setLoading(true);
     try {
-      const mcqsData = await getChapterMCQs(chapterId, topicId);
+      const mcqsData = await getChapterMCQsByLanguage(chapterId, topicId, selectedLanguage);
       setLocalMcqs(mcqsData);
-      toast.success('MCQs refreshed');
+      toast.success(`${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs refreshed`);
     } catch (error) {
-      console.error('Error refreshing MCQs:', error);
-      toast.error('Failed to refresh MCQs');
+      console.error(`Error refreshing ${selectedLanguage} MCQs:`, error);
+      toast.error(`Failed to refresh ${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs`);
     } finally {
       setLoading(false);
     }
@@ -197,11 +215,21 @@ export const McqTab = ({
           <div>
             <h2 className="text-lg font-semibold text-white">Multiple Choice Questions</h2>
             <p className="text-sm text-slate-400 mt-1">
-              {visibleMcqs.length} question{visibleMcqs.length !== 1 ? 's' : ''} 
+              {visibleMcqs.length} {selectedLanguage === 'en' ? 'English' : 'Hindi'} question{visibleMcqs.length !== 1 ? 's' : ''} 
               <span className="text-cyan-400/60 ml-1">(from chapter_mcqs)</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Language Toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">Language:</span>
+              <LanguageToggle
+                value={selectedLanguage}
+                onChange={handleLanguageChange}
+                size="sm"
+                showFlags={true}
+              />
+            </div>
             {chapterId && topicId && (
               <button
                 onClick={handleRefresh}
@@ -352,7 +380,14 @@ export const McqTab = ({
                           </button>
                         </div>
                         <div className="space-y-2">
-                          {(mcq.options || []).map((option, optIndex) => (
+                          {(() => {
+                            // Ensure options array exists and has at least 4 items for display
+                            const options = mcq.options || [];
+                            const displayOptions = options.length >= 4 
+                              ? options 
+                              : [...options, ...Array(4 - options.length).fill('')];
+                            
+                            return displayOptions.map((option, optIndex) => (
                             <div key={optIndex} className="flex items-center gap-2">
                               <button
                                 onClick={() => handleUpdateMcq(index, 'correct_option_index', optIndex)}
@@ -370,7 +405,7 @@ export const McqTab = ({
                               </button>
                               <input
                                 type="text"
-                                value={option}
+                                value={option || ''}
                                 onChange={(e) => handleUpdateOption(index, optIndex, e.target.value)}
                                 disabled={isReadOnly}
                                 placeholder={`Option ${optIndex + 1}`}
@@ -379,7 +414,7 @@ export const McqTab = ({
                                          focus:outline-none focus:ring-2 focus:ring-cyan-500/50 
                                          disabled:opacity-50"
                               />
-                              {(mcq.options?.length || 0) > 2 && (
+                              {(displayOptions.length > 2 && optIndex < options.length) && (
                                 <button
                                   onClick={() => handleRemoveOption(index, optIndex)}
                                   disabled={isReadOnly}
@@ -390,7 +425,8 @@ export const McqTab = ({
                                 </button>
                               )}
                             </div>
-                          ))}
+                            ));
+                          })()}
                         </div>
                         <p className="text-[10px] text-slate-500">
                           Click the circle to mark the correct answer

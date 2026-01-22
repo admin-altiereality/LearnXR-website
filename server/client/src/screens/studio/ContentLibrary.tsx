@@ -11,13 +11,19 @@ import {
   GetChaptersResult,
 } from '../../lib/firestore/queries';
 import { ChapterTable } from '../../Components/studio/ChapterTable';
+import { LanguageSelector } from '../../Components/LanguageSelector';
 import {
   Chapter,
   Curriculum,
   Class,
   Subject,
   ContentFilters,
+  LanguageCode,
 } from '../../types/curriculum';
+import { chapterHasContentForLanguage } from '../../lib/firebase/utils/languageAvailability';
+import type { CurriculumChapter } from '../../types/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import {
   Search,
   Filter,
@@ -55,10 +61,12 @@ const ContentLibrary = () => {
   
   // Data state
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [rawChapters, setRawChapters] = useState<Array<{ id: string; data: CurriculumChapter }>>([]);
   const [loading, setLoading] = useState(false);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [hasMore, setHasMore] = useState(false);
   const [lastDoc, setLastDoc] = useState<unknown>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>('en');
   
   // Scroll-based header visibility
   useEffect(() => {
@@ -151,6 +159,7 @@ const ContentLibrary = () => {
   const loadChapters = useCallback(async (reset = true) => {
     if (!filters.curriculum || !filters.classId || !filters.subject) {
       setChapters([]);
+      setRawChapters([]);
       return;
     }
     
@@ -164,10 +173,38 @@ const ContentLibrary = () => {
         lastDoc: reset ? undefined : (lastDoc as any),
       });
       
+      // Fetch raw chapter data for language checking
+      const chaptersWithRawData = await Promise.all(
+        result.chapters.map(async (chapter) => {
+          try {
+            const chapterRef = doc(db, 'curriculum_chapters', chapter.id);
+            const chapterSnap = await getDoc(chapterRef);
+            if (chapterSnap.exists()) {
+              return {
+                ...chapter,
+                _rawData: chapterSnap.data() as CurriculumChapter,
+              };
+            }
+            return chapter;
+          } catch (err) {
+            console.warn(`Failed to fetch raw data for chapter ${chapter.id}:`, err);
+            return chapter;
+          }
+        })
+      );
+      
+      // Filter by language availability
+      const filteredChapters = chaptersWithRawData.filter(ch => {
+        if (!ch._rawData) return true; // Include if we couldn't fetch raw data
+        return chapterHasContentForLanguage(ch._rawData, selectedLanguage);
+      });
+      
       if (reset) {
-        setChapters(result.chapters);
+        setChapters(filteredChapters);
+        setRawChapters(chaptersWithRawData.map(ch => ({ id: ch.id, data: ch._rawData! })).filter(ch => ch.data));
       } else {
-        setChapters((prev) => [...prev, ...result.chapters]);
+        setChapters((prev) => [...prev, ...filteredChapters]);
+        setRawChapters((prev) => [...prev, ...chaptersWithRawData.map(ch => ({ id: ch.id, data: ch._rawData! })).filter(ch => ch.data)]);
       }
       setLastDoc(result.lastDoc);
       setHasMore(result.hasMore);
@@ -177,7 +214,22 @@ const ContentLibrary = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters, lastDoc]);
+  }, [filters, lastDoc, selectedLanguage]);
+  
+  // Re-filter chapters when language changes
+  useEffect(() => {
+    if (rawChapters.length === 0) return;
+    
+    const filtered = rawChapters
+      .filter(ch => chapterHasContentForLanguage(ch.data, selectedLanguage))
+      .map(ch => {
+        const chapter = chapters.find(c => c.id === ch.id);
+        return chapter || null;
+      })
+      .filter(Boolean) as Chapter[];
+    
+    setChapters(filtered);
+  }, [selectedLanguage, rawChapters]);
   
   useEffect(() => {
     loadChapters(true);
@@ -199,6 +251,7 @@ const ContentLibrary = () => {
         curriculumId: filters.curriculum,
         classId: filters.classId,
         subjectId: filters.subject,
+        language: selectedLanguage,
       },
     });
   };
