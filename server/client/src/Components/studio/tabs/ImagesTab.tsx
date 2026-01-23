@@ -18,6 +18,8 @@ import { ChapterImage } from '../../../types/curriculum';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, db } from '../../../config/firebase';
 import { collection, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { useAuth } from '../../../contexts/AuthContext';
+import { canEditLesson, canDeleteAsset } from '../../../utils/rbac';
 import {
   Image,
   Loader2,
@@ -40,6 +42,7 @@ import {
 interface ImagesTabProps {
   chapterId: string;
   topicId: string;
+  bundle?: any; // Lesson bundle containing images
 }
 
 const imageTypes = [
@@ -50,7 +53,8 @@ const imageTypes = [
   { value: 'other', label: 'Other', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20' },
 ];
 
-export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
+export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
+  const { user, profile } = useAuth();
   const [images, setImages] = useState<ChapterImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<ChapterImage | null>(null);
@@ -74,14 +78,37 @@ export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
   // Context menu
   const [contextMenu, setContextMenu] = useState<{ image: ChapterImage; x: number; y: number } | null>(null);
 
-  // Load images from chapter_images collection
+  // Load images from bundle or fetch directly
   useEffect(() => {
     const loadImages = async () => {
       if (!chapterId || !topicId) return;
       
       setLoading(true);
       try {
-        const imagesData = await getChapterImages(chapterId, topicId);
+        let imagesData: ChapterImage[] = [];
+        
+        // Priority 1: Use bundle data if available
+        if (bundle?.images && Array.isArray(bundle.images)) {
+          imagesData = bundle.images.map((img: any) => ({
+            id: img.id || '',
+            chapter_id: img.chapter_id || chapterId,
+            topic_id: img.topic_id || topicId,
+            name: img.name || img.filename || 'Image',
+            description: img.description,
+            image_url: img.image_url || img.url || img.imageUrl || '',
+            thumbnail_url: img.thumbnail_url || img.thumbnail,
+            type: img.type || (img.source === 'pdf' ? 'pdf' : 'other'),
+            order: img.order ?? 0,
+            created_at: img.created_at,
+            updated_at: img.updated_at,
+          }));
+          console.log(`✅ Loaded ${imagesData.length} images from bundle (including ${bundle.images.filter((i: any) => i.source === 'pdf').length} from PDF)`);
+        } else {
+          // Fallback: Fetch directly
+          imagesData = await getChapterImages(chapterId, topicId);
+          console.log(`✅ Loaded ${imagesData.length} images from direct fetch`);
+        }
+        
         setImages(imagesData);
         if (imagesData.length > 0 && !selectedImage) {
           setSelectedImage(imagesData[0]);
@@ -95,7 +122,7 @@ export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
     };
 
     loadImages();
-  }, [chapterId, topicId]);
+  }, [chapterId, topicId, bundle]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -207,6 +234,7 @@ export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
         const downloadUrl = await getDownloadURL(storageRef);
         
         // Save to chapter_images collection
+        // New images are NOT core by default (can be deleted by admin)
         const imageDoc = await addDoc(collection(db, 'chapter_images'), {
           chapter_id: chapterId,
           topic_id: topicId,
@@ -214,6 +242,8 @@ export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
           image_url: downloadUrl,
           type: metadata.type,
           order: images.length + uploadedCount,
+          isCore: false, // New uploads are not core by default
+          assetTier: 'optional', // Can be changed later by superadmin
           created_at: serverTimestamp(),
         });
         
@@ -257,7 +287,16 @@ export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
 
   // Delete image
   const handleDeleteImage = async () => {
-    if (!imageToDelete) return;
+    if (!imageToDelete || !profile) return;
+    
+    // Check permissions (images can have isCore field too)
+    const imageAsAsset = { isCore: (imageToDelete as any).isCore, assetTier: (imageToDelete as any).assetTier };
+    if (!canDeleteAsset(profile, imageAsAsset)) {
+      toast.error('You do not have permission to delete this core image. Only superadmin can delete core images.');
+      setShowDeleteConfirm(false);
+      setImageToDelete(null);
+      return;
+    }
     
     setDeletingImageId(imageToDelete.id);
     
@@ -626,14 +665,25 @@ export const ImagesTab = ({ chapterId, topicId }: ImagesTabProps) => {
             <ExternalLink className="w-4 h-4" />
             Open in New Tab
           </a>
-          <div className="my-1 border-t border-slate-700/50" />
-          <button
-            onClick={() => openDeleteConfirm(contextMenu.image)}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </button>
+          {canEditLesson(profile) && (
+            <>
+              <div className="my-1 border-t border-slate-700/50" />
+              {canDeleteAsset(profile, { isCore: (contextMenu.image as any).isCore, assetTier: (contextMenu.image as any).assetTier }) ? (
+                <button
+                  onClick={() => openDeleteConfirm(contextMenu.image)}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              ) : (
+                <div className="w-full flex items-center gap-2 px-4 py-2 text-sm text-amber-400">
+                  <AlertTriangle className="w-4 h-4" />
+                  Core Image (Superadmin only)
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

@@ -49,11 +49,22 @@ class ModelLoader {
   }
 
   async loadModel(url: string): Promise<any> {
-    // Always use proxy URL to avoid CORS issues
-    // Direct URL will always fail due to CORS policy
-    const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
-    console.log('🔄 Loading via proxy:', proxyUrl);
-    return this.loadGLTF(proxyUrl);
+    // Check if this is a Firebase Storage URL - use directly (no proxy needed)
+    const isFirebaseStorageUrl = url.includes('firebasestorage.googleapis.com') || 
+                                url.includes('firebasestorage.app');
+    
+    let finalUrl = url;
+    
+    if (!isFirebaseStorageUrl) {
+      // Only use proxy for external URLs (like Meshy.ai)
+      const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+      console.log('🔄 Loading via proxy (external URL):', proxyUrl);
+      finalUrl = proxyUrl;
+    } else {
+      console.log('✅ Loading directly from Firebase Storage:', url);
+    }
+    
+    return this.loadGLTF(finalUrl);
   }
 
   private loadGLTF(url: string): Promise<any> {
@@ -216,12 +227,23 @@ const SkyboxEnvironment: React.FC<{
         
         // Use proxy URL to avoid CORS issues
         // Skyboxes from external sources may also have CORS restrictions
-        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
-        console.log('🔄 Loading skybox texture via proxy:', proxyUrl);
+        // Check if this is a Firebase Storage URL - use directly (no proxy needed)
+        const isFirebaseStorageUrl = skyboxUrl.includes('firebasestorage.googleapis.com') || 
+                                    skyboxUrl.includes('firebasestorage.app');
+        
+        let finalSkyboxUrl = skyboxUrl;
+        
+        if (!isFirebaseStorageUrl) {
+          // Only use proxy for external URLs
+          finalSkyboxUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
+          console.log('🔄 Loading skybox texture via proxy (external URL):', finalSkyboxUrl);
+        } else {
+          console.log('✅ Loading skybox texture directly from Firebase Storage:', skyboxUrl);
+        }
         
         const loadedTexture = await new Promise<THREE.Texture>((resolve, reject) => {
           loader.load(
-            proxyUrl,
+            finalSkyboxUrl,
             (texture) => {
               // Configure texture
               texture.mapping = THREE.EquirectangularReflectionMapping;

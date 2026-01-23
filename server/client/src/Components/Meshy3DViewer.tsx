@@ -85,11 +85,22 @@ class ModelLoader {
   }
 
   async loadModel(url: string): Promise<any> {
-    // Always use proxy URL to avoid CORS issues
-    // Direct URL will always fail due to CORS policy
-    const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
-    console.log('🔄 Loading via proxy:', proxyUrl);
-    return this.loadGLTF(proxyUrl);
+    // Check if this is a Firebase Storage URL - use directly (no proxy needed)
+    const isFirebaseStorageUrl = url.includes('firebasestorage.googleapis.com') || 
+                                url.includes('firebasestorage.app');
+    
+    let finalUrl = url;
+    
+    if (!isFirebaseStorageUrl) {
+      // Only use proxy for external URLs (like Meshy.ai)
+      const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+      console.log('🔄 Loading via proxy (external URL):', proxyUrl);
+      finalUrl = proxyUrl;
+    } else {
+      console.log('✅ Loading directly from Firebase Storage:', url);
+    }
+    
+    return this.loadGLTF(finalUrl);
 
     let lastError: Error | null = null;
 

@@ -1164,16 +1164,177 @@ export const getTopicResourceIds = async (
 // ============================================
 
 /**
+ * Helper to get download URL from storage path with retry logic
+ * Falls back to existing downloadUrl if storagePath is not available
+ */
+/**
+ * Verify that a URL points to a valid GLB/GLTF file by checking Content-Type
+ */
+const verifyFileType = async (url: string): Promise<{ isValid: boolean; contentType?: string; error?: string }> => {
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    const contentType = response.headers.get('content-type') || '';
+    
+    // Check if it's a valid 3D model content type
+    const isValid3DModel = contentType.includes('model/gltf') || 
+                          contentType.includes('model/gltf-binary') ||
+                          contentType.includes('application/octet-stream') ||
+                          contentType.includes('model/');
+    
+    // Check if it's an image (should not be)
+    const isImage = contentType.includes('image/');
+    
+    if (isImage) {
+      return {
+        isValid: false,
+        contentType,
+        error: `URL points to an image file (${contentType}), not a 3D model`
+      };
+    }
+    
+    if (!isValid3DModel && !contentType.includes('octet-stream')) {
+      return {
+        isValid: false,
+        contentType,
+        error: `Unexpected content type: ${contentType}. Expected 3D model file.`
+      };
+    }
+    
+    return { isValid: true, contentType };
+  } catch (error) {
+    // If verification fails (CORS, etc.), return valid but log warning
+    console.warn('⚠️ Could not verify file type (may be CORS issue):', error);
+    return { isValid: true }; // Assume valid if we can't verify
+  }
+};
+
+const getAssetDownloadUrl = async (storagePath: string | undefined, existingUrl: string | undefined): Promise<string | null> => {
+  // If we have storagePath, regenerate URL (more reliable)
+  if (storagePath) {
+    try {
+      const { ref, getDownloadURL } = await import('firebase/storage');
+      const { storage } = await import('../../config/firebase');
+      const storageRef = ref(storage, storagePath);
+      const freshUrl = await getDownloadURL(storageRef);
+      console.log(`✅ Regenerated download URL from storagePath: ${storagePath.substring(0, 50)}...`);
+      
+      // Verify the file type if it's a GLB file
+      if (storagePath.toLowerCase().endsWith('.glb') || storagePath.toLowerCase().endsWith('.gltf')) {
+        const verification = await verifyFileType(freshUrl);
+        if (!verification.isValid) {
+          console.error(`❌ File type verification failed: ${verification.error}`);
+          console.error(`   Content-Type: ${verification.contentType}`);
+          console.error(`   StoragePath: ${storagePath}`);
+          // Still return the URL but log the error - let the viewer handle it
+        } else {
+          console.log(`✅ File type verified: ${verification.contentType || 'unknown'}`);
+        }
+      }
+      
+      return freshUrl;
+    } catch (error) {
+      console.warn(`⚠️ Failed to regenerate URL from storagePath ${storagePath}:`, error);
+      // Fall back to existing URL if regeneration fails
+      if (existingUrl) {
+        console.log('📦 Using existing downloadUrl as fallback');
+        return existingUrl;
+      }
+      return null;
+    }
+  }
+  
+  // If no storagePath, verify existing URL if available
+  if (existingUrl) {
+    // Quick verification for existing URLs (only for GLB files)
+    const urlLower = existingUrl.toLowerCase();
+    if (urlLower.includes('.glb') || urlLower.includes('.gltf')) {
+      const verification = await verifyFileType(existingUrl);
+      if (!verification.isValid) {
+        console.error(`❌ Existing URL verification failed: ${verification.error}`);
+        console.error(`   URL: ${existingUrl.substring(0, 100)}...`);
+        // Still return it - let the viewer show the error
+      }
+    }
+  }
+  
+  return existingUrl || null;
+};
+
+/**
  * Helper to convert meshy_assets document data to MeshyAsset interface
  * Handles various field naming conventions in the collection
+ * Now includes storagePath support for reliable refetching
  */
-const mapMeshyDocToAsset = (docSnap: DocumentSnapshot, chapterId: string, topicId: string): MeshyAsset => {
+const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, topicId: string): Promise<MeshyAsset> => {
   const data = docSnap.data() || {};
   
-  // Handle different field naming conventions
-  const glbUrl = data.glb_url || data.textured_model_glb || data.final_asset_url || data.asset_url || data.model_urls?.glb || '';
-  const fbxUrl = data.fbx_url || data.textured_model_fbx || data.model_urls?.fbx;
-  const usdzUrl = data.usdz_url || data.textured_model_usdz || data.model_urls?.usdz;
+  // Get storagePath for reliable refetching
+  const storagePath = data.storagePath || data.storage_path;
+  
+  // Handle different field naming conventions for URLs
+  const existingGlbUrl = data.glb_url || data.textured_model_glb || data.final_asset_url || data.asset_url || data.model_urls?.glb || '';
+  const existingFbxUrl = data.fbx_url || data.textured_model_fbx || data.model_urls?.fbx;
+  const existingUsdzUrl = data.usdz_url || data.textured_model_usdz || data.model_urls?.usdz;
+  
+  // Regenerate URLs from storagePath if available (for GLB - primary format)
+  // Only regenerate if storagePath points to a GLB file
+  let glbUrl = existingGlbUrl;
+  
+  // Check if storagePath is for a GLB file
+  const isGlbFile = storagePath && (
+    storagePath.toLowerCase().endsWith('.glb') || 
+    storagePath.toLowerCase().includes('.glb?') ||
+    storagePath.toLowerCase().includes('.glb&')
+  );
+  
+  if (isGlbFile) {
+    // Regenerate URL from storagePath for GLB files
+    const regenerated = await getAssetDownloadUrl(storagePath, existingGlbUrl);
+    if (regenerated) {
+      glbUrl = regenerated;
+      console.log(`✅ Using regenerated GLB URL from storagePath: ${storagePath}`);
+    } else if (existingGlbUrl) {
+      console.log(`⚠️ Failed to regenerate URL, using existing glb_url: ${existingGlbUrl.substring(0, 80)}...`);
+      glbUrl = existingGlbUrl;
+    }
+  } else if (storagePath) {
+    // storagePath exists but doesn't point to GLB - log warning
+    console.warn(`⚠️ storagePath does not point to GLB file: ${storagePath}`);
+    // Still use existing URL if available
+    if (!existingGlbUrl) {
+      console.warn(`⚠️ No existing glb_url and storagePath is not GLB - asset may not be loadable`);
+    }
+  }
+  
+  // Final validation: ensure we have a URL and it's not an image
+  if (!glbUrl || glbUrl.trim() === '') {
+    console.error(`❌ No GLB URL available for asset ${docSnap.id}. storagePath: ${storagePath}, existingGlbUrl: ${existingGlbUrl ? 'exists' : 'missing'}`);
+    // Return empty string - caller should handle this
+    glbUrl = '';
+  } else {
+    // Check if URL might be pointing to an image (common mistake)
+    const urlLower = glbUrl.toLowerCase();
+    const isImageUrl = urlLower.includes('thumbnail') || 
+                      urlLower.includes('preview') ||
+                      urlLower.includes('.jpg') ||
+                      urlLower.includes('.jpeg') ||
+                      urlLower.includes('.png') ||
+                      urlLower.includes('image');
+    
+    if (isImageUrl) {
+      console.error(`❌ CRITICAL: Asset ${docSnap.id} has an image URL stored as glb_url: ${glbUrl.substring(0, 100)}...`);
+      console.error(`   This is likely a data error. The asset may need to be re-uploaded.`);
+      // Don't return image URL - return empty string instead
+      glbUrl = '';
+    }
+  }
+  
+  // Log final URL for debugging
+  if (glbUrl) {
+    console.log(`✅ Final GLB URL for asset ${docSnap.id}: ${glbUrl.substring(0, 100)}...`);
+  } else {
+    console.warn(`⚠️ Asset ${docSnap.id} (${data.name || 'unnamed'}) has no valid GLB URL`);
+  }
   
   return {
     id: docSnap.id,
@@ -1181,15 +1342,18 @@ const mapMeshyDocToAsset = (docSnap: DocumentSnapshot, chapterId: string, topicI
     topic_id: data.topic_id || topicId,
     name: data.name || data.prompt || 'Meshy 3D Asset',
     prompt: data.prompt,
-    glb_url: glbUrl,
-    fbx_url: fbxUrl,
-    usdz_url: usdzUrl,
+    glb_url: glbUrl || '', // Ensure we always return a string
+    fbx_url: existingFbxUrl,
+    usdz_url: existingUsdzUrl,
     thumbnail_url: data.thumbnail_url || data.thumbnail || data.previewUrl,
     meshy_id: data.meshy_id || data.meshyId || data.asset_id,
     status: data.status === 'completed' ? 'complete' : (data.status || 'complete'),
     created_at: data.created_at || data.createdAt,
     updated_at: data.updated_at || data.updatedAt,
-    metadata: data.metadata,
+    metadata: {
+      ...data.metadata,
+      storagePath, // Include storagePath in metadata for future refetching
+    },
   };
 };
 
@@ -1255,9 +1419,11 @@ export const getMeshyAssets = async (
           
           console.log(`📦 Batch query for asset_ids returned ${snapshot.docs.length} results`);
           
-          snapshot.docs.forEach((docSnap) => {
-            assets.push(mapMeshyDocToAsset(docSnap, chapterId, topicId));
-          });
+          // Map documents to assets (now async)
+          const batchAssets = await Promise.all(
+            snapshot.docs.map((docSnap) => mapMeshyDocToAsset(docSnap, chapterId, topicId))
+          );
+          assets.push(...batchAssets);
         } catch (batchErr) {
           console.warn('⚠️ Batch query failed, trying individual fetches:', batchErr);
           
@@ -1268,7 +1434,8 @@ export const getMeshyAssets = async (
               const assetSnap = await getDoc(assetRef);
               
               if (assetSnap.exists()) {
-                assets.push(mapMeshyDocToAsset(assetSnap, chapterId, topicId));
+                const asset = await mapMeshyDocToAsset(assetSnap, chapterId, topicId);
+                assets.push(asset);
               }
             } catch (err) {
               console.warn(`⚠️ Could not fetch asset ${assetId}:`, err);
@@ -1292,9 +1459,10 @@ export const getMeshyAssets = async (
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
         console.log('✅ Found Meshy assets via chapter_id/topic_id query:', snapshot.docs.length);
-        snapshot.docs.forEach((docSnap) => {
-          assets.push(mapMeshyDocToAsset(docSnap, chapterId, topicId));
-        });
+        const fallbackAssets = await Promise.all(
+          snapshot.docs.map((docSnap) => mapMeshyDocToAsset(docSnap, chapterId, topicId))
+        );
+        assets.push(...fallbackAssets);
       }
     }
     

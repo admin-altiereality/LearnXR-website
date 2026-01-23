@@ -19,9 +19,10 @@ import { getMeshyAssets } from '../../../lib/firestore/queries';
 import { MeshyAsset } from '../../../types/curriculum';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage, db } from '../../../config/firebase';
-import { collection, addDoc, deleteDoc, doc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, serverTimestamp, getDoc, updateDoc, setDoc } from 'firebase/firestore';
 import { linkMeshyAssetsToTopic, unlinkMeshyAssetFromTopic } from '../../../lib/firestore/updateHelpers';
 import { useAuth } from '../../../contexts/AuthContext';
+import { canDeleteAsset, canEditLesson } from '../../../utils/rbac';
 import {
   Box,
   ExternalLink,
@@ -89,9 +90,30 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
       try {
         // Fetch from meshy_assets collection (replaces legacy get3DAssets)
         const assetsData = await getMeshyAssets(chapterId, topicId);
-        setAssets(assetsData);
-        if (assetsData.length > 0 && !selectedAsset) {
-          setSelectedAsset(assetsData[0]);
+        
+        // Filter out assets without valid GLB URLs
+        const validAssets = assetsData.filter(asset => {
+          if (!asset.glb_url || asset.glb_url.trim() === '') {
+            console.warn(`⚠️ Asset ${asset.id} (${asset.name}) has no GLB URL - skipping`);
+            return false;
+          }
+          // Check if URL looks valid
+          if (!asset.glb_url.startsWith('http')) {
+            console.warn(`⚠️ Asset ${asset.id} (${asset.name}) has invalid URL format: ${asset.glb_url}`);
+            return false;
+          }
+          return true;
+        });
+        
+        if (validAssets.length < assetsData.length) {
+          const skippedCount = assetsData.length - validAssets.length;
+          console.warn(`⚠️ Skipped ${skippedCount} asset(s) without valid GLB URLs`);
+          toast.warn(`${skippedCount} asset(s) skipped - missing or invalid GLB URL`);
+        }
+        
+        setAssets(validAssets);
+        if (validAssets.length > 0 && !selectedAsset) {
+          setSelectedAsset(validAssets[0]);
         }
       } catch (error) {
         console.error('Error loading Meshy assets from meshy_assets collection:', error);
@@ -153,30 +175,130 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
     validateAndAddFiles(files);
   };
 
-  const validateAndAddFiles = (files: File[]) => {
+  // Helper function to validate file type by reading magic bytes
+  const validateFileType = async (file: File): Promise<{ isValid: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        try {
+          const arrayBuffer = e.target?.result as ArrayBuffer;
+          const bytes = new Uint8Array(arrayBuffer.slice(0, 12)); // Read first 12 bytes
+          
+          // GLB file magic: "glTF" (0x67 0x6C 0x54 0x46) at offset 0, followed by version (4 bytes) and length (4 bytes)
+          // GLB files start with: 0x67 0x6C 0x54 0x46 0x02 0x00 0x00 0x00
+          const isGLB = bytes.length >= 4 && 
+                       bytes[0] === 0x67 && bytes[1] === 0x6C && bytes[2] === 0x54 && bytes[3] === 0x46;
+          
+          // GLTF (JSON) files start with "{" or have JSON structure
+          const textDecoder = new TextDecoder();
+          const textStart = textDecoder.decode(bytes.slice(0, 10));
+          const isGLTF = textStart.trim().startsWith('{');
+          
+          // Check for JPEG (JFIF header)
+          const isJPEG = bytes.length >= 4 && 
+                        bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
+          
+          // Check for PNG
+          const isPNG = bytes.length >= 8 &&
+                       bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
+          
+          const fileName = file.name.toLowerCase();
+          const hasGlbExtension = fileName.endsWith('.glb') || fileName.endsWith('.gltf');
+          
+          if (isJPEG || isPNG) {
+            resolve({
+              isValid: false,
+              error: `File "${file.name}" is an image file (${isJPEG ? 'JPEG' : 'PNG'}), not a 3D model. Please upload a GLB/GLTF file.`
+            });
+            return;
+          }
+          
+          if (hasGlbExtension && !isGLB && !isGLTF) {
+            resolve({
+              isValid: false,
+              error: `File "${file.name}" has a .glb/.gltf extension but the file content doesn't match. The file may be corrupted or is not actually a 3D model file.`
+            });
+            return;
+          }
+          
+          // For FBX/OBJ, we can't easily validate magic bytes, so trust the extension
+          if (fileName.endsWith('.fbx') || fileName.endsWith('.obj')) {
+            resolve({ isValid: true });
+            return;
+          }
+          
+          // For GLB/GLTF, require valid magic bytes
+          if (hasGlbExtension && (isGLB || isGLTF)) {
+            resolve({ isValid: true });
+            return;
+          }
+          
+          // If extension doesn't match, reject
+          if (!hasGlbExtension && !fileName.endsWith('.fbx') && !fileName.endsWith('.obj')) {
+            resolve({
+              isValid: false,
+              error: `File "${file.name}" has an unsupported format. Please use GLB, GLTF, FBX, or OBJ files.`
+            });
+            return;
+          }
+          
+          resolve({ isValid: true });
+        } catch (error) {
+          console.error('Error validating file type:', error);
+          resolve({
+            isValid: false,
+            error: `Could not validate file type for "${file.name}". Please ensure it's a valid 3D model file.`
+          });
+        }
+      };
+      
+      reader.onerror = () => {
+        resolve({
+          isValid: false,
+          error: `Could not read file "${file.name}" for validation.`
+        });
+      };
+      
+      // Read first 12 bytes to check magic bytes
+      const blob = file.slice(0, 12);
+      reader.readAsArrayBuffer(blob);
+    });
+  };
+
+  const validateAndAddFiles = async (files: File[]) => {
     const validExtensions = ['.glb', '.gltf', '.fbx', '.obj'];
     const maxSize = 100 * 1024 * 1024; // 100MB
     
     const validFiles: File[] = [];
     const newNames: { [key: string]: string } = { ...assetNames };
     
-    files.forEach(file => {
+    for (const file of files) {
       const fileName = file.name.toLowerCase();
-      const isValid = validExtensions.some(ext => fileName.endsWith(ext));
+      const isValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
       
-      if (!isValid) {
+      if (!isValidExtension) {
         toast.error(`${file.name}: Invalid format. Use GLB, GLTF, FBX, or OBJ`);
-        return;
+        continue;
       }
       
       if (file.size > maxSize) {
         toast.error(`${file.name}: File too large (max 100MB)`);
-        return;
+        continue;
+      }
+      
+      // Validate file type by reading magic bytes (only for GLB/GLTF)
+      if (fileName.endsWith('.glb') || fileName.endsWith('.gltf')) {
+        const validation = await validateFileType(file);
+        if (!validation.isValid) {
+          toast.error(validation.error || `${file.name}: Invalid file type`);
+          continue;
+        }
       }
       
       validFiles.push(file);
       newNames[file.name] = file.name.replace(/\.[^/.]+$/, '');
-    });
+    }
     
     setSelectedFiles(prev => [...prev, ...validFiles]);
     setAssetNames(newNames);
@@ -204,24 +326,200 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
     
     try {
       for (const file of selectedFiles) {
+        // Double-check file type before upload
+        const fileNameLower = file.name.toLowerCase();
+        const isGlbFile = fileNameLower.endsWith('.glb') || fileNameLower.endsWith('.gltf');
+        
+        if (isGlbFile) {
+          const validation = await validateFileType(file);
+          if (!validation.isValid) {
+            toast.error(`${file.name}: ${validation.error || 'Invalid file type'}`);
+            continue;
+          }
+        }
+        
         const name = assetNames[file.name] || file.name.replace(/\.[^/.]+$/, '');
         const timestamp = Date.now();
-        const fileName = `${name.replace(/\s+/g, '_')}_${timestamp}${file.name.substring(file.name.lastIndexOf('.'))}`;
+        const fileExtension = file.name.substring(file.name.lastIndexOf('.'));
+        const fileName = `${name.replace(/\s+/g, '_')}_${timestamp}${fileExtension}`;
         const storagePath = `meshy_assets/${chapterId}/${topicId}/${fileName}`;
         const storageRef = ref(storage, storagePath);
         
-        await uploadBytes(storageRef, file);
+        console.log(`📤 Uploading file: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB) to ${storagePath}`);
+        
+        // Upload with proper content type metadata
+        const metadata = {
+          contentType: file.type || (fileNameLower.endsWith('.glb') ? 'model/gltf-binary' : 
+                                    fileNameLower.endsWith('.gltf') ? 'model/gltf+json' :
+                                    fileNameLower.endsWith('.fbx') ? 'application/octet-stream' :
+                                    'model/obj'),
+          customMetadata: {
+            originalFileName: file.name,
+            fileSize: file.size.toString(),
+            uploadedAt: new Date().toISOString(),
+          }
+        };
+        
+        await uploadBytes(storageRef, file, metadata);
         const downloadUrl = await getDownloadURL(storageRef);
         
+        // DEBUG: Log upload details
+        console.log('📤 UPLOAD DEBUG:', {
+          fileName: file.name,
+          fileExtension: fileExtension,
+          fileSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+          fileType: file.type,
+          storagePath: storagePath,
+          downloadUrl: downloadUrl.substring(0, 150) + '...',
+          contentType: metadata.contentType,
+        });
+        
+        // Verify the uploaded file by checking its content type and actual file content
+        try {
+          const verifyResponse = await fetch(downloadUrl, { method: 'HEAD' });
+          const contentType = verifyResponse.headers.get('content-type') || '';
+          const contentLength = verifyResponse.headers.get('content-length');
+          
+          console.log(`✅ Uploaded file verification:`, {
+            fileName: file.name,
+            contentType,
+            contentLength: contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(2)} MB` : 'unknown',
+            downloadUrl: downloadUrl.substring(0, 100) + '...',
+          });
+          
+          // Check if content type matches expected 3D model type
+          // Be lenient - only reject if we're absolutely sure it's wrong
+          if (isGlbFile) {
+            // Only reject if Content-Type says image AND magic bytes confirm it
+            if (contentType.includes('image/')) {
+              // Double-check by reading first bytes to confirm
+              try {
+                const verifyContentResponse = await fetch(downloadUrl, { 
+                  method: 'GET',
+                  headers: { 'Range': 'bytes=0-11' } // Read first 12 bytes
+                });
+                const arrayBuffer = await verifyContentResponse.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+                
+                // Check for JPEG magic bytes
+                const isJPEG = bytes.length >= 4 && 
+                              bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF;
+                
+                // Check for PNG magic bytes
+                const isPNG = bytes.length >= 8 &&
+                             bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47;
+                
+                if (isJPEG || isPNG) {
+                  toast.error(`${file.name}: Uploaded file is an image (${isJPEG ? 'JPEG' : 'PNG'}), not a 3D model. The file will not be saved.`);
+                  // Delete the incorrectly uploaded file
+                  try {
+                    await deleteObject(storageRef);
+                    console.log(`🗑️ Deleted incorrectly uploaded image file: ${storagePath}`);
+                  } catch (deleteError) {
+                    console.error('Failed to delete incorrect file:', deleteError);
+                  }
+                  continue;
+                }
+                
+                // If Content-Type says image but magic bytes don't match, allow it (might be server misconfiguration)
+                console.warn(`⚠️ Warning: Content-Type says image but file content doesn't match - allowing upload`);
+              } catch (contentError) {
+                console.warn('⚠️ Could not verify file content, allowing upload:', contentError);
+                // Continue - might be CORS or other issue, don't block upload
+              }
+            }
+            
+            // For other content types, be lenient - only warn, don't reject
+            // Many servers serve GLB files with generic binary content types
+            if (contentType && !contentType.includes('model/') && !contentType.includes('application/octet-stream') && !contentType.includes('binary')) {
+              console.warn(`⚠️ Warning: Uploaded file has unexpected content type: ${contentType} - but allowing upload (might be valid GLB)`);
+              // Don't reject - might be valid GLB with wrong Content-Type header
+            }
+          }
+        } catch (verifyError) {
+          console.warn('⚠️ Could not verify uploaded file:', verifyError);
+          // Continue anyway - might be CORS or other issue
+        }
+        
+        // Create document reference first to get the ID
+        const assetDocRef = doc(collection(db, 'meshy_assets'));
+        const assetId = assetDocRef.id;
+        
+        // Determine correct content type for storage
+        let storedContentType = file.type;
+        if (!storedContentType) {
+          if (fileNameLower.endsWith('.glb')) {
+            storedContentType = 'model/gltf-binary';
+          } else if (fileNameLower.endsWith('.gltf')) {
+            storedContentType = 'model/gltf+json';
+          } else if (fileNameLower.endsWith('.fbx')) {
+            storedContentType = 'application/octet-stream';
+          } else {
+            storedContentType = 'application/octet-stream';
+          }
+        }
+        
         // Save to meshy_assets collection (NEW schema)
-        const assetDoc = await addDoc(collection(db, 'meshy_assets'), {
+        // Store BOTH storagePath and downloadUrl for reliable refetching
+        // Store asset_id field (document ID) so queries can find it by asset_id
+        // New assets are NOT core by default (can be deleted by admin)
+        const assetData = {
+          asset_id: assetId, // Store document ID as asset_id for querying
           chapter_id: chapterId,
           topic_id: topicId,
           name,
-          glb_url: downloadUrl,
+          storagePath: storagePath, // Store storage path for reliable refetching
+          glb_url: downloadUrl, // Keep downloadUrl for immediate use
           status: 'complete',
-          created_at: serverTimestamp(),
+          isCore: false, // New uploads are not core by default
+          assetTier: 'optional', // Can be changed later by superadmin
+          contentType: storedContentType, // Store correct content type
+          fileName: fileName,
+          fileSize: file.size, // Store file size for reference
+          originalFileName: file.name, // Store original filename
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+        
+        await setDoc(assetDocRef, assetData);
+        
+        // DEBUG: Immediately refetch to verify what was saved
+        console.log('💾 FIRESTORE SAVE DEBUG:', {
+          documentId: assetId,
+          savedData: {
+            ...assetData,
+            createdAt: 'serverTimestamp()',
+            updatedAt: 'serverTimestamp()',
+          },
         });
+        
+        // Immediately refetch the document to verify
+        try {
+          const verifyDoc = await getDoc(assetDocRef);
+          if (verifyDoc.exists()) {
+            const fetchedData = verifyDoc.data();
+            console.log('✅ FIRESTORE FETCH VERIFICATION:', {
+              documentId: assetId,
+              fetchedGlbUrl: fetchedData.glb_url?.substring(0, 150) + '...',
+              fetchedStoragePath: fetchedData.storagePath,
+              fetchedContentType: fetchedData.contentType,
+              urlMatches: fetchedData.glb_url === downloadUrl,
+              storagePathMatches: fetchedData.storagePath === storagePath,
+            });
+            
+            if (fetchedData.glb_url !== downloadUrl) {
+              console.error('❌ URL MISMATCH: Saved URL does not match fetched URL!');
+              console.error('   Saved:', downloadUrl.substring(0, 150));
+              console.error('   Fetched:', fetchedData.glb_url?.substring(0, 150));
+            }
+          } else {
+            console.error('❌ Document not found after save!');
+          }
+        } catch (verifyError) {
+          console.error('⚠️ Could not verify saved document:', verifyError);
+        }
+        
+        const assetDoc = { id: assetId };
         
         const newAsset: MeshyAsset = {
           id: assetDoc.id,
@@ -284,7 +582,15 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
   
   // Delete asset from meshy_assets collection
   const handleDeleteAsset = async () => {
-    if (!assetToDelete) return;
+    if (!assetToDelete || !profile) return;
+    
+    // Check permissions
+    if (!canDeleteAsset(profile, assetToDelete)) {
+      toast.error('You do not have permission to delete this core asset. Only superadmin can delete core assets.');
+      setShowDeleteConfirm(false);
+      setAssetToDelete(null);
+      return;
+    }
     
     setDeletingAssetId(assetToDelete.id);
     
@@ -345,6 +651,10 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
   };
   
   const handleContextMenu = (e: React.MouseEvent, asset: MeshyAsset) => {
+    // Only show context menu if user can perform actions
+    if (!canEditLesson(profile) && !canDeleteAsset(profile, asset)) {
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ asset, x: e.clientX, y: e.clientY });
@@ -483,15 +793,23 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
                         >
                           <Eye className="w-5 h-5" />
                         </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDeleteConfirm(asset);
-                          }}
-                          className="p-2 bg-red-500/20 rounded-lg text-red-400 hover:bg-red-500/30"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                        {canDeleteAsset(profile, asset) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDeleteConfirm(asset);
+                            }}
+                            className="p-2 bg-red-500/20 rounded-lg text-red-400 hover:bg-red-500/30"
+                            title={asset.isCore || asset.assetTier === 'core' ? 'Core asset - Superadmin only' : 'Delete asset'}
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        )}
+                        {!canDeleteAsset(profile, asset) && (asset.isCore || asset.assetTier === 'core') && (
+                          <div className="p-2 bg-amber-500/20 rounded-lg text-amber-400" title="Core asset - Cannot delete (Superadmin only)">
+                            <AlertTriangle className="w-5 h-5" />
+                          </div>
+                        )}
                       </div>
                     </div>
                     
@@ -567,15 +885,23 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openDeleteConfirm(asset);
-                        }}
-                        className="p-2 text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canDeleteAsset(profile, asset) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDeleteConfirm(asset);
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                          title={asset.isCore || asset.assetTier === 'core' ? 'Core asset - Superadmin only' : 'Delete asset'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      {!canDeleteAsset(profile, asset) && (asset.isCore || asset.assetTier === 'core') && (
+                        <div className="p-2 opacity-0 group-hover:opacity-100 transition-all" title="Core asset - Cannot delete (Superadmin only)">
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        </div>
+                      )}
                     </div>
                     
                     {/* Deleting indicator */}
@@ -618,15 +944,47 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      <Lazy3DViewer
-                        assetUrl={selectedAsset.glb_url}
-                        skyboxImageUrl=""
-                        className="w-full h-full"
-                        autoRotate={true}
-                        onError={(err) => setViewerError(err.message)}
-                      />
-                    )}
+                    ) : (() => {
+                      // SAFEGUARD: Ensure we're using glb_url, not thumbnail_url
+                      const modelUrl = selectedAsset.glb_url;
+                      const thumbnailUrl = selectedAsset.thumbnail_url;
+                      
+                      // Validate that we're not accidentally using thumbnail URL
+                      if (thumbnailUrl && modelUrl === thumbnailUrl) {
+                        console.error('❌ CRITICAL: glb_url matches thumbnail_url - this is wrong!');
+                        console.error('   Asset ID:', selectedAsset.id);
+                        console.error('   Asset Name:', selectedAsset.name);
+                        console.error('   URL:', modelUrl.substring(0, 150));
+                        return (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="text-center p-6">
+                              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+                              <p className="text-white font-medium">Invalid Asset Configuration</p>
+                              <p className="text-sm text-slate-400 mt-1">
+                                The 3D model URL is incorrectly pointing to a thumbnail image. Please check the asset configuration.
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // Additional validation: check if URL looks like an image
+                      const urlLower = modelUrl.toLowerCase();
+                      if (urlLower.includes('thumbnail') || urlLower.includes('preview') || 
+                          urlLower.includes('.jpg') || urlLower.includes('.jpeg') || urlLower.includes('.png')) {
+                        console.warn('⚠️ WARNING: glb_url may be pointing to an image file:', modelUrl.substring(0, 150));
+                      }
+                      
+                      return (
+                        <Lazy3DViewer
+                          assetUrl={modelUrl}
+                          skyboxImageUrl=""
+                          className="w-full h-full"
+                          autoRotate={true}
+                          onError={(err) => setViewerError(err.message)}
+                        />
+                      );
+                    })()}
                   </Suspense>
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -701,16 +1059,26 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
                                    }`}>
                       {selectedAsset.status === 'complete' ? '✓ Ready' : selectedAsset.status}
                     </span>
-                    <button
-                      onClick={() => openDeleteConfirm(selectedAsset)}
-                      className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium
-                               text-red-400 bg-red-500/10 hover:bg-red-500/20
-                               rounded-lg border border-red-500/30
-                               transition-all duration-200"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete
-                    </button>
+                    {canDeleteAsset(profile, selectedAsset) ? (
+                      <button
+                        onClick={() => openDeleteConfirm(selectedAsset)}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium
+                                 text-red-400 bg-red-500/10 hover:bg-red-500/20
+                                 rounded-lg border border-red-500/30
+                                 transition-all duration-200"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    ) : (selectedAsset.isCore || selectedAsset.assetTier === 'core') ? (
+                      <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium
+                                   text-amber-400 bg-amber-500/10
+                                   rounded-lg border border-amber-500/30"
+                           title="Core asset - Only superadmin can delete">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        Core Asset
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -818,13 +1186,20 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
             </a>
           )}
           <div className="my-1 border-t border-slate-700/50" />
-          <button
-            onClick={() => openDeleteConfirm(contextMenu.asset)}
-            className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </button>
+          {canDeleteAsset(profile, contextMenu.asset) ? (
+            <button
+              onClick={() => openDeleteConfirm(contextMenu.asset)}
+              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+          ) : (
+            <div className="w-full flex items-center gap-2 px-4 py-2 text-sm text-amber-400">
+              <AlertTriangle className="w-4 h-4" />
+              Core Asset (Superadmin only)
+            </div>
+          )}
         </div>
       )}
 
@@ -984,17 +1359,27 @@ export const AssetsTab = ({ chapterId, topicId }: AssetsTabProps) => {
       )}
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && assetToDelete && (
+      {showDeleteConfirm && assetToDelete && profile && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="bg-slate-900 rounded-2xl border border-slate-700/50 shadow-2xl max-w-md w-full mx-4 overflow-hidden">
             <div className="p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
                 <Trash2 className="w-8 h-8 text-red-400" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Delete Asset?</h3>
-              <p className="text-slate-400 mb-6">
+              <h3 className="text-xl font-semibold text-white mb-2">
+                {assetToDelete.isCore || assetToDelete.assetTier === 'core' ? 'Delete Core Asset?' : 'Delete Asset?'}
+              </h3>
+              <p className="text-slate-400 mb-2">
                 Are you sure you want to delete "{assetToDelete.name}"? This action cannot be undone.
               </p>
+              {(assetToDelete.isCore || assetToDelete.assetTier === 'core') && (
+                <div className="mb-6 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <p className="text-xs text-amber-400 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>This is a <strong>core asset</strong>. Deleting it may break lesson rendering.</span>
+                  </p>
+                </div>
+              )}
               <div className="flex items-center justify-center gap-3">
                 <button
                   onClick={() => {
