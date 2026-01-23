@@ -1079,10 +1079,11 @@ export const getChapterResourceIds = async (
     
     const data = snapshot.data();
     
-    // Extract image3dasset if present
+    // Extract image3dasset if present (check sharedAssets first, then legacy)
     let image3dAsset: Image3DAsset | undefined;
-    if (data.image3dasset) {
-      const img3d = data.image3dasset;
+    const image3dSource = data.sharedAssets?.image3dasset || data.image3dasset;
+    if (image3dSource) {
+      const img3d = image3dSource;
       image3dAsset = {
         imageasset_id: img3d.imageasset_id || '',
         imageasset_name: img3d.imageasset_name || 'image_to_3d_asset',
@@ -1098,27 +1099,65 @@ export const getChapterResourceIds = async (
       };
     }
     
+    // Extract resource IDs: Check sharedAssets first, then fallback to legacy fields
+    // Merge both sources to ensure we don't lose any data
+    // Images are chapter-level
+    const sharedImageIds = Array.isArray(data.sharedAssets?.image_ids) ? data.sharedAssets.image_ids : [];
+    const legacyImageIds = Array.isArray(data.image_ids) ? data.image_ids : [];
+    // Merge: sharedAssets first (priority), then legacy
+    const imageIds = [...new Set([...sharedImageIds, ...legacyImageIds])];
+    
+    // Meshy assets are topic-level, but we'll extract them per topic below
+    // Chapter-level meshy_asset_ids are used as fallback
+    const sharedChapterMeshyIds = Array.isArray(data.sharedAssets?.meshy_asset_ids) ? data.sharedAssets.meshy_asset_ids : [];
+    const legacyChapterMeshyIds = Array.isArray(data.meshy_asset_ids) ? data.meshy_asset_ids : [];
+    // Merge: sharedAssets first (priority), then legacy
+    const chapterMeshyAssetIds = [...new Set([...sharedChapterMeshyIds, ...legacyChapterMeshyIds])];
+    
     const result: ChapterWithResourceIds = {
       chapter_id: chapterId,
-      mcq_ids: data.mcq_ids || [],
-      tts_ids: data.tts_ids || [],
-      image_ids: data.image_ids || [],
-      meshy_asset_ids: data.meshy_asset_ids || [],
+      mcq_ids: data.mcq_ids || [], // MCQs are language-specific, handled separately
+      tts_ids: data.tts_ids || [], // TTS are language-specific, handled separately
+      image_ids: imageIds, // Use sharedAssets or legacy
+      meshy_asset_ids: chapterMeshyAssetIds, // Use sharedAssets or legacy (chapter-level fallback)
       image3dasset: image3dAsset,
-      topics: (data.topics || []).map((t: FirebaseTopic) => ({
-        topic_id: t.topic_id,
-        topic_name: t.topic_name,
-        mcq_ids: t.mcq_ids || [],
-        tts_ids: t.tts_ids || [],
-        meshy_asset_ids: t.meshy_asset_ids || [],
-      })),
+      topics: (data.topics || []).map((t: FirebaseTopic) => {
+        // For topics, check sharedAssets first, then legacy fields
+        // Merge both sources to ensure we don't lose any data
+        const topicSharedMeshyIds = Array.isArray(t.sharedAssets?.meshy_asset_ids) 
+          ? t.sharedAssets.meshy_asset_ids 
+          : (Array.isArray(t.sharedAssets?.asset_ids) ? t.sharedAssets.asset_ids : []);
+        const topicLegacyMeshyIds = [
+          ...(Array.isArray(t.meshy_asset_ids) ? t.meshy_asset_ids : []),
+          ...(Array.isArray(t.asset_ids) ? t.asset_ids : []),
+        ];
+        // Merge: sharedAssets first (priority), then legacy
+        const topicMeshyIds = [...new Set([...topicSharedMeshyIds, ...topicLegacyMeshyIds])];
+        
+        return {
+          topic_id: t.topic_id,
+          topic_name: t.topic_name,
+          mcq_ids: t.mcq_ids || [], // Language-specific, handled separately
+          tts_ids: t.tts_ids || [], // Language-specific, handled separately
+          meshy_asset_ids: topicMeshyIds, // Merged from sharedAssets and legacy
+        };
+      }),
     };
     
     console.log('✅ Chapter resource IDs loaded:', {
+      hasSharedAssets: !!data.sharedAssets,
+      image_ids: {
+        fromShared: sharedImageIds?.length || 0,
+        fromLegacy: legacyImageIds?.length || 0,
+        final: result.image_ids.length,
+      },
+      meshy_asset_ids: {
+        fromShared: sharedChapterMeshyIds?.length || 0,
+        fromLegacy: legacyChapterMeshyIds?.length || 0,
+        final: result.meshy_asset_ids.length,
+      },
       mcq_ids: result.mcq_ids.length,
       tts_ids: result.tts_ids.length,
-      image_ids: result.image_ids.length,
-      meshy_asset_ids: result.meshy_asset_ids.length,
       hasImage3d: !!result.image3dasset,
       topics: result.topics.length,
     });
@@ -1145,12 +1184,14 @@ export const getTopicResourceIds = async (
     const topic = chapterData.topics.find((t) => t.topic_id === topicId);
     
     // Return topic-level IDs if they exist, otherwise fall back to chapter-level
+    // Note: This function is used by getMeshyAssets, getChapterImages, etc.
+    // It already gets data from getChapterResourceIds which handles sharedAssets
     return {
       mcq_ids: topic?.mcq_ids?.length ? topic.mcq_ids : chapterData.mcq_ids,
       tts_ids: topic?.tts_ids?.length ? topic.tts_ids : chapterData.tts_ids,
-      image_ids: chapterData.image_ids, // Always chapter-level
-      meshy_asset_ids: topic?.meshy_asset_ids?.length ? topic.meshy_asset_ids : chapterData.meshy_asset_ids,
-      image3dasset: chapterData.image3dasset,
+      image_ids: chapterData.image_ids, // Always chapter-level (already from sharedAssets or legacy)
+      meshy_asset_ids: topic?.meshy_asset_ids?.length ? topic.meshy_asset_ids : chapterData.meshy_asset_ids, // Already from sharedAssets or legacy
+      image3dasset: chapterData.image3dasset, // Already from sharedAssets or legacy
     };
   } catch (error) {
     console.error('Error fetching topic resource IDs:', error);

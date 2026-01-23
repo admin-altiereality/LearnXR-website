@@ -83,30 +83,57 @@ export interface CurriculumChapter {
   // ============================================
   supported_languages?: LanguageCode[]; // e.g., ["en", "hi"]
   
-  // Language-specific MCQ IDs
+  // ============================================
+  // SHARED ASSETS (Language-independent)
+  // Images, Skyboxes, 3D Assets, Text-to-3D Models are shared across all languages
+  // ============================================
+  sharedAssets?: {
+    image_ids?: string[]; // References to chapter_images collection
+    skybox_id?: string; // Reference to skyboxes collection (topic-level, but stored here for compatibility)
+    meshy_asset_ids?: string[]; // References to meshy_assets collection
+    text_to_3d_asset_ids?: string[]; // References to text_to_3d_assets collection
+    skybox_glb_urls?: string[]; // Direct skybox GLB URLs
+    meshy_glb_urls?: string[]; // Direct meshy GLB URLs
+    image3dasset?: Image3DAsset; // Inline 3D asset from Meshy (generated from image)
+  };
+  
+  // ============================================
+  // LOCALIZED CONTENT (Language-specific)
+  // MCQs, TTS, Avatar Scripts are language-specific
+  // ============================================
+  localized?: {
+    [lang in LanguageCode]?: {
+      mcq_ids?: string[]; // References to chapter_mcqs collection
+      tts_ids?: string[]; // References to chapter_tts collection
+      avatar_scripts?: AvatarScripts; // Avatar scripts for this language
+    };
+  };
+  
+  // Language-specific MCQ IDs (kept for backward compatibility, will migrate to localized)
   mcq_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
   
-  // Language-specific TTS IDs
+  // Language-specific TTS IDs (kept for backward compatibility, will migrate to localized)
   tts_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
   
-  // Language-specific avatar scripts (chapter-level fallback)
+  // Language-specific avatar scripts (chapter-level fallback, kept for backward compatibility)
   avatar_scripts_by_language?: AvatarScriptsByLanguage;
   
   // ============================================
   // LEGACY FIELDS (kept for backwards compatibility)
   // ============================================
   // Resource ID arrays - reference documents in separate collections
+  // These will be migrated to sharedAssets and localized
   mcq_ids?: string[]; // Legacy: contains both languages mixed
   tts_ids?: string[]; // Legacy: contains both languages mixed
-  image_ids?: string[];
-  meshy_asset_ids?: string[];
+  image_ids?: string[]; // Legacy: will migrate to sharedAssets.image_ids
+  meshy_asset_ids?: string[]; // Legacy: will migrate to sharedAssets.meshy_asset_ids
   
   // Skybox GLB URLs (NEW - from skybox_glb_urls collection or inline)
-  skybox_glb_urls?: string[];
-  meshy_glb_urls?: string[];
+  skybox_glb_urls?: string[]; // Legacy: will migrate to sharedAssets.skybox_glb_urls
+  meshy_glb_urls?: string[]; // Legacy: will migrate to sharedAssets.meshy_glb_urls
   
   // Inline 3D asset from Meshy (generated from image)
-  image3dasset?: Image3DAsset;
+  image3dasset?: Image3DAsset; // Legacy: will migrate to sharedAssets.image3dasset
   
   // PDF metadata
   pdf_id?: string;
@@ -144,6 +171,18 @@ export interface Topic {
   // ============================================
   avatar_scripts_by_language?: AvatarScriptsByLanguage; // { en: {intro, explanation, outro}, hi: {...} }
   
+  // ============================================
+  // SHARED ASSETS (Language-independent)
+  // Images, Skyboxes, 3D Assets, Text-to-3D Models are shared across all languages
+  // ============================================
+  sharedAssets?: {
+    skybox_id?: string; // Reference to skyboxes collection (topic-level)
+    meshy_asset_ids?: string[]; // References to meshy_assets collection
+    text_to_3d_asset_ids?: string[]; // References to text_to_3d_assets collection
+    asset_ids?: string[]; // Legacy field name, same as meshy_asset_ids
+    asset_urls?: string[]; // Direct asset URLs (from N8N workflow)
+  };
+  
   // Language-specific resource IDs (NEW)
   mcq_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
   tts_ids_by_language?: IdsByLanguage; // { en: string[], hi: string[] }
@@ -156,9 +195,12 @@ export interface Topic {
   topic_avatar_outro?: string; // Conclusion/outro script
   
   // Legacy resource ID arrays (may contain mixed languages)
+  // These will be migrated to sharedAssets
   mcq_ids?: string[];
   tts_ids?: string[];
-  meshy_asset_ids?: string[];
+  meshy_asset_ids?: string[]; // Legacy: will migrate to sharedAssets.meshy_asset_ids
+  asset_ids?: string[]; // Legacy: same as meshy_asset_ids, will migrate to sharedAssets.asset_ids
+  asset_urls?: string[]; // Legacy: will migrate to sharedAssets.asset_urls
   
   // ============================================
   // APPROVAL FIELDS (NEW)

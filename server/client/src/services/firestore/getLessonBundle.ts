@@ -114,93 +114,191 @@ function extractLinkedIds(chapterData: any, lang: LanguageCode, topicId?: string
     ? chapterData.topics?.find((t: any) => t.topic_id === topicId)
     : chapterData.topics?.[0];
 
+  // ============================================
+  // EXTRACT LOCALIZED CONTENT (Language-specific)
+  // Priority: localized[lang] > mcq_ids_by_language > legacy fields
+  // ============================================
+  
   // Extract MCQ IDs (language-specific)
-  // Priority 1: Check for inline MCQs in mcqs_by_language[lang]
-  const inlineMcqs = targetTopic?.mcqs_by_language?.[lang];
-  if (inlineMcqs && Array.isArray(inlineMcqs)) {
-    // If they're IDs (strings), collect them
-    inlineMcqs.forEach((item: any) => {
-      if (typeof item === 'string') {
-        mcqIds.push(item);
-      } else if (item?.question_id || item?.id) {
-        mcqIds.push(item.question_id || item.id);
+  // Priority 1: Check localized structure
+  if (targetTopic?.localized?.[lang]?.mcq_ids?.length) {
+    mcqIds.push(...targetTopic.localized[lang].mcq_ids);
+  } else if (chapterData.localized?.[lang]?.mcq_ids?.length) {
+    mcqIds.push(...chapterData.localized[lang].mcq_ids);
+  } else {
+    // Priority 2: Check for inline MCQs in mcqs_by_language[lang]
+    const inlineMcqs = targetTopic?.mcqs_by_language?.[lang];
+    if (inlineMcqs && Array.isArray(inlineMcqs)) {
+      // If they're IDs (strings), collect them
+      inlineMcqs.forEach((item: any) => {
+        if (typeof item === 'string') {
+          mcqIds.push(item);
+        } else if (item?.question_id || item?.id) {
+          mcqIds.push(item.question_id || item.id);
+        }
+      });
+    }
+
+    // Priority 3: Check topic-level language-specific IDs
+    if (targetTopic?.mcq_ids_by_language?.[lang]?.length) {
+      mcqIds.push(...targetTopic.mcq_ids_by_language[lang]);
+    }
+
+    // Priority 4: Check chapter-level language-specific IDs
+    if (chapterData.mcq_ids_by_language?.[lang]?.length) {
+      mcqIds.push(...chapterData.mcq_ids_by_language[lang]);
+    }
+
+    // Priority 5: Fallback to general mcq_ids (filter by language pattern if needed)
+    if (mcqIds.length === 0) {
+      const allMcqIds = [
+        ...(targetTopic?.mcq_ids || []),
+        ...(chapterData.mcq_ids || []),
+      ];
+      if (lang === 'hi') {
+        mcqIds.push(...allMcqIds.filter((id: string) => id.includes('_hi') || id.includes('_HI')));
+      } else {
+        mcqIds.push(...allMcqIds.filter((id: string) => !id.includes('_hi') && !id.includes('_HI')));
       }
-    });
-  }
-
-  // Priority 2: Check topic-level language-specific IDs
-  if (targetTopic?.mcq_ids_by_language?.[lang]?.length) {
-    mcqIds.push(...targetTopic.mcq_ids_by_language[lang]);
-  }
-
-  // Priority 3: Check chapter-level language-specific IDs
-  if (chapterData.mcq_ids_by_language?.[lang]?.length) {
-    mcqIds.push(...chapterData.mcq_ids_by_language[lang]);
-  }
-
-  // Priority 4: Fallback to general mcq_ids (filter by language pattern if needed)
-  if (mcqIds.length === 0) {
-    const allMcqIds = [
-      ...(targetTopic?.mcq_ids || []),
-      ...(chapterData.mcq_ids || []),
-    ];
-    if (lang === 'hi') {
-      mcqIds.push(...allMcqIds.filter((id: string) => id.includes('_hi') || id.includes('_HI')));
-    } else {
-      mcqIds.push(...allMcqIds.filter((id: string) => !id.includes('_hi') && !id.includes('_HI')));
     }
   }
 
   // Extract TTS IDs (language-specific)
-  if (targetTopic?.tts_ids_by_language?.[lang]?.length) {
-    ttsIds.push(...targetTopic.tts_ids_by_language[lang]);
-  } else if (chapterData.tts_ids_by_language?.[lang]?.length) {
-    ttsIds.push(...chapterData.tts_ids_by_language[lang]);
+  // Priority 1: Check localized structure
+  if (targetTopic?.localized?.[lang]?.tts_ids?.length) {
+    ttsIds.push(...targetTopic.localized[lang].tts_ids);
+  } else if (chapterData.localized?.[lang]?.tts_ids?.length) {
+    ttsIds.push(...chapterData.localized[lang].tts_ids);
   } else {
-    const allTtsIds = [
-      ...(targetTopic?.tts_ids || []),
-      ...(chapterData.tts_ids || []),
-    ];
-    // Filter by language if IDs contain language markers
-    if (lang === 'hi') {
-      ttsIds.push(...allTtsIds.filter((id: string) => id.includes('_hi') || id.includes('_HI')));
+    // Priority 2: Check topic-level language-specific IDs
+    if (targetTopic?.tts_ids_by_language?.[lang]?.length) {
+      ttsIds.push(...targetTopic.tts_ids_by_language[lang]);
+    } else if (chapterData.tts_ids_by_language?.[lang]?.length) {
+      ttsIds.push(...chapterData.tts_ids_by_language[lang]);
     } else {
-      ttsIds.push(...allTtsIds.filter((id: string) => !id.includes('_hi') && !id.includes('_HI')));
+      // Priority 3: Fallback to legacy fields
+      const allTtsIds = [
+        ...(targetTopic?.tts_ids || []),
+        ...(chapterData.tts_ids || []),
+      ];
+      // Filter by language if IDs contain language markers
+      if (lang === 'hi') {
+        ttsIds.push(...allTtsIds.filter((id: string) => id.includes('_hi') || id.includes('_HI')));
+      } else {
+        ttsIds.push(...allTtsIds.filter((id: string) => !id.includes('_hi') && !id.includes('_HI')));
+      }
     }
   }
 
-  // Extract skybox ID
-  skyboxId = targetTopic?.skybox_id || chapterData.skybox_id;
-
-  // Extract PDF ID
+  // Extract PDF ID (not language-specific, not in sharedAssets)
   pdfId = chapterData.pdf_id;
 
-  // Extract 3D asset IDs (meshy_assets)
-  const allAssetIds = [
+  // ============================================
+  // EXTRACT SHARED ASSETS (Language-independent)
+  // Priority: sharedAssets > legacy fields
+  // ============================================
+  
+  // Extract skybox ID (shared across languages)
+  // Priority 1: Check sharedAssets (topic-level or chapter-level)
+  if (targetTopic?.sharedAssets?.skybox_id) {
+    skyboxId = targetTopic.sharedAssets.skybox_id;
+  } else if (chapterData.sharedAssets?.skybox_id) {
+    skyboxId = chapterData.sharedAssets.skybox_id;
+  } else {
+    // Fallback to legacy fields
+    skyboxId = targetTopic?.skybox_id || chapterData.skybox_id;
+  }
+
+  // Extract 3D asset IDs (meshy_assets) - shared across languages
+  // Check both sharedAssets and legacy fields, merge them (sharedAssets takes priority)
+  const topicSharedAssetIds = targetTopic?.sharedAssets?.meshy_asset_ids || targetTopic?.sharedAssets?.asset_ids || [];
+  const chapterSharedAssetIds = chapterData.sharedAssets?.meshy_asset_ids || chapterData.sharedAssets?.asset_ids || [];
+  const topicLegacyAssetIds = [
     ...(targetTopic?.asset_ids || []),
     ...(targetTopic?.meshy_asset_ids || []),
-    ...(chapterData.meshy_asset_ids || []),
+  ];
+  const chapterLegacyAssetIds = chapterData.meshy_asset_ids || [];
+  
+  // Combine: sharedAssets first (priority), then legacy as fallback
+  const allAssetIds = [
+    ...(Array.isArray(topicSharedAssetIds) ? topicSharedAssetIds : []),
+    ...(Array.isArray(chapterSharedAssetIds) ? chapterSharedAssetIds : []),
+    ...(Array.isArray(topicLegacyAssetIds) ? topicLegacyAssetIds : []),
+    ...(Array.isArray(chapterLegacyAssetIds) ? chapterLegacyAssetIds : []),
   ];
   assetIds.push(...allAssetIds);
 
-  // Extract image IDs (from chapter_images collection)
-  const allImageIds = [
+  // Extract image IDs (from chapter_images collection) - shared across languages
+  // Check both sharedAssets and legacy fields, merge them (sharedAssets takes priority)
+  const sharedImageIds = Array.isArray(chapterData.sharedAssets?.image_ids) ? chapterData.sharedAssets.image_ids : [];
+  const legacyImageIds = [
     ...(targetTopic?.image_ids || []),
     ...(chapterData.image_ids || []),
   ];
+  
+  // Combine: sharedAssets first (priority), then legacy as fallback
+  const allImageIds = [
+    ...sharedImageIds,
+    ...(Array.isArray(legacyImageIds) ? legacyImageIds : []),
+  ];
   imageIds.push(...allImageIds);
 
-  // Extract text_to_3d_asset IDs
-  // These might be in asset_ids (if they're text_to_3d_assets) or in a separate field
-  // Check for text_to_3d_asset_ids field, or filter asset_ids by checking the collection
-  const textTo3dIds = [
+  // Extract text_to_3d_asset IDs - shared across languages
+  // Check both sharedAssets and legacy fields, merge them (sharedAssets takes priority)
+  const topicSharedTextTo3dIds = Array.isArray(targetTopic?.sharedAssets?.text_to_3d_asset_ids) 
+    ? targetTopic.sharedAssets.text_to_3d_asset_ids 
+    : [];
+  const chapterSharedTextTo3dIds = Array.isArray(chapterData.sharedAssets?.text_to_3d_asset_ids)
+    ? chapterData.sharedAssets.text_to_3d_asset_ids
+    : [];
+  const legacyTextTo3dIds = [
     ...(targetTopic?.text_to_3d_asset_ids || []),
     ...(chapterData.text_to_3d_asset_ids || []),
   ];
-  textTo3dAssetIds.push(...textTo3dIds);
+  
+  // Combine: sharedAssets first (priority), then legacy as fallback
+  const allTextTo3dIds = [
+    ...topicSharedTextTo3dIds,
+    ...chapterSharedTextTo3dIds,
+    ...(Array.isArray(legacyTextTo3dIds) ? legacyTextTo3dIds : []),
+  ];
+  textTo3dAssetIds.push(...allTextTo3dIds);
   
   // Also check if any asset_ids are actually text_to_3d_assets
   // We'll filter these later when fetching
+
+  // Debug logging to help troubleshoot
+  console.log(`[extractLinkedIds] Extracted IDs for language ${lang}:`, {
+    hasSharedAssets: !!(chapterData.sharedAssets || targetTopic?.sharedAssets),
+    topicSharedAssets: !!targetTopic?.sharedAssets,
+    chapterSharedAssets: !!chapterData.sharedAssets,
+    mcqIds: mcqIds.length,
+    ttsIds: ttsIds.length,
+    assetIds: assetIds.length,
+    imageIds: imageIds.length,
+    textTo3dAssetIds: textTo3dAssetIds.length,
+    skyboxId: skyboxId || 'none',
+    pdfId: pdfId || 'none',
+    source: {
+      images: chapterData.sharedAssets?.image_ids?.length 
+        ? 'sharedAssets' 
+        : (chapterData.image_ids?.length ? 'legacy' : 'none'),
+      assets: assetIds.length > 0 
+        ? (targetTopic?.sharedAssets?.meshy_asset_ids?.length || targetTopic?.sharedAssets?.asset_ids?.length
+          ? 'topic.sharedAssets'
+          : (chapterData.sharedAssets?.meshy_asset_ids?.length || chapterData.sharedAssets?.asset_ids?.length
+            ? 'chapter.sharedAssets'
+            : 'legacy'))
+        : 'none',
+      textTo3d: textTo3dAssetIds.length > 0
+        ? (targetTopic?.sharedAssets?.text_to_3d_asset_ids?.length
+          ? 'topic.sharedAssets'
+          : (chapterData.sharedAssets?.text_to_3d_asset_ids?.length
+            ? 'chapter.sharedAssets'
+            : 'legacy'))
+        : 'none',
+    },
+  });
 
   return {
     mcqIds: [...new Set(mcqIds)], // Remove duplicates

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { updateTopicApproval } from '../../lib/firestore/updateHelpers';
+import { approveChapter, unapproveChapter } from '../../lib/firebase/queries/curriculumChapters';
 import { isAdminOnly, isSuperadmin } from '../../utils/rbac';
 import { toast } from 'react-hot-toast';
 
@@ -57,6 +58,7 @@ export const ChapterTable = ({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const { profile } = useAuth();
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
+  const [updatingChapterApproval, setUpdatingChapterApproval] = useState<string | null>(null);
   
   // Debug: Log approval permissions
   useEffect(() => {
@@ -160,6 +162,36 @@ export const ChapterTable = ({
   
   // Check if user can approve (admin or superadmin)
   const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  
+  // Handle chapter approval toggle
+  const handleChapterApprovalToggle = async (chapterId: string, currentApproved: boolean) => {
+    if (!canApprove || !profile) return;
+    
+    setUpdatingChapterApproval(chapterId);
+    
+    try {
+      if (currentApproved) {
+        await unapproveChapter(chapterId);
+        toast.success('Chapter unapproved successfully');
+      } else {
+        await approveChapter(chapterId, profile.uid);
+        toast.success('Chapter approved successfully');
+      }
+      
+      // Trigger a refresh by calling the callback if provided
+      if (onApprovalChange) {
+        onApprovalChange();
+      } else {
+        // Fallback: reload page if no callback provided
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error updating chapter approval:', error);
+      toast.error('Failed to update approval status');
+    } finally {
+      setUpdatingChapterApproval(null);
+    }
+  };
   
   // Handle topic approval toggle
   const handleApprovalToggle = async (chapterId: string, topicId: string, currentApproved: boolean) => {
@@ -309,6 +341,52 @@ export const ChapterTable = ({
                 <div></div>
                 <div></div>
                 <div className="flex items-center justify-end gap-2">
+                  {canApprove && group.topics.length > 0 && (() => {
+                    const firstChapter = group.topics[0].chapter;
+                    const isApproved = (firstChapter as any).approved === true;
+                    const isUpdating = updatingChapterApproval === firstChapter.id;
+                    
+                    return (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleChapterApprovalToggle(firstChapter.id, isApproved);
+                        }}
+                        disabled={isUpdating}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5
+                                 text-xs font-semibold text-white 
+                                 ${isApproved 
+                                   ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500' 
+                                   : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-400 hover:to-green-500'
+                                 }
+                                 rounded-lg shadow-lg transition-all duration-200
+                                 opacity-0 group-hover:opacity-100
+                                 hover:scale-105 active:scale-95
+                                 disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {isUpdating ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            {isApproved ? 'Unapproving...' : 'Approving...'}
+                          </>
+                        ) : (
+                          <>
+                            {isApproved ? (
+                              <>
+                                <XCircle className="w-3.5 h-3.5" />
+                                Unapprove
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Approve
+                              </>
+                            )}
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()}
                   {group.topics.length > 0 && (
                     <button
                       onClick={(e) => {
