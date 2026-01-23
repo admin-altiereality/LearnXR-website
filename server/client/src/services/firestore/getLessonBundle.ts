@@ -529,38 +529,72 @@ export async function getLessonBundle(params: {
         }
       })(),
       // Fetch images from chapter_images collection
-      extractedIds.imageIds.length > 0
-        ? fetchDocsByIds(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds)
-        : (async () => {
-            // Fallback: Query by chapter_id/topic_id
+      // Always try both: fetch by IDs AND query by chapter_id/topic_id, then merge
+      (async () => {
+        try {
+          const topic = topicId 
+            ? chapterData.topics?.find((t: any) => t.topic_id === topicId)
+            : chapterData.topics?.[0];
+          
+          // Method 1: Fetch by IDs (if available)
+          let imagesByIds: any[] = [];
+          if (extractedIds.imageIds.length > 0) {
+            imagesByIds = await fetchDocsByIds(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds);
+            console.log(`[getLessonBundle] Found ${imagesByIds.length} images by IDs`);
+          }
+          
+          // Method 2: Query by chapter_id/topic_id (always try as fallback)
+          let imagesByQuery: any[] = [];
+          if (topic) {
             try {
-              const topic = topicId 
-                ? chapterData.topics?.find((t: any) => t.topic_id === topicId)
-                : chapterData.topics?.[0];
-              if (!topic) return [];
-              
               const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
               const q = query(
                 imagesRef,
                 where('chapter_id', '==', chapterId),
-                where('topic_id', '==', topic?.topic_id || '')
+                where('topic_id', '==', topic.topic_id || '')
               );
               const snapshot = await getDocs(q);
-              const images = snapshot.docs.map(doc => ({
+              imagesByQuery = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),
               }));
-              
-              if (images.length > 0) {
-                console.log(`[getLessonBundle] Found ${images.length} images via chapter_id/topic_id query`);
+              if (imagesByQuery.length > 0) {
+                console.log(`[getLessonBundle] Found ${imagesByQuery.length} images via chapter_id/topic_id query`);
               }
-              
-              return images;
             } catch (err) {
-              console.warn(`[getLessonBundle] Error fetching images:`, err);
-              return [];
+              console.warn(`[getLessonBundle] Error querying images by chapter_id/topic_id:`, err);
             }
-          })(),
+          }
+          
+          // Merge both results and remove duplicates by ID
+          const imageMap = new Map<string, any>();
+          
+          // Add images fetched by IDs first (priority)
+          imagesByIds.forEach(img => {
+            if (img.id) {
+              imageMap.set(img.id, img);
+            }
+          });
+          
+          // Add images from query (will overwrite duplicates, but that's okay)
+          imagesByQuery.forEach(img => {
+            if (img.id && !imageMap.has(img.id)) {
+              imageMap.set(img.id, img);
+            }
+          });
+          
+          const mergedImages = Array.from(imageMap.values());
+          
+          if (mergedImages.length > 0) {
+            console.log(`[getLessonBundle] Merged ${mergedImages.length} images (${imagesByIds.length} by IDs, ${imagesByQuery.length} by query)`);
+          }
+          
+          return mergedImages;
+        } catch (err) {
+          console.warn(`[getLessonBundle] Error fetching images:`, err);
+          return [];
+        }
+      })(),
       // Fetch text_to_3d_assets with all fields (including approval_status, prompt, model_urls, etc.)
       // Try both collection names: text_to_3d_assets and text_to_3d
       (async () => {
