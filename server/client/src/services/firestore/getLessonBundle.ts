@@ -368,7 +368,11 @@ function filterByLanguage<T extends { language?: string; lang?: string; id?: str
     if (doc.language) {
       const docLang = String(doc.language).toLowerCase().trim();
       const targetLang = lang.toLowerCase();
-      if (docLang === targetLang || (docLang === 'en' && targetLang === 'english')) {
+      // Handle both 'hi'/'hindi' and 'en'/'english' variations
+      if (docLang === targetLang || 
+          (docLang === 'en' && targetLang === 'english') ||
+          (docLang === 'hindi' && targetLang === 'hi') ||
+          (docLang === 'hi' && targetLang === 'hindi')) {
         return true;
       }
       // If language field exists but doesn't match, exclude
@@ -379,7 +383,11 @@ function filterByLanguage<T extends { language?: string; lang?: string; id?: str
     if (doc.lang) {
       const docLang = String(doc.lang).toLowerCase().trim();
       const targetLang = lang.toLowerCase();
-      if (docLang === targetLang || (docLang === 'en' && targetLang === 'english')) {
+      // Handle both 'hi'/'hindi' and 'en'/'english' variations
+      if (docLang === targetLang || 
+          (docLang === 'en' && targetLang === 'english') ||
+          (docLang === 'hindi' && targetLang === 'hi') ||
+          (docLang === 'hi' && targetLang === 'hindi')) {
         return true;
       }
       // If lang field exists but doesn't match, exclude
@@ -414,7 +422,11 @@ function filterByLanguage<T extends { language?: string; lang?: string; id?: str
     before: docs.length,
     after: filtered.length,
     language: lang,
-    sampleIds: docs.slice(0, 3).map(d => ({ id: d.id, language: d.language || d.lang || 'none' })),
+    sampleIds: docs.slice(0, 5).map(d => ({ 
+      id: d.id, 
+      language: d.language || d.lang || 'none',
+      matches: filtered.some(f => f.id === d.id)
+    })),
   });
   
   return filtered;
@@ -858,26 +870,48 @@ export async function getLessonBundle(params: {
       } : null,
     });
 
+    // Filter TTS by language and ensure language field is set
     const tts = filterByLanguage(ttsRaw, lang).map(t => ({
       ...t,
       language: t.language || t.lang || lang, // Ensure language field is explicitly set
     }));
+    
+    // Enhanced logging for TTS debugging
+    console.log(`[getLessonBundle] TTS processing for language ${lang}:`, {
+      rawTtsCount: ttsRaw.length,
+      filteredTtsCount: tts.length,
+      rawTtsSamples: ttsRaw.slice(0, 3).map((t: any) => ({
+        id: t.id,
+        language: t.language || t.lang || 'none',
+        script_type: t.script_type || t.section || 'none',
+        hasAudio: !!(t.audio_url || t.audioUrl || t.url),
+      })),
+      filteredTtsSamples: tts.slice(0, 3).map((t: any) => ({
+        id: t.id,
+        language: t.language,
+        script_type: t.script_type || t.section || 'none',
+        hasAudio: !!(t.audio_url || t.audioUrl || t.url),
+      })),
+    });
     
     // Separate meshy_assets from text_to_3d_assets
     // text_to_3d_assets are already fetched separately in textTo3dAssetsRaw
     // meshy_assets are in meshyAssetsRaw
     // assetsRaw might contain either, but we'll use meshyAssetsRaw as primary source
     const allAssetsRaw = [...(meshyAssetsRaw || [])];
-    const assets3d = filterByLanguage(allAssetsRaw, lang);
+    // IMPORTANT: 3D assets are LANGUAGE-INDEPENDENT - do NOT filter by language
+    // They should appear in both English and Hindi tabs
+    const assets3d = allAssetsRaw; // Remove language filtering for 3D assets
     
     // text_to_3d_assets don't need language filtering (they're language-agnostic)
     // But we'll keep them separate in the bundle
     
-    console.log(`[getLessonBundle] Merged assets:`, {
+    console.log(`[getLessonBundle] Merged assets (language-independent):`, {
       textTo3dAssets: textTo3dAssetsRaw?.length || 0,
       meshyAssets: meshyAssetsRaw?.length || 0,
       total: allAssetsRaw.length,
-      afterFilter: assets3d.length,
+      assets3d: assets3d.length,
+      note: '3D assets are NOT filtered by language - they appear in all languages',
     });
 
     const mcqsAfterFilter = mcqs.length;
@@ -958,7 +992,9 @@ export async function getLessonBundle(params: {
       chapterId: bundle.chapter.id,
       mcqs: bundle.mcqs.length,
       tts: bundle.tts.length,
+      ttsLanguages: bundle.tts.map((t: any) => t.language || t.lang || 'unknown'),
       assets3d: bundle.assets3d.length,
+      assets3dNote: '3D assets are language-independent and appear in all languages',
       images: bundle.images.length,
       textTo3dAssets: bundle.textTo3dAssets.length,
       hasAvatarScripts: !!bundle.avatarScripts,
