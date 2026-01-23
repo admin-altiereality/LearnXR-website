@@ -683,6 +683,11 @@ function AssetModel({
       setGltf(null);
 
       try {
+        // Validate that we have a URL
+        if (!assetUrl || assetUrl.trim() === '') {
+          throw new Error('No asset URL provided. Please check the asset configuration.');
+        }
+        
         if (!loaderRef.current) {
           const gltfLoader = new GLTFLoader();
           const dracoLoader = new DRACOLoader();
@@ -691,12 +696,175 @@ function AssetModel({
           loaderRef.current = { gltfLoader, dracoLoader };
         }
 
-        const apiBaseUrl = getApiBaseUrl();
-        const proxyUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
-        console.log('🔄 Loading 3D asset via proxy:', proxyUrl);
+        // Validate URL - check if it looks like a 3D model file
+        const urlLower = assetUrl.toLowerCase();
+        const hasGlbExtension = urlLower.includes('.glb') || urlLower.includes('.gltf');
+        
+        // Extract file extension from URL (before query params)
+        const urlWithoutParams = assetUrl.split('?')[0].split('#')[0];
+        const fileExtension = urlWithoutParams.substring(urlWithoutParams.lastIndexOf('.')).toLowerCase();
+        
+        console.log('🔍 Validating asset URL:', {
+          url: assetUrl.substring(0, 100) + '...',
+          extension: fileExtension,
+          hasGlbExtension,
+          isFirebaseStorage: assetUrl.includes('firebasestorage'),
+        });
+        
+        // Check for image file extensions
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+        if (imageExtensions.some(ext => fileExtension === ext || urlLower.includes(ext))) {
+          throw new Error(`Invalid file type: URL points to an image file (${fileExtension}), not a 3D model. Please check the asset configuration and ensure the GLB file URL is correct.`);
+        }
+        
+        // Check for other 3D formats that GLTFLoader might not support directly
+        if (fileExtension === '.fbx' || fileExtension === '.obj') {
+          console.warn('⚠️ URL points to FBX/OBJ file - GLTFLoader may not support this format:', fileExtension);
+          // Continue anyway - might work with some loaders
+        }
+        
+        if (!hasGlbExtension && !assetUrl.includes('proxy-asset')) {
+          console.warn('⚠️ URL does not contain .glb/.gltf extension:', assetUrl.substring(0, 100));
+          // Don't throw error yet - let GLTFLoader try to load it
+        }
+        
+        // Check if this is a Firebase Storage URL - use directly (no proxy needed)
+        const isFirebaseStorageUrl = assetUrl.includes('firebasestorage.googleapis.com') || 
+                                    assetUrl.includes('firebasestorage.app');
+        
+        let finalUrl = assetUrl;
+        
+        if (!isFirebaseStorageUrl) {
+          // Only use proxy for external URLs (like Meshy.ai)
+          const apiBaseUrl = getApiBaseUrl();
+          finalUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+          console.log('🔄 Loading 3D asset via proxy (external URL):', finalUrl);
+        } else {
+          console.log('✅ Loading 3D asset directly from Firebase Storage:', assetUrl);
+          
+          // Verify file type by checking Content-Type header (for Firebase Storage URLs)
+          try {
+            const headResponse = await fetch(assetUrl, { method: 'HEAD' });
+            const contentType = headResponse.headers.get('content-type') || '';
+            const contentLength = headResponse.headers.get('content-length');
+            
+            console.log('📋 File verification:', {
+              contentType,
+              contentLength: contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(2)} MB` : 'unknown',
+              url: assetUrl.substring(0, 100) + '...',
+            });
+            
+            // Check if it's an image (should not be)
+            const isImageType = contentType.includes('image/');
+            
+            if (isImageType) {
+              throw new Error(`File type mismatch: URL points to an image file (${contentType}), not a 3D model. The asset may have been incorrectly uploaded. Please re-upload the GLB file.`);
+            }
+            
+            // Check if it's actually a 3D model file
+            const is3DModelType = contentType.includes('model/gltf') || 
+                                 contentType.includes('model/gltf-binary') ||
+                                 contentType.includes('application/octet-stream') ||
+                                 contentType.includes('model/');
+            
+            if (!is3DModelType && !contentType.includes('octet-stream')) {
+              console.warn('⚠️ Unexpected Content-Type for 3D model:', contentType);
+              // Don't throw error - might still work
+            } else {
+              console.log('✅ File type verified as 3D model');
+            }
+            
+            // Check file size if available
+            if (contentLength) {
+              const sizeMB = parseInt(contentLength) / 1024 / 1024;
+              if (sizeMB > 50) {
+                console.warn(`⚠️ Large file size: ${sizeMB.toFixed(2)} MB - may take time to load`);
+              }
+            }
+          } catch (headError) {
+            // If HEAD request fails, continue anyway - might be CORS or other issue
+            console.warn('⚠️ Could not verify file type via HEAD request:', headError);
+            // Try to get more info from the error
+            if (headError instanceof Error && headError.message.includes('image')) {
+              throw headError; // Re-throw if it's an image error
+            }
+          }
+        }
+        
+        // Estimate file size and set appropriate timeout
+        let loadTimeout = 120000; // Default 2 minutes
+        try {
+          const headResponse = await fetch(finalUrl, { method: 'HEAD' });
+          const contentLength = headResponse.headers.get('content-length');
+          if (contentLength) {
+            const sizeMB = parseInt(contentLength) / 1024 / 1024;
+            // Increase timeout for larger files: 1 minute per 10MB, minimum 2 minutes, maximum 10 minutes
+            loadTimeout = Math.max(120000, Math.min(600000, 60000 + (sizeMB * 10000)));
+            console.log(`⏱️ File size: ${sizeMB.toFixed(2)} MB, timeout set to ${(loadTimeout / 1000).toFixed(0)} seconds`);
+          }
+        } catch (sizeError) {
+          console.warn('⚠️ Could not determine file size, using default timeout');
+        }
         
         const loadedGltf = await new Promise<any>((resolve, reject) => {
-          loaderRef.current!.gltfLoader.load(proxyUrl, resolve, undefined, reject);
+          // Add timeout to prevent hanging (based on file size)
+          const timeout = setTimeout(() => {
+            reject(new Error(`Model loading timeout after ${(loadTimeout / 1000).toFixed(0)} seconds. The file may be too large, the network connection may be slow, or the URL may be invalid. Please check your internet connection and try again.`));
+          }, loadTimeout);
+          
+          // Track loading progress
+          let lastProgress = 0;
+          
+          loaderRef.current!.gltfLoader.load(
+            finalUrl,
+            (gltf) => {
+              clearTimeout(timeout);
+              console.log('✅ 3D model loaded successfully');
+              resolve(gltf);
+            },
+            (progress) => {
+              // Update progress
+              if (progress.total > 0) {
+                const percent = Math.round((progress.loaded / progress.total) * 100);
+                if (percent !== lastProgress && percent % 10 === 0) {
+                  console.log(`📥 Loading progress: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(2)} MB / ${(progress.total / 1024 / 1024).toFixed(2)} MB)`);
+                  lastProgress = percent;
+                }
+              }
+            },
+            (error) => {
+              clearTimeout(timeout);
+              console.error('❌ GLTFLoader error:', error);
+              
+              // Enhance error message
+              let enhancedError = error;
+              if (error instanceof Error) {
+                const message = error.message || '';
+                
+                // Check for JSON parsing errors (usually means wrong file type)
+                if (message.includes('JSON') || message.includes('Unexpected token') || message.includes('JFIF')) {
+                  // Check if URL might be pointing to wrong file type
+                  const urlLower = finalUrl.toLowerCase();
+                  if (urlLower.includes('.jpg') || urlLower.includes('.jpeg') || urlLower.includes('.png') || message.includes('JFIF')) {
+                    enhancedError = new Error('Invalid file type: The URL points to an image file (JPEG/PNG) instead of a 3D model (GLB/GLTF). This usually means the wrong file was uploaded or the asset configuration is incorrect. Please re-upload the correct GLB file.');
+                  } else {
+                    enhancedError = new Error(`Invalid file format: The file at this URL is not a valid GLB/GLTF file. The file may be corrupted, the wrong file type, or the URL may be incorrect. Please verify the asset was uploaded correctly.`);
+                  }
+                } else if (message.includes('404') || message.includes('Not Found')) {
+                  enhancedError = new Error(`File not found: The 3D model file could not be located. The file may have been deleted or the URL is incorrect. Please check the asset configuration.`);
+                } else if (message.includes('403') || message.includes('Forbidden')) {
+                  enhancedError = new Error('Access denied: You do not have permission to access this file. Please check Firebase Storage rules and ensure you are authenticated.');
+                } else if (message.includes('timeout') || message.includes('Timeout')) {
+                  enhancedError = new Error(`Loading timeout: The file took too long to load (${(loadTimeout / 1000).toFixed(0)} seconds). This may be due to a large file size, slow network connection, or server issues. Please try again or check your internet connection.`);
+                } else if (message.includes('network') || message.includes('Network')) {
+                  enhancedError = new Error('Network error: Failed to load the 3D model due to a network issue. Please check your internet connection and try again.');
+                } else if (message.includes('CORS')) {
+                  enhancedError = new Error('CORS error: The file cannot be loaded due to cross-origin restrictions. Please check the Firebase Storage configuration.');
+                }
+              }
+              reject(enhancedError);
+            }
+          );
         });
 
         // Optimize the model for immersive rendering
@@ -731,7 +899,13 @@ function AssetModel({
         onLoad?.(loadedGltf);
       } catch (err) {
         console.error('Model loading failed:', err);
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        let errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        
+        // Check if error is about JSON parsing (suggests wrong file type or error response)
+        if (errorMessage.includes('JSON') || errorMessage.includes('Unexpected token')) {
+          console.error('⚠️ JSON parsing error - file might not be a valid GLB/GLTF or URL returned wrong content type');
+          errorMessage = 'Invalid file format. Expected GLB/GLTF file, but received different content. Please check the file URL.';
+        }
         
         // Check if it's a 403 error and the URL is from Meshy
         if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
@@ -743,12 +917,18 @@ function AssetModel({
               
               if (refreshedUrl) {
                 console.log('✅ Got refreshed URL, retrying load...');
-                // Retry with refreshed URL
-                const apiBaseUrl = getApiBaseUrl();
-                const proxyUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(refreshedUrl)}`;
+                // Retry with refreshed URL - check if it's Firebase Storage or external
+                const isFirebaseStorageUrl = refreshedUrl.includes('firebasestorage.googleapis.com') || 
+                                            refreshedUrl.includes('firebasestorage.app');
+                
+                let finalUrl = refreshedUrl;
+                if (!isFirebaseStorageUrl) {
+                  const apiBaseUrl = getApiBaseUrl();
+                  finalUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(refreshedUrl)}`;
+                }
                 
                 const loadedGltf = await new Promise<any>((resolve, reject) => {
-                  loaderRef.current!.gltfLoader.load(proxyUrl, resolve, undefined, reject);
+                  loaderRef.current!.gltfLoader.load(finalUrl, resolve, undefined, reject);
                 });
 
                 // Optimize the model for immersive rendering

@@ -169,6 +169,9 @@ export interface MeshyAsset {
   status: 'pending' | 'processing' | 'complete' | 'failed' | 'completed';
   created_at?: string;
   updated_at?: string;
+  // Core asset protection - prevents accidental deletion
+  isCore?: boolean; // If true, only superadmin can delete
+  assetTier?: 'core' | 'optional'; // Alternative to isCore
   metadata?: {
     ai_selection_reasoning?: string;
     ai_selection_score?: number;
@@ -232,6 +235,9 @@ export interface ChapterImage {
   order?: number;
   created_at?: string;
   updated_at?: string;
+  // Core asset protection - prevents accidental deletion
+  isCore?: boolean; // If true, only superadmin can delete
+  assetTier?: 'core' | 'optional'; // Alternative to isCore
 }
 
 /**

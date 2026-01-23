@@ -1,12 +1,65 @@
 rules_version = '2';
 
-// DEVELOPMENT STORAGE RULES - VERY PERMISSIVE FOR TESTING
-// WARNING: These rules are for development only. DO NOT use in production!
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow all read and write operations for development
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Note: Storage rules cannot access Firestore documents directly
+    // Core asset protection is enforced in UI + Firestore rules
+    // Storage rules allow admin/superadmin to delete, UI will prevent admin from deleting core assets
+    
+    // Lesson assets and content storage
+    // Admin and superadmin can upload/replace/delete
+    // UI will prevent admin from deleting core assets
+    match /lesson_assets/{assetId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+    }
+    
+    // Meshy assets storage
+    match /meshy_assets/{assetId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+    }
+    
+    // Text-to-3D assets storage
+    match /text_to_3d_assets/{assetId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+    }
+    
+    // Chapter images storage
+    match /chapter_images/{imageId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+    }
+    
+    // PDFs storage
+    match /pdfs/{pdfId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated(); // UI enforces superadmin-only check
+    }
+    
+    // General user uploads (non-lesson content)
+    match /uploads/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Default: Allow read for authenticated users
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces role checks
+      allow delete: if isAuthenticated(); // UI enforces role checks
     }
   }
 } 

@@ -7,6 +7,7 @@ import { McqTab } from './tabs/McqTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import { AssetsTab } from './tabs/AssetsTab';
 import { ImagesTab } from './tabs/ImagesTab';
+import { TextTo3dAssetsTab } from './tabs/TextTo3dAssetsTab';
 import {
   FileText,
   Image,
@@ -16,6 +17,7 @@ import {
   History,
   Loader2,
   Package,
+  Sparkles,
 } from 'lucide-react';
 
 interface ContentAvailability {
@@ -49,12 +51,14 @@ interface TopicEditorProps {
   onNormalizeMCQs: () => void;
   contentAvailability?: ContentAvailability;
   language?: LanguageCode;
+  bundle?: any; // Lesson bundle for passing to tabs
 }
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: FileText },
   { id: 'scene', label: 'Scene & Skybox', icon: Image },
   { id: 'assets', label: '3D Assets', icon: Package },
+  { id: 'text-to-3d', label: 'Text-to-3D', icon: Sparkles },
   { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'avatar', label: 'Avatar Scripts', icon: User },
   { id: 'mcqs', label: 'MCQs', icon: HelpCircle },
@@ -82,6 +86,7 @@ export const TopicEditor = ({
   onNormalizeMCQs,
   contentAvailability,
   language = 'en',
+  bundle,
 }: TopicEditorProps) => {
   if (loading) {
     return (
@@ -155,10 +160,19 @@ export const TopicEditor = ({
           />
         )}
         
+        {activeTab === 'text-to-3d' && (
+          <TextTo3dAssetsTab
+            chapterId={chapterId}
+            topicId={topic.id}
+            bundle={bundle}
+          />
+        )}
+        
         {activeTab === 'images' && (
           <ImagesTab
             chapterId={chapterId}
             topicId={topic.id}
+            bundle={bundle}
           />
         )}
         

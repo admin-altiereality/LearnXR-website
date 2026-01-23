@@ -442,6 +442,73 @@ export function getAccessiblePages(role: UserRole): string[] {
 }
 
 // ============================================================================
+// Lesson Content Editing Permissions
+// ============================================================================
+
+/**
+ * Check if user can edit lesson content
+ * Both admin and superadmin can edit
+ */
+export function canEditLesson(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'admin' || profile.role === 'superadmin';
+}
+
+/**
+ * Check if user can delete core assets
+ * Only superadmin can delete core assets
+ */
+export function canDeleteCoreAsset(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'superadmin';
+}
+
+/**
+ * Check if user can delete a specific asset
+ * Admin can delete non-core assets, superadmin can delete all
+ */
+export function canDeleteAsset(profile: UserProfile | null, asset: { isCore?: boolean; assetTier?: string } | null): boolean {
+  if (!profile) return false;
+  if (!asset) return false;
+  
+  // Superadmin can delete anything
+  if (profile.role === 'superadmin') return true;
+  
+  // Admin can only delete non-core assets
+  if (profile.role === 'admin') {
+    const isCore = asset.isCore === true || asset.assetTier === 'core';
+    return !isCore;
+  }
+  
+  return false;
+}
+
+/**
+ * Check if user can delete entire lesson
+ * Only superadmin can delete lessons
+ */
+export function canDeleteLesson(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'superadmin';
+}
+
+/**
+ * Check if user is superadmin
+ */
+export function isSuperadmin(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'superadmin';
+}
+
+/**
+ * Check if user is admin (but not superadmin)
+ */
+export function isAdminOnly(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'admin';
+}
+
+// ============================================================================
 // Role Display Utilities
 // ============================================================================
 

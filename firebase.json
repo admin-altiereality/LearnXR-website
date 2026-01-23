@@ -1,21 +1,24 @@
 {
-  "hosting": {
-    "public": "server/client/dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ],
-    "predeploy": [
-      "npm --prefix \"server/client\" run build"
-    ]
-  },
+  "hosting": [
+    {
+      "target": "learnxr-evoneuralai",
+      "public": "server/client/dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        {
+          "source": "**",
+          "destination": "/index.html"
+        }
+      ],
+      "predeploy": [
+        "npm --prefix \"server/client\" run build"
+      ]
+    }
+  ],
   "functions": [
     {
       "source": "functions",

@@ -1,5 +1,5 @@
 import { Topic, Scene, LanguageCode } from '../../../types/curriculum';
-import { FileText, Hash, Tag, Target, HelpCircle, Box, Image, Loader2, CheckCircle, XCircle, Volume2, Globe } from 'lucide-react';
+import { FileText, Hash, Tag, Target, HelpCircle, Box, Image, Loader2, CheckCircle, XCircle, Volume2, Globe, Sparkles } from 'lucide-react';
 import { LanguageToggle } from '../../../Components/LanguageSelector';
 import {
   getChapterNameByLanguage,
@@ -25,6 +25,9 @@ interface ContentAvailability {
   ttsWithAudio: number;
   hasSkybox: boolean;
   hasAvatarScripts: boolean;
+  hasTextTo3dAssets: boolean;
+  textTo3dAssetsCount: number;
+  textTo3dApprovedCount: number;
   sceneStatus: 'published' | 'draft' | 'pending';
   loading: boolean;
 }
@@ -71,14 +74,17 @@ export const OverviewTab = ({
     assetCount: 0,
     hasImages: false,
     imageCount: 0,
-    hasTTS: false,
-    ttsCount: 0,
-    ttsWithAudio: 0,
-    hasSkybox: false,
-    hasAvatarScripts: false,
-    sceneStatus: 'pending',
-    loading: true,
-  });
+          hasTTS: false,
+          ttsCount: 0,
+          ttsWithAudio: 0,
+          hasSkybox: false,
+          hasAvatarScripts: false,
+          hasTextTo3dAssets: false,
+          textTo3dAssetsCount: 0,
+          textTo3dApprovedCount: 0,
+          sceneStatus: 'pending',
+          loading: true,
+        });
   
   // Sync with prop language
   useEffect(() => {
@@ -88,9 +94,13 @@ export const OverviewTab = ({
   }, [propLanguage]);
 
   // Load chapter data and bundle-based content availability
+  // This MUST run first and block rendering until complete
   useEffect(() => {
     const loadData = async () => {
-      if (!chapterId || !topicId) return;
+      if (!chapterId || !topicId) {
+        setBundleAvailability(prev => ({ ...prev, loading: false }));
+        return;
+      }
       
       setLoading(true);
       setBundleAvailability(prev => ({ ...prev, loading: true }));
@@ -104,7 +114,7 @@ export const OverviewTab = ({
           setChapterData(chapterSnap.data() as CurriculumChapter);
         }
         
-        // Load bundle for content availability check
+        // Load bundle for content availability check - THIS IS THE GATE
         const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId,
@@ -112,15 +122,17 @@ export const OverviewTab = ({
           topicId,
         });
         
-        // Check images separately (not in bundle yet)
-        const images = await getChapterImages(chapterId, topicId).catch(() => []);
+        // Use images from bundle (includes PDF suitable images) - safe defaults
+        const images = Array.isArray(bundle.images) ? bundle.images : [];
         
-        // Analyze bundle content
-        const mcqsWithOptions = (bundle.mcqs || []).filter(
+        // Analyze bundle content - safe defaults
+        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+        const mcqsWithOptions = safeMcqs.filter(
           (m: any) => m.options && Array.isArray(m.options) && m.options.length > 0
         );
         
-        const ttsWithAudio = (bundle.tts || []).filter(
+        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+        const ttsWithAudio = safeTts.filter(
           (t: any) => t.audio_url || t.audioUrl || t.url
         );
         
@@ -132,23 +144,49 @@ export const OverviewTab = ({
           sceneStatus = 'draft';
         }
         
+        const safeTextTo3dAssets = Array.isArray(bundle.textTo3dAssets) ? bundle.textTo3dAssets : [];
+        const textTo3dApproved = safeTextTo3dAssets.filter((a: any) => a.approval_status === true);
+        
+        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+        
+        // Enhanced skybox availability check - check multiple sources
+        const hasSkybox = !!(
+          bundle.skybox || // From bundle (fetched by skybox_id)
+          sceneFormState.skybox_url || // From scene form state
+          sceneFormState.skybox_id || // Skybox ID exists
+          chapterData?.topics?.find((t: any) => t.topic_id === topicId)?.skybox_url || // Topic-level skybox URL
+          chapterData?.topics?.find((t: any) => t.topic_id === topicId)?.skybox_id // Topic-level skybox ID
+        );
+        
+        console.log('🔍 [OverviewTab] Skybox availability check:', {
+          bundleSkybox: !!bundle.skybox,
+          sceneFormSkyboxUrl: !!sceneFormState.skybox_url,
+          sceneFormSkyboxId: !!sceneFormState.skybox_id,
+          topicSkyboxUrl: !!chapterData?.topics?.find((t: any) => t.topic_id === topicId)?.skybox_url,
+          topicSkyboxId: !!chapterData?.topics?.find((t: any) => t.topic_id === topicId)?.skybox_id,
+          finalHasSkybox: hasSkybox,
+        });
+        
         setBundleAvailability({
           hasMCQs: mcqsWithOptions.length > 0,
-          mcqCount: bundle.mcqs?.length || 0,
+          mcqCount: safeMcqs.length,
           mcqsWithOptions: mcqsWithOptions.length,
-          has3DAssets: (bundle.assets3d?.length || 0) > 0,
-          assetCount: bundle.assets3d?.length || 0,
+          has3DAssets: safeAssets3d.length > 0,
+          assetCount: safeAssets3d.length,
           hasImages: images.length > 0,
           imageCount: images.length,
           hasTTS: ttsWithAudio.length > 0,
-          ttsCount: bundle.tts?.length || 0,
+          ttsCount: safeTts.length,
           ttsWithAudio: ttsWithAudio.length,
-          hasSkybox: !!(bundle.skybox || sceneFormState.skybox_url),
+          hasSkybox: hasSkybox,
           hasAvatarScripts: !!(bundle.avatarScripts && (
             bundle.avatarScripts.intro || 
             bundle.avatarScripts.explanation || 
             bundle.avatarScripts.outro
           )),
+          hasTextTo3dAssets: safeTextTo3dAssets.length > 0,
+          textTo3dAssetsCount: safeTextTo3dAssets.length,
+          textTo3dApprovedCount: textTo3dApproved.length,
           sceneStatus,
           loading: false,
         });
@@ -156,22 +194,43 @@ export const OverviewTab = ({
         console.log('📊 [OverviewTab] Bundle-based content availability:', {
           language: selectedLanguage,
           mcqs: {
-            total: bundle.mcqs?.length || 0,
+            total: safeMcqs.length,
             withOptions: mcqsWithOptions.length,
           },
           tts: {
-            total: bundle.tts?.length || 0,
+            total: safeTts.length,
             withAudio: ttsWithAudio.length,
           },
-          assets: bundle.assets3d?.length || 0,
+          assets: safeAssets3d.length,
           images: images.length,
+          textTo3dAssets: safeTextTo3dAssets.length,
+          textTo3dApproved: textTo3dApproved.length,
           skybox: !!bundle.skybox,
           avatarScripts: !!bundle.avatarScripts,
           sceneStatus,
         });
       } catch (error) {
-        console.error('Error loading content availability:', error);
-        setBundleAvailability(prev => ({ ...prev, loading: false }));
+        console.error('❌ [OverviewTab] Error loading content availability:', error);
+        // Set safe defaults on error
+        setBundleAvailability({
+          hasMCQs: false,
+          mcqCount: 0,
+          mcqsWithOptions: 0,
+          has3DAssets: false,
+          assetCount: 0,
+          hasImages: false,
+          imageCount: 0,
+          hasTTS: false,
+          ttsCount: 0,
+          ttsWithAudio: 0,
+          hasSkybox: false,
+          hasAvatarScripts: false,
+          hasTextTo3dAssets: false,
+          textTo3dAssetsCount: 0,
+          textTo3dApprovedCount: 0,
+          sceneStatus: 'pending',
+          loading: false,
+        });
       } finally {
         setLoading(false);
       }
@@ -179,6 +238,18 @@ export const OverviewTab = ({
     
     loadData();
   }, [chapterId, topicId, selectedLanguage, sceneFormState.status, sceneFormState.skybox_url]);
+  
+  // BLOCK RENDERING until availability check completes
+  if (bundleAvailability.loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+          <span className="text-sm text-slate-400">Loading content availability...</span>
+        </div>
+      </div>
+    );
+  }
   
   // Get language-specific names
   const topic = chapterData?.topics?.find(t => t.topic_id === topicId);
@@ -643,6 +714,34 @@ export const OverviewTab = ({
                       <>
                         <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
                         <span className="text-sm text-slate-500">Missing</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Text-to-3D Assets */}
+                <div className={`p-4 rounded-lg border transition-all ${
+                  availability.hasTextTo3dAssets
+                    ? 'bg-purple-500/10 border-purple-500/30 hover:border-purple-500/50'
+                    : 'bg-slate-700/30 border-slate-600/30'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className={`w-4 h-4 ${
+                      availability.hasTextTo3dAssets ? 'text-purple-400' : 'text-slate-500'
+                    }`} />
+                    <p className="text-xs font-medium text-slate-300">Text-to-3D</p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    {availability.hasTextTo3dAssets ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                        <span className="text-lg font-bold text-purple-400">{availability.textTo3dApprovedCount}</span>
+                        <span className="text-xs text-slate-400">/ {availability.textTo3dAssetsCount} approved</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        <span className="text-sm text-slate-500">None</span>
                       </>
                     )}
                   </div>

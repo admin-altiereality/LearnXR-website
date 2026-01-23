@@ -569,6 +569,7 @@ const ContentLibrary = () => {
                 chapters={chapters}
                 onOpenChapter={handleOpenChapter}
                 loading={loading}
+                onApprovalChange={() => loadChapters(true)}
               />
               
               {/* Load More */}

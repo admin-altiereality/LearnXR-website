@@ -40,7 +40,9 @@ import {
   Glasses,
   Monitor,
   AlertTriangle,
-  Clock
+  Clock,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 import { getVRCapabilities, getVRRecommendation } from '../utils/vrDetection';
 import { LanguageToggle } from '../Components/LanguageSelector';
@@ -51,6 +53,8 @@ import {
   getLearningObjectiveByLanguage,
   getSubjectNameByLanguage
 } from '../lib/firebase/utils/languageAvailability';
+import { updateTopicApproval } from '../lib/firestore/updateHelpers';
+import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 
 // Content indicators (simple badges) - Memoized
 const ContentBadges = memo(({ chapter }) => (
@@ -179,13 +183,70 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
 });
 
 // LIST VIEW - Topic Row - Memoized
-const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 'en' }) => {
+const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 'en', onApprovalChange }) => {
+  const { profile } = useAuth();
+  const [updatingApproval, setUpdatingApproval] = useState(false);
+  
   const hasSkybox = !!topic.skybox_url || !!topic.skybox_id;
   const hasScript = !!(topic.topic_avatar_intro || topic.topic_avatar_explanation);
   
   // Get language-specific names
   const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || `Topic ${index + 1}`;
   const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective;
+  
+  // Check if user can approve (admin or superadmin)
+  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  
+  // Get approval status
+  const approval = topic.approval || {};
+  const isApproved = approval.approved === true;
+  const approvedAt = approval.approvedAt;
+  
+  // Format approvedAt timestamp
+  const formatApprovedAt = (timestamp) => {
+    if (!timestamp) return null;
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (e) {
+      return null;
+    }
+  };
+  
+  const handleApprovalToggle = async (e) => {
+    e.stopPropagation();
+    if (!canApprove || !profile) return;
+    
+    const newApproved = !isApproved;
+    setUpdatingApproval(true);
+    
+    try {
+      await updateTopicApproval({
+        chapterId: chapter.id,
+        topicId: topic.topic_id,
+        approved: newApproved,
+        userId: profile.uid,
+      });
+      
+      // Optimistic update - call parent callback to refresh
+      if (onApprovalChange) {
+        onApprovalChange(chapter.id, topic.topic_id, newApproved);
+      }
+      
+      toast.success(`Topic ${newApproved ? 'approved' : 'unapproved'} successfully`);
+    } catch (error) {
+      console.error('Error updating topic approval:', error);
+      toast.error('Failed to update approval status');
+    } finally {
+      setUpdatingApproval(false);
+    }
+  };
 
   return (
     <div
@@ -199,11 +260,30 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
       </div>
       
       <div className="flex-1 min-w-0">
-        <h4 className="text-sm font-medium text-white truncate hover:text-cyan-300 transition-colors">
-          {topicName}
-        </h4>
+        <div className="flex items-center gap-2 mb-1">
+          <h4 className="text-sm font-medium text-white truncate hover:text-cyan-300 transition-colors">
+            {topicName}
+          </h4>
+          {/* Approval Status Badge */}
+          {isApproved ? (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              <CheckCircle2 className="w-3 h-3" />
+              Approved
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              <XCircle className="w-3 h-3" />
+              Not Approved
+            </span>
+          )}
+        </div>
         {learningObjective && (
           <p className="text-xs text-slate-500 truncate">{learningObjective}</p>
+        )}
+        {isApproved && approvedAt && (
+          <p className="text-[10px] text-slate-500 mt-0.5">
+            Approved {formatApprovedAt(approvedAt)}
+          </p>
         )}
       </div>
       
@@ -212,24 +292,55 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
         {hasScript && <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
       </div>
       
-      <button 
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg 
-                 bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-medium
-                 hover:bg-cyan-500/30 hover:border-cyan-400 transition-all"
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpenModal(chapter, topic);
-        }}
-      >
-        <Play className="w-3 h-3" />
-        View
-      </button>
+      <div className="flex items-center gap-2">
+        {/* Approval Controls (Admin/Superadmin only) */}
+        {canApprove && (
+          <button
+            onClick={handleApprovalToggle}
+            disabled={updatingApproval}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
+                       transition-all disabled:opacity-50 disabled:cursor-not-allowed
+                       ${isApproved
+                         ? 'bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 hover:border-red-400'
+                         : 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400'
+                       }`}
+            title={isApproved ? 'Unapprove topic' : 'Approve topic'}
+          >
+            {updatingApproval ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : isApproved ? (
+              <>
+                <XCircle className="w-3 h-3" />
+                Unapprove
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3 h-3" />
+                Approve
+              </>
+            )}
+          </button>
+        )}
+        
+        <button 
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg 
+                   bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-medium
+                   hover:bg-cyan-500/30 hover:border-cyan-400 transition-all"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenModal(chapter, topic);
+          }}
+        >
+          <Play className="w-3 h-3" />
+          View
+        </button>
+      </div>
     </div>
   );
 });
 
 // LIST VIEW - Chapter Item - Memoized
-const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onOpenModal, onToggleChapter, selectedLanguage = 'en' }) => {
+const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onOpenModal, onToggleChapter, selectedLanguage = 'en', onApprovalChange }) => {
   const isExpanded = expandedChapters.has(chapter.id);
   const topics = chapter.topics || [];
   const firstTopic = topics.find(t => t.skybox_url || t.topic_avatar_intro) || topics[0];
@@ -322,6 +433,7 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
                 index={index}
                 onOpenModal={onOpenModal}
                 selectedLanguage={selectedLanguage}
+                onApprovalChange={onApprovalChange}
               />
             ))}
           </div>
@@ -587,6 +699,33 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
   }, []);
 
+  // Handle topic approval change - optimistic update
+  const handleApprovalChange = useCallback((chapterId, topicId, approved) => {
+    setChapters(prevChapters => {
+      return prevChapters.map(chapter => {
+        if (chapter.id === chapterId) {
+          const updatedTopics = chapter.topics?.map(topic => {
+            if (topic.topic_id === topicId) {
+              return {
+                ...topic,
+                approval: {
+                  approved: approved,
+                  approvedAt: approved ? new Date().toISOString() : null,
+                },
+              };
+            }
+            return topic;
+          });
+          return {
+            ...chapter,
+            topics: updatedTopics,
+          };
+        }
+        return chapter;
+      });
+    });
+  }, []);
+
   // Close lesson modal
   const closeLessonModal = useCallback(() => {
     // Clear countdown timer
@@ -639,12 +778,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
       let assetUrls = topic.asset_urls || [];
       let assetIds = topic.asset_ids || [];
       
-      // Include 3D assets from bundle
-      if (bundle.assets3d && bundle.assets3d.length > 0) {
-        bundle.assets3d.forEach(asset => {
-          if (asset.glb_url && !assetUrls.includes(asset.glb_url)) {
+      // Include 3D assets from bundle - safe defaults
+      const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+      if (safeAssets3d.length > 0) {
+        safeAssets3d.forEach(asset => {
+          if (asset && asset.glb_url && !assetUrls.includes(asset.glb_url)) {
             assetUrls.push(asset.glb_url);
-            assetIds.push(asset.id);
+            assetIds.push(asset.id || `asset_${assetUrls.length}`);
           }
         });
       }
@@ -667,19 +807,21 @@ const Lessons = ({ setBackgroundSkybox }) => {
         hasOutro: !!scripts.outro,
       });
 
-      // Use MCQs from bundle (already language-filtered)
-      const mcqs = bundle.mcqs.map(m => ({
-        id: m.id,
+      // Use MCQs from bundle (already language-filtered) - safe defaults
+      const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+      const mcqs = safeMcqs.map(m => ({
+        id: m.id || `mcq_${Math.random()}`,
         question: m.question || m.question_text || '',
-        options: m.options || [],
+        options: Array.isArray(m.options) ? m.options : [],
         correct_option_index: m.correct_option_index ?? 0,
         explanation: m.explanation || '',
       }));
       console.log(`✅ Using ${mcqs.length} MCQs from bundle for language ${selectedLanguage}`);
 
-      // Use TTS from bundle (already language-filtered)
+      // Use TTS from bundle (already language-filtered) - safe defaults
       // Transform TTS to expected format with language field and double-check filtering
-      const ttsAudio = (bundle.tts || [])
+      const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+      const ttsAudio = safeTts
         .map((tts) => {
           // Determine language from TTS data
           let ttsLanguage = tts.language || tts.lang || selectedLanguage;
@@ -788,8 +930,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
             scripts.explanation,
             scripts.outro,
           ].filter(Boolean).length,
-          // Include 3D assets from bundle for lesson players
-          assets3d: bundle.assets3d || [],
+          // Include 3D assets from bundle for lesson players - safe defaults
+          assets3d: safeAssets3d,
           meshy_asset_ids: fullData.meshy_asset_ids || [],
         }
       };
@@ -804,9 +946,17 @@ const Lessons = ({ setBackgroundSkybox }) => {
       setDataLoading(false);
       
     } catch (err) {
-      console.error('Failed to fetch lesson data:', err);
-      setDataError(err.message);
+      console.error('❌ Failed to fetch lesson data:', err);
+      // Provide safe error message
+      const errorMessage = err?.message || 'Failed to load lesson data';
+      // Check for specific errors
+      if (errorMessage.includes('assetsRaw') || errorMessage.includes('not defined')) {
+        setDataError('Lesson data structure error. Please refresh the page.');
+      } else {
+        setDataError(errorMessage);
+      }
       setDataLoading(false);
+      setDataReady(false);
     }
   }, [selectedLanguage]);
 
@@ -1776,6 +1926,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 expandedChapters={expandedChapters}
                 onOpenModal={openLessonModal}
                 onToggleChapter={toggleChapter}
+                onApprovalChange={handleApprovalChange}
               />
             ))}
           </div>

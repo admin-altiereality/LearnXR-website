@@ -51,19 +51,48 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
     if (response.status >= 400) {
       console.error(`[${requestId}] Asset proxy failed with status ${response.status}:`, response.statusText);
       
-      // Try to get error message from response
+      // Check content type to determine if we should try to parse as text/JSON
+      const contentType = response.headers['content-type'] || '';
+      const isTextContent = contentType.includes('text/') || contentType.includes('application/json');
+      
+      // Try to get error message from response (only for text/JSON content)
       let errorMessage = `Failed to fetch asset: ${response.status} ${response.statusText}`;
-      try {
-        const errorData = await new Promise((resolve) => {
-          let data = '';
-          response.data.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-          response.data.on('end', () => resolve(data));
-        });
-        if (errorData) {
-          errorMessage += ` - ${errorData}`;
+      if (isTextContent) {
+        try {
+          const errorData = await new Promise<string>((resolve) => {
+            let data = '';
+            response.data.on('data', (chunk: Buffer) => { 
+              // Only read first 1000 bytes to avoid memory issues
+              if (data.length < 1000) {
+                data += chunk.toString('utf8', 0, Math.min(chunk.length, 1000 - data.length));
+              }
+            });
+            response.data.on('end', () => resolve(data));
+          });
+          
+          // Try to parse as JSON if it looks like JSON
+          if (errorData.trim().startsWith('{') || errorData.trim().startsWith('[')) {
+            try {
+              const parsed = JSON.parse(errorData);
+              if (parsed.error || parsed.message) {
+                errorMessage += ` - ${parsed.error || parsed.message}`;
+              }
+            } catch {
+              // Not valid JSON, use as-is if it's reasonable length
+              if (errorData.length < 200) {
+                errorMessage += ` - ${errorData}`;
+              }
+            }
+          } else if (errorData.length < 200) {
+            errorMessage += ` - ${errorData}`;
+          }
+        } catch (e) {
+          // Ignore error reading error response
+          console.warn(`[${requestId}] Could not read error response:`, e);
         }
-      } catch (e) {
-        // Ignore error reading error response
+      } else {
+        // Binary content (image, etc.) - don't try to parse, just return generic error
+        console.warn(`[${requestId}] Error response is binary (${contentType}), not parsing`);
       }
       
       return res.status(response.status).json({ 

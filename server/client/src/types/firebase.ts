@@ -159,4 +159,12 @@ export interface Topic {
   mcq_ids?: string[];
   tts_ids?: string[];
   meshy_asset_ids?: string[];
+  
+  // ============================================
+  // APPROVAL FIELDS (NEW)
+  // ============================================
+  approval?: {
+    approved: boolean;
+    approvedAt: string | null; // Firestore timestamp
+  };
 } 

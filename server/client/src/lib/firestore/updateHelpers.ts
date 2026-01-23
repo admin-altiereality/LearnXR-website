@@ -93,6 +93,68 @@ export const getChangedFields = <T extends Record<string, unknown>>(
 };
 
 // ============================================
+// TOPIC APPROVAL UPDATES
+// Update topic approval status within chapter document
+// ============================================
+
+export interface UpdateTopicApprovalOptions {
+  chapterId: string;
+  topicId: string;
+  approved: boolean;
+  userId: string;
+}
+
+/**
+ * Update topic approval status (admin/superadmin only)
+ * Updates the approval object within a topic in the topics array
+ */
+export const updateTopicApproval = async (options: UpdateTopicApprovalOptions): Promise<void> => {
+  const { chapterId, topicId, approved, userId } = options;
+
+  console.log('📝 Updating topic approval:', { chapterId, topicId, approved, userId });
+
+  // Get the chapter document
+  const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+  const chapterSnap = await getDoc(chapterRef);
+  
+  if (!chapterSnap.exists()) {
+    throw new Error('Chapter not found');
+  }
+  
+  const chapter = chapterSnap.data() as CurriculumChapter;
+  const topicIndex = chapter.topics?.findIndex((t) => t.topic_id === topicId);
+  
+  if (topicIndex === undefined || topicIndex === -1) {
+    throw new Error('Topic not found');
+  }
+  
+  // Update the topic in the array with approval fields
+  const updatedTopics = [...chapter.topics];
+  const topic = updatedTopics[topicIndex];
+  
+  // Initialize approval object if it doesn't exist
+  if (!topic.approval) {
+    topic.approval = {};
+  }
+  
+  // Update approval fields
+  updatedTopics[topicIndex] = {
+    ...topic,
+    approval: {
+      approved: approved,
+      approvedAt: approved ? serverTimestamp() : null,
+    } as any, // Type assertion needed for serverTimestamp()
+  };
+  
+  await updateDoc(chapterRef, {
+    topics: updatedTopics,
+    updatedAt: serverTimestamp(),
+  });
+  
+  console.log('✅ Topic approval updated successfully');
+};
+
+// ============================================
 // TOPIC UPDATES
 // Topics are stored inline in the chapter document
 // ============================================

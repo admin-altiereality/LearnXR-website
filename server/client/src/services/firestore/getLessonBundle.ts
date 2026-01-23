@@ -28,9 +28,12 @@ const COLLECTION_CURRICULUM_CHAPTERS = 'curriculum_chapters';
 const COLLECTION_CHAPTER_MCQS = 'chapter_mcqs';
 const COLLECTION_CHAPTER_TTS = 'chapter_tts';
 const COLLECTION_CHAPTER_AVATAR_SCRIPTS = 'chapter_avatar_scripts';
+const COLLECTION_CHAPTER_IMAGES = 'chapter_images';
 const COLLECTION_SKYBOXES = 'skyboxes';
 const COLLECTION_PDFS = 'pdfs';
+// Try both collection names for compatibility
 const COLLECTION_TEXT_TO_3D_ASSETS = 'text_to_3d_assets';
+const COLLECTION_TEXT_TO_3D = 'text_to_3d'; // Alternative collection name
 const COLLECTION_MESHY_ASSETS = 'meshy_assets';
 
 /**
@@ -45,6 +48,8 @@ export interface LessonBundle {
   skybox: any | null;
   pdf: any | null;
   assets3d: any[];
+  images: any[]; // Images from chapter_images collection
+  textTo3dAssets: any[]; // Text-to-3D assets with all fields including approval_status
   intro?: any | null;
   explanation?: any | null;
   outro?: any | null;
@@ -56,6 +61,8 @@ export interface LessonBundle {
       skyboxId?: string;
       pdfId?: string;
       assetIds: string[];
+      imageIds: string[];
+      textTo3dAssetIds: string[];
     };
     counts: {
       mcqsBeforeFilter: number;
@@ -64,6 +71,8 @@ export interface LessonBundle {
       ttsAfterFilter: number;
       assetsBeforeFilter: number;
       assetsAfterFilter: number;
+      imagesCount: number;
+      textTo3dAssetsCount: number;
     };
   };
 }
@@ -89,10 +98,14 @@ function extractLinkedIds(chapterData: any, lang: LanguageCode, topicId?: string
   skyboxId?: string;
   pdfId?: string;
   assetIds: string[];
+  imageIds: string[];
+  textTo3dAssetIds: string[];
 } {
   const mcqIds: string[] = [];
   const ttsIds: string[] = [];
   const assetIds: string[] = [];
+  const imageIds: string[] = [];
+  const textTo3dAssetIds: string[] = [];
   let skyboxId: string | undefined;
   let pdfId: string | undefined;
 
@@ -162,7 +175,7 @@ function extractLinkedIds(chapterData: any, lang: LanguageCode, topicId?: string
   // Extract PDF ID
   pdfId = chapterData.pdf_id;
 
-  // Extract 3D asset IDs
+  // Extract 3D asset IDs (meshy_assets)
   const allAssetIds = [
     ...(targetTopic?.asset_ids || []),
     ...(targetTopic?.meshy_asset_ids || []),
@@ -170,12 +183,33 @@ function extractLinkedIds(chapterData: any, lang: LanguageCode, topicId?: string
   ];
   assetIds.push(...allAssetIds);
 
+  // Extract image IDs (from chapter_images collection)
+  const allImageIds = [
+    ...(targetTopic?.image_ids || []),
+    ...(chapterData.image_ids || []),
+  ];
+  imageIds.push(...allImageIds);
+
+  // Extract text_to_3d_asset IDs
+  // These might be in asset_ids (if they're text_to_3d_assets) or in a separate field
+  // Check for text_to_3d_asset_ids field, or filter asset_ids by checking the collection
+  const textTo3dIds = [
+    ...(targetTopic?.text_to_3d_asset_ids || []),
+    ...(chapterData.text_to_3d_asset_ids || []),
+  ];
+  textTo3dAssetIds.push(...textTo3dIds);
+  
+  // Also check if any asset_ids are actually text_to_3d_assets
+  // We'll filter these later when fetching
+
   return {
     mcqIds: [...new Set(mcqIds)], // Remove duplicates
     ttsIds: [...new Set(ttsIds)],
     skyboxId,
     pdfId,
     assetIds: [...new Set(assetIds)],
+    imageIds: [...new Set(imageIds)],
+    textTo3dAssetIds: [...new Set(textTo3dAssetIds)],
   };
 }
 
@@ -325,7 +359,7 @@ export async function getLessonBundle(params: {
     console.log(`[getLessonBundle] Extracted IDs from ${topicId ? `topic ${topicId}` : 'first topic'}:`, extractedIds);
 
     // Step 3: Fetch linked documents in parallel
-    const [mcqsRaw, ttsRaw, skyboxData, pdfData, assetsRaw, meshyAssetsRaw] = await Promise.all([
+    const [mcqsRaw, ttsRaw, skyboxData, pdfData, meshyAssetsRaw, imagesRaw, textTo3dAssetsRaw, pdfSuitableImages] = await Promise.all([
       extractedIds.mcqIds.length > 0
         ? fetchDocsByIds(COLLECTION_CHAPTER_MCQS, extractedIds.mcqIds)
         : Promise.resolve([]),
@@ -352,7 +386,12 @@ export async function getLessonBundle(params: {
               const pdfRef = doc(db, COLLECTION_PDFS, extractedIds.pdfId!);
               const pdfSnap = await getDoc(pdfRef);
               if (pdfSnap.exists()) {
-                return { id: pdfSnap.id, ...pdfSnap.data() };
+                const pdfData = { id: pdfSnap.id, ...pdfSnap.data() };
+                console.log(`[getLessonBundle] Loaded PDF: ${pdfData.id}`, {
+                  hasImages: !!(pdfData.images && Array.isArray(pdfData.images)),
+                  imageCount: pdfData.images?.length || 0,
+                });
+                return pdfData;
               }
             } catch (err) {
               console.warn(`[getLessonBundle] Failed to fetch PDF:`, err);
@@ -360,9 +399,6 @@ export async function getLessonBundle(params: {
             return null;
           })()
         : Promise.resolve(null),
-      extractedIds.assetIds.length > 0
-        ? fetchDocsByIds(COLLECTION_TEXT_TO_3D_ASSETS, extractedIds.assetIds)
-        : Promise.resolve([]),
       // Also fetch meshy_assets by chapter_id/topic_id as fallback (for assets added via AssetsTab)
       (async () => {
         try {
@@ -394,12 +430,168 @@ export async function getLessonBundle(params: {
           return [];
         }
       })(),
+      // Fetch images from chapter_images collection
+      extractedIds.imageIds.length > 0
+        ? fetchDocsByIds(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds)
+        : (async () => {
+            // Fallback: Query by chapter_id/topic_id
+            try {
+              const topic = topicId 
+                ? chapterData.topics?.find((t: any) => t.topic_id === topicId)
+                : chapterData.topics?.[0];
+              if (!topic) return [];
+              
+              const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
+              const q = query(
+                imagesRef,
+                where('chapter_id', '==', chapterId),
+                where('topic_id', '==', topic?.topic_id || '')
+              );
+              const snapshot = await getDocs(q);
+              const images = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+              }));
+              
+              if (images.length > 0) {
+                console.log(`[getLessonBundle] Found ${images.length} images via chapter_id/topic_id query`);
+              }
+              
+              return images;
+            } catch (err) {
+              console.warn(`[getLessonBundle] Error fetching images:`, err);
+              return [];
+            }
+          })(),
+      // Fetch text_to_3d_assets with all fields (including approval_status, prompt, model_urls, etc.)
+      // Try both collection names: text_to_3d_assets and text_to_3d
+      (async () => {
+        try {
+          const topic = topicId 
+            ? chapterData.topics?.find((t: any) => t.topic_id === topicId)
+            : chapterData.topics?.[0];
+          if (!topic) return [];
+          
+          // First try by IDs if available (try both collection names)
+          let textTo3dAssets: any[] = [];
+          if (extractedIds.textTo3dAssetIds.length > 0) {
+            try {
+              textTo3dAssets = await fetchDocsByIds(COLLECTION_TEXT_TO_3D_ASSETS, extractedIds.textTo3dAssetIds);
+              console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets by IDs from ${COLLECTION_TEXT_TO_3D_ASSETS}`);
+            } catch (err) {
+              // Try alternative collection name
+              try {
+                textTo3dAssets = await fetchDocsByIds(COLLECTION_TEXT_TO_3D, extractedIds.textTo3dAssetIds);
+                console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets by IDs from ${COLLECTION_TEXT_TO_3D}`);
+              } catch (err2) {
+                console.warn(`[getLessonBundle] Failed to fetch by IDs from both collections:`, err2);
+              }
+            }
+          }
+          
+          // Also check if any assetIds are actually text_to_3d_assets
+          if (extractedIds.assetIds.length > 0 && textTo3dAssets.length === 0) {
+            // Try fetching by IDs to see if they're text_to_3d_assets (try both collections)
+            for (const collectionName of [COLLECTION_TEXT_TO_3D_ASSETS, COLLECTION_TEXT_TO_3D]) {
+              try {
+                const potentialAssets = await fetchDocsByIds(collectionName, extractedIds.assetIds);
+                // Filter to only include those that have text_to_3d_asset specific fields
+                const textTo3dOnly = potentialAssets.filter((a: any) => 
+                  a.prompt || a.model_urls || a.approval_status !== undefined
+                );
+                if (textTo3dOnly.length > 0) {
+                  textTo3dAssets = textTo3dOnly;
+                  console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets from assetIds in ${collectionName}`);
+                  break;
+                }
+              } catch (err) {
+                // Continue to next collection
+              }
+            }
+          }
+          
+          // Fallback: Query by chapter_id/topic_id (try both collections)
+          if (textTo3dAssets.length === 0) {
+            for (const collectionName of [COLLECTION_TEXT_TO_3D_ASSETS, COLLECTION_TEXT_TO_3D]) {
+              try {
+                const textTo3dRef = collection(db, collectionName);
+                const q = query(
+                  textTo3dRef,
+                  where('chapter_id', '==', chapterId),
+                  where('topic_id', '==', topic?.topic_id || '')
+                );
+                const snapshot = await getDocs(q);
+                textTo3dAssets = snapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data(), // Include all fields: approval_status, prompt, model_urls, status, etc.
+                }));
+                
+                if (textTo3dAssets.length > 0) {
+                  console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets via chapter_id/topic_id query from ${collectionName}`);
+                  break;
+                }
+              } catch (err) {
+                // Continue to next collection
+              }
+            }
+          }
+          
+          return textTo3dAssets || [];
+        } catch (err) {
+          console.warn(`[getLessonBundle] Error fetching text_to_3d_assets:`, err);
+          return [];
+        }
+      })(),
+      // Check PDF collection for images (both suitable_for_3d and all images)
+      // This is for /studio/content page to display PDF images
+      (async () => {
+        try {
+          if (!pdfData) return [];
+          
+          // Fetch ALL images from PDF (not just suitable_for_3d)
+          // PDF images are stored in pdfData.images array
+          if (pdfData.images && Array.isArray(pdfData.images)) {
+            // Map all PDF images with proper fields
+            const pdfImages = pdfData.images.map((img: any, idx: number) => {
+              // Handle various field names for image URLs
+              const imageUrl = img.url || img.image_url || img.imageUrl || img.fileUrl || img.file_url || '';
+              const thumbnailUrl = img.thumbnail_url || img.thumbnailUrl || img.thumbnail || imageUrl;
+              
+              return {
+                id: img.id || `pdf_image_${pdfData.id}_${idx}`,
+                source: 'pdf',
+                pdf_id: pdfData.id,
+                pdf_name: pdfData.name || pdfData.filename || 'PDF Document',
+                image_url: imageUrl,
+                thumbnail_url: thumbnailUrl,
+                url: imageUrl, // Also include as 'url' for compatibility
+                name: img.name || img.filename || `PDF Image ${idx + 1}`,
+                description: img.description || img.caption || '',
+                suitable_for_3d: img.suitable_for_3d === true,
+                type: img.type || (img.suitable_for_3d ? 'pdf_3d' : 'pdf'),
+                order: img.order ?? idx,
+                ...img, // Include all other fields
+              };
+            });
+            
+            if (pdfImages.length > 0) {
+              console.log(`[getLessonBundle] Found ${pdfImages.length} PDF images (${pdfImages.filter((i: any) => i.suitable_for_3d).length} suitable for 3D)`);
+            }
+            
+            return pdfImages;
+          }
+          return [];
+        } catch (err) {
+          console.warn(`[getLessonBundle] Error checking PDF images:`, err);
+          return [];
+        }
+      })(),
     ]);
 
     // Step 4: Apply language filtering
     const mcqsBeforeFilter = mcqsRaw.length;
     const ttsBeforeFilter = ttsRaw.length;
-    const assetsBeforeFilter = assetsRaw.length + (meshyAssetsRaw?.length || 0);
+    const assetsBeforeFilter = (meshyAssetsRaw?.length || 0);
 
     // Helper function to extract MCQ options from various field formats
     const extractMcqOptions = (data: any): string[] => {
@@ -539,12 +731,18 @@ export async function getLessonBundle(params: {
       language: t.language || t.lang || lang, // Ensure language field is explicitly set
     }));
     
-    // Merge text_to_3d_assets with meshy_assets (both are 3D assets)
-    const allAssetsRaw = [...assetsRaw, ...(meshyAssetsRaw || [])];
+    // Separate meshy_assets from text_to_3d_assets
+    // text_to_3d_assets are already fetched separately in textTo3dAssetsRaw
+    // meshy_assets are in meshyAssetsRaw
+    // assetsRaw might contain either, but we'll use meshyAssetsRaw as primary source
+    const allAssetsRaw = [...(meshyAssetsRaw || [])];
     const assets3d = filterByLanguage(allAssetsRaw, lang);
     
+    // text_to_3d_assets don't need language filtering (they're language-agnostic)
+    // But we'll keep them separate in the bundle
+    
     console.log(`[getLessonBundle] Merged assets:`, {
-      textTo3dAssets: assetsRaw.length,
+      textTo3dAssets: textTo3dAssetsRaw?.length || 0,
       meshyAssets: meshyAssetsRaw?.length || 0,
       total: allAssetsRaw.length,
       afterFilter: assets3d.length,
@@ -586,15 +784,25 @@ export async function getLessonBundle(params: {
     const explanation = chapterData.explanation?.[lang] || topic?.explanation?.[lang] || null;
     const outro = chapterData.outro?.[lang] || topic?.outro?.[lang] || null;
 
+    // Ensure all arrays have safe defaults
+    const safeTextTo3dAssets = Array.isArray(textTo3dAssetsRaw) ? textTo3dAssetsRaw : [];
+    const safeImagesRaw = Array.isArray(imagesRaw) ? imagesRaw : [];
+    const safePdfSuitableImages = Array.isArray(pdfSuitableImages) ? pdfSuitableImages : [];
+    const safeMcqs = Array.isArray(mcqs) ? mcqs : [];
+    const safeTts = Array.isArray(tts) ? tts : [];
+    const safeAssets3d = Array.isArray(assets3d) ? assets3d : [];
+    
     const bundle: LessonBundle = {
       lang,
       chapter: chapterData,
-      mcqs,
-      tts,
+      mcqs: safeMcqs,
+      tts: safeTts,
       avatarScripts,
       skybox: skyboxData,
       pdf: pdfData,
-      assets3d,
+      assets3d: safeAssets3d,
+      images: [...safeImagesRaw, ...safePdfSuitableImages], // Merge regular images with PDF suitable images
+      textTo3dAssets: safeTextTo3dAssets,
       intro,
       explanation,
       outro,
@@ -602,11 +810,13 @@ export async function getLessonBundle(params: {
         extractedIds,
         counts: {
           mcqsBeforeFilter,
-          mcqsAfterFilter,
+          mcqsAfterFilter: safeMcqs.length,
           ttsBeforeFilter,
-          ttsAfterFilter,
+          ttsAfterFilter: safeTts.length,
           assetsBeforeFilter,
-          assetsAfterFilter,
+          assetsAfterFilter: safeAssets3d.length,
+          imagesCount: safeImagesRaw.length + safePdfSuitableImages.length,
+          textTo3dAssetsCount: safeTextTo3dAssets.length,
         },
       },
     };
@@ -617,9 +827,12 @@ export async function getLessonBundle(params: {
       mcqs: bundle.mcqs.length,
       tts: bundle.tts.length,
       assets3d: bundle.assets3d.length,
+      images: bundle.images.length,
+      textTo3dAssets: bundle.textTo3dAssets.length,
       hasAvatarScripts: !!bundle.avatarScripts,
       hasSkybox: !!bundle.skybox,
       hasPdf: !!bundle.pdf,
+      textTo3dApproved: bundle.textTo3dAssets.filter((a: any) => a.approval_status === true).length,
     });
 
     return bundle;

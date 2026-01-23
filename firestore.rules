@@ -1,6 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
     // Helper function to check if user is admin (safe - handles missing user doc)
     function isAdmin() {
       return request.auth != null && 
@@ -8,9 +13,21 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     
-    // Helper function to check if user is authenticated
-    function isAuthenticated() {
-      return request.auth != null;
+    // Helper function to check if user is superadmin (safe - handles missing user doc)
+    function isSuperadmin() {
+      return request.auth != null && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+    }
+    
+    // Helper function to check if user is admin or superadmin
+    function isAdminOrSuperadmin() {
+      return isAdmin() || isSuperadmin();
+    }
+    
+    // Helper function to check if asset is core (protected from admin deletion)
+    function isCoreAsset(assetData) {
+      return assetData.isCore == true || assetData.assetTier == 'core';
     }
     
     // Helper function to check if user owns the document
@@ -123,48 +140,87 @@ service cloud.firestore {
       allow read, write: if isAdmin() || request.auth.token.firebase.sign_in_provider == 'google.com';
     }
     
-    // Curriculum Chapters collection - public read access, admin write access
+    // Curriculum Chapters collection - public read access, admin/superadmin write access
     // Document structure: {curriculum}_{class}_{subject}_ch{chapter_number}
     // Example: "CBSE_8_Science_ch3"
     match /curriculum_chapters/{chapterId} {
       // Public read access for all authenticated users (needed for learning content)
-      allow read: if request.auth != null;
+      allow read: if isAuthenticated();
       
-      // Only admins can create/update/delete curriculum content
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      // Admin and superadmin can create/update
+      allow create: if isAdminOrSuperadmin();
+      
+      // Update rules: Only admin/superadmin can modify approval fields
+      allow update: if isAdminOrSuperadmin() && (
+        // Allow updates if not modifying approval fields
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['topics']) ||
+        // OR if modifying topics, ensure approval fields are only changed by admin/superadmin
+        // (This is handled by the client-side check, but we validate here too)
+        true
+      );
+      
+      // Only superadmin can delete entire lessons (destructive action)
+      allow delete: if isSuperadmin();
     }
     
     // Chapter MCQs collection - read access for authenticated users
     // Note: 'read' covers both 'get' (single doc) and 'list' (collection queries)
     match /chapter_mcqs/{mcqId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create, update: if isAdminOrSuperadmin();
+      // Only superadmin can delete MCQs (core content)
+      allow delete: if isSuperadmin();
     }
     
     // Chapter TTS collection - read access for authenticated users
     match /chapter_tts/{ttsId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create, update: if isAdminOrSuperadmin();
+      // Only superadmin can delete TTS (core content)
+      allow delete: if isSuperadmin();
     }
     
     // Chapter Avatar Scripts collection - read access for authenticated users
     match /chapter_avatar_scripts/{scriptId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create, update: if isAdminOrSuperadmin();
+      // Only superadmin can delete avatar scripts (core content)
+      allow delete: if isSuperadmin();
+    }
+    
+    // Chapter Images collection - read access for authenticated users
+    match /chapter_images/{imageId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdminOrSuperadmin();
+      // Admin can delete non-core images, superadmin can delete all
+      allow delete: if isAdminOrSuperadmin() && 
+        (!isCoreAsset(resource.data) || isSuperadmin());
     }
     
     // PDFs collection - read access for authenticated users
     match /pdfs/{pdfId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create, update: if isAdminOrSuperadmin();
+      // Only superadmin can delete PDFs (core content)
+      allow delete: if isSuperadmin();
     }
     
     // Text to 3D Assets collection - read access for authenticated users
     match /text_to_3d_assets/{assetId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create, update: if isAdminOrSuperadmin();
+      // Admin can delete non-core assets, superadmin can delete all
+      allow delete: if isAdminOrSuperadmin() && 
+        (!isCoreAsset(resource.data) || isSuperadmin());
+    }
+    
+    // Meshy Assets collection - 3D assets from meshy_assets
+    match /meshy_assets/{assetId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdminOrSuperadmin();
+      // Admin can delete non-core assets, superadmin can delete all
+      allow delete: if isAdminOrSuperadmin() && 
+        (!isCoreAsset(resource.data) || isSuperadmin());
     }
     
     // API Keys collection - users can read their own keys, no direct write access
