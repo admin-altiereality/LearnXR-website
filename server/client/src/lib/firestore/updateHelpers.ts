@@ -266,12 +266,21 @@ export const updateScene = async (options: UpdateSceneOptions): Promise<void> =>
   const language = (options as any).language || 'en'; // Default to 'en' for backward compatibility
   
   // Prepare updated topic
+  // Initialize sharedAssets if it doesn't exist
+  const sharedAssets = currentTopic.sharedAssets || {};
+  
   const updatedTopic: any = {
     ...currentTopic,
     learning_objective: (changes.learning_objective as string) ?? currentTopic.learning_objective,
     in3d_prompt: (changes.in3d_prompt as string) ?? currentTopic.in3d_prompt,
     asset_list: (changes.asset_list as string[]) ?? currentTopic.asset_list,
     camera_guidance: (changes.camera_guidance as string) ?? currentTopic.camera_guidance,
+    // Update sharedAssets if skybox_id changed
+    sharedAssets: changes.skybox_id ? {
+      ...sharedAssets,
+      skybox_id: changes.skybox_id as string,
+    } : sharedAssets,
+    // Keep legacy fields for backward compatibility
     skybox_id: (changes.skybox_id as string) ?? currentTopic.skybox_id,
     generatedAt: new Date().toISOString(),
   };
@@ -563,11 +572,22 @@ export const updateSkybox = async (options: {
   }
   
   // Update the topic with skybox
+  // Save to sharedAssets (language-independent)
   const updatedTopics = [...chapter.topics];
-  const currentSkyboxIds = updatedTopics[topicIndex].skybox_ids || [];
+  const currentTopic = updatedTopics[topicIndex];
+  const currentSkyboxIds = currentTopic.skybox_ids || [];
+  
+  // Initialize sharedAssets if it doesn't exist
+  const sharedAssets = currentTopic.sharedAssets || {};
   
   updatedTopics[topicIndex] = {
-    ...updatedTopics[topicIndex],
+    ...currentTopic,
+    // Save to sharedAssets (new structure)
+    sharedAssets: {
+      ...sharedAssets,
+      skybox_id: skyboxId,
+    },
+    // Keep legacy fields for backward compatibility
     skybox_id: skyboxId,
     skybox_ids: [...currentSkyboxIds, skyboxId],
     status: 'generated',
@@ -814,6 +834,7 @@ export const saveChapterTTS = async (options: {
 
 /**
  * Save image to chapter_images collection
+ * Also updates chapter.sharedAssets.image_ids
  */
 export const saveChapterImage = async (options: {
   image: Omit<ChapterImage, 'id'> & { id?: string };
@@ -822,6 +843,8 @@ export const saveChapterImage = async (options: {
   const { image, userId } = options;
   
   try {
+    let imageId: string;
+    
     if (image.id) {
       // Update existing
       const imageRef = doc(db, COLLECTION_CHAPTER_IMAGES, image.id);
@@ -829,18 +852,68 @@ export const saveChapterImage = async (options: {
         ...image,
         updated_at: serverTimestamp(),
       });
-      return { success: true, id: image.id };
+      imageId = image.id;
     } else {
       // Create new
       const docRef = await addDoc(collection(db, COLLECTION_CHAPTER_IMAGES), {
         ...image,
         created_at: serverTimestamp(),
       });
-      return { success: true, id: docRef.id };
+      imageId = docRef.id;
     }
+    
+    // Update chapter.sharedAssets.image_ids (if chapter_id is provided)
+    if (image.chapter_id && !image.id) {
+      // Only add to sharedAssets if it's a new image
+      await addImageIdToChapterSharedAssets(image.chapter_id, imageId);
+    }
+    
+    return { success: true, id: imageId };
   } catch (error) {
     console.error('Error saving image:', error);
     return { success: false, error: String(error) };
+  }
+};
+
+/**
+ * Add image ID to chapter's sharedAssets.image_ids
+ */
+export const addImageIdToChapterSharedAssets = async (
+  chapterId: string,
+  imageId: string
+): Promise<void> => {
+  try {
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const chapterSnap = await getDoc(chapterRef);
+    
+    if (!chapterSnap.exists()) {
+      console.warn(`Chapter ${chapterId} not found, skipping sharedAssets update`);
+      return;
+    }
+    
+    const chapter = chapterSnap.data() as CurriculumChapter;
+    const sharedAssets = chapter.sharedAssets || {};
+    const existingImageIds = sharedAssets.image_ids || chapter.image_ids || [];
+    
+    // Only add if not already present
+    if (!existingImageIds.includes(imageId)) {
+      const updatedImageIds = [...existingImageIds, imageId];
+      
+      await updateDoc(chapterRef, {
+        sharedAssets: {
+          ...sharedAssets,
+          image_ids: updatedImageIds,
+        },
+        // Keep legacy field for backward compatibility
+        image_ids: updatedImageIds,
+        updatedAt: serverTimestamp(),
+      });
+      
+      console.log(`✅ Added image ${imageId} to chapter ${chapterId} sharedAssets`);
+    }
+  } catch (error) {
+    console.error('Error updating chapter sharedAssets:', error);
+    // Don't throw - this is a non-critical update
   }
 };
 
@@ -985,13 +1058,27 @@ export const linkMeshyAssetsToTopic = async (options: {
     const updatedTopics = [...chapter.topics];
     const currentTopic = updatedTopics[topicIndex];
     
+    // Initialize sharedAssets if it doesn't exist
+    const sharedAssets = currentTopic.sharedAssets || {};
+    
     // Merge new asset IDs with existing ones (remove duplicates)
-    const existingIds = currentTopic.meshy_asset_ids || [];
-    const allIds = [...new Set([...existingIds, ...assetIds])];
+    // Check both sharedAssets and legacy fields
+    const existingIdsFromShared = sharedAssets.meshy_asset_ids || sharedAssets.asset_ids || [];
+    const existingIdsFromLegacy = currentTopic.meshy_asset_ids || currentTopic.asset_ids || [];
+    const allExistingIds = [...new Set([...existingIdsFromShared, ...existingIdsFromLegacy])];
+    const allIds = [...new Set([...allExistingIds, ...assetIds])];
     
     updatedTopics[topicIndex] = {
       ...currentTopic,
+      // Save to sharedAssets (new structure)
+      sharedAssets: {
+        ...sharedAssets,
+        meshy_asset_ids: allIds,
+        asset_ids: allIds, // Support legacy field name
+      },
+      // Keep legacy fields for backward compatibility
       meshy_asset_ids: allIds,
+      asset_ids: allIds,
     };
     
     await updateDoc(chapterRef, {
@@ -1039,13 +1126,27 @@ export const unlinkMeshyAssetFromTopic = async (options: {
     const updatedTopics = [...chapter.topics];
     const currentTopic = updatedTopics[topicIndex];
     
+    // Initialize sharedAssets if it doesn't exist
+    const sharedAssets = currentTopic.sharedAssets || {};
+    
     // Remove the asset ID from the array
-    const existingIds = currentTopic.meshy_asset_ids || [];
-    const filteredIds = existingIds.filter((id: string) => id !== assetId);
+    // Check both sharedAssets and legacy fields
+    const existingIdsFromShared = sharedAssets.meshy_asset_ids || sharedAssets.asset_ids || [];
+    const existingIdsFromLegacy = currentTopic.meshy_asset_ids || currentTopic.asset_ids || [];
+    const allExistingIds = [...new Set([...existingIdsFromShared, ...existingIdsFromLegacy])];
+    const filteredIds = allExistingIds.filter((id: string) => id !== assetId);
     
     updatedTopics[topicIndex] = {
       ...currentTopic,
+      // Save to sharedAssets (new structure)
+      sharedAssets: {
+        ...sharedAssets,
+        meshy_asset_ids: filteredIds,
+        asset_ids: filteredIds, // Support legacy field name
+      },
+      // Keep legacy fields for backward compatibility
       meshy_asset_ids: filteredIds,
+      asset_ids: filteredIds,
     };
     
     await updateDoc(chapterRef, {

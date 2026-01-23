@@ -263,6 +263,19 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
         setUploadProgress((uploadedCount / totalFiles) * 100);
       }
       
+      // Update chapter.sharedAssets.image_ids with all new image IDs
+      if (newImages.length > 0) {
+        try {
+          const { addImageIdToChapterSharedAssets } = await import('../../../lib/firestore/updateHelpers');
+          for (const newImage of newImages) {
+            await addImageIdToChapterSharedAssets(chapterId, newImage.id);
+          }
+          console.log(`✅ Updated chapter ${chapterId} sharedAssets with ${newImages.length} new image IDs`);
+        } catch (error) {
+          console.warn('Could not update chapter sharedAssets (non-critical):', error);
+        }
+      }
+      
       // Update local state
       setImages(prev => [...prev, ...newImages]);
       if (newImages.length > 0) {
