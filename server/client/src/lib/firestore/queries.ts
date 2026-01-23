@@ -1759,10 +1759,48 @@ export const getChapterImages = async (
     // Step 1: Get the image_ids from the chapter document
     const resourceIds = await getTopicResourceIds(chapterId, topicId);
     
-    if (!resourceIds || !resourceIds.image_ids || resourceIds.image_ids.length === 0) {
-      console.log('ℹ️ No image_ids found in chapter');
+    // Step 2: Fetch images by IDs (if available)
+    const imagesByIds: ChapterImage[] = [];
+    if (resourceIds && resourceIds.image_ids && resourceIds.image_ids.length > 0) {
+      console.log('🖼️ Image IDs from chapter:', resourceIds.image_ids);
       
-      // Fallback: Try query by chapter_id/topic_id (legacy approach)
+      for (let i = 0; i < resourceIds.image_ids.length; i++) {
+        const imageId = resourceIds.image_ids[i];
+        try {
+          const imageRef = doc(db, COLLECTION_CHAPTER_IMAGES, imageId);
+          const imageSnap = await getDoc(imageRef);
+          
+          if (imageSnap.exists()) {
+            const data = imageSnap.data();
+            imagesByIds.push({
+              id: imageSnap.id,
+              chapter_id: data.chapter_id || chapterId,
+              topic_id: data.topic_id || topicId,
+              name: data.name || `Image ${i + 1}`,
+              description: data.description,
+              image_url: data.image_url || data.url || '',
+              thumbnail_url: data.thumbnail_url,
+              type: data.type || 'other',
+              order: data.order ?? i,
+              created_at: data.created_at,
+              updated_at: data.updated_at,
+            });
+          } else {
+            console.warn(`⚠️ Image document not found: ${imageId}`);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Error fetching image ${imageId}:`, err);
+        }
+      }
+      
+      console.log(`✅ Found ${imagesByIds.length} images by IDs`);
+    } else {
+      console.log('ℹ️ No image_ids found in chapter');
+    }
+    
+    // Step 3: Always try query by chapter_id/topic_id as fallback (even if we found images by IDs)
+    let imagesByQuery: ChapterImage[] = [];
+    try {
       const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
       const q = query(
         imagesRef,
@@ -1772,8 +1810,7 @@ export const getChapterImages = async (
       
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
-        console.log('✅ Found images via chapter_id/topic_id query:', snapshot.docs.length);
-        return snapshot.docs.map((docSnap, index) => {
+        imagesByQuery = snapshot.docs.map((docSnap, index) => {
           const data = docSnap.data();
           return {
             id: docSnap.id,
@@ -1789,50 +1826,40 @@ export const getChapterImages = async (
             updated_at: data.updated_at,
           };
         });
+        console.log(`✅ Found ${imagesByQuery.length} images via chapter_id/topic_id query`);
       }
-      
-      return [];
+    } catch (err) {
+      console.warn(`⚠️ Error querying images by chapter_id/topic_id:`, err);
     }
     
-    console.log('🖼️ Image IDs from chapter:', resourceIds.image_ids);
+    // Step 4: Merge both results and remove duplicates by ID
+    const imageMap = new Map<string, ChapterImage>();
     
-    // Step 2: Fetch each image document by ID
-    const images: ChapterImage[] = [];
-    
-    for (let i = 0; i < resourceIds.image_ids.length; i++) {
-      const imageId = resourceIds.image_ids[i];
-      try {
-        const imageRef = doc(db, COLLECTION_CHAPTER_IMAGES, imageId);
-        const imageSnap = await getDoc(imageRef);
-        
-        if (imageSnap.exists()) {
-          const data = imageSnap.data();
-          images.push({
-            id: imageSnap.id,
-            chapter_id: data.chapter_id || chapterId,
-            topic_id: data.topic_id || topicId,
-            name: data.name || `Image ${i + 1}`,
-            description: data.description,
-            image_url: data.image_url || data.url || '',
-            thumbnail_url: data.thumbnail_url,
-            type: data.type || 'other',
-            order: data.order ?? i,
-            created_at: data.created_at,
-            updated_at: data.updated_at,
-          });
-        } else {
-          console.warn(`⚠️ Image document not found: ${imageId}`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ Error fetching image ${imageId}:`, err);
+    // Add images fetched by IDs first (priority)
+    imagesByIds.forEach(img => {
+      if (img.id) {
+        imageMap.set(img.id, img);
       }
+    });
+    
+    // Add images from query (only if not already present)
+    imagesByQuery.forEach(img => {
+      if (img.id && !imageMap.has(img.id)) {
+        imageMap.set(img.id, img);
+      }
+    });
+    
+    const mergedImages = Array.from(imageMap.values());
+    
+    if (mergedImages.length > 0) {
+      console.log(`✅ Merged ${mergedImages.length} images (${imagesByIds.length} by IDs, ${imagesByQuery.length} by query)`);
     }
     
     // Sort by order
-    images.sort((a, b) => (a.order || 0) - (b.order || 0));
+    mergedImages.sort((a, b) => (a.order || 0) - (b.order || 0));
     
-    console.log('✅ Loaded images by ID:', images.length);
-    return images;
+    console.log('✅ Loaded images:', mergedImages.length);
+    return mergedImages;
   } catch (error) {
     console.error('❌ Error fetching images:', error);
     return [];
