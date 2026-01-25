@@ -816,7 +816,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
         correct_option_index: m.correct_option_index ?? 0,
         explanation: m.explanation || '',
       }));
-      console.log(`✅ Using ${mcqs.length} MCQs from bundle for language ${selectedLanguage}`);
 
       // Use TTS from bundle (already language-filtered) - safe defaults
       // Transform TTS to expected format with language field and double-check filtering
@@ -845,29 +844,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
           };
         })
         .filter((tts) => {
-          // Double-check language filtering (strict match)
+          // Language filtering (strict match)
           const ttsLang = (tts.language || 'en').toLowerCase().trim();
           const targetLang = selectedLanguage.toLowerCase().trim();
-          const matches = ttsLang === targetLang;
-          
-          if (!matches) {
-            console.warn(`[Lessons] Filtered out TTS with language mismatch:`, {
-              ttsId: tts.id,
-              ttsLanguage: tts.language,
-              selectedLanguage: selectedLanguage,
-              script_type: tts.script_type,
-            });
-          }
-          
-          return matches;
+          return ttsLang === targetLang;
         });
-      
-      console.log(`✅ Using ${ttsAudio.length} TTS audio files from bundle for language ${selectedLanguage}`, {
-        totalInBundle: bundle.tts?.length || 0,
-        filtered: ttsAudio.length,
-        language: selectedLanguage,
-        ttsDetails: ttsAudio.map(t => ({ id: t.id, script_type: t.script_type, language: t.language })),
-      });
 
       // Get language-specific names
       const chapterName = getChapterNameByLanguage(fullData, selectedLanguage) || fullData.chapter_name || chapter.chapter_name;
@@ -1032,33 +1013,26 @@ const Lessons = ({ setBackgroundSkybox }) => {
     console.log('🚀 [Lessons] LAUNCH LESSON INITIATED');
     console.log('═══════════════════════════════════════════════════════');
     
-    // STEP 0: Check if we have lesson data
+    // Check if we have lesson data
     if (!lessonData) {
-      console.error('❌ [Step 0] No lesson data available');
       setDataError('No lesson data available. Please try again.');
       return;
     }
-    console.log('✅ [Step 0] Lesson data exists');
     
-    // STEP 1: Validate the data structure
-    console.log('📋 [Step 1] Validating lesson data structure...');
+    // Validate the data structure
     try {
       const validation = validateLessonData(lessonData);
-      
       if (!validation.isValid) {
-        console.error('❌ [Step 1] Validation failed:', validation.errors);
         setDataError(`Lesson data validation failed: ${validation.errors.join(', ')}`);
         return;
       }
-      console.log('✅ [Step 1] Validation passed');
     } catch (validationErr) {
-      console.error('❌ [Step 1] Validation threw error:', validationErr);
+      console.error('Validation error:', validationErr);
       setDataError('Error validating lesson data');
       return;
     }
     
-    // STEP 2: Prepare clean lesson data
-    console.log('🧹 [Step 2] Preparing clean lesson data...');
+    // Prepare clean lesson data
     let cleanChapter, cleanTopic, fullLessonData;
     
     try {
@@ -1088,7 +1062,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
         mcq_ids: Array.isArray(lessonData.topic?.mcq_ids) ? [...lessonData.topic.mcq_ids] : [],
         tts_ids: Array.isArray(lessonData.topic?.tts_ids) ? [...lessonData.topic.tts_ids] : [],
         mcqs: Array.isArray(lessonData.topic?.mcqs) ? [...lessonData.topic.mcqs] : [],
-        // Include language and TTS audio in topic so LessonContext preserves them
         language: lessonData.language || 'en',
         ttsAudio: Array.isArray(lessonData.ttsAudio) ? [...lessonData.ttsAudio] : [],
       };
@@ -1100,93 +1073,33 @@ const Lessons = ({ setBackgroundSkybox }) => {
         startedAt: lessonData.startedAt ?? new Date().toISOString(),
         launchedAt: new Date().toISOString(),
         _meta: lessonData._meta ?? null,
-        // Include language and TTS audio array (same as launchVRLesson)
-        language: lessonData.language || 'en',
-        ttsAudio: lessonData.ttsAudio || [],
       };
-      
-      console.log('✅ [Step 2] Clean data prepared:', {
-        chapterId: cleanChapter.chapter_id,
-        topicId: cleanTopic.topic_id,
-        hasSkybox: !!cleanTopic.skybox_url,
-        hasNarration: !!(cleanTopic.avatar_intro || cleanTopic.avatar_explanation),
-        // DEBUG: Log language and TTS info being saved
-        language: fullLessonData.language,
-        ttsAudioCount: fullLessonData.ttsAudio?.length || 0,
-        ttsAudioSample: fullLessonData.ttsAudio?.slice(0, 2).map(t => ({
-          id: t.id,
-          language: t.language,
-          script_type: t.script_type,
-        })),
-      });
     } catch (prepErr) {
-      console.error('❌ [Step 2] Error preparing data:', prepErr);
+      console.error('Error preparing lesson data:', prepErr);
       setDataError('Error preparing lesson data');
       return;
     }
     
-    // STEP 3: Save to sessionStorage FIRST
-    console.log('💾 [Step 3] Saving to sessionStorage...');
+    // Save to sessionStorage
     try {
-      const jsonString = JSON.stringify(fullLessonData);
-      sessionStorage.setItem('activeLesson', jsonString);
-      
-      // Verify it was saved correctly
-      const verified = sessionStorage.getItem('activeLesson');
-      if (!verified) {
-        throw new Error('SessionStorage verification failed');
-      }
-      // DEBUG: Parse and verify language/TTS are in saved data
-      const parsedVerified = JSON.parse(verified);
-      console.log('✅ [Step 3] SessionStorage saved and verified:', {
-        savedLanguage: parsedVerified.language,
-        savedTtsAudioCount: parsedVerified.ttsAudio?.length || 0,
-        hasLanguageField: 'language' in parsedVerified,
-        hasTtsAudioField: 'ttsAudio' in parsedVerified,
-      });
+      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
     } catch (storageErr) {
-      console.error('⚠️ [Step 3] SessionStorage error (continuing anyway):', storageErr);
+      console.error('SessionStorage error:', storageErr);
     }
     
-    // STEP 4: Update LessonContext
-    console.log('🔄 [Step 4] Updating LessonContext...');
+    // Update LessonContext
     try {
-      // Check if context function exists
-      if (typeof contextStartLesson !== 'function') {
-        throw new Error('contextStartLesson is not a function');
+      if (typeof contextStartLesson === 'function') {
+        contextStartLesson(cleanChapter, cleanTopic);
       }
-      
-      contextStartLesson(cleanChapter, cleanTopic);
-      console.log('✅ [Step 4] LessonContext updated');
     } catch (contextErr) {
-      console.error('❌ [Step 4] Context update error:', contextErr);
-      // Don't fail here - sessionStorage has the data
-      console.log('⚠️ [Step 4] Continuing with sessionStorage fallback...');
+      console.error('Context update error:', contextErr);
     }
     
-    // STEP 5: Close modal
-    console.log('🚪 [Step 5] Closing modal...');
-    try {
-      closeLessonModal();
-      console.log('✅ [Step 5] Modal closed');
-    } catch (modalErr) {
-      console.error('⚠️ [Step 5] Modal close error:', modalErr);
-    }
-    
-    // STEP 6: Navigate with delay
-    console.log('🧭 [Step 6] Preparing navigation...');
-    console.log('═══════════════════════════════════════════════════════');
-    
-    // Use longer delay and wrap in try-catch
+    // Close modal and navigate
+    closeLessonModal();
     setTimeout(() => {
-      try {
-        console.log('🚀 [Step 6] Navigating to /vrlessonplayer NOW');
-        navigate('/vrlessonplayer');
-      } catch (navErr) {
-        console.error('❌ [Step 6] Navigation error:', navErr);
-        // Fallback: use window.location
-        window.location.href = '/vrlessonplayer';
-      }
+      navigate('/vrlessonplayer');
     }, 200);
     
   }, [lessonData, navigate, closeLessonModal, contextStartLesson, validateLessonData]);
@@ -1281,18 +1194,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
     const validation = validateVRLessonData(lessonData);
     
     if (!validation.isValid) {
-      console.error('❌ Validation failed for VR:', validation.errors);
       setDataError(`Lesson not ready: ${validation.errors.join(', ')}`);
       return;
     }
-    
-    console.log('✅ Validation passed:', {
-      hasSkybox: validation.assets.hasSkybox,
-      skyboxId: validation.assets.skyboxId,
-      has3DAssets: validation.assets.has3DAssets,
-      hasTTS: validation.assets.hasTTS,
-      hasMCQ: validation.assets.hasMCQ,
-    });
     
     // Prepare and save to sessionStorage
     try {
@@ -1362,33 +1266,20 @@ const Lessons = ({ setBackgroundSkybox }) => {
       
       // Save to sessionStorage
       sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-      console.log('✅ Saved lesson for VR:', {
-        chapterId: cleanChapter.chapter_id,
-        topicId: cleanTopic.topic_id,
-        skyboxId: cleanTopic.skybox_id,
-        assetCount: cleanTopic.asset_urls.length,
-        meshyAssetCount: fullLessonData.meshy_asset_ids?.length || 0,
-      });
       
       // Update context
       if (typeof contextStartLesson === 'function') {
         contextStartLesson(cleanChapter, cleanTopic);
       }
       
-      // Close modal
+      // Close modal and navigate
       closeLessonModal();
-      
-      // Store lesson data in sessionStorage (XRLessonPlayer reads from here)
-      // Use fullLessonData which includes MCQs and TTS from bundle
-      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-      
       setTimeout(() => {
-        console.log('🚀 Navigating to /xrlessonplayer');
         navigate('/xrlessonplayer');
       }, 100);
       
     } catch (err) {
-      console.error('❌ Failed to prepare VR lesson:', err);
+      console.error('Failed to prepare VR lesson:', err);
       setDataError('Failed to prepare VR lesson');
     }
   }, [lessonData, navigate, closeLessonModal, validateVRLessonData, contextStartLesson]);
