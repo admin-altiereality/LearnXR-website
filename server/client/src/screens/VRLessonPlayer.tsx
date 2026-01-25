@@ -53,6 +53,7 @@ import {
   Move,
   AlertTriangle,
   RefreshCcw,
+  SkipForward,
 } from 'lucide-react';
 
 // ============================================================================
@@ -898,35 +899,58 @@ const VRLessonPlayerInner = () => {
         }
         
         // Handle correct answer index
-        let correctIndex = mcq.correct_option_index ?? 0;
-        if (typeof correctIndex !== 'number') {
-          correctIndex = parseInt(String(correctIndex), 10) || 0;
+        let rawIndex = mcq.correct_option_index ?? 0;
+        if (typeof rawIndex !== 'number') {
+          rawIndex = parseInt(String(rawIndex), 10) || 0;
         }
-        // Handle if correct answer is stored as 1-indexed
+        // Handle if correct answer is stored with alternate field name
         if ((mcq as any).correct_answer_index !== undefined) {
-          correctIndex = (mcq as any).correct_answer_index;
+          rawIndex = (mcq as any).correct_answer_index;
         }
         // Handle if correct answer is stored as letter (A, B, C, D)
         const correctLetter = (mcq as any).correct_answer || (mcq as any).correct_option;
         if (typeof correctLetter === 'string' && correctLetter.length === 1) {
           const letterIndex = correctLetter.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
-          if (letterIndex >= 0 && letterIndex < 4) {
-            correctIndex = letterIndex;
+          if (letterIndex >= 0 && letterIndex < options.length) {
+            rawIndex = letterIndex; // Already 0-based from letter conversion
+          }
+        } else {
+          // CRITICAL FIX: Convert 1-based DB index to 0-based frontend index
+          // DB stores: 1=A, 2=B, 3=C, 4=D; Frontend expects: 0=A, 1=B, 2=C, 3=D
+          if (rawIndex >= 1 && rawIndex <= options.length) {
+            rawIndex = rawIndex - 1;
           }
         }
+        
+        // Validate bounds
+        const correctIndex = Math.max(0, Math.min(rawIndex, options.length - 1));
 
         return {
           id: mcq.id || `mcq_${Math.random().toString(36).substr(2, 9)}`,
           question: mcq.question || (mcq as any).question_text || '',
           options: options,
-          correct_option_index: correctIndex,
+          correctAnswer: correctIndex, // 0-based index for frontend
           explanation: mcq.explanation || (mcq as any).explanation_text || '',
         };
       }).filter(mcq => mcq.question && mcq.options.length > 0); // Only include valid MCQs
     }
-    // Fallback to embedded MCQs
+    // Fallback to embedded MCQs - apply same conversion
     const embeddedMcqs = activeLesson?.topic?.mcqs || [];
-    return embeddedMcqs.filter((mcq: any) => mcq.question && mcq.options?.length > 0);
+    return embeddedMcqs
+      .filter((mcq: any) => mcq.question && mcq.options?.length > 0)
+      .map((mcq: any) => {
+        const options = mcq.options || [];
+        let rawIdx = mcq.correct_option_index ?? 0;
+        if (typeof rawIdx !== 'number') rawIdx = parseInt(String(rawIdx), 10) || 0;
+        // Convert 1-based to 0-based if needed
+        if (rawIdx >= 1 && rawIdx <= options.length) {
+          rawIdx = rawIdx - 1;
+        }
+        return {
+          ...mcq,
+          correctAnswer: Math.max(0, Math.min(rawIdx, options.length - 1)),
+        };
+      });
   }, [fetchedMCQs, activeLesson]);
   
   const currentMcq = mcqs[currentMcqIndex];
@@ -1723,6 +1747,22 @@ const VRLessonPlayerInner = () => {
   // Legacy handler for backward compatibility
   const handleNext = handleContinue;
 
+  // Skip to Quiz - allows user to skip intro/explanation/outro and go directly to quiz
+  const handleSkipToQuiz = useCallback(() => {
+    cleanupAudio();
+    setTtsStatus('ready');
+    setWaitingForUser(false);
+    lastPlayedPhaseRef.current = null;
+    
+    if (mcqs.length > 0) {
+      setPhase('quiz');
+    } else {
+      setPhase('completed');
+      saveProgress(lessonId, { completedAt: new Date().toISOString() });
+      saveLessonCompletionToFirestore();
+    }
+  }, [mcqs, setPhase, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
+
   // ============================================================================
   // Chat Functions with TTS
   // ============================================================================
@@ -1892,7 +1932,7 @@ const VRLessonPlayerInner = () => {
         if (idx === currentMcqIndex && selectedAnswer !== null) {
           finalAnswers[mcq.id] = selectedAnswer;
         }
-        if (answer === mcq.correct_option_index) correct++;
+        if (answer === mcq.correctAnswer) correct++;
       });
       
       // Submit results
@@ -2479,6 +2519,22 @@ const VRLessonPlayerInner = () => {
                   Replay
                 </button>
 
+                {/* Skip to Quiz Button - Show during TTS phases when MCQs available */}
+                {['intro', 'explanation', 'outro'].includes(lessonPhase) && mcqs.length > 0 && (
+                  <motion.button
+                    onClick={handleSkipToQuiz}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[10px] font-semibold
+                             text-amber-200 bg-gradient-to-r from-amber-600/80 to-orange-600/80 
+                             hover:from-amber-500 hover:to-orange-500 
+                             rounded-lg border border-amber-500/50 shadow-lg shadow-amber-500/20 transition-all"
+                  >
+                    <SkipForward className="w-3 h-3" />
+                    Skip to Quiz
+                  </motion.button>
+                )}
+
                 {/* Main Continue Button - Highlighted when waiting for user */}
                 <motion.button
                   onClick={handleContinue}
@@ -2538,7 +2594,7 @@ const VRLessonPlayerInner = () => {
               <div className="space-y-1.5 mb-2">
                 {currentMcq.options.map((option, idx) => {
                   const isSelected = selectedAnswer === idx;
-                  const isCorrect = idx === currentMcq.correct_option_index;
+                  const isCorrect = idx === currentMcq.correctAnswer;
                   const showCorrect = showMcqResult && isCorrect;
                   const showWrong = showMcqResult && isSelected && !isCorrect;
 
@@ -2621,9 +2677,7 @@ const VRLessonPlayerInner = () => {
                 <div className="mb-4 p-4 bg-slate-800/50 rounded-xl inline-block">
                   <p className="text-xs text-slate-400 mb-1">Score</p>
                   <p className="text-3xl font-bold text-emerald-400">
-                    {Object.values(mcqAnswers).filter((ans, idx) => 
-                      ans === mcqs[idx]?.correct_option_index
-                    ).length}/{mcqs.length}
+                    {mcqs.filter((mcq) => mcqAnswers[mcq.id] === mcq.correctAnswer).length}/{mcqs.length}
                   </p>
                 </div>
               )}
