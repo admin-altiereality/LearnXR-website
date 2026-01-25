@@ -168,6 +168,13 @@ interface LessonProgress {
   score?: { correct: number; total: number };
 }
 
+interface TTSData {
+  id: string;
+  section: string;
+  audioUrl: string;
+  text?: string;
+}
+
 // ============================================================================
 // Debug Logger
 // ============================================================================
@@ -773,6 +780,20 @@ const VRLessonPlayerInner = () => {
             const parsed = JSON.parse(stored);
             console.log('  - Parsed successfully');
             
+            // DEBUG: Log ALL keys and language/ttsAudio status from sessionStorage
+            console.log('🔍 [Data Init] SessionStorage parsed contents:', {
+              allKeys: Object.keys(parsed),
+              hasLanguageField: 'language' in parsed,
+              languageValue: parsed.language,
+              hasTtsAudioField: 'ttsAudio' in parsed,
+              ttsAudioLength: parsed.ttsAudio?.length || 0,
+              ttsAudioSample: parsed.ttsAudio?.slice?.(0, 2)?.map?.((t: any) => ({
+                id: t.id,
+                language: t.language,
+                script_type: t.script_type,
+              })),
+            });
+            
             // Validate the parsed data
             if (parsed && typeof parsed === 'object') {
               const hasChapter = !!(parsed.chapter && parsed.chapter.chapter_id);
@@ -858,7 +879,7 @@ const VRLessonPlayerInner = () => {
   const [showWelcomeScreen, setShowWelcomeScreen] = useState(true);
   
   // TTS State - Pre-generated audio from Firestore (NO runtime generation)
-  const [ttsData, setTtsData] = useState<ChapterTTS[]>([]);
+  const [ttsData, setTtsData] = useState<TTSData[]>([]);
   const [ttsStatus, setTtsStatus] = useState<'idle' | 'loading' | 'ready' | 'playing' | 'paused' | 'error'>('idle');
   const [isMuted, setIsMuted] = useState(false);
   const [avatarReady, setAvatarReady] = useState(false);
@@ -1009,7 +1030,8 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchMCQs = async () => {
-      const lessonLanguage = extraLessonData?.language || activeLesson?.topic?.language || 'en';
+      // Check topic level (new) first, then root level (old), then context
+      const lessonLanguage = extraLessonData?.topic?.language || extraLessonData?.language || activeLesson?.topic?.language || 'en';
       
       // Priority 1: Check sessionStorage for embedded MCQs (from bundle)
       if (extraLessonData?.topic?.mcqs && Array.isArray(extraLessonData.topic.mcqs)) {
@@ -1295,13 +1317,31 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchTTSData = async () => {
-      // First, check if we have TTS audio in sessionStorage (from bundle)
-      const lessonLanguage = extraLessonData?.language || 'en';
+      if (!extraLessonData) return;
       
-      // Priority 1: Check ttsAudio directly from extraLessonData (from sessionStorage)
-      const ttsAudioFromStorage = extraLessonData?.ttsAudio || extraLessonData?.topic?.ttsAudio;
+      // Check both root level (old) and topic level (new - after LessonContext saves)
+      const lessonLanguage = extraLessonData?.topic?.language || extraLessonData?.language || 'en';
+      
+      // DEBUG: Log what we're receiving from sessionStorage
+      console.log('🔍 [VRLessonPlayer TTS] Debug - extraLessonData contents:', {
+        hasLanguageRoot: 'language' in extraLessonData,
+        languageRoot: extraLessonData?.language,
+        hasLanguageTopic: !!(extraLessonData?.topic && 'language' in extraLessonData.topic),
+        languageTopic: extraLessonData?.topic?.language,
+        lessonLanguageUsed: lessonLanguage,
+        hasTtsAudioRoot: 'ttsAudio' in extraLessonData,
+        ttsAudioLengthRoot: extraLessonData?.ttsAudio?.length || 0,
+        hasTtsAudioTopic: !!(extraLessonData?.topic && 'ttsAudio' in extraLessonData.topic),
+        ttsAudioLengthTopic: extraLessonData?.topic?.ttsAudio?.length || 0,
+        allKeys: Object.keys(extraLessonData),
+        topicKeys: extraLessonData?.topic ? Object.keys(extraLessonData.topic) : [],
+      });
+      
+      // Priority 1: Check if TTS audio is already in extraLessonData (from bundle)
+      // Check both topic level (new - after LessonContext saves) and root level (old)
+      const ttsAudioFromStorage = extraLessonData?.topic?.ttsAudio || extraLessonData?.ttsAudio;
       if (ttsAudioFromStorage && Array.isArray(ttsAudioFromStorage)) {
-        // Filter TTS by language (strict match)
+        // Filter by language (strict match)
         const languageFilteredTTS = ttsAudioFromStorage.filter((tts: any) => {
           const ttsLang = (tts.language || 'en').toLowerCase().trim();
           const targetLang = lessonLanguage.toLowerCase().trim();
@@ -1309,68 +1349,76 @@ const VRLessonPlayerInner = () => {
         });
         
         if (languageFilteredTTS.length > 0) {
-          // Convert to ChapterTTS format
-          const convertedTTS: ChapterTTS[] = languageFilteredTTS.map((tts: any) => ({
+          const convertedTTS: TTSData[] = languageFilteredTTS.map((tts: any) => ({
             id: tts.id || '',
             section: tts.script_type || tts.section || 'full',
-            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+            audioUrl: tts.audio_url || tts.audioUrl || tts.url || '',
             text: tts.text || tts.script_text || '',
-            language: tts.language || lessonLanguage, // Explicitly set language
           }));
           
           setTtsData(convertedTTS);
           setTtsStatus('ready');
-          log('✅', `Loaded ${convertedTTS.length} TTS entries from sessionStorage (language: ${lessonLanguage})`, {
-            ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, language: t.language, hasAudio: !!t.audio_url })),
+          log('✅', `Loaded ${convertedTTS.length} TTS entries from bundle (language: ${lessonLanguage})`, {
+            ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, hasAudio: !!t.audioUrl })),
           });
           return;
         } else {
-          log('⚠️', `No TTS found in sessionStorage for language ${lessonLanguage}`, {
+          log('⚠️', `No TTS found in bundle for language ${lessonLanguage}`, {
             totalTTS: ttsAudioFromStorage.length,
             sampleLanguages: ttsAudioFromStorage.slice(0, 3).map((t: any) => t.language || 'none'),
           });
         }
       }
       
-      // Fallback to Firestore if no TTS in sessionStorage
-      if (!activeLesson?.topic?.topic_id || !activeLesson?.chapter?.chapter_id) {
-        log('⚠️', 'Missing chapter/topic ID for TTS fetch');
+      // Priority 2: Fetch from Firestore using IDs
+      const ttsIds = extraLessonData?.topic?.tts_ids || extraLessonData?.chapter?.tts_ids || [];
+      if (ttsIds.length === 0) {
+        log('⚠️', 'No TTS IDs found');
         return;
       }
       
-      setTtsStatus('loading');
+      log('🔍', `Fetching ${ttsIds.length} TTS entries for language: ${lessonLanguage}...`);
+      const ttsResults: TTSData[] = [];
       
-      try {
-        const chapterId = activeLesson.chapter.chapter_id;
-        const topicId = activeLesson.topic.topic_id;
-        
-        log('🔍', 'Fetching pre-generated TTS from Firestore...', { chapterId, topicId, language: lessonLanguage });
-        const data = await getCachedTTS(chapterId, topicId);
-        
-        // Filter by language if language field exists
-        const filteredData = data.filter((tts: any) => {
-          const ttsLang = tts.language || 'en';
-          return ttsLang === lessonLanguage;
-        });
-        
-        if (filteredData.length > 0) {
-          setTtsData(filteredData);
-          setTtsStatus('ready');
-          log('✅', `Loaded ${filteredData.length} TTS entries from Firestore (language: ${lessonLanguage})`);
+      // Filter IDs by language (check if ID contains language indicator)
+      const languageTtsIds = ttsIds.filter((id: string) => {
+        if (lessonLanguage === 'hi') {
+          return id.includes('_hi') || id.includes('_hindi');
         } else {
-          setTtsData([]);
-          setTtsStatus('error');
-          log('⚠️', `No TTS data found in Firestore for language: ${lessonLanguage}`);
+          return !id.includes('_hi') && !id.includes('_hindi');
         }
-      } catch (error) {
-        console.error('Failed to fetch TTS data:', error);
-        setTtsStatus('error');
-        setTtsData([]);
+      });
+      
+      for (const ttsId of languageTtsIds.slice(0, 3)) { // Max 3 for intro/explanation/outro
+        try {
+          const ttsDoc = await getDoc(doc(db, 'chapter_tts', ttsId));
+          if (ttsDoc.exists()) {
+            const data = ttsDoc.data();
+            const ttsLang = data.language || 'en';
+            
+            // Only include if language matches
+            if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
+              ttsResults.push({
+                id: ttsId,
+                section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
+                audioUrl: data.audio_url || data.audioUrl,
+                text: data.text || data.content || '',
+              });
+              log('✅', `TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
+            }
+          }
+        } catch (err) {
+          log('❌', `TTS error for ${ttsId}: ${err}`);
+        }
       }
+      
+      setTtsData(ttsResults);
+      setTtsStatus(ttsResults.length > 0 ? 'ready' : 'error');
+      log('✅', `Loaded ${ttsResults.length} TTS entries (language: ${lessonLanguage})`);
     };
     
     fetchTTSData();
-  }, [activeLesson, extraLessonData]);
+  }, [extraLessonData]);
 
   // ============================================================================
   // Fetch 3D Assets from Firestore (Platform-aware)
@@ -1471,21 +1519,28 @@ const VRLessonPlayerInner = () => {
   // Get TTS Audio URL for Current Script Type
   // ============================================================================
 
-  const getTTSForCurrentPhase = useCallback((): ChapterTTS | null => {
+  const getTTSForCurrentPhase = useCallback((): TTSData | null => {
     if (ttsData.length === 0) return null;
     
-    // Map lesson phase to script_type
-    let scriptType: 'intro' | 'explanation' | 'outro' | 'full' = 'full';
-    if (lessonPhase === 'intro') scriptType = 'intro';
-    else if (lessonPhase === 'explanation') scriptType = 'explanation';
-    else if (lessonPhase === 'outro') scriptType = 'outro';
+    // Map lesson phase to section (handle both 'content' and 'explanation' phases)
+    let targetSection: string = 'full';
+    if (lessonPhase === 'intro') targetSection = 'intro';
+    else if (lessonPhase === 'explanation' || lessonPhase === 'content') targetSection = 'explanation';
+    else if (lessonPhase === 'outro') targetSection = 'outro';
     
-    // Find matching TTS entry
-    const match = ttsData.find(tts => tts.script_type === scriptType);
-    if (match) return match;
+    // Find matching TTS entry (check section field)
+    const match = ttsData.find(tts => {
+      const ttsSection = tts.section;
+      return ttsSection === targetSection;
+    });
+    
+    if (match) {
+      log('✅', `Found TTS for ${lessonPhase}: ${match.section}`);
+      return match;
+    }
     
     // Fallback: try 'full' type if specific not found
-    const fullMatch = ttsData.find(tts => tts.script_type === 'full');
+    const fullMatch = ttsData.find(tts => tts.section === 'full');
     if (fullMatch) return fullMatch;
     
     // Return first available
@@ -1511,7 +1566,7 @@ const VRLessonPlayerInner = () => {
     }
     
     const ttsEntry = getTTSForCurrentPhase();
-    if (!ttsEntry?.audio_url) {
+    if (!ttsEntry?.audioUrl) {
       log('⚠️', 'No audio URL available for current phase');
       setTtsStatus('error');
       // Still allow progression even without audio
@@ -1519,7 +1574,7 @@ const VRLessonPlayerInner = () => {
       return;
     }
     
-    log('🎵', `Playing TTS for ${lessonPhase}:`, ttsEntry.audio_url.substring(0, 60));
+    log('🎵', `Playing TTS for ${lessonPhase}:`, ttsEntry.audioUrl.substring(0, 60));
     
     // Clean up any existing audio first
     cleanupAudio();
@@ -1533,11 +1588,6 @@ const VRLessonPlayerInner = () => {
     
     // IMPORTANT: Prevent looping
     audio.loop = false;
-    
-    // Set duration from TTS data if available
-    if (ttsEntry.duration_seconds) {
-      setAudioDuration(ttsEntry.duration_seconds);
-    }
     
     audio.onloadedmetadata = () => {
       setAudioDuration(audio.duration);
@@ -1555,7 +1605,7 @@ const VRLessonPlayerInner = () => {
     audio.onplay = () => {
       log('▶️', 'Audio started playing');
       setTtsStatus('playing');
-      setCurrentAudioUrl(ttsEntry.audio_url || null);
+      setCurrentAudioUrl(ttsEntry.audioUrl || null);
       setUserPaused(false);
     };
     
@@ -1589,7 +1639,7 @@ const VRLessonPlayerInner = () => {
     };
     
     // Set source and play
-    audio.src = ttsEntry.audio_url;
+    audio.src = ttsEntry.audioUrl;
     audio.play().catch(err => {
       console.error('Failed to play audio:', err);
       setTtsStatus('error');
