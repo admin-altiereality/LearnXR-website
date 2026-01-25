@@ -23,9 +23,17 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
+import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
 import { db } from '../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home, Play } from 'lucide-react';
+
+// WebXR Utilities
+import {
+  LayoutEngine,
+  createLayoutEngine,
+  DEBUG_CATEGORIES,
+} from '../utils/webxr';
 
 // ============================================================================
 // Types
@@ -83,7 +91,7 @@ interface MeshyAsset {
 }
 
 type LoadingState = 'loading' | 'ready' | 'error' | 'no-vr' | 'in-vr';
-type LessonPhase = 'intro' | 'content' | 'outro' | 'mcq' | 'complete';
+type LessonPhase = 'waiting' | 'intro' | 'content' | 'outro' | 'mcq' | 'complete';
 
 // ============================================================================
 // Error Boundary Component
@@ -151,6 +159,20 @@ const XRLessonPlayerV3: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const assetsGroupRef = useRef<THREE.Group | null>(null);
   const primaryAssetRef = useRef<THREE.Group | null>(null);
+  const groundPlaneRef = useRef<THREE.Mesh | null>(null);
+  
+  // Professional Layout System - handles zones, collision, and placement
+  const professionalLayoutRef = useRef<ProfessionalLayoutSystem | null>(null);
+  const placedAssetsRef = useRef<PlacedAsset[]>([]);
+  
+  // Ground plane constants
+  const GROUND_LEVEL = 0;        // Y coordinate of the ground plane
+  const TABLE_HEIGHT = 1.0;      // Height for placing objects (1m above ground)
+  const ASSET_DISTANCE = 2.5;    // Distance from user to asset (closer for better view)
+  const ASSET_RIGHT_OFFSET = 1.2; // How far right of center
+  
+  // Normalized asset sizing - ALL assets scaled to this size
+  const NORMALIZED_SIZE = 1.0;   // All assets fit within 1.0m bounding box for better viewing
   
   // XR Controller refs
   const controller1Ref = useRef<THREE.Group | null>(null);
@@ -165,8 +187,13 @@ const XRLessonPlayerV3: React.FC = () => {
   // VR UI refs
   const scriptPanelRef = useRef<THREE.Mesh | null>(null);
   const mcqPanelRef = useRef<THREE.Mesh | null>(null);
+  const startPanelRef = useRef<THREE.Mesh | null>(null);
   const lastScriptPanelUpdateRef = useRef<number>(0);
   const lastProgressPercentRef = useRef<number>(-1);
+  const lastMcqPanelStateRef = useRef<string>(''); // Track MCQ panel state to avoid redundant recreations
+  
+  // WebXR Systems refs
+  const layoutEngineRef = useRef<LayoutEngine | null>(null);
   
   // State
   const [loadingState, setLoadingState] = useState<LoadingState>('loading');
@@ -181,7 +208,8 @@ const XRLessonPlayerV3: React.FC = () => {
   const [ttsData, setTtsData] = useState<TTSData[]>([]);
   const [mcqData, setMcqData] = useState<MCQData[]>([]);
   const [meshyAssets, setMeshyAssets] = useState<MeshyAsset[]>([]);
-  const [lessonPhase, setLessonPhase] = useState<LessonPhase>('intro');
+  const [lessonPhase, setLessonPhase] = useState<LessonPhase>('waiting');
+  const [lessonStarted, setLessonStarted] = useState(false);
   const [currentTtsIndex, setCurrentTtsIndex] = useState(0);
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -197,14 +225,66 @@ const XRLessonPlayerV3: React.FC = () => {
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   
-  // Debug state
+  // Debug state - expanded for comprehensive logging
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [debugExpanded, setDebugExpanded] = useState(true);
   
-  // Debug logger
-  const addDebug = useCallback((msg: string) => {
-    console.log(`[V3 Debug] ${msg}`);
-    setDebugInfo(prev => [...prev.slice(-15), `${new Date().toLocaleTimeString()}: ${msg}`]);
+  // Debug logger with category support - enhanced with timestamps and structured output
+  const addDebug = useCallback((msg: string, category?: keyof typeof DEBUG_CATEGORIES) => {
+    const prefix = category ? DEBUG_CATEGORIES[category] : '[V3]';
+    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    const fullMsg = `${prefix} ${msg}`;
+    console.log(`[${timestamp}] ${fullMsg}`);
+    setDebugInfo(prev => [...prev.slice(-30), `${timestamp}: ${msg}`]); // Increased log retention
   }, []);
+  
+  // Structured debug helpers with enhanced context
+  const debugXR = useCallback((msg: string) => {
+    addDebug(`🥽 ${msg}`, 'XR');
+  }, [addDebug]);
+  
+  const debugLayout = useCallback((msg: string) => {
+    addDebug(`📐 ${msg}`, 'LAYOUT');
+  }, [addDebug]);
+  
+  const debugUI = useCallback((msg: string) => {
+    addDebug(`🖼️ ${msg}`, 'UI');
+  }, [addDebug]);
+  
+  const debugAsset = useCallback((msg: string) => {
+    addDebug(`📦 ${msg}`, 'ASSET');
+  }, [addDebug]);
+  
+  const debugInteraction = useCallback((msg: string) => {
+    addDebug(`👆 ${msg}`, 'INTERACTION');
+  }, [addDebug]);
+  
+  const debugTTS = useCallback((msg: string) => {
+    addDebug(`🔊 ${msg}`, 'TTS');
+  }, [addDebug]);
+  
+  const debugQuiz = useCallback((msg: string) => {
+    addDebug(`❓ ${msg}`, 'QUIZ');
+  }, [addDebug]);
+  
+  // Comprehensive state logger - logs current state summary
+  const logStateSummary = useCallback(() => {
+    const summary = {
+      loadingState,
+      lessonPhase,
+      lessonStarted,
+      ttsCount: ttsData.length,
+      mcqCount: mcqData.length,
+      currentMcqIndex,
+      mcqScore,
+      assetsLoaded,
+      isAudioPlaying,
+      ttsState,
+      layoutEngineReady: layoutEngineRef.current?.isReady() || false,
+    };
+    console.log('[STATE SUMMARY]', summary);
+    addDebug(`State: phase=${lessonPhase}, started=${lessonStarted}, tts=${ttsData.length}, mcq=${mcqData.length}, score=${mcqScore}/${mcqData.length}`);
+  }, [loadingState, lessonPhase, lessonStarted, ttsData.length, mcqData.length, currentMcqIndex, mcqScore, assetsLoaded, isAudioPlaying, ttsState, addDebug]);
   
   // ============================================================================
   // Load Lesson Data from SessionStorage
@@ -325,7 +405,9 @@ const XRLessonPlayerV3: React.FC = () => {
     const fetchTTSData = async () => {
       if (!lessonData) return;
       
-      const lessonLanguage = (lessonData as any).language || 'en';
+      // CRITICAL: Language is in topic.language, not lessonData.language
+      const lessonLanguage = (lessonData as any).topic?.language || (lessonData as any).language || 'en';
+      console.log('[TTS FETCH] Detected lesson language:', lessonLanguage);
       
       // Priority 1: Check if TTS audio is already in lessonData (from bundle)
       const ttsAudioFromStorage = (lessonData as any).ttsAudio;
@@ -338,17 +420,68 @@ const XRLessonPlayerV3: React.FC = () => {
         });
         
         if (languageFilteredTTS.length > 0) {
-          const convertedTTS: TTSData[] = languageFilteredTTS.map((tts: any) => ({
-            id: tts.id || '',
-            section: tts.script_type || tts.section || 'full',
-            audioUrl: tts.audio_url || tts.audioUrl || tts.url || '',
-            text: tts.text || tts.script_text || '',
-          }));
+          // VERSION MARKER - v3.0 - Camera-relative asset positioning + TTS fix
+          console.log('[TTS v3.0] ════════════════════════════════════════');
+          console.log('[TTS v3.0] Processing', languageFilteredTTS.length, 'TTS entries');
+          addDebug(`[v3.0] Processing ${languageFilteredTTS.length} TTS for ${lessonLanguage}`);
+          
+          const convertedTTS: TTSData[] = languageFilteredTTS.map((tts: any, index: number) => {
+            const rawId = tts.id || '';
+            const rawScriptType = tts.script_type;
+            
+            console.log(`[TTS v3.0] #${index + 1}: script_type="${rawScriptType}", id contains: intro=${rawId.includes('intro')}, expl=${rawId.includes('explanation')}, outro=${rawId.includes('outro')}`);
+            
+            // FORCE section extraction - ALWAYS extract from script_type or ID
+            let sectionType: string;
+            
+            // Priority 1: Use script_type directly if valid
+            if (rawScriptType === 'intro' || rawScriptType === 'introduction') {
+              sectionType = 'intro';
+              console.log(`[TTS v3.0]   → script_type match: intro`);
+            } else if (rawScriptType === 'explanation' || rawScriptType === 'content') {
+              sectionType = 'explanation';
+              console.log(`[TTS v3.0]   → script_type match: explanation`);
+            } else if (rawScriptType === 'outro' || rawScriptType === 'conclusion' || rawScriptType === 'summary') {
+              sectionType = 'outro';
+              console.log(`[TTS v3.0]   → script_type match: outro`);
+            }
+            // Priority 2: Extract from ID
+            else if (rawId.toLowerCase().includes('intro')) {
+              sectionType = 'intro';
+              console.log(`[TTS v3.0]   → ID match: intro`);
+            } else if (rawId.toLowerCase().includes('explanation')) {
+              sectionType = 'explanation';
+              console.log(`[TTS v3.0]   → ID match: explanation`);
+            } else if (rawId.toLowerCase().includes('outro')) {
+              sectionType = 'outro';
+              console.log(`[TTS v3.0]   → ID match: outro`);
+            }
+            // Priority 3: Position in array
+            else {
+              if (index === 0) sectionType = 'intro';
+              else if (index === languageFilteredTTS.length - 1) sectionType = 'outro';
+              else sectionType = 'explanation';
+              console.log(`[TTS v3.0]   → Position fallback: ${sectionType}`);
+            }
+            
+            console.log(`[TTS v3.0]   FINAL: "${sectionType}"`);
+            
+            return {
+              id: rawId,
+              section: sectionType,
+              audioUrl: tts.audio_url || tts.audioUrl || tts.url || '',
+              text: tts.text || tts.script_text || '',
+            };
+          });
+          
+          console.log('[TTS v3.0] ════════════════════════════════════════');
+          console.log('[TTS v3.0] RESULTS:');
+          convertedTTS.forEach((t, i) => {
+            console.log(`[TTS v3.0]   #${i + 1}: section="${t.section}"`);
+          });
           
           setTtsData(convertedTTS);
-          addDebug(`✅ Loaded ${convertedTTS.length} TTS entries from bundle (language: ${lessonLanguage})`, {
-            ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, hasAudio: !!t.audioUrl })),
-          });
+          addDebug(`[v3.0] TTS: ${convertedTTS.map(t => t.section).join(', ')}`);
           return;
         } else {
           addDebug(`⚠️ No TTS found in bundle for language ${lessonLanguage}`, {
@@ -386,13 +519,20 @@ const XRLessonPlayerV3: React.FC = () => {
             
             // Only include if language matches
             if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
+              // Extract section from ID (more reliable than data.section)
+              let section = 'content';
+              const idLower = ttsId.toLowerCase();
+              if (idLower.includes('intro')) section = 'intro';
+              else if (idLower.includes('explanation')) section = 'explanation';
+              else if (idLower.includes('outro')) section = 'outro';
+              
               ttsResults.push({
                 id: ttsId,
-                section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
+                section: section,
                 audioUrl: data.audio_url || data.audioUrl,
                 text: data.text || data.content || '',
               });
-              addDebug(`TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
+              addDebug(`TTS loaded: ${section} (${ttsLang})`);
             }
           }
         } catch (err) {
@@ -401,6 +541,21 @@ const XRLessonPlayerV3: React.FC = () => {
       }
       
       setTtsData(ttsResults);
+      
+      // Comprehensive TTS debug logging
+      console.log('[TTS DEBUG] ========================================');
+      console.log('[TTS DEBUG] Language:', lessonLanguage);
+      console.log('[TTS DEBUG] Total TTS loaded:', ttsResults.length);
+      ttsResults.forEach((tts, idx) => {
+        console.log(`[TTS DEBUG] TTS #${idx + 1}:`, {
+          id: tts.id,
+          section: tts.section,
+          audioUrl: tts.audioUrl?.substring(0, 80) + '...',
+          hasText: !!tts.text,
+        });
+      });
+      console.log('[TTS DEBUG] ========================================');
+      
       addDebug(`✅ Loaded ${ttsResults.length} TTS entries (language: ${lessonLanguage})`);
     };
     
@@ -415,7 +570,9 @@ const XRLessonPlayerV3: React.FC = () => {
     const fetchMCQData = async () => {
       if (!lessonData) return;
       
-      const lessonLanguage = (lessonData as any).language || 'en';
+      // CRITICAL: Language is in topic.language, not lessonData.language
+      const lessonLanguage = (lessonData as any).topic?.language || (lessonData as any).language || 'en';
+      console.log('[MCQ FETCH] Detected lesson language:', lessonLanguage);
       
       // Priority 1: Check if MCQs are already in lessonData (from bundle)
       if ((lessonData as any).topic?.mcqs && Array.isArray((lessonData as any).topic.mcqs)) {
@@ -439,6 +596,22 @@ const XRLessonPlayerV3: React.FC = () => {
               explanation: mcq.explanation || '',
             };
           });
+          
+          // Comprehensive MCQ debug logging for bundle data
+          console.log('[MCQ DEBUG FROM BUNDLE] ========================================');
+          console.log('[MCQ DEBUG] Language:', lessonLanguage);
+          console.log('[MCQ DEBUG] Total MCQs from bundle:', convertedMCQs.length);
+          convertedMCQs.forEach((mcq, idx) => {
+            console.log(`[MCQ DEBUG] MCQ #${idx + 1}:`, {
+              id: mcq.id,
+              question: mcq.question?.substring(0, 50) + '...',
+              optionsCount: mcq.options?.length,
+              options: mcq.options,
+              correctAnswer: mcq.correctAnswer,
+              correctOptionText: mcq.options?.[mcq.correctAnswer] || 'N/A',
+            });
+          });
+          console.log('[MCQ DEBUG] ========================================');
           
           setMcqData(convertedMCQs);
           addDebug(`✅ Loaded ${convertedMCQs.length} MCQs from bundle (language: ${lessonLanguage})`);
@@ -498,6 +671,23 @@ const XRLessonPlayerV3: React.FC = () => {
       }
       
       setMcqData(mcqResults);
+      
+      // Comprehensive MCQ debug logging
+      console.log('[MCQ DEBUG] ========================================');
+      console.log('[MCQ DEBUG] Language:', lessonLanguage);
+      console.log('[MCQ DEBUG] Total MCQs loaded:', mcqResults.length);
+      mcqResults.forEach((mcq, idx) => {
+        console.log(`[MCQ DEBUG] MCQ #${idx + 1}:`, {
+          id: mcq.id,
+          question: mcq.question?.substring(0, 50) + '...',
+          optionsCount: mcq.options?.length,
+          options: mcq.options,
+          correctAnswer: mcq.correctAnswer,
+          correctOptionText: mcq.options?.[mcq.correctAnswer] || 'N/A',
+        });
+      });
+      console.log('[MCQ DEBUG] ========================================');
+      
       addDebug(`✅ Loaded ${mcqResults.length} MCQs (language: ${lessonLanguage})`);
     };
     
@@ -771,13 +961,169 @@ const XRLessonPlayerV3: React.FC = () => {
           
           // Listen for session start/end
           rendererRef.current.xr.addEventListener('sessionstart', () => {
-            console.log('[XRLessonPlayerV3] VR session started');
+            console.log(`${DEBUG_CATEGORIES.XR} VR session started`);
             setLoadingState('in-vr');
+            
+            // Initialize layout engine and compute anchor from current head pose
+            if (!layoutEngineRef.current) {
+              layoutEngineRef.current = createLayoutEngine();
+            }
+            
+            // CRITICAL: Must call initialize() before computeAnchor() for isReady() to return true
+            const xrSession = rendererRef.current?.xr.getSession();
+            if (xrSession) {
+              layoutEngineRef.current.initialize(xrSession);
+              console.log(`${DEBUG_CATEGORIES.LAYOUT} Layout engine initialized with XR session`);
+            } else {
+              layoutEngineRef.current.initialize();
+              console.log(`${DEBUG_CATEGORIES.LAYOUT} Layout engine initialized without XR session`);
+            }
+            
+            // Compute layout anchor after a brief delay for head tracking to stabilize
+            setTimeout(() => {
+              if (layoutEngineRef.current && cameraRef.current) {
+                console.log(`\n🎯 [VR START] ════════════════════════════════════════`);
+                console.log(`🎯 [VR START] Computing initial anchor on VR session start`);
+                
+                // Compute anchor
+                layoutEngineRef.current.computeAnchor(cameraRef.current);
+                
+                // Get camera position for asset repositioning
+                const cameraPos = new THREE.Vector3();
+                cameraRef.current.getWorldPosition(cameraPos);
+                console.log(`🎯 [VR START] Camera position: (${cameraPos.x.toFixed(3)}, ${cameraPos.y.toFixed(3)}, ${cameraPos.z.toFixed(3)})`);
+                
+                addDebug(`VR Session Started`);
+                addDebug(`Camera Y: ${cameraPos.y.toFixed(2)}m`);
+                
+                // ═══════════════════════════════════════════════════════════════════
+                // PROFESSIONAL LAYOUT: Update user pose and reposition assets
+                // Uses collision-aware placement with zone management
+                // ═══════════════════════════════════════════════════════════════════
+                addDebug(`═══ VR SESSION STARTED ═══`);
+                addDebug(`Camera Y: ${cameraPos.y.toFixed(2)}m`);
+                
+                // Update the professional layout system with current user pose
+                if (professionalLayoutRef.current && cameraRef.current) {
+                  professionalLayoutRef.current.updateUserPose(cameraRef.current, GROUND_LEVEL);
+                  console.log(`[LayoutSystem] User pose updated for VR session`);
+                  addDebug(`Layout System: User pose updated`);
+                }
+                
+                addDebug(`Ground Level: ${GROUND_LEVEL}m`);
+                addDebug(`Table Height: ${TABLE_HEIGHT}m`);
+                addDebug(`Target Asset Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`);
+                
+                const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
+                if (assetsGroup && assetsGroup.children.length > 0) {
+                  console.log(`🎯 [VR START] REPOSITIONING ${assetsGroup.children.length} assets with Professional Layout System`);
+                  addDebug(`🔄 Professional layout for ${assetsGroup.children.length} asset(s)`);
+                  
+                  // Get camera forward direction (flattened)
+                  const rawForward = new THREE.Vector3(0, 0, -1);
+                  rawForward.applyQuaternion(cameraRef.current.quaternion);
+                  const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z);
+                  if (flatForward.lengthSq() < 0.001) flatForward.set(0, 0, -1);
+                  flatForward.normalize();
+                  
+                  // Get right direction
+                  const rightDir = new THREE.Vector3();
+                  rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
+                  
+                  console.log(`🎯 [VR START] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
+                  console.log(`🎯 [VR START] Right: (${rightDir.x.toFixed(3)}, 0, ${rightDir.z.toFixed(3)})`);
+                  
+                  // Reposition each asset - GROUND PLANE REFERENCED + MULTI-ASSET LAYOUT
+                  // ═══════════════════════════════════════════════════════════════════════
+                  // MULTI-ASSET LAYOUT STRATEGY (VR START):
+                  // - Primary asset: Front-right of user (comfortable viewing)
+                  // - Secondary assets: Positioned to the LEFT of primary in an arc
+                  // - Each secondary is 45° apart for clear separation
+                  // ═══════════════════════════════════════════════════════════════════════
+                  const totalAssets = assetsGroup.children.length;
+                  const SECONDARY_ARC_ANGLE = 45;                // 45° between assets for clear separation
+                  const SECONDARY_LEFT_OFFSET = 1.2;             // 1.2m to the left of primary
+                  
+                  console.log(`🎯 [VR START] ═══════════════════════════════════════`);
+                  console.log(`🎯 [VR START] MULTI-ASSET LAYOUT for ${totalAssets} assets`);
+                  console.log(`🎯 [VR START] Camera: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
+                  console.log(`🎯 [VR START] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
+                  console.log(`🎯 [VR START] Right: (${rightDir.x.toFixed(3)}, 0, ${rightDir.z.toFixed(3)})`);
+                  
+                  assetsGroup.children.forEach((assetWrapper, index) => {
+                    const oldPos = assetWrapper.position.clone();
+                    
+                    // Y is ALWAYS: GROUND_LEVEL + TABLE_HEIGHT (model bottom at table level)
+                    const newY = GROUND_LEVEL + TABLE_HEIGHT;
+                    
+                    let newX: number, newZ: number, layoutType: string;
+                    
+                    if (index === 0 || totalAssets === 1) {
+                      // PRIMARY ASSET: Front-right of user (to the right of UI panel)
+                      newX = cameraPos.x + flatForward.x * ASSET_DISTANCE + rightDir.x * ASSET_RIGHT_OFFSET;
+                      newZ = cameraPos.z + flatForward.z * ASSET_DISTANCE + rightDir.z * ASSET_RIGHT_OFFSET;
+                      layoutType = 'PRIMARY_RIGHT';
+                    } else {
+                      // SECONDARY ASSETS: To the LEFT of primary, in front of user
+                      // Each secondary is positioned at an angle to the LEFT
+                      const angleOffset = -index * SECONDARY_ARC_ANGLE; // Negative = to the LEFT
+                      const angleRad = THREE.MathUtils.degToRad(angleOffset);
+                      
+                      // Rotate forward direction by angle (around Y axis) - LEFT rotation
+                      const rotatedForward = new THREE.Vector3(
+                        flatForward.x * Math.cos(angleRad) - flatForward.z * Math.sin(angleRad),
+                        0,
+                        flatForward.x * Math.sin(angleRad) + flatForward.z * Math.cos(angleRad)
+                      ).normalize();
+                      
+                      // Position: forward direction rotated LEFT, with LEFT offset
+                      newX = cameraPos.x + rotatedForward.x * ASSET_DISTANCE - rightDir.x * SECONDARY_LEFT_OFFSET;
+                      newZ = cameraPos.z + rotatedForward.z * ASSET_DISTANCE - rightDir.z * SECONDARY_LEFT_OFFSET;
+                      layoutType = `SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
+                    }
+                    
+                    assetWrapper.position.set(newX, newY, newZ);
+                    
+                    // Make asset face the camera (rotate to look at user)
+                    assetWrapper.lookAt(cameraPos.x, newY, cameraPos.z);
+                    
+                    // Store original position for reset
+                    assetWrapper.userData.originalPosition = assetWrapper.position.clone();
+                    assetWrapper.userData.originalRotation = assetWrapper.rotation.clone();
+                    assetWrapper.userData.originalScale = assetWrapper.scale.clone();
+                    
+                    console.log(`🎯 [VR START] Asset ${index + 1}/${totalAssets} [${layoutType}]:`);
+                    console.log(`🎯 [VR START]   Old: (${oldPos.x.toFixed(2)}, ${oldPos.y.toFixed(2)}, ${oldPos.z.toFixed(2)})`);
+                    console.log(`🎯 [VR START]   New: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
+                    
+                    addDebug(`Asset ${index + 1} [${layoutType}]:`);
+                    addDebug(`  Position: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
+                  });
+                  console.log(`🎯 [VR START] ═══════════════════════════════════════`);
+                } else {
+                  console.log(`🎯 [VR START] No assets group found or empty`);
+                  addDebug(`No assets to reposition`);
+                }
+                
+                console.log(`🎯 [VR START] ════════════════════════════════════════\n`);
+                
+                // Create START panel if lesson hasn't started
+                if (!lessonStarted) {
+                  createStartPanel();
+                }
+              }
+            }, 500);
           });
           
           rendererRef.current.xr.addEventListener('sessionend', () => {
-            console.log('[XRLessonPlayerV3] VR session ended');
+            console.log(`${DEBUG_CATEGORIES.XR} VR session ended`);
             setLoadingState('ready');
+            
+            // Remove start panel if exists
+            if (startPanelRef.current && sceneRef.current) {
+              sceneRef.current.remove(startPanelRef.current);
+              startPanelRef.current = null;
+            }
           });
         } catch (vrErr: any) {
           console.error('[XRLessonPlayerV3] VR button creation error:', vrErr);
@@ -801,6 +1147,77 @@ const XRLessonPlayerV3: React.FC = () => {
     scene.add(hemiLight);
     
     console.log('[XRLessonPlayerV3] Lights added: Ambient, Directional, Hemisphere');
+    
+    // ═══════════════════════════════════════════════════════════════════════════
+    // GROUND PLANE - Invisible reference surface for consistent asset placement
+    // This provides a fixed Y=0 reference for all 3D assets
+    // ═══════════════════════════════════════════════════════════════════════════
+    const GROUND_Y = 0; // Ground level at Y=0
+    const groundGeometry = new THREE.PlaneGeometry(50, 50); // 50m x 50m plane
+    const groundMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0,           // Fully transparent - won't block skybox
+      side: THREE.DoubleSide,
+      depthWrite: false,    // Don't write to depth buffer
+    });
+    const groundPlane = new THREE.Mesh(groundGeometry, groundMaterial);
+    groundPlane.rotation.x = -Math.PI / 2; // Rotate to horizontal (XZ plane)
+    groundPlane.position.y = GROUND_Y;
+    groundPlane.name = 'groundPlane';
+    groundPlane.userData.isGround = true;
+    groundPlane.userData.groundY = GROUND_Y;
+    groundPlane.renderOrder = -1; // Render first (behind everything)
+    scene.add(groundPlane);
+    
+    // Store ground reference for asset positioning
+    groundPlaneRef.current = groundPlane;
+    
+    // Also add a subtle grid helper for development (semi-transparent)
+    // This helps visualize the ground plane during testing
+    const gridHelper = new THREE.GridHelper(20, 20, 0x444444, 0x222222);
+    gridHelper.position.y = GROUND_Y + 0.001; // Slightly above ground to prevent z-fighting
+    gridHelper.material.transparent = true;
+    gridHelper.material.opacity = 0.15; // Very subtle
+    gridHelper.name = 'groundGrid';
+    gridHelper.visible = false; // Hidden by default - can enable for debugging
+    scene.add(gridHelper);
+    
+    console.log(`[XRLessonPlayerV3] Ground plane added at Y=${GROUND_Y}`);
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROFESSIONAL LAYOUT SYSTEM INITIALIZATION
+    // Handles zone management, collision detection, and asset placement
+    // ═══════════════════════════════════════════════════════════════════════
+    const layoutSystem = new ProfessionalLayoutSystem({
+      uiZone: {
+        distance: 2.0,
+        height: 0.0,
+        width: 1.2,
+        depth: 0.1,
+      },
+      assetZone: {
+        minDistance: 2.0,
+        maxDistance: 4.0,
+        horizontalSpread: 90,
+        verticalOffset: TABLE_HEIGHT,
+      },
+      interactionZone: {
+        minDistance: 0.5,
+        maxDistance: 5.0,
+        floorY: GROUND_LEVEL,
+        ceilingY: 3.0,
+      },
+    });
+    layoutSystem.setNormalizedSize(NORMALIZED_SIZE);
+    professionalLayoutRef.current = layoutSystem;
+    
+    console.log(`[XRLessonPlayerV3] Professional Layout System initialized`);
+    addDebug(`═══ PROFESSIONAL LAYOUT SYSTEM ═══`);
+    addDebug(`Normalized Size: ${NORMALIZED_SIZE}m`);
+    addDebug(`UI Zone: 2.0m distance, left side`);
+    addDebug(`Asset Zone: 2.0-4.0m, right side`);
+    addDebug(`Collision Detection: ENABLED`);
     
     // Initialize raycaster for VR controller interaction
     const raycaster = new THREE.Raycaster();
@@ -894,8 +1311,8 @@ const XRLessonPlayerV3: React.FC = () => {
         
         raycaster.set(origin, direction);
         
-        // Check panels first (for button clicks)
-        const panels = [scriptPanelRef.current, mcqPanelRef.current].filter(Boolean) as THREE.Mesh[];
+        // Check panels first (for button clicks) - include start panel
+        const panels = [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].filter(Boolean) as THREE.Mesh[];
         const panelIntersects = raycaster.intersectObjects(panels, false);
         
         if (panelIntersects.length > 0) {
@@ -1142,6 +1559,9 @@ const XRLessonPlayerV3: React.FC = () => {
           if (mcqPanelRef.current && cameraRef.current) {
             mcqPanelRef.current.lookAt(cameraRef.current.position);
           }
+          if (startPanelRef.current && cameraRef.current) {
+            startPanelRef.current.lookAt(cameraRef.current.position);
+          }
           
           // Update raycast for controllers (for hover feedback)
           if (raycasterRef.current && reticleRef.current && controller1Ref.current) {
@@ -1161,8 +1581,8 @@ const XRLessonPlayerV3: React.FC = () => {
               
               raycaster.set(origin, direction);
               
-              // Check panels and 3D objects for hover
-              const panels = [scriptPanelRef.current, mcqPanelRef.current].filter(Boolean) as THREE.Mesh[];
+              // Check panels and 3D objects for hover - include start panel
+              const panels = [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].filter(Boolean) as THREE.Mesh[];
               const interactables: THREE.Object3D[] = [];
               sceneRef.current.traverse((obj) => {
                 if (obj.userData.isInteractable && obj.visible) {
@@ -1212,8 +1632,30 @@ const XRLessonPlayerV3: React.FC = () => {
             }
           }
           
-          // Update grabbed objects position
+          // Update grabbed objects position AND handle rotation/scale
           if (sceneRef.current) {
+            // Get XR session for input sources (thumbstick data)
+            const xrSession = rendererRef.current?.xr.getSession();
+            let thumbstickX = 0;
+            let thumbstickY = 0;
+            
+            if (xrSession) {
+              // Read thumbstick input from controllers
+              for (const inputSource of xrSession.inputSources) {
+                if (inputSource.gamepad) {
+                  const axes = inputSource.gamepad.axes;
+                  // Axes 2 and 3 are typically the thumbstick (x, y)
+                  if (axes.length >= 4) {
+                    thumbstickX = axes[2] || 0;
+                    thumbstickY = axes[3] || 0;
+                  } else if (axes.length >= 2) {
+                    thumbstickX = axes[0] || 0;
+                    thumbstickY = axes[1] || 0;
+                  }
+                }
+              }
+            }
+            
             sceneRef.current.traverse((obj) => {
               if (obj.userData.isGrabbed && obj.userData.grabController) {
                 const controller = obj.userData.grabController;
@@ -1221,8 +1663,72 @@ const XRLessonPlayerV3: React.FC = () => {
                 controller.getWorldPosition(worldPos);
                 worldPos.add(obj.userData.grabOffset);
                 
+                // ═══════════════════════════════════════════════════════════════
+                // COLLISION-AWARE MOVEMENT: Check for collisions before moving
+                // ═══════════════════════════════════════════════════════════════
+                let finalPosition = worldPos.clone();
+                
+                if (professionalLayoutRef.current) {
+                  // Use the layout system to constrain movement
+                  finalPosition = professionalLayoutRef.current.constrainMovement(obj, worldPos);
+                }
+                
                 // Smooth interpolation for stable movement
-                obj.position.lerp(worldPos, 0.15);
+                obj.position.lerp(finalPosition, 0.15);
+                
+                // ═══════════════════════════════════════════════════════════════
+                // THUMBSTICK ROTATION: Rotate grabbed object with thumbstick X
+                // ═══════════════════════════════════════════════════════════════
+                if (Math.abs(thumbstickX) > 0.1) {
+                  // Rotate around Y axis (horizontal rotation)
+                  obj.rotation.y += thumbstickX * 0.05;
+                }
+                
+                // ═══════════════════════════════════════════════════════════════
+                // THUMBSTICK SCALE: Scale object with thumbstick Y (push up = bigger)
+                // ═══════════════════════════════════════════════════════════════
+                if (Math.abs(thumbstickY) > 0.1) {
+                  const scaleFactor = 1 + thumbstickY * 0.02;
+                  const currentScale = obj.scale.x;
+                  const newScale = Math.max(0.1, Math.min(5.0, currentScale * scaleFactor));
+                  obj.scale.setScalar(newScale);
+                }
+                
+                // Visual feedback - slight glow effect (emissive)
+                obj.traverse((child: any) => {
+                  if (child.isMesh && child.material) {
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    mats.forEach((mat: any) => {
+                      if (!mat.userData.originalEmissive) {
+                        mat.userData.originalEmissive = mat.emissive ? mat.emissive.clone() : new THREE.Color(0x000000);
+                      }
+                      // Slight cyan glow when grabbed
+                      if (mat.emissive) {
+                        mat.emissive.setHex(0x003344);
+                        mat.emissiveIntensity = 0.3;
+                      }
+                    });
+                  }
+                });
+              } else if (obj.userData.wasGrabbed) {
+                // Reset visual feedback when released
+                obj.traverse((child: any) => {
+                  if (child.isMesh && child.material) {
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    mats.forEach((mat: any) => {
+                      if (mat.userData.originalEmissive && mat.emissive) {
+                        mat.emissive.copy(mat.userData.originalEmissive);
+                        mat.emissiveIntensity = 0;
+                      }
+                    });
+                  }
+                });
+                obj.userData.wasGrabbed = false;
+              }
+              
+              // Track grab state for visual feedback reset
+              if (obj.userData.isGrabbed) {
+                obj.userData.wasGrabbed = true;
               }
             });
           }
@@ -1544,88 +2050,206 @@ const XRLessonPlayerV3: React.FC = () => {
           addDebug(`✅ GLTF loaded successfully`);
           addDebug(`Processing geometry and materials...`);
           
-          // Calculate bounding box BEFORE scaling
+          // ═══════════════════════════════════════════════════════════════════════
+          // MODEL ANALYSIS SYSTEM - Analyze model geometry for smart positioning
+          // ═══════════════════════════════════════════════════════════════════════
           const box = new THREE.Box3().setFromObject(gltf.scene);
           const size = box.getSize(new THREE.Vector3());
           const center = box.getCenter(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z);
           
-          addDebug(`Asset ${i + 1} original size: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)} (max: ${maxDim.toFixed(2)})`);
-          addDebug(`Asset ${i + 1} center: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
+          // Calculate model's bottom position (min Y of bounding box)
+          const modelBottom = box.min.y;
+          const modelTop = box.max.y;
+          const modelHeight = modelTop - modelBottom;
           
-          // Scale to reasonable size (target: larger for better visibility)
-          // For very large models, use a larger target size to ensure visibility
-          // Increased base target size to ensure assets are visible
-          const targetSize = maxDim > 10 ? 2.5 : maxDim > 5 ? 2.0 : 1.5;
-          let scale = maxDim > 0 ? targetSize / maxDim : 1;
+          // Analyze model type based on center offset from bottom
+          // If center.y is close to bottom, it's a "bottom-origin" model
+          // If center.y is in middle, it's a "center-origin" model
+          const centerOffset = center.y - modelBottom;
+          const centerRatio = modelHeight > 0 ? centerOffset / modelHeight : 0.5;
+          const modelType = centerRatio < 0.3 ? 'BOTTOM_ORIGIN' : 
+                           centerRatio > 0.7 ? 'TOP_ORIGIN' : 'CENTER_ORIGIN';
+          
+          addDebug(`═══ MODEL ANALYSIS (Asset ${i + 1}) ═══`);
+          addDebug(`Original size: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`);
+          addDebug(`Model bottom Y: ${modelBottom.toFixed(2)}m`);
+          addDebug(`Model center Y: ${center.y.toFixed(2)}m`);
+          addDebug(`Model top Y: ${modelTop.toFixed(2)}m`);
+          addDebug(`Model height: ${modelHeight.toFixed(2)}m`);
+          addDebug(`Center ratio: ${(centerRatio * 100).toFixed(0)}% from bottom`);
+          addDebug(`Model type: ${modelType}`);
+          
+          console.log(`🔍 [MODEL ANALYSIS] Asset ${i + 1}:`, {
+            size: `${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`,
+            modelBottom: modelBottom.toFixed(2),
+            modelCenter: center.y.toFixed(2),
+            modelTop: modelTop.toFixed(2),
+            modelHeight: modelHeight.toFixed(2),
+            centerRatio: centerRatio.toFixed(2),
+            modelType
+          });
+          
+          // ═══════════════════════════════════════════════════════════════════════
+          // NORMALIZED BOUNDING BOX SCALING
+          // All assets are scaled to the SAME normalized size for visual consistency
+          // This ensures a tiny model and a huge model both appear at ~1.2m
+          // Uses the global NORMALIZED_SIZE constant defined at component level
+          // ═══════════════════════════════════════════════════════════════════════
+          let scale = maxDim > 0 ? NORMALIZED_SIZE / maxDim : 1;
           
           // Ensure minimum scale for very small models (prevent invisible assets)
-          const minScale = 0.1; // Minimum scale factor
-          const maxScale = 10.0; // Maximum scale factor to prevent huge assets
+          const minScale = 0.01;  // Allow very small scaling for huge models
+          const maxScale = 100.0; // Allow large scaling for tiny models
           scale = Math.max(minScale, Math.min(maxScale, scale));
           
-          console.log(`[XRLessonPlayerV3] Asset ${i + 1} scaling:`, {
-            originalMaxDim: maxDim.toFixed(2),
-            targetSize,
-            scale: scale.toFixed(3),
+          console.log(`📏 [NORMALIZED SCALING] Asset ${i + 1}:`, {
+            originalMaxDim: `${maxDim.toFixed(2)}m`,
+            normalizedSize: `${NORMALIZED_SIZE}m`,
+            scaleFactor: scale.toFixed(4),
             fileSizeMB: fileSizeMB.toFixed(2)
           });
-          addDebug(`Asset ${i + 1} scale factor: ${scale.toFixed(3)} (target: ${targetSize}m, original: ${maxDim.toFixed(2)}m)`);
           
-          // Center the model at origin first, then scale
-          gltf.scene.position.set(-center.x, -center.y, -center.z);
+          addDebug(`═══ NORMALIZED SCALING ═══`);
+          addDebug(`Original max dim: ${maxDim.toFixed(2)}m`);
+          addDebug(`Normalized to: ${NORMALIZED_SIZE}m`);
+          addDebug(`Scale factor: ${scale.toFixed(4)}`);
+          
+          // ═══════════════════════════════════════════════════════════════════════
+          // SMART CENTERING - Position model so its BOTTOM sits at Y=0 initially
+          // Instead of centering at origin, we place the bottom at Y=0
+          // This makes subsequent positioning predictable
+          // ═══════════════════════════════════════════════════════════════════════
+          
+          // Center horizontally (X, Z) but place BOTTOM at Y=0
+          const yOffsetForBottomAtZero = -modelBottom; // This moves bottom to Y=0
+          gltf.scene.position.set(-center.x, yOffsetForBottomAtZero, -center.z);
           gltf.scene.scale.setScalar(scale);
           gltf.scene.name = `asset_${asset.id}`;
+          
+          // Calculate scaled height (needed for positioning)
+          const scaledHeight = modelHeight * scale;
+          
+          addDebug(`Scaled height: ${scaledHeight.toFixed(2)}m`);
+          console.log(`🔍 [MODEL ANALYSIS] Scaled height: ${scaledHeight.toFixed(2)}m, bottom now at local Y=0`);
           
           // Ensure the scene is visible and not culled
           gltf.scene.visible = true;
           gltf.scene.frustumCulled = false; // Disable frustum culling for large/complex models
           
-          // Calculate position: Directly in front of camera (relative to camera position)
-          // Get camera's current world position (important for VR where camera might move)
+          // ═══════════════════════════════════════════════════════════════════════
+          // ASSET POSITION CALCULATION - GROUND PLANE REFERENCED
+          // Uses model analysis to place model's BOTTOM at table height
+          // Multi-asset layout: Primary asset right, others in arc formation
+          // ═══════════════════════════════════════════════════════════════════════
+          console.log(`\n🎯 [ASSET POSITION] ════════════════════════════════════════`);
+          console.log(`🎯 [ASSET POSITION] Asset ${i + 1}/${meshyAssets.length} | Scaled Height: ${scaledHeight.toFixed(2)}m`);
+          console.log(`🎯 [ASSET POSITION] Loading State: ${loadingState}`);
+          console.log(`🎯 [ASSET POSITION] Ground Level: ${GROUND_LEVEL}m, Table Height: ${TABLE_HEIGHT}m`);
+          
+          let x: number, y: number, z: number;
+          let positionSource: string = 'unknown';
+          
+          // Get camera info for direction calculation
           const cameraPos = new THREE.Vector3();
-          let useCameraPosition = false;
+          let cameraValid = false;
           
           if (cameraRef.current) {
             cameraRef.current.getWorldPosition(cameraPos);
-            // Only use camera position if it's valid (not NaN and reasonable)
-            if (!isNaN(cameraPos.x) && !isNaN(cameraPos.y) && !isNaN(cameraPos.z) &&
-                Math.abs(cameraPos.x) < 100 && Math.abs(cameraPos.y) < 100 && Math.abs(cameraPos.z) < 100) {
-              useCameraPosition = true;
+            cameraValid = !isNaN(cameraPos.x) && !isNaN(cameraPos.y) && !isNaN(cameraPos.z) &&
+                Math.abs(cameraPos.x) < 100 && Math.abs(cameraPos.y) < 100 && Math.abs(cameraPos.z) < 100;
+          }
+          
+          // ═══════════════════════════════════════════════════════════════════════
+          // MULTI-ASSET LAYOUT STRATEGY (INITIAL LOAD)
+          // - Primary (Asset 0): To the RIGHT of UI panel, in front of user
+          // - Secondary (Asset 1+): To the LEFT of user, at 45° intervals
+          // This creates a "showcase" arrangement where assets don't overlap
+          // ═══════════════════════════════════════════════════════════════════════
+          const totalAssets = meshyAssets.length;
+          const assetIndex = i;
+          
+          // Layout constants for multi-asset arrangement
+          const PRIMARY_DISTANCE = ASSET_DISTANCE;         // 3m for primary
+          const PRIMARY_RIGHT_OFFSET = ASSET_RIGHT_OFFSET; // Right offset for primary
+          const SECONDARY_ARC_ANGLE = 45;                  // 45° between secondary assets
+          const SECONDARY_LEFT_OFFSET = 1.2;               // 1.2m to the left
+          
+          // Y position: TABLE_HEIGHT above ground
+          // Since model's bottom is now at local Y=0, placing at TABLE_HEIGHT puts bottom at table level
+          y = GROUND_LEVEL + TABLE_HEIGHT;
+          
+          console.log(`🎯 [ASSET POSITION] ═══════════════════════════════════════`);
+          console.log(`🎯 [ASSET POSITION] Asset ${assetIndex + 1}/${totalAssets} | Total: ${totalAssets}`);
+          
+          // Check if we should use camera direction (in VR with valid camera)
+          if (loadingState === 'in-vr' && cameraValid && cameraRef.current) {
+            // Get camera forward direction (flattened to horizontal plane)
+            const rawForward = new THREE.Vector3(0, 0, -1);
+            rawForward.applyQuaternion(cameraRef.current.quaternion);
+            const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z);
+            if (flatForward.lengthSq() < 0.001) flatForward.set(0, 0, -1);
+            flatForward.normalize();
+            
+            // Get right direction
+            const rightDir = new THREE.Vector3();
+            rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
+            
+            console.log(`🎯 [ASSET POSITION] VR Mode - Camera: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
+            console.log(`🎯 [ASSET POSITION] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
+            
+            if (assetIndex === 0 || totalAssets === 1) {
+              // PRIMARY ASSET: Front-right of user (to the right of UI panel)
+              x = cameraPos.x + flatForward.x * PRIMARY_DISTANCE + rightDir.x * PRIMARY_RIGHT_OFFSET;
+              z = cameraPos.z + flatForward.z * PRIMARY_DISTANCE + rightDir.z * PRIMARY_RIGHT_OFFSET;
+              positionSource = 'VR_PRIMARY_RIGHT';
+            } else {
+              // SECONDARY ASSETS: To the LEFT of user, at 45° intervals
+              const angleOffset = -assetIndex * SECONDARY_ARC_ANGLE; // Negative = LEFT
+              const angleRad = THREE.MathUtils.degToRad(angleOffset);
+              
+              // Rotate forward direction by angle (around Y axis) - LEFT rotation
+              const rotatedForward = new THREE.Vector3(
+                flatForward.x * Math.cos(angleRad) - flatForward.z * Math.sin(angleRad),
+                0,
+                flatForward.x * Math.sin(angleRad) + flatForward.z * Math.cos(angleRad)
+              ).normalize();
+              
+              // Position to the LEFT of center
+              x = cameraPos.x + rotatedForward.x * PRIMARY_DISTANCE - rightDir.x * SECONDARY_LEFT_OFFSET;
+              z = cameraPos.z + rotatedForward.z * PRIMARY_DISTANCE - rightDir.z * SECONDARY_LEFT_OFFSET;
+              positionSource = `VR_SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
             }
-          }
-          
-          let x: number, y: number, z: number;
-          
-          if (useCameraPosition && cameraRef.current) {
-            // Calculate forward direction from camera
-            const forward = new THREE.Vector3(0, 0, -1); // Default forward in Three.js
-            forward.applyQuaternion(cameraRef.current.quaternion);
-            
-            // Position asset 2 meters in front of camera, at eye level
-            const assetDistance = 2.0; // 2 meters in front
-            const newPos = new THREE.Vector3().copy(cameraPos);
-            newPos.add(forward.multiplyScalar(assetDistance));
-            // Keep Y at eye level relative to camera
-            newPos.y = cameraPos.y; // Same height as camera
-            
-            x = newPos.x;
-            y = newPos.y;
-            z = newPos.z;
-            
-            addDebug(`Asset ${i + 1} positioned relative to camera`);
           } else {
-            // Fallback: Fixed position directly in front (2m forward, eye level)
-            x = 0; // Centered horizontally
-            z = -2.0; // 2 meters in front (negative Z is forward in Three.js)
-            y = 1.6; // Eye level
-            addDebug(`Asset ${i + 1} positioned at fixed location (camera position unavailable)`);
+            // PRE-VR: Fixed positions relative to origin (for preview before VR)
+            if (assetIndex === 0 || totalAssets === 1) {
+              // Primary asset: front-right
+              x = PRIMARY_RIGHT_OFFSET;
+              z = -PRIMARY_DISTANCE;
+              positionSource = 'FIXED_PRIMARY_RIGHT';
+            } else {
+              // Secondary assets: to the LEFT at 45° intervals
+              const angleOffset = -assetIndex * SECONDARY_ARC_ANGLE; // Negative = LEFT
+              const angleRad = THREE.MathUtils.degToRad(angleOffset);
+              
+              // Rotate the forward direction (-Z) by angleOffset
+              x = -SECONDARY_LEFT_OFFSET + Math.sin(angleRad) * PRIMARY_DISTANCE;
+              z = -PRIMARY_DISTANCE * Math.cos(angleRad);
+              positionSource = `FIXED_SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
+            }
+            
+            console.log(`🎯 [ASSET POSITION] Pre-VR Mode`);
           }
           
-          addDebug(`Asset ${i + 1} will be positioned at: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
-          if (useCameraPosition) {
-            addDebug(`Camera position: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
-          }
+          console.log(`🎯 [ASSET POSITION] FINAL: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}) [${positionSource}]`);
+          console.log(`🎯 [ASSET POSITION] Model bottom at Y=${y.toFixed(2)}m (TABLE_HEIGHT above ground)`);
+          console.log(`🎯 [ASSET POSITION] Model top at Y=${(y + scaledHeight).toFixed(2)}m`);
+          console.log(`🎯 [ASSET POSITION] ════════════════════════════════════════\n`);
+          
+          addDebug(`═══ ASSET ${i + 1} POSITION ═══`);
+          addDebug(`Type: ${assetIndex === 0 ? 'PRIMARY' : 'SECONDARY'} | Layout: ${positionSource}`);
+          addDebug(`Position: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
+          addDebug(`Bottom Y: ${y.toFixed(2)}m | Top Y: ${(y + scaledHeight).toFixed(2)}m`)
           
           // Make materials work with scene lighting (preserve original materials)
           gltf.scene.traverse((child: any) => {
@@ -1820,6 +2444,102 @@ const XRLessonPlayerV3: React.FC = () => {
           console.log('[XRLessonPlayerV3] ✅ Forced render after adding assets');
           addDebug(`✅ Forced render complete`);
         }
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // CRITICAL: If already in VR, reposition assets to camera-relative position
+        // This handles the case where assets load AFTER VR session starts
+        // Uses GROUND PLANE as reference (Y = GROUND_LEVEL + TABLE_HEIGHT)
+        // ═══════════════════════════════════════════════════════════════════
+        if (loadingState === 'in-vr' && cameraRef.current && foundGroup && foundGroup.children.length > 0) {
+          console.log(`\n🎯 [POST-LOAD REPOSITION] Already in VR - repositioning assets`);
+          addDebug(`═══ POST-LOAD REPOSITION ═══`);
+          addDebug(`Assets loaded while in VR: ${foundGroup.children.length}`);
+          addDebug(`Ground Level: ${GROUND_LEVEL}m`);
+          addDebug(`Table Height: ${TABLE_HEIGHT}m`);
+          addDebug(`Target Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`);
+          
+          const cameraPos = new THREE.Vector3();
+          cameraRef.current.getWorldPosition(cameraPos);
+          
+          // Get camera forward direction (flattened)
+          const rawForward = new THREE.Vector3(0, 0, -1);
+          rawForward.applyQuaternion(cameraRef.current.quaternion);
+          const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z);
+          if (flatForward.lengthSq() < 0.001) flatForward.set(0, 0, -1);
+          flatForward.normalize();
+          
+          // Get right direction
+          const rightDir = new THREE.Vector3();
+          rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
+          
+          // Ground Plane Referenced Positioning + Multi-Asset Layout
+          // ═══════════════════════════════════════════════════════════════════════
+          // POST-LOAD REPOSITION: Same strategy as VR START
+          // - Primary: RIGHT side of user
+          // - Secondary: LEFT side of user, at 45° intervals
+          // ═══════════════════════════════════════════════════════════════════════
+          const totalAssets = foundGroup.children.length;
+          const SECONDARY_ARC_ANGLE = 45;               // 45° between assets
+          const SECONDARY_LEFT_OFFSET = 1.2;            // 1.2m to the left
+          
+          console.log(`🎯 [POST-LOAD] ═══════════════════════════════════════`);
+          console.log(`🎯 [POST-LOAD] MULTI-ASSET LAYOUT for ${totalAssets} assets`);
+          console.log(`🎯 [POST-LOAD] Camera: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
+          console.log(`🎯 [POST-LOAD] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
+          console.log(`🎯 [POST-LOAD] Right: (${rightDir.x.toFixed(3)}, 0, ${rightDir.z.toFixed(3)})`);
+          
+          foundGroup.children.forEach((assetWrapper, index) => {
+            const oldPos = assetWrapper.position.clone();
+            
+            // Y is ALWAYS: GROUND_LEVEL + TABLE_HEIGHT (model bottom at table level)
+            const newY = GROUND_LEVEL + TABLE_HEIGHT;
+            
+            let newX: number, newZ: number, layoutType: string;
+            
+            if (index === 0 || totalAssets === 1) {
+              // PRIMARY ASSET: Front-right of user
+              newX = cameraPos.x + flatForward.x * ASSET_DISTANCE + rightDir.x * ASSET_RIGHT_OFFSET;
+              newZ = cameraPos.z + flatForward.z * ASSET_DISTANCE + rightDir.z * ASSET_RIGHT_OFFSET;
+              layoutType = 'PRIMARY_RIGHT';
+            } else {
+              // SECONDARY ASSETS: To the LEFT of user, at 45° intervals
+              const angleOffset = -index * SECONDARY_ARC_ANGLE; // Negative = LEFT
+              const angleRad = THREE.MathUtils.degToRad(angleOffset);
+              
+              const rotatedForward = new THREE.Vector3(
+                flatForward.x * Math.cos(angleRad) - flatForward.z * Math.sin(angleRad),
+                0,
+                flatForward.x * Math.sin(angleRad) + flatForward.z * Math.cos(angleRad)
+              ).normalize();
+              
+              // Position to the LEFT of center
+              newX = cameraPos.x + rotatedForward.x * ASSET_DISTANCE - rightDir.x * SECONDARY_LEFT_OFFSET;
+              newZ = cameraPos.z + rotatedForward.z * ASSET_DISTANCE - rightDir.z * SECONDARY_LEFT_OFFSET;
+              layoutType = `SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
+            }
+            
+            assetWrapper.position.set(newX, newY, newZ);
+            assetWrapper.lookAt(cameraPos.x, newY, cameraPos.z);
+            
+            // Store original position for reset
+            assetWrapper.userData.originalPosition = assetWrapper.position.clone();
+            assetWrapper.userData.originalRotation = assetWrapper.rotation.clone();
+            assetWrapper.userData.originalScale = assetWrapper.scale.clone();
+            
+            console.log(`🎯 [POST-LOAD] Asset ${index + 1}/${totalAssets} [${layoutType}]:`);
+            console.log(`🎯 [POST-LOAD]   Old: (${oldPos.x.toFixed(2)}, ${oldPos.y.toFixed(2)}, ${oldPos.z.toFixed(2)})`);
+            console.log(`🎯 [POST-LOAD]   New: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
+            
+            addDebug(`Asset ${index + 1} [${layoutType}]:`);
+            addDebug(`  Position: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
+          });
+          console.log(`🎯 [POST-LOAD] ═══════════════════════════════════════`);
+          
+          // Force another render after repositioning
+          if (rendererRef.current) {
+            rendererRef.current.render(sceneRef.current, cameraRef.current);
+          }
+        }
       } else {
         console.error('[XRLessonPlayerV3] ❌ Scene ref is null!');
         addDebug(`❌ ERROR: Scene ref is null, cannot add assets!`);
@@ -1884,26 +2604,55 @@ const XRLessonPlayerV3: React.FC = () => {
   
   // Get TTS for current phase
   const getTTSForPhase = useCallback((phase: LessonPhase): TTSData | null => {
-    if (ttsData.length === 0) return null;
+    if (ttsData.length === 0) {
+      console.log('[TTS MATCH] No TTS data available');
+      return null;
+    }
     
-    // Map phase to script_type (handle both 'content' and 'explanation' phases)
-    let scriptType: string = 'full';
-    if (phase === 'intro') scriptType = 'intro';
-    else if (phase === 'content' || phase === 'explanation') scriptType = 'explanation';
-    else if (phase === 'outro') scriptType = 'outro';
+    // Map phase to expected section types
+    let targetSections: string[] = ['full'];
+    if (phase === 'intro') {
+      targetSections = ['intro', 'introduction', 'avatar_intro'];
+    } else if (phase === 'content' || phase === 'explanation') {
+      targetSections = ['explanation', 'content', 'avatar_explanation', 'main'];
+    } else if (phase === 'outro') {
+      targetSections = ['outro', 'conclusion', 'avatar_outro', 'summary'];
+    }
     
-    // Find matching TTS entry (check both script_type and section fields)
+    console.log(`[TTS MATCH] Looking for phase=${phase}, targetSections=${targetSections.join(',')}`);
+    console.log(`[TTS MATCH] Available TTS:`, ttsData.map(t => ({ id: t.id.substring(0, 40), section: t.section })));
+    
+    // Find matching TTS entry by section field
     const match = ttsData.find(tts => {
-      const ttsSection = (tts as any).script_type || (tts as any).section || tts.section;
-      return ttsSection === scriptType || ttsSection === 'full';
+      const ttsSection = (tts.section || '').toLowerCase().trim();
+      const isMatch = targetSections.some(target => ttsSection === target || ttsSection.includes(target));
+      console.log(`[TTS MATCH] Checking ${tts.id.substring(0, 30)}... section="${ttsSection}" => ${isMatch ? 'MATCH' : 'no match'}`);
+      return isMatch;
     });
     
     if (match) {
-      addDebug(`Found TTS for ${phase}: ${(match as any).script_type || match.section}`);
+      console.log(`[TTS MATCH] ✅ Found match for ${phase}: ${match.id}`);
+      addDebug(`Found TTS for ${phase}: ${match.section}`);
       return match;
     }
     
-    // Fallback to first available
+    // Fallback: Try to match by ID parsing
+    const idMatch = ttsData.find(tts => {
+      const idLower = (tts.id || '').toLowerCase();
+      if (phase === 'intro' && (idLower.includes('_intro_') || idLower.endsWith('_intro'))) return true;
+      if ((phase === 'content' || phase === 'explanation') && (idLower.includes('_explanation_') || idLower.includes('_content_'))) return true;
+      if (phase === 'outro' && (idLower.includes('_outro_') || idLower.includes('_conclusion_'))) return true;
+      return false;
+    });
+    
+    if (idMatch) {
+      console.log(`[TTS MATCH] ✅ Found ID match for ${phase}: ${idMatch.id}`);
+      addDebug(`Found TTS for ${phase} (by ID): ${idMatch.id.substring(0, 40)}`);
+      return idMatch;
+    }
+    
+    console.log(`[TTS MATCH] ⚠️ No match for ${phase}, using fallback (first TTS)`);
+    addDebug(`⚠️ No TTS match for ${phase}, using fallback`);
     return ttsData[0] || null;
   }, [ttsData, addDebug]);
   
@@ -1927,7 +2676,16 @@ const XRLessonPlayerV3: React.FC = () => {
       return;
     }
     
-    addDebug(`Playing TTS for ${phase}: ${(tts as any).script_type || tts.section}`);
+    // Comprehensive TTS playback debug logging
+    console.log('[TTS PLAYBACK] ========================================');
+    console.log('[TTS PLAYBACK] Phase:', phase);
+    console.log('[TTS PLAYBACK] TTS ID:', tts.id);
+    console.log('[TTS PLAYBACK] Section:', (tts as any).script_type || tts.section);
+    console.log('[TTS PLAYBACK] Audio URL:', tts.audioUrl?.substring(0, 80) + '...');
+    console.log('[TTS PLAYBACK] Has text:', !!tts.text);
+    console.log('[TTS PLAYBACK] ========================================');
+    
+    debugTTS(`Playing TTS for ${phase}: ${(tts as any).script_type || tts.section}`);
     
     // Clean up previous audio
     if (audioRef.current) {
@@ -2053,15 +2811,257 @@ const XRLessonPlayerV3: React.FC = () => {
     stopAudio();
     if (mcqData.length > 0) {
       setLessonPhase('mcq');
-      addDebug('⏭️ Skipped to Quiz');
+      debugQuiz('⏭️ Skipped to Quiz');
     } else {
       setLessonPhase('complete');
-      addDebug('⏭️ No quiz available - completing lesson');
+      debugQuiz('⏭️ No quiz available - completing lesson');
     }
   }, [mcqData.length, stopAudio, addDebug]);
   
-  // Auto-play TTS when phase changes (intro/content/outro)
+  // ============================================================================
+  // START Button Panel (Gate before lesson begins)
+  // ============================================================================
+  
+  const handleLessonStart = useCallback(() => {
+    console.log('[LESSON START] ========================================');
+    console.log('[LESSON START] User pressed START button');
+    console.log('[LESSON START] Current state before start:', {
+      lessonPhase,
+      lessonStarted,
+      ttsDataCount: ttsData.length,
+      mcqDataCount: mcqData.length,
+      layoutEngineReady: layoutEngineRef.current?.isReady() || false,
+    });
+    
+    debugXR('Lesson START button pressed');
+    addDebug('🚀 Lesson started by user');
+    
+    // Remove start panel
+    if (startPanelRef.current && sceneRef.current) {
+      sceneRef.current.remove(startPanelRef.current);
+      startPanelRef.current = null;
+      debugUI('Start panel removed');
+    }
+    
+    // Mark lesson as started and transition to intro phase
+    setLessonStarted(true);
+    setLessonPhase('intro');
+    
+    console.log('[LESSON START] Transitioning to INTRO phase');
+    console.log('[LESSON START] TTS data available:', ttsData.map(t => ({ id: t.id, section: t.section })));
+    console.log('[LESSON START] MCQ data available:', mcqData.length, 'questions');
+    console.log('[LESSON START] ========================================');
+    
+    // Recompute layout anchor at start
+    if (layoutEngineRef.current && cameraRef.current) {
+      layoutEngineRef.current.computeAnchor(cameraRef.current);
+      debugLayout('Layout anchor recomputed at lesson start');
+    }
+  }, [addDebug, lessonPhase, lessonStarted, ttsData, mcqData, debugXR, debugUI, debugLayout]);
+  
+  const createStartPanel = useCallback(() => {
+    try {
+      if (!sceneRef.current || !cameraRef.current || !layoutEngineRef.current) {
+        console.warn('[XRLessonPlayerV3] Cannot create start panel: scene, camera, or layout engine not ready');
+        return null;
+      }
+      
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      
+      // Remove existing start panel
+      const existing = scene.getObjectByName('startPanel');
+      if (existing) {
+        scene.remove(existing);
+      }
+      
+      // Create canvas for start screen
+      const canvas = document.createElement('canvas');
+      canvas.width = 1000;
+      canvas.height = 700;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      
+      // Glassmorphism background with gradient
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, 'rgba(15, 23, 42, 0.95)');
+      gradient.addColorStop(0.5, 'rgba(30, 41, 59, 0.92)');
+      gradient.addColorStop(1, 'rgba(51, 65, 85, 0.90)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Cyan glow border
+      ctx.shadowColor = 'rgba(6, 182, 212, 0.6)';
+      ctx.shadowBlur = 40;
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(15, 15, canvas.width - 30, canvas.height - 30);
+      
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      
+      // Title - Lesson Name
+      const lessonTitle = lessonData?.topic?.topic_name || 'Lesson';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 56px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(lessonTitle.substring(0, 30), canvas.width / 2, 120);
+      
+      // Subtitle - Subject
+      const subtitle = `${lessonData?.chapter?.subject || ''} • ${lessonData?.chapter?.class_name || ''}`;
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '32px Arial';
+      ctx.fillText(subtitle, canvas.width / 2, 175);
+      
+      // Divider line
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(100, 220);
+      ctx.lineTo(canvas.width - 100, 220);
+      ctx.stroke();
+      
+      // Content info
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '28px Arial';
+      ctx.textAlign = 'left';
+      
+      const hasIntro = !!(lessonData as any)?.topic?.avatar_intro;
+      const hasContent = !!(lessonData as any)?.topic?.avatar_explanation;
+      const hasOutro = !!(lessonData as any)?.topic?.avatar_outro;
+      const hasMCQ = mcqData.length > 0;
+      const hasAssets = meshyAssets.length > 0;
+      
+      let infoY = 280;
+      const infoX = 120;
+      
+      ctx.fillText(`📖 Sections: ${[hasIntro && 'Intro', hasContent && 'Explanation', hasOutro && 'Conclusion'].filter(Boolean).join(', ') || 'None'}`, infoX, infoY);
+      infoY += 45;
+      
+      if (hasMCQ) {
+        ctx.fillText(`❓ Quiz: ${mcqData.length} questions`, infoX, infoY);
+        infoY += 45;
+      }
+      
+      if (hasAssets) {
+        ctx.fillText(`📦 3D Assets: ${meshyAssets.length} models`, infoX, infoY);
+        infoY += 45;
+      }
+      
+      if (ttsData.length > 0) {
+        ctx.fillText(`🔊 Audio narration included`, infoX, infoY);
+      }
+      
+      // START Button
+      const buttonWidth = 300;
+      const buttonHeight = 90;
+      const buttonX = (canvas.width - buttonWidth) / 2;
+      const buttonY = canvas.height - 160;
+      
+      // Button gradient background
+      const btnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonHeight);
+      btnGradient.addColorStop(0, '#06b6d4');
+      btnGradient.addColorStop(1, '#0891b2');
+      ctx.fillStyle = btnGradient;
+      
+      // Rounded rectangle
+      const radius = 20;
+      ctx.beginPath();
+      ctx.moveTo(buttonX + radius, buttonY);
+      ctx.lineTo(buttonX + buttonWidth - radius, buttonY);
+      ctx.quadraticCurveTo(buttonX + buttonWidth, buttonY, buttonX + buttonWidth, buttonY + radius);
+      ctx.lineTo(buttonX + buttonWidth, buttonY + buttonHeight - radius);
+      ctx.quadraticCurveTo(buttonX + buttonWidth, buttonY + buttonHeight, buttonX + buttonWidth - radius, buttonY + buttonHeight);
+      ctx.lineTo(buttonX + radius, buttonY + buttonHeight);
+      ctx.quadraticCurveTo(buttonX, buttonY + buttonHeight, buttonX, buttonY + buttonHeight - radius);
+      ctx.lineTo(buttonX, buttonY + radius);
+      ctx.quadraticCurveTo(buttonX, buttonY, buttonX + radius, buttonY);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Button text
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 48px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('▶ START', canvas.width / 2, buttonY + 58);
+      
+      // Instruction text
+      ctx.fillStyle = '#64748b';
+      ctx.font = '24px Arial';
+      ctx.fillText('Point and click to begin', canvas.width / 2, canvas.height - 40);
+      
+      // Create texture from canvas
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      
+      // Create plane mesh
+      const geometry = new THREE.PlaneGeometry(2.0, 1.4);
+      const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide,
+        emissive: new THREE.Color(0x06b6d4),
+        emissiveIntensity: 0.1,
+        roughness: 0.2,
+        metalness: 0.2,
+      });
+      
+      const panel = new THREE.Mesh(geometry, material);
+      panel.name = 'startPanel';
+      
+      // Get camera position for reference
+      const cameraPos = new THREE.Vector3();
+      camera.getWorldPosition(cameraPos);
+      
+      // Get camera forward direction (flattened to horizontal)
+      const rawForward = new THREE.Vector3(0, 0, -1);
+      rawForward.applyQuaternion(camera.quaternion);
+      const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z).normalize();
+      
+      // Position START panel DIRECTLY IN FRONT of user (center), not to the side
+      // Distance: 2 meters in front
+      const distance = 2.0;
+      const panelPosition = new THREE.Vector3();
+      panelPosition.copy(cameraPos);
+      panelPosition.add(flatForward.clone().multiplyScalar(distance));
+      panelPosition.y = cameraPos.y; // At eye level
+      
+      console.log(`🎯 [START PANEL] ════════════════════════════════════════`);
+      console.log(`🎯 [START PANEL] Camera Position: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
+      console.log(`🎯 [START PANEL] Forward Direction: (${flatForward.x.toFixed(2)}, ${flatForward.y.toFixed(2)}, ${flatForward.z.toFixed(2)})`);
+      console.log(`🎯 [START PANEL] Panel Position: (${panelPosition.x.toFixed(2)}, ${panelPosition.y.toFixed(2)}, ${panelPosition.z.toFixed(2)})`);
+      console.log(`🎯 [START PANEL] ════════════════════════════════════════`);
+      
+      panel.position.copy(panelPosition);
+      panel.userData.isInteractable = true;
+      panel.userData.panelType = 'start';
+      panel.userData.hasButtons = true;
+      panel.userData.buttons = [{
+        bounds: { x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight },
+        action: handleLessonStart,
+      }];
+      
+      // Make it face camera
+      panel.lookAt(cameraPos);
+      
+      scene.add(panel);
+      startPanelRef.current = panel;
+      
+      console.log(`${DEBUG_CATEGORIES.UI} Start panel created`);
+      addDebug('Start panel ready - click START to begin');
+      return panel;
+    } catch (error: any) {
+      console.error('[XRLessonPlayerV3] Error creating start panel:', error);
+      addDebug(`ERROR creating start panel: ${error?.message || error}`);
+      return null;
+    }
+  }, [sceneRef, cameraRef, lessonData, mcqData.length, meshyAssets.length, ttsData.length, handleLessonStart, addDebug]);
+  
+  // Auto-play TTS when phase changes (intro/content/outro) - ONLY if lesson has started
   useEffect(() => {
+    // Don't auto-play if lesson hasn't started yet
+    if (!lessonStarted) return;
+    
     if (['intro', 'content', 'outro'].includes(lessonPhase) && ttsData.length > 0) {
       // Small delay to ensure UI is ready
       const timer = setTimeout(() => {
@@ -2074,8 +3074,21 @@ const XRLessonPlayerV3: React.FC = () => {
         audioRef.current.pause();
         setTtsState('paused');
       }
+      
+      // Comprehensive quiz phase transition logging
+      console.log('[QUIZ PHASE] ========================================');
+      console.log('[QUIZ PHASE] Entered MCQ phase');
+      console.log('[QUIZ PHASE] Total questions:', mcqData.length);
+      console.log('[QUIZ PHASE] Current question index:', currentMcqIndex);
+      console.log('[QUIZ PHASE] Current score:', mcqScore);
+      mcqData.forEach((mcq, idx) => {
+        console.log(`[QUIZ PHASE] Q${idx + 1}: correctAnswer=${mcq.correctAnswer}, correctText="${mcq.options?.[mcq.correctAnswer]}"`);
+      });
+      console.log('[QUIZ PHASE] ========================================');
+      
+      debugQuiz(`Entered quiz phase with ${mcqData.length} questions`);
     }
-  }, [lessonPhase, ttsData, playTTSForPhase]);
+  }, [lessonPhase, ttsData, playTTSForPhase, lessonStarted, mcqData, currentMcqIndex, mcqScore, debugQuiz]);
   
   // Cleanup audio on unmount
   useEffect(() => {
@@ -2087,16 +3100,16 @@ const XRLessonPlayerV3: React.FC = () => {
     };
   }, []);
   
-  // Auto-start intro when entering VR
+  // Auto-start intro when entering VR - ONLY if lesson has been started by user
   useEffect(() => {
-    if (loadingState === 'in-vr' && lessonPhase === 'intro' && ttsData.length > 0) {
+    if (loadingState === 'in-vr' && lessonPhase === 'intro' && ttsData.length > 0 && lessonStarted) {
       // Wait a moment for user to orient themselves
       const timer = setTimeout(() => {
         playTTSForPhase('intro');
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [loadingState, lessonPhase, ttsData, playTTSForPhase]);
+  }, [loadingState, lessonPhase, ttsData, playTTSForPhase, lessonStarted]);
   
   // ============================================================================
   // Create VR Script Panel UI (3D Billboard)
@@ -2285,12 +3298,24 @@ const XRLessonPlayerV3: React.FC = () => {
       const panel = new THREE.Mesh(geometry, material);
       panel.name = 'scriptPanel';
       
-      // Position at 30° to the right
-      const angle = Math.PI / 6; // +30 degrees
-      const distance = 2.0;
-      const panelX = Math.sin(angle) * distance;
-      const panelZ = -Math.cos(angle) * distance;
-      const panelY = 1.6; // Eye level
+      // Position using layout engine (left of forward view)
+      let panelX: number, panelY: number, panelZ: number;
+      
+      if (layoutEngineRef.current && layoutEngineRef.current.isReady()) {
+        const panelPos = layoutEngineRef.current.positionUIPanel();
+        panelX = panelPos.x;
+        panelY = panelPos.y;
+        panelZ = panelPos.z;
+        console.log(`${DEBUG_CATEGORIES.LAYOUT} Script panel positioned by layout engine`);
+      } else {
+        // Fallback: Position at 30° to the left (negative angle)
+        const angle = -Math.PI / 9; // -20 degrees (left side)
+        const distance = 2.0;
+        panelX = Math.sin(angle) * distance;
+        panelZ = -Math.cos(angle) * distance;
+        panelY = 1.6; // Eye level
+        console.log(`${DEBUG_CATEGORIES.LAYOUT} Script panel using fallback position`);
+      }
       
       panel.position.set(panelX, panelY, panelZ);
       panel.userData.isInteractable = true;
@@ -2417,22 +3442,40 @@ const XRLessonPlayerV3: React.FC = () => {
   // ============================================================================
   
   const handleMCQOptionSelect = useCallback((optionIndex: number) => {
-    if (mcqAnswered || lessonPhase !== 'mcq' || currentMcqIndex >= mcqData.length) return;
-    
-    setSelectedMcqOption(optionIndex);
-    setMcqAnswered(true);
+    if (mcqAnswered || lessonPhase !== 'mcq' || currentMcqIndex >= mcqData.length) {
+      console.log('[MCQ INTERACTION] Selection blocked:', { mcqAnswered, lessonPhase, currentMcqIndex, mcqDataLength: mcqData.length });
+      return;
+    }
     
     const currentMcq = mcqData[currentMcqIndex];
     // correctAnswer is now already 0-based (converted in fetchMCQData)
     const correctIndex = currentMcq.correctAnswer;
+    const isCorrect = optionIndex === correctIndex;
     
-    if (optionIndex === correctIndex) {
+    // Comprehensive MCQ interaction debug logging
+    console.log('[MCQ INTERACTION] ========================================');
+    console.log('[MCQ INTERACTION] Question:', currentMcqIndex + 1, '/', mcqData.length);
+    console.log('[MCQ INTERACTION] MCQ ID:', currentMcq.id);
+    console.log('[MCQ INTERACTION] Question text:', currentMcq.question?.substring(0, 60) + '...');
+    console.log('[MCQ INTERACTION] Options:', currentMcq.options);
+    console.log('[MCQ INTERACTION] correct_option_index (0-based):', correctIndex);
+    console.log('[MCQ INTERACTION] Correct option text:', currentMcq.options?.[correctIndex] || 'N/A');
+    console.log('[MCQ INTERACTION] User selected index:', optionIndex);
+    console.log('[MCQ INTERACTION] User selected text:', currentMcq.options?.[optionIndex] || 'N/A');
+    console.log('[MCQ INTERACTION] Is Correct:', isCorrect);
+    console.log('[MCQ INTERACTION] Current Score before:', mcqScore, '/', mcqData.length);
+    console.log('[MCQ INTERACTION] ========================================');
+    
+    setSelectedMcqOption(optionIndex);
+    setMcqAnswered(true);
+    
+    if (isCorrect) {
       setMcqScore(prev => prev + 1);
-      addDebug(`✅ Correct answer selected`);
+      debugQuiz(`✅ CORRECT! Selected: ${optionIndex} (${currentMcq.options?.[optionIndex]}), Correct: ${correctIndex} (${currentMcq.options?.[correctIndex]})`);
     } else {
-      addDebug(`❌ Incorrect answer selected`);
+      debugQuiz(`❌ WRONG! Selected: ${optionIndex} (${currentMcq.options?.[optionIndex]}), Correct: ${correctIndex} (${currentMcq.options?.[correctIndex]})`);
     }
-  }, [mcqAnswered, lessonPhase, mcqData, currentMcqIndex, addDebug]);
+  }, [mcqAnswered, lessonPhase, mcqData, currentMcqIndex, mcqScore, debugQuiz]);
   
   const handleMCQNext = useCallback(() => {
     if (!mcqAnswered) return;
@@ -2445,7 +3488,7 @@ const XRLessonPlayerV3: React.FC = () => {
     } else {
       // Quiz complete
       setLessonPhase('complete');
-      addDebug(`Quiz complete! Score: ${mcqScore}/${mcqData.length}`);
+      debugQuiz(`Quiz complete! Score: ${mcqScore}/${mcqData.length}`);
     }
   }, [mcqAnswered, currentMcqIndex, mcqData.length, mcqScore, addDebug]);
   
@@ -2690,12 +3733,24 @@ const XRLessonPlayerV3: React.FC = () => {
       const panel = new THREE.Mesh(geometry, material);
       panel.name = 'mcqPanel';
       
-      // Position at 30° to the right
-      const angle = Math.PI / 6;
-      const distance = 2.0;
-      const panelX = Math.sin(angle) * distance;
-      const panelZ = -Math.cos(angle) * distance;
-      const panelY = 1.6;
+      // Position using layout engine (left of forward view, same as script panel)
+      let panelX: number, panelY: number, panelZ: number;
+      
+      if (layoutEngineRef.current && layoutEngineRef.current.isReady()) {
+        const panelPos = layoutEngineRef.current.positionUIPanel();
+        panelX = panelPos.x;
+        panelY = panelPos.y;
+        panelZ = panelPos.z;
+        console.log(`${DEBUG_CATEGORIES.LAYOUT} MCQ panel positioned by layout engine`);
+      } else {
+        // Fallback: Position at 20° to the left
+        const angle = -Math.PI / 9;
+        const distance = 2.0;
+        panelX = Math.sin(angle) * distance;
+        panelZ = -Math.cos(angle) * distance;
+        panelY = 1.6;
+        console.log(`${DEBUG_CATEGORIES.LAYOUT} MCQ panel using fallback position`);
+      }
       
       panel.position.set(panelX, panelY, panelZ);
       panel.lookAt(camera.position);
@@ -2707,7 +3762,7 @@ const XRLessonPlayerV3: React.FC = () => {
       scene.add(panel);
       mcqPanelRef.current = panel;
       
-      addDebug(`MCQ panel created: Question ${questionIndex + 1} (${buttonBounds.length} clickable buttons)`);
+      debugQuiz(`MCQ panel created: Question ${questionIndex + 1} (${buttonBounds.length} clickable buttons)`);
       return panel;
     } catch (error: any) {
       console.error('[XRLessonPlayerV3] Error creating MCQ panel:', error);
@@ -2723,13 +3778,25 @@ const XRLessonPlayerV3: React.FC = () => {
       if (mcqPanelRef.current && sceneRef.current) {
         sceneRef.current.remove(mcqPanelRef.current);
         mcqPanelRef.current = null;
+        lastMcqPanelStateRef.current = '';
       }
+      return;
+    }
+    
+    // Create a state key to detect actual changes and avoid redundant recreation
+    const currentStateKey = `${currentMcqIndex}-${selectedMcqOption}-${mcqAnswered}`;
+    
+    // Skip if state hasn't changed (prevents double recreation)
+    if (lastMcqPanelStateRef.current === currentStateKey && mcqPanelRef.current) {
+      console.log('[MCQ PANEL] Skipping redundant recreation - state unchanged');
       return;
     }
     
     if (currentMcqIndex < mcqData.length && sceneRef.current && cameraRef.current && mcqData[currentMcqIndex]) {
       try {
+        console.log(`[MCQ PANEL] Creating panel for state: ${currentStateKey}`);
         createMCQPanel(mcqData[currentMcqIndex], currentMcqIndex, mcqData.length);
+        lastMcqPanelStateRef.current = currentStateKey;
       } catch (error: any) {
         console.error('[XRLessonPlayerV3] Error updating MCQ panel:', error);
         addDebug(`ERROR updating MCQ panel: ${error?.message || error}`);
@@ -2893,12 +3960,29 @@ const XRLessonPlayerV3: React.FC = () => {
             <p className="text-cyan-300 text-sm text-center">
               Click "Enter VR" below to start the immersive experience
             </p>
+            <p className="text-slate-400 text-xs text-center mt-1">
+              In VR, point at the START button to begin the lesson
+            </p>
           </div>
         </div>
       )}
       
-      {/* Skip to Quiz Button - Show during TTS phases */}
-      {(loadingState === 'ready' || loadingState === 'in-vr') && 
+      {/* Waiting for START indicator in VR */}
+      {loadingState === 'in-vr' && lessonPhase === 'waiting' && !lessonStarted && (
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-cyan-600/90 backdrop-blur-sm rounded-lg px-6 py-3 border border-cyan-400/50 shadow-lg">
+            <div className="flex items-center gap-3">
+              <Play className="w-5 h-5 text-white animate-pulse" />
+              <p className="text-white font-medium">
+                Point at the START button in VR to begin
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Skip to Quiz Button - Show during TTS phases ONLY when lesson has started */}
+      {(loadingState === 'ready' || loadingState === 'in-vr') && lessonStarted &&
        ['intro', 'content', 'outro'].includes(lessonPhase) && mcqData.length > 0 && (
         <div className="absolute top-20 right-4 z-40">
           <button
@@ -2982,64 +4066,176 @@ const XRLessonPlayerV3: React.FC = () => {
         </div>
       )}
       
-      {/* DEBUG PANEL - Shows loading progress */}
-      <div className="absolute bottom-4 left-4 z-50 max-w-lg">
-        <div className="bg-black/90 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/50 text-xs font-mono">
+      {/* COMPREHENSIVE DEBUG PANEL */}
+      <div className="absolute bottom-4 left-4 z-50 max-w-xl">
+        <div className="bg-black/95 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/50 text-xs font-mono">
+          {/* Header with toggle and controls */}
           <div className="flex items-center justify-between mb-2">
-            <span className="text-yellow-400 font-bold">🐛 Debug Log</span>
+            <button 
+              onClick={() => setDebugExpanded(!debugExpanded)}
+              className="text-yellow-400 font-bold hover:text-yellow-300 flex items-center gap-1"
+            >
+              🐛 Debug Panel {debugExpanded ? '▼' : '▶'}
+            </button>
             <div className="flex items-center gap-2">
-              <span className="text-slate-500">State: {loadingState}</span>
+              <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                loadingState === 'in-vr' ? 'bg-purple-600 text-white' :
+                loadingState === 'ready' ? 'bg-green-600 text-white' :
+                loadingState === 'error' ? 'bg-red-600 text-white' :
+                'bg-slate-600 text-white'
+              }`}>
+                {loadingState}
+              </span>
+              <button
+                onClick={() => logStateSummary()}
+                className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
+                title="Log state summary to console"
+              >
+                📊 Log State
+              </button>
               <button
                 onClick={() => {
                   const fullLog = [
-                    `=== XRLessonPlayerV3 Debug Log ===`,
+                    `=== XRLessonPlayerV3 COMPREHENSIVE Debug Log ===`,
                     `Time: ${new Date().toISOString()}`,
-                    `State: ${loadingState}`,
-                    `Phase: ${lessonPhase}`,
-                    `VR Support: ${isVRSupported}`,
-                    `Skybox URL: ${skyboxUrl || 'null'}`,
-                    `TTS: ${ttsData.length} entries (playing: ${currentTtsIndex + 1})`,
-                    `MCQ: ${mcqData.length} questions`,
-                    `3D Assets: ${meshyAssets.length} (loaded: ${assetsLoaded})`,
                     ``,
-                    `=== Log Messages ===`,
+                    `=== CURRENT STATE ===`,
+                    `Loading State: ${loadingState}`,
+                    `Lesson Phase: ${lessonPhase}`,
+                    `Lesson Started: ${lessonStarted}`,
+                    `VR Supported: ${isVRSupported}`,
+                    `Layout Engine Ready: ${layoutEngineRef.current?.isReady() || false}`,
+                    ``,
+                    `=== TTS DATA ===`,
+                    `Total TTS entries: ${ttsData.length}`,
+                    `TTS State: ${ttsState}`,
+                    `Audio Playing: ${isAudioPlaying}`,
+                    `Audio Progress: ${(audioProgress * 100).toFixed(1)}%`,
+                    ...ttsData.map((t, i) => `TTS #${i + 1}: id=${t.id}, section=${t.section}`),
+                    ``,
+                    `=== MCQ DATA ===`,
+                    `Total MCQs: ${mcqData.length}`,
+                    `Current Question: ${currentMcqIndex + 1}`,
+                    `Score: ${mcqScore}/${mcqData.length}`,
+                    `MCQ Answered: ${mcqAnswered}`,
+                    `Selected Option: ${selectedMcqOption}`,
+                    ...mcqData.map((m, i) => `MCQ #${i + 1}: correctAnswer=${m.correctAnswer} (${m.options?.[m.correctAnswer]})`),
+                    ``,
+                    `=== 3D ASSETS ===`,
+                    `Total Assets: ${meshyAssets.length}`,
+                    `Loaded: ${assetsLoaded}`,
+                    ``,
+                    `=== GROUND PLANE CONFIG ===`,
+                    `Ground Level (Y): ${GROUND_LEVEL}m`,
+                    `Table Height: ${TABLE_HEIGHT}m`,
+                    `Asset Distance: ${ASSET_DISTANCE}m`,
+                    `Asset Right Offset: ${ASSET_RIGHT_OFFSET}m`,
+                    `Target Asset Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`,
+                    `Ground Plane Ref: ${groundPlaneRef.current ? 'EXISTS' : 'NULL'}`,
+                    ``,
+                    `=== NORMALIZED SCALING ===`,
+                    `All assets scaled to: ${NORMALIZED_SIZE}m max dimension`,
+                    `This ensures consistent sizing regardless of original model size`,
+                    ``,
+                    `=== MULTI-ASSET LAYOUT ===`,
+                    `Total Assets: ${meshyAssets.length}`,
+                    `Primary (Asset 1): RIGHT side at ${ASSET_DISTANCE}m, ${ASSET_RIGHT_OFFSET}m right`,
+                    `Secondary (Asset 2+): LEFT side at 45° intervals, 1.2m left`,
+                    `Layout: PRIMARY_RIGHT → SECONDARY_LEFT_45deg → SECONDARY_LEFT_90deg...`,
+                    ``,
+                    `=== DEBUG MESSAGES ===`,
                     ...debugInfo,
                     ``,
-                    `=== Lesson Data ===`,
+                    `=== RAW LESSON DATA ===`,
                     JSON.stringify(lessonData, null, 2)
                   ].join('\n');
                   navigator.clipboard.writeText(fullLog);
-                  alert('Debug log copied to clipboard!');
+                  alert('Comprehensive debug log copied to clipboard!');
                 }}
                 className="px-2 py-0.5 bg-yellow-600 hover:bg-yellow-500 text-black rounded text-xs"
               >
-                📋 Copy
+                📋 Copy All
               </button>
             </div>
           </div>
-          <div className="max-h-32 overflow-y-auto space-y-0.5">
-            {debugInfo.map((msg, i) => (
-              <div key={i} className={`text-xs ${
-                msg.includes('ERROR') ? 'text-red-400' : 
-                msg.includes('✅') ? 'text-green-400' : 
-                msg.includes('⚠') ? 'text-yellow-400' :
-                'text-slate-300'
-              }`}>
-                {msg}
+          
+          {debugExpanded && (
+            <>
+              {/* Status Grid - Always visible */}
+              <div className="mb-2 p-2 bg-slate-800/50 rounded grid grid-cols-3 gap-2 text-xs">
+                <div className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${skyboxUrl ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}></span>
+                  <span className="text-slate-300">Skybox</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${isVRSupported ? 'bg-green-500' : isVRSupported === false ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`}></span>
+                  <span className="text-slate-300">VR</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${layoutEngineRef.current?.isReady() ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
+                  <span className="text-slate-300">Layout</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${ttsData.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                  <span className="text-slate-300">TTS: {ttsData.length} {isAudioPlaying ? '▶' : ''}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${mcqData.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+                  <span className="text-slate-300">MCQ: {mcqData.length}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${assetsLoaded > 0 ? 'bg-green-500' : meshyAssets.length > 0 ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'}`}></span>
+                  <span className="text-slate-300">Assets: {assetsLoaded}/{meshyAssets.length}</span>
+                </div>
               </div>
-            ))}
-            {debugInfo.length === 0 && (
-              <div className="text-slate-500">Waiting for logs...</div>
-            )}
-          </div>
-          <div className="mt-2 pt-2 border-t border-slate-700 grid grid-cols-2 gap-x-4 text-slate-400">
-            <div>🌐 Skybox: {skyboxUrl ? '✓' : '...'}</div>
-            <div>🥽 VR: {isVRSupported === null ? '...' : isVRSupported ? '✓' : '✗'}</div>
-            <div>🔊 TTS: {ttsData.length} {isAudioPlaying ? '▶' : ''}</div>
-            <div>❓ MCQ: {mcqData.length}</div>
-            <div>📦 3D: {assetsLoaded}/{meshyAssets.length}</div>
-            <div>📍 Phase: {lessonPhase}</div>
-          </div>
+              
+              {/* Phase indicator */}
+              <div className="mb-2 p-2 bg-slate-800/50 rounded">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Phase:</span>
+                  <span className={`px-2 py-0.5 rounded font-bold text-xs ${
+                    lessonPhase === 'waiting' ? 'bg-gray-600 text-gray-200' :
+                    lessonPhase === 'intro' ? 'bg-cyan-600 text-white' :
+                    lessonPhase === 'content' ? 'bg-purple-600 text-white' :
+                    lessonPhase === 'outro' ? 'bg-emerald-600 text-white' :
+                    lessonPhase === 'mcq' ? 'bg-amber-600 text-white' :
+                    lessonPhase === 'complete' ? 'bg-green-600 text-white' :
+                    'bg-slate-600 text-white'
+                  }`}>
+                    {lessonPhase.toUpperCase()} {lessonStarted ? '✓' : '⏳'}
+                  </span>
+                </div>
+                {lessonPhase === 'mcq' && (
+                  <div className="mt-1 text-xs text-amber-300">
+                    Quiz: Q{currentMcqIndex + 1}/{mcqData.length} | Score: {mcqScore}/{mcqData.length}
+                  </div>
+                )}
+              </div>
+              
+              {/* Log Messages */}
+              <div className="max-h-40 overflow-y-auto space-y-0.5 p-2 bg-slate-900/50 rounded">
+                {debugInfo.slice(-20).map((msg, i) => (
+                  <div key={i} className={`text-xs ${
+                    msg.includes('ERROR') || msg.includes('❌') ? 'text-red-400' : 
+                    msg.includes('✅') ? 'text-green-400' : 
+                    msg.includes('⚠') || msg.includes('⏳') ? 'text-yellow-400' :
+                    msg.includes('🥽') ? 'text-purple-400' :
+                    msg.includes('🔊') ? 'text-cyan-400' :
+                    msg.includes('❓') ? 'text-amber-400' :
+                    msg.includes('📐') ? 'text-blue-400' :
+                    msg.includes('📦') ? 'text-orange-400' :
+                    msg.includes('👆') ? 'text-pink-400' :
+                    'text-slate-300'
+                  }`}>
+                    {msg}
+                  </div>
+                ))}
+                {debugInfo.length === 0 && (
+                  <div className="text-slate-500 text-center py-2">Waiting for debug messages...</div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

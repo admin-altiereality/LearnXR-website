@@ -51,11 +51,11 @@ export default defineConfig(({ mode }) => {
       },
       // Optimize chunk size warnings
       chunkSizeWarningLimit: 1000,
-      // Enable minification
+      // Enable minification but preserve console logs for debugging
       minify: 'terser',
       terserOptions: {
         compress: {
-          drop_console: true,
+          drop_console: false,  // Keep console logs for debugging
           drop_debugger: true,
         },
       },
