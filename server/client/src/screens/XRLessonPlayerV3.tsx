@@ -25,7 +25,7 @@ import { VRButton } from 'three/examples/jsm/webxr/VRButton';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 import { db } from '../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { ArrowLeft, Loader2, AlertTriangle, Glasses } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home } from 'lucide-react';
 
 // ============================================================================
 // Types
@@ -83,7 +83,7 @@ interface MeshyAsset {
 }
 
 type LoadingState = 'loading' | 'ready' | 'error' | 'no-vr' | 'in-vr';
-type LessonPhase = 'intro' | 'content' | 'mcq' | 'complete';
+type LessonPhase = 'intro' | 'content' | 'outro' | 'mcq' | 'complete';
 
 // ============================================================================
 // Error Boundary Component
@@ -421,14 +421,24 @@ const XRLessonPlayerV3: React.FC = () => {
       if ((lessonData as any).topic?.mcqs && Array.isArray((lessonData as any).topic.mcqs)) {
         const mcqs = (lessonData as any).topic.mcqs;
         if (mcqs.length > 0) {
-          // Convert to MCQData format
-          const convertedMCQs: MCQData[] = mcqs.map((mcq: any) => ({
-            id: mcq.id || '',
-            question: mcq.question || '',
-            options: Array.isArray(mcq.options) ? mcq.options : [],
-            correctAnswer: mcq.correct_option_index ?? 0,
-            explanation: mcq.explanation || '',
-          }));
+          // Convert to MCQData format with 1-based to 0-based index conversion
+          const convertedMCQs: MCQData[] = mcqs.map((mcq: any) => {
+            const options = Array.isArray(mcq.options) ? mcq.options : [];
+            let rawIndex = mcq.correct_option_index ?? 0;
+            if (typeof rawIndex !== 'number') rawIndex = parseInt(String(rawIndex), 10) || 0;
+            // CRITICAL: Convert 1-based DB index to 0-based frontend index
+            let correctAnswer = rawIndex;
+            if (rawIndex >= 1 && rawIndex <= options.length) {
+              correctAnswer = rawIndex - 1;
+            }
+            return {
+              id: mcq.id || '',
+              question: mcq.question || '',
+              options: options,
+              correctAnswer: Math.max(0, Math.min(correctAnswer, options.length - 1)),
+              explanation: mcq.explanation || '',
+            };
+          });
           
           setMcqData(convertedMCQs);
           addDebug(`✅ Loaded ${convertedMCQs.length} MCQs from bundle (language: ${lessonLanguage})`);
@@ -464,11 +474,19 @@ const XRLessonPlayerV3: React.FC = () => {
             
             // Only include if language matches
             if (mcqLang === lessonLanguage) {
+              const options = data.options || [];
+              let rawIndex = data.correct_option_index ?? data.correct_answer ?? data.correctAnswer ?? 0;
+              if (typeof rawIndex !== 'number') rawIndex = parseInt(String(rawIndex), 10) || 0;
+              // CRITICAL: Convert 1-based DB index to 0-based frontend index
+              let correctAnswer = rawIndex;
+              if (rawIndex >= 1 && rawIndex <= options.length) {
+                correctAnswer = rawIndex - 1;
+              }
               mcqResults.push({
                 id: mcqId,
                 question: data.question || data.question_text || '',
-                options: data.options || [],
-                correctAnswer: data.correct_answer ?? data.correctAnswer ?? 0,
+                options: options,
+                correctAnswer: Math.max(0, Math.min(correctAnswer, options.length - 1)),
                 explanation: data.explanation || '',
               });
               addDebug(`MCQ loaded: ${mcqId} (${mcqLang})`);
@@ -2030,6 +2048,18 @@ const XRLessonPlayerV3: React.FC = () => {
     }
   }, [lessonPhase, stopAudio]);
   
+  // Skip directly to Quiz - for users who want to skip all TTS phases
+  const skipToQuiz = useCallback(() => {
+    stopAudio();
+    if (mcqData.length > 0) {
+      setLessonPhase('mcq');
+      addDebug('⏭️ Skipped to Quiz');
+    } else {
+      setLessonPhase('complete');
+      addDebug('⏭️ No quiz available - completing lesson');
+    }
+  }, [mcqData.length, stopAudio, addDebug]);
+  
   // Auto-play TTS when phase changes (intro/content/outro)
   useEffect(() => {
     if (['intro', 'content', 'outro'].includes(lessonPhase) && ttsData.length > 0) {
@@ -2393,10 +2423,8 @@ const XRLessonPlayerV3: React.FC = () => {
     setMcqAnswered(true);
     
     const currentMcq = mcqData[currentMcqIndex];
-    // Note: correct_option_index is 1-based, optionIndex is 0-based
-    const correctIndex = (currentMcq as any).correct_option_index 
-      ? (currentMcq as any).correct_option_index - 1 
-      : currentMcq.correctAnswer;
+    // correctAnswer is now already 0-based (converted in fetchMCQData)
+    const correctIndex = currentMcq.correctAnswer;
     
     if (optionIndex === correctIndex) {
       setMcqScore(prev => prev + 1);
@@ -2528,10 +2556,8 @@ const XRLessonPlayerV3: React.FC = () => {
       // Store button bounds for raycast interaction
       const buttonBounds: Array<{ bounds: { x: number; y: number; width: number; height: number }; action: () => void }> = [];
       
-      // Get correct answer index (handle 1-based vs 0-based)
-      const correctIndex = (mcq as any).correct_option_index 
-        ? (mcq as any).correct_option_index - 1 
-        : mcq.correctAnswer;
+      // correctAnswer is now already 0-based (converted in fetchMCQData)
+      const correctIndex = mcq.correctAnswer;
       
       mcq.options.forEach((option, index) => {
         const optionY = optionStartY + (index * optionSpacing);
@@ -2867,6 +2893,63 @@ const XRLessonPlayerV3: React.FC = () => {
             <p className="text-cyan-300 text-sm text-center">
               Click "Enter VR" below to start the immersive experience
             </p>
+          </div>
+        </div>
+      )}
+      
+      {/* Skip to Quiz Button - Show during TTS phases */}
+      {(loadingState === 'ready' || loadingState === 'in-vr') && 
+       ['intro', 'content', 'outro'].includes(lessonPhase) && mcqData.length > 0 && (
+        <div className="absolute top-20 right-4 z-40">
+          <button
+            onClick={skipToQuiz}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 
+                     hover:from-amber-500 hover:to-orange-500 text-white rounded-lg font-medium 
+                     shadow-lg shadow-amber-500/20 border border-amber-500/50 transition-all"
+          >
+            <SkipForward className="w-4 h-4" />
+            Skip to Quiz
+          </button>
+        </div>
+      )}
+      
+      {/* Lesson Completion Screen */}
+      {lessonPhase === 'complete' && (
+        <div className="absolute inset-0 bg-slate-950/95 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="max-w-md w-full mx-4 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl 
+                        border border-emerald-500/30 p-8 text-center shadow-2xl">
+            <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 
+                          flex items-center justify-center border border-emerald-500/30">
+              <Award className="w-10 h-10 text-emerald-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">Lesson Complete!</h2>
+            <p className="text-slate-400 text-sm mb-6">
+              {lessonData?.topic.topic_name}
+            </p>
+            
+            {/* Quiz Score Display */}
+            {mcqData.length > 0 && (
+              <div className="mb-6 p-4 bg-slate-800/50 rounded-xl inline-block">
+                <p className="text-xs text-slate-400 mb-1">Quiz Score</p>
+                <p className="text-4xl font-bold text-emerald-400">
+                  {mcqScore}/{mcqData.length}
+                </p>
+                <p className="text-sm text-slate-500 mt-1">
+                  {Math.round((mcqScore / mcqData.length) * 100)}% correct
+                </p>
+              </div>
+            )}
+            
+            <button
+              onClick={() => navigate('/lessons')}
+              className="flex items-center justify-center gap-2 px-6 py-3 mx-auto
+                       text-white bg-gradient-to-r from-cyan-600 to-blue-600 
+                       hover:from-cyan-500 hover:to-blue-500 rounded-lg font-medium 
+                       shadow-lg transition-all"
+            >
+              <Home className="w-4 h-4" />
+              Back to Lessons
+            </button>
           </div>
         </div>
       )}
