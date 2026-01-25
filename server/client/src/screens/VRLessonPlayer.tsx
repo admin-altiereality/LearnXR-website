@@ -693,38 +693,29 @@ const TTSStatusIndicator = ({
 // ============================================================================
 
 const VRLessonPlayerInner = () => {
-  console.log('═══════════════════════════════════════════════════════');
-  console.log('🎬 [VRLessonPlayer] Component rendering...');
-  console.log('═══════════════════════════════════════════════════════');
   
-  // STEP 1: Initialize React Router hooks
+  // Initialize React Router hooks
   let navigate: ReturnType<typeof useNavigate>;
   try {
     navigate = useNavigate();
-    console.log('✅ [Init 1] useNavigate initialized');
   } catch (e) {
-    console.error('❌ [Init 1] useNavigate failed:', e);
     throw new Error('Failed to initialize navigation');
   }
   
-  // STEP 2: Initialize Auth context
+  // Initialize Auth context
   let user: any = null;
   try {
     const authContext = useAuth();
     user = authContext?.user ?? null;
-    console.log('✅ [Init 2] useAuth initialized, user:', user?.uid ? 'logged in' : 'null');
   } catch (e) {
-    console.error('❌ [Init 2] useAuth failed:', e);
     // Continue without user - some features won't work
   }
   
-  // STEP 3: Initialize Lesson context with defensive access
+  // Initialize Lesson context with defensive access
   let lessonContext: ReturnType<typeof useLesson> | null = null;
   try {
     lessonContext = useLesson();
-    console.log('✅ [Init 3] useLesson initialized, activeLesson:', lessonContext?.activeLesson ? 'exists' : 'null');
   } catch (e) {
-    console.error('❌ [Init 3] useLesson failed:', e);
     // Will use sessionStorage fallback
   }
 
@@ -732,97 +723,55 @@ const VRLessonPlayerInner = () => {
   const activeLesson = lessonContext?.activeLesson ?? null;
   const lessonPhase = lessonContext?.lessonPhase ?? 'idle';
   const currentScriptIndex = lessonContext?.currentScriptIndex ?? 0;
-  const setPhase = lessonContext?.setPhase ?? (() => { console.warn('setPhase not available'); });
-  const advanceScript = lessonContext?.advanceScript ?? (() => { console.warn('advanceScript not available'); });
+  const setPhase = lessonContext?.setPhase ?? (() => {});
+  const advanceScript = lessonContext?.advanceScript ?? (() => {});
   const hasNextScript = lessonContext?.hasNextScript ?? (() => false);
-  const endLesson = lessonContext?.endLesson ?? (() => { console.warn('endLesson not available'); });
-  const submitQuizResults = lessonContext?.submitQuizResults ?? (() => { console.warn('submitQuizResults not available'); });
+  const endLesson = lessonContext?.endLesson ?? (() => {});
+  const submitQuizResults = lessonContext?.submitQuizResults ?? (() => {});
 
-  // STEP 4: Initialize all state hooks BEFORE any conditional logic
+  // Initialize all state hooks BEFORE any conditional logic
   const [extraLessonData, setExtraLessonData] = useState<any>(null);
   const [dataInitialized, setDataInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [initPhase, setInitPhase] = useState<'starting' | 'loading-storage' | 'validating' | 'ready' | 'error'>('starting');
-  
-  console.log('✅ [Init 4] State hooks initialized');
 
-  // STEP 5: Load extra lesson data from sessionStorage on mount with comprehensive validation
+  // Load extra lesson data from sessionStorage on mount
   useEffect(() => {
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('📦 [VRLessonPlayer] Data initialization effect running...');
-    console.log('═══════════════════════════════════════════════════════');
-    
     const initializeData = async () => {
       setInitPhase('loading-storage');
       
       try {
         // Give a small delay for context to propagate
-        console.log('⏳ [Data Init] Waiting for context propagation...');
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Check context first
-        console.log('🔍 [Data Init] Checking context state...');
-        console.log('  - activeLesson from context:', activeLesson ? 'exists' : 'null');
-        if (activeLesson) {
-          console.log('  - chapter_id:', activeLesson.chapter?.chapter_id);
-          console.log('  - topic_id:', activeLesson.topic?.topic_id);
-        }
-        
         // Check sessionStorage
-        console.log('🔍 [Data Init] Checking sessionStorage...');
         const stored = sessionStorage.getItem('activeLesson');
         
         if (stored) {
-          console.log('  - Found data in sessionStorage, length:', stored.length);
           setInitPhase('validating');
           
           try {
             const parsed = JSON.parse(stored);
-            console.log('  - Parsed successfully');
-            
-            // DEBUG: Log ALL keys and language/ttsAudio status from sessionStorage
-            console.log('🔍 [Data Init] SessionStorage parsed contents:', {
-              allKeys: Object.keys(parsed),
-              hasLanguageField: 'language' in parsed,
-              languageValue: parsed.language,
-              hasTtsAudioField: 'ttsAudio' in parsed,
-              ttsAudioLength: parsed.ttsAudio?.length || 0,
-              ttsAudioSample: parsed.ttsAudio?.slice?.(0, 2)?.map?.((t: any) => ({
-                id: t.id,
-                language: t.language,
-                script_type: t.script_type,
-              })),
-            });
             
             // Validate the parsed data
             if (parsed && typeof parsed === 'object') {
               const hasChapter = !!(parsed.chapter && parsed.chapter.chapter_id);
               const hasTopic = !!(parsed.topic && parsed.topic.topic_id);
               
-              console.log('  - Validation:', { hasChapter, hasTopic });
-              
               if (hasChapter && hasTopic) {
-                console.log('✅ [Data Init] Lesson data validated from sessionStorage');
                 setExtraLessonData(parsed);
-              } else {
-                console.warn('⚠️ [Data Init] SessionStorage data missing required fields');
               }
-            } else {
-              console.warn('⚠️ [Data Init] Parsed data is not an object');
             }
           } catch (parseErr) {
-            console.error('❌ [Data Init] JSON parse error:', parseErr);
+            console.error('JSON parse error:', parseErr);
           }
-        } else {
-          console.log('  - No data in sessionStorage');
         }
         
         setInitPhase('ready');
         setDataInitialized(true);
-        console.log('✅ [Data Init] Initialization complete');
         
       } catch (e) {
-        console.error('❌ [Data Init] Error:', e);
+        console.error('Data init error:', e);
         setInitError('Failed to load lesson data');
         setInitPhase('error');
         setDataInitialized(true);
@@ -836,25 +785,21 @@ const VRLessonPlayerInner = () => {
   const isLessonDataValid = useMemo(() => {
     const fromContext = !!(activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id);
     const fromStorage = !!(extraLessonData?.chapter?.chapter_id && extraLessonData?.topic?.topic_id);
-    console.log('🔍 [Validation] isLessonDataValid:', { fromContext, fromStorage });
     return fromContext || fromStorage;
   }, [activeLesson, extraLessonData]);
   
   // Get the best available lesson data (context takes priority)
   const effectiveLesson = useMemo(() => {
     if (activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id) {
-      console.log('📋 [effectiveLesson] Using context data');
       return activeLesson;
     }
     if (extraLessonData?.chapter && extraLessonData?.topic) {
-      console.log('📋 [effectiveLesson] Using sessionStorage data');
       return {
         chapter: extraLessonData.chapter,
         topic: extraLessonData.topic,
         startedAt: extraLessonData.startedAt || new Date().toISOString(),
       };
     }
-    console.log('📋 [effectiveLesson] No valid data available');
     return null;
   }, [activeLesson, extraLessonData]);
 
@@ -1319,26 +1264,10 @@ const VRLessonPlayerInner = () => {
     const fetchTTSData = async () => {
       if (!extraLessonData) return;
       
-      // Check both root level (old) and topic level (new - after LessonContext saves)
+      // Get language from topic (primary) or root level (fallback)
       const lessonLanguage = extraLessonData?.topic?.language || extraLessonData?.language || 'en';
       
-      // DEBUG: Log what we're receiving from sessionStorage
-      console.log('🔍 [VRLessonPlayer TTS] Debug - extraLessonData contents:', {
-        hasLanguageRoot: 'language' in extraLessonData,
-        languageRoot: extraLessonData?.language,
-        hasLanguageTopic: !!(extraLessonData?.topic && 'language' in extraLessonData.topic),
-        languageTopic: extraLessonData?.topic?.language,
-        lessonLanguageUsed: lessonLanguage,
-        hasTtsAudioRoot: 'ttsAudio' in extraLessonData,
-        ttsAudioLengthRoot: extraLessonData?.ttsAudio?.length || 0,
-        hasTtsAudioTopic: !!(extraLessonData?.topic && 'ttsAudio' in extraLessonData.topic),
-        ttsAudioLengthTopic: extraLessonData?.topic?.ttsAudio?.length || 0,
-        allKeys: Object.keys(extraLessonData),
-        topicKeys: extraLessonData?.topic ? Object.keys(extraLessonData.topic) : [],
-      });
-      
-      // Priority 1: Check if TTS audio is already in extraLessonData (from bundle)
-      // Check both topic level (new - after LessonContext saves) and root level (old)
+      // Get TTS audio from topic (primary) or root level (fallback)
       const ttsAudioFromStorage = extraLessonData?.topic?.ttsAudio || extraLessonData?.ttsAudio;
       if (ttsAudioFromStorage && Array.isArray(ttsAudioFromStorage)) {
         // Filter by language (strict match)
@@ -2002,11 +1931,8 @@ const VRLessonPlayerInner = () => {
   // Initialization / Loading State
   // ============================================================================
 
-  console.log('🔍 [Render] Checking render state:', { dataInitialized, initError, initPhase, isLessonDataValid });
-
   // Show loading while data initializes
   if (!dataInitialized) {
-    console.log('🔄 [Render] Showing loading state, phase:', initPhase);
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
@@ -2027,7 +1953,6 @@ const VRLessonPlayerInner = () => {
 
   // Show error if initialization failed
   if (initError) {
-    console.log('❌ [Render] Showing error state:', initError);
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
@@ -2068,7 +1993,6 @@ const VRLessonPlayerInner = () => {
 
   // Show no lesson state if data is invalid
   if (!isLessonDataValid || !effectiveLesson) {
-    console.log('⚠️ [Render] No valid lesson data:', { isLessonDataValid, hasEffectiveLesson: !!effectiveLesson });
     return (
       <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
@@ -2079,15 +2003,8 @@ const VRLessonPlayerInner = () => {
           <p className="text-slate-400 mb-4">
             Please select a lesson from the library to start learning.
           </p>
-          <p className="text-xs text-slate-500 mb-6 font-mono">
-            Context: {activeLesson ? 'has data' : 'empty'} | 
-            Storage: {extraLessonData ? 'has data' : 'empty'}
-          </p>
           <button
-            onClick={() => {
-              console.log('🚪 Navigating to lessons...');
-              navigate('/lessons');
-            }}
+            onClick={() => navigate('/lessons')}
             className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 
                      text-white font-semibold rounded-xl shadow-lg"
           >
@@ -2100,7 +2017,6 @@ const VRLessonPlayerInner = () => {
   }
   
   // Use effective lesson for all subsequent operations
-  console.log('✅ [Render] Lesson data valid, proceeding with render');
   const currentLesson = effectiveLesson;
 
   const getPhaseLabel = () => {
@@ -2824,15 +2740,11 @@ const VRLessonPlayerInner = () => {
 // ============================================================================
 
 const SafeVRLessonPlayer = () => {
-  console.log('🛡️ [SafeVRLessonPlayer] Checking safe initialization...');
-  
   // Check if we're in a valid render context
   const [isReady, setIsReady] = React.useState(false);
   const [mountError, setMountError] = React.useState<string | null>(null);
   
   React.useEffect(() => {
-    console.log('🔍 [SafeVRLessonPlayer] Running mount check...');
-    
     // Small delay to ensure all providers are ready
     const checkMount = async () => {
       try {
@@ -2841,17 +2753,12 @@ const SafeVRLessonPlayer = () => {
           throw new Error('SessionStorage not available');
         }
         
-        // Check if we have lesson data somewhere
-        const hasStorageData = !!sessionStorage.getItem('activeLesson');
-        console.log('  - SessionStorage data:', hasStorageData ? 'found' : 'not found');
-        
         // Give context providers time to initialize
         await new Promise(resolve => setTimeout(resolve, 150));
         
-        console.log('✅ [SafeVRLessonPlayer] Mount check passed');
         setIsReady(true);
       } catch (err) {
-        console.error('❌ [SafeVRLessonPlayer] Mount check failed:', err);
+        console.error('Mount check failed:', err);
         setMountError(err instanceof Error ? err.message : 'Unknown error');
       }
     };
@@ -2895,7 +2802,6 @@ const SafeVRLessonPlayer = () => {
     );
   }
   
-  console.log('🎬 [SafeVRLessonPlayer] Rendering VRLessonPlayerInner...');
   return <VRLessonPlayerInner />;
 };
 
@@ -2904,13 +2810,8 @@ const SafeVRLessonPlayer = () => {
 // ============================================================================
 
 const VRLessonPlayer = () => {
-  console.log('═══════════════════════════════════════════════════════');
-  console.log('🎮 [VRLessonPlayer] Main component mounting...');
-  console.log('═══════════════════════════════════════════════════════');
-  
   return (
     <VRPlayerErrorBoundary onReset={() => {
-      console.log('🔄 [VRLessonPlayer] Error boundary reset triggered');
       sessionStorage.removeItem('activeLesson');
       window.location.href = '/lessons';
     }}>
