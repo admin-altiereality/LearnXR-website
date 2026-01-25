@@ -1088,6 +1088,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
         mcq_ids: Array.isArray(lessonData.topic?.mcq_ids) ? [...lessonData.topic.mcq_ids] : [],
         tts_ids: Array.isArray(lessonData.topic?.tts_ids) ? [...lessonData.topic.tts_ids] : [],
         mcqs: Array.isArray(lessonData.topic?.mcqs) ? [...lessonData.topic.mcqs] : [],
+        // Include language and TTS audio in topic so LessonContext preserves them
+        language: lessonData.language || 'en',
+        ttsAudio: Array.isArray(lessonData.ttsAudio) ? [...lessonData.ttsAudio] : [],
       };
       
       fullLessonData = {
@@ -1097,6 +1100,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
         startedAt: lessonData.startedAt ?? new Date().toISOString(),
         launchedAt: new Date().toISOString(),
         _meta: lessonData._meta ?? null,
+        // Include language and TTS audio array (same as launchVRLesson)
+        language: lessonData.language || 'en',
+        ttsAudio: lessonData.ttsAudio || [],
       };
       
       console.log('✅ [Step 2] Clean data prepared:', {
@@ -1104,6 +1110,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
         topicId: cleanTopic.topic_id,
         hasSkybox: !!cleanTopic.skybox_url,
         hasNarration: !!(cleanTopic.avatar_intro || cleanTopic.avatar_explanation),
+        // DEBUG: Log language and TTS info being saved
+        language: fullLessonData.language,
+        ttsAudioCount: fullLessonData.ttsAudio?.length || 0,
+        ttsAudioSample: fullLessonData.ttsAudio?.slice(0, 2).map(t => ({
+          id: t.id,
+          language: t.language,
+          script_type: t.script_type,
+        })),
       });
     } catch (prepErr) {
       console.error('❌ [Step 2] Error preparing data:', prepErr);
@@ -1122,7 +1136,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
       if (!verified) {
         throw new Error('SessionStorage verification failed');
       }
-      console.log('✅ [Step 3] SessionStorage saved and verified');
+      // DEBUG: Parse and verify language/TTS are in saved data
+      const parsedVerified = JSON.parse(verified);
+      console.log('✅ [Step 3] SessionStorage saved and verified:', {
+        savedLanguage: parsedVerified.language,
+        savedTtsAudioCount: parsedVerified.ttsAudio?.length || 0,
+        hasLanguageField: 'language' in parsedVerified,
+        hasTtsAudioField: 'ttsAudio' in parsedVerified,
+      });
     } catch (storageErr) {
       console.error('⚠️ [Step 3] SessionStorage error (continuing anyway):', storageErr);
     }
