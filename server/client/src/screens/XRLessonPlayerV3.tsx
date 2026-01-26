@@ -24,6 +24,8 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
 import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
+import { VRLessonExperience } from '../utils/webxr/vrLessonExperience';
+import { StableLayoutSystem } from '../utils/webxr/stableLayoutSystem';
 import { db } from '../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home, Play } from 'lucide-react';
@@ -165,6 +167,19 @@ const XRLessonPlayerV3: React.FC = () => {
   const professionalLayoutRef = useRef<ProfessionalLayoutSystem | null>(null);
   const placedAssetsRef = useRef<PlacedAsset[]>([]);
   
+  // VR Lesson Experience - world-class VR EdTech experience
+  const vrExperienceRef = useRef<VRLessonExperience | null>(null);
+  
+  // Stable Layout System - crash-safe, deterministic asset staging
+  const stableLayoutRef = useRef<StableLayoutSystem | null>(null);
+  
+  // Interaction guard - prevent runaway loops
+  const interactionGuardRef = useRef<{
+    lastInteractionTime: number;
+    interactionCount: number;
+    isProcessing: boolean;
+  }>({ lastInteractionTime: 0, interactionCount: 0, isProcessing: false });
+  
   // Ground plane constants
   const GROUND_LEVEL = 0;        // Y coordinate of the ground plane
   const TABLE_HEIGHT = 1.0;      // Height for placing objects (1m above ground)
@@ -228,6 +243,13 @@ const XRLessonPlayerV3: React.FC = () => {
   // Debug state - expanded for comprehensive logging
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [debugExpanded, setDebugExpanded] = useState(true);
+  
+  // Asset dock state
+  const [assetsVisible, setAssetsVisible] = useState(true);
+  const [assetDockExpanded, setAssetDockExpanded] = useState(false);
+  
+  // Asset references map for dock control
+  const assetRefs = useRef<Map<string, THREE.Object3D>>(new Map());
   
   // Debug logger with category support - enhanced with timestamps and structured output
   const addDebug = useCallback((msg: string, category?: keyof typeof DEBUG_CATEGORIES) => {
@@ -1010,99 +1032,69 @@ const XRLessonPlayerV3: React.FC = () => {
                   addDebug(`Layout System: User pose updated`);
                 }
                 
+                // Update VR Lesson Experience with user pose
+                if (vrExperienceRef.current && cameraRef.current) {
+                  vrExperienceRef.current.updateUserPose(cameraRef.current, GROUND_LEVEL);
+                  console.log(`[VRExperience] User pose updated for VR session`);
+                  addDebug(`VR Experience: Stage positioned`);
+                }
+                
                 addDebug(`Ground Level: ${GROUND_LEVEL}m`);
                 addDebug(`Table Height: ${TABLE_HEIGHT}m`);
                 addDebug(`Target Asset Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`);
                 
+                // ═══════════════════════════════════════════════════════════════════
+                // STABLE LAYOUT ON VR SESSION START
+                // Recompute anchors for VR mode and re-stage if needed
+                // ═══════════════════════════════════════════════════════════════════
                 const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
                 if (assetsGroup && assetsGroup.children.length > 0) {
-                  console.log(`🎯 [VR START] REPOSITIONING ${assetsGroup.children.length} assets with Professional Layout System`);
-                  addDebug(`🔄 Professional layout for ${assetsGroup.children.length} asset(s)`);
-                  
-                  // Get camera forward direction (flattened)
-                  const rawForward = new THREE.Vector3(0, 0, -1);
-                  rawForward.applyQuaternion(cameraRef.current.quaternion);
-                  const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z);
-                  if (flatForward.lengthSq() < 0.001) flatForward.set(0, 0, -1);
-                  flatForward.normalize();
-                  
-                  // Get right direction
-                  const rightDir = new THREE.Vector3();
-                  rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
-                  
-                  console.log(`🎯 [VR START] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
-                  console.log(`🎯 [VR START] Right: (${rightDir.x.toFixed(3)}, 0, ${rightDir.z.toFixed(3)})`);
-                  
-                  // Reposition each asset - GROUND PLANE REFERENCED + MULTI-ASSET LAYOUT
-                  // ═══════════════════════════════════════════════════════════════════════
-                  // MULTI-ASSET LAYOUT STRATEGY (VR START):
-                  // - Primary asset: Front-right of user (comfortable viewing)
-                  // - Secondary assets: Positioned to the LEFT of primary in an arc
-                  // - Each secondary is 45° apart for clear separation
-                  // ═══════════════════════════════════════════════════════════════════════
-                  const totalAssets = assetsGroup.children.length;
-                  const SECONDARY_ARC_ANGLE = 45;                // 45° between assets for clear separation
-                  const SECONDARY_LEFT_OFFSET = 1.2;             // 1.2m to the left of primary
-                  
                   console.log(`🎯 [VR START] ═══════════════════════════════════════`);
-                  console.log(`🎯 [VR START] MULTI-ASSET LAYOUT for ${totalAssets} assets`);
-                  console.log(`🎯 [VR START] Camera: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
-                  console.log(`🎯 [VR START] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
-                  console.log(`🎯 [VR START] Right: (${rightDir.x.toFixed(3)}, 0, ${rightDir.z.toFixed(3)})`);
+                  console.log(`🎯 [VR START] STABLE LAYOUT for ${assetsGroup.children.length} assets`);
                   
-                  assetsGroup.children.forEach((assetWrapper, index) => {
-                    const oldPos = assetWrapper.position.clone();
-                    
-                    // Y is ALWAYS: GROUND_LEVEL + TABLE_HEIGHT (model bottom at table level)
-                    const newY = GROUND_LEVEL + TABLE_HEIGHT;
-                    
-                    let newX: number, newZ: number, layoutType: string;
-                    
-                    if (index === 0 || totalAssets === 1) {
-                      // PRIMARY ASSET: Front-right of user (to the right of UI panel)
-                      newX = cameraPos.x + flatForward.x * ASSET_DISTANCE + rightDir.x * ASSET_RIGHT_OFFSET;
-                      newZ = cameraPos.z + flatForward.z * ASSET_DISTANCE + rightDir.z * ASSET_RIGHT_OFFSET;
-                      layoutType = 'PRIMARY_RIGHT';
-                    } else {
-                      // SECONDARY ASSETS: To the LEFT of primary, in front of user
-                      // Each secondary is positioned at an angle to the LEFT
-                      const angleOffset = -index * SECONDARY_ARC_ANGLE; // Negative = to the LEFT
-                      const angleRad = THREE.MathUtils.degToRad(angleOffset);
-                      
-                      // Rotate forward direction by angle (around Y axis) - LEFT rotation
-                      const rotatedForward = new THREE.Vector3(
-                        flatForward.x * Math.cos(angleRad) - flatForward.z * Math.sin(angleRad),
-                        0,
-                        flatForward.x * Math.sin(angleRad) + flatForward.z * Math.cos(angleRad)
-                      ).normalize();
-                      
-                      // Position: forward direction rotated LEFT, with LEFT offset
-                      newX = cameraPos.x + rotatedForward.x * ASSET_DISTANCE - rightDir.x * SECONDARY_LEFT_OFFSET;
-                      newZ = cameraPos.z + rotatedForward.z * ASSET_DISTANCE - rightDir.z * SECONDARY_LEFT_OFFSET;
-                      layoutType = `SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
-                    }
-                    
-                    assetWrapper.position.set(newX, newY, newZ);
-                    
-                    // Make asset face the camera (rotate to look at user)
-                    assetWrapper.lookAt(cameraPos.x, newY, cameraPos.z);
-                    
-                    // Store original position for reset
-                    assetWrapper.userData.originalPosition = assetWrapper.position.clone();
-                    assetWrapper.userData.originalRotation = assetWrapper.rotation.clone();
-                    assetWrapper.userData.originalScale = assetWrapper.scale.clone();
-                    
-                    console.log(`🎯 [VR START] Asset ${index + 1}/${totalAssets} [${layoutType}]:`);
-                    console.log(`🎯 [VR START]   Old: (${oldPos.x.toFixed(2)}, ${oldPos.y.toFixed(2)}, ${oldPos.z.toFixed(2)})`);
-                    console.log(`🎯 [VR START]   New: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
-                    
-                    addDebug(`Asset ${index + 1} [${layoutType}]:`);
-                    addDebug(`  Position: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
+                  addDebug(`🔄 Stable Layout for ${assetsGroup.children.length} asset(s)`);
+                  
+                  // Initialize or update Stable Layout System
+                  if (!stableLayoutRef.current) {
+                    stableLayoutRef.current = new StableLayoutSystem({
+                      stageDistance: 2.5,
+                      stageWidth: 4.0,
+                      stageDepth: 2.5,
+                      horizontalOffset: 0.8,
+                      floorHeight: GROUND_LEVEL,
+                      modelSpacing: 0.5,
+                      normalizedSize: 0.8,
+                      environmentThreshold: 10.0,
+                    });
+                  }
+                  
+                  // Initialize or recompute anchors for VR
+                  if (!stableLayoutRef.current.isReady()) {
+                    stableLayoutRef.current.initialize(cameraRef.current, GROUND_LEVEL);
+                  } else {
+                    // Unlock and restage for VR mode
+                    stableLayoutRef.current.unlockLayout();
+                    stableLayoutRef.current.recomputeAnchors(cameraRef.current, GROUND_LEVEL);
+                  }
+                  
+                  // Stage all models
+                  const modelsToStage = assetsGroup.children as THREE.Object3D[];
+                  const stagedModels = stableLayoutRef.current.stageModels(modelsToStage);
+                  
+                  addDebug(`Layout Engine Ready: ${stableLayoutRef.current.isReady()}`);
+                  addDebug(`Models staged: ${stagedModels.length}`);
+                  
+                  // Log final positions
+                  stagedModels.forEach((staged, index) => {
+                    const pos = staged.model.position;
+                    console.log(`🎯 [VR START] Asset ${index + 1}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+                    addDebug(`Asset ${index + 1}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
                   });
+                  
                   console.log(`🎯 [VR START] ═══════════════════════════════════════`);
                 } else {
                   console.log(`🎯 [VR START] No assets group found or empty`);
-                  addDebug(`No assets to reposition`);
+                  addDebug(`No assets to layout`);
                 }
                 
                 console.log(`🎯 [VR START] ════════════════════════════════════════\n`);
@@ -1218,6 +1210,40 @@ const XRLessonPlayerV3: React.FC = () => {
     addDebug(`UI Zone: 2.0m distance, left side`);
     addDebug(`Asset Zone: 2.0-4.0m, right side`);
     addDebug(`Collision Detection: ENABLED`);
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // VR LESSON EXPERIENCE - World-Class VR EdTech Layout
+    // Creates stage platform, professional lighting, and natural grab controls
+    // ═══════════════════════════════════════════════════════════════════════
+    const vrExperience = new VRLessonExperience({
+      panelSide: 'left',
+      panel: {
+        distance: 2.0,
+        width: 1.2,
+        height: 1.4,
+        horizontalOffset: -1.0,
+        verticalOffset: 0.0,
+        tiltAngle: -8,
+      },
+      assetStage: {
+        distance: 2.5,
+        width: 3.0,
+        depth: 2.0,
+        horizontalOffset: 0.8,
+        floorHeight: GROUND_LEVEL,
+      },
+      normalizedSize: NORMALIZED_SIZE,
+      modelSpacing: 0.4,
+    });
+    vrExperience.initialize(scene);
+    vrExperienceRef.current = vrExperience;
+    
+    console.log(`[XRLessonPlayerV3] VR Lesson Experience initialized`);
+    addDebug(`═══ VR LESSON EXPERIENCE ═══`);
+    addDebug(`Panel: LEFT side, 2.0m distance`);
+    addDebug(`Asset Stage: RIGHT side, circular platform`);
+    addDebug(`Stage Lighting: Spotlight + Ambient`);
+    addDebug(`Natural Grab: ENABLED`);
     
     // Initialize raycaster for VR controller interaction
     const raycaster = new THREE.Raycaster();
@@ -1357,50 +1383,131 @@ const XRLessonPlayerV3: React.FC = () => {
           }
         }
         
-        // Check 3D objects for grabbing
-        const interactables: THREE.Object3D[] = [];
-        if (sceneRef.current) {
-          sceneRef.current.traverse((obj) => {
-            if (obj.userData.isInteractable && obj.visible && !obj.userData.hasButtons) {
-              interactables.push(obj);
-            }
-          });
+        // ═══════════════════════════════════════════════════════════════
+        // CRASH-SAFE 3D OBJECT GRABBING
+        // Uses cached interactables from Stable Layout System
+        // NO SCENE TRAVERSAL during interaction to prevent crash
+        // ═══════════════════════════════════════════════════════════════
+        
+        // Guard against rapid-fire interactions
+        const guard = interactionGuardRef.current;
+        const now = Date.now();
+        
+        if (guard.isProcessing) {
+          console.log('[XRLessonPlayerV3] CRASH GUARD: Interaction already processing, skipping');
+          return;
         }
         
-        const objectIntersects = raycaster.intersectObjects(interactables, false);
-        if (objectIntersects.length > 0) {
-          const obj = objectIntersects[0].object;
-          const objId = obj.uuid || obj.name || 'unknown';
-          const now = Date.now();
-          
-          // Debounce grabs
-          const lastGrab = lastGrabTimeRef.current.get(objId) || 0;
-          if (now - lastGrab < 200) {
+        // Rate limit: max 10 interactions per second
+        if (now - guard.lastInteractionTime < 100) {
+          guard.interactionCount++;
+          if (guard.interactionCount > 10) {
+            console.warn('[XRLessonPlayerV3] CRASH GUARD: Interaction rate limit hit');
             return;
           }
-          lastGrabTimeRef.current.set(objId, now);
+        } else {
+          guard.interactionCount = 0;
+        }
+        guard.lastInteractionTime = now;
+        guard.isProcessing = true;
+        
+        try {
+          // Get interactables from Stable Layout System (cached, no traversal)
+          let interactables: THREE.Object3D[] = [];
           
-          // Start grab (store in userData for animation loop)
-          obj.userData.isGrabbed = true;
-          obj.userData.grabController = controller;
-          const worldPos = new THREE.Vector3();
-          controller.getWorldPosition(worldPos);
-          obj.getWorldPosition(obj.userData.grabOffset = new THREE.Vector3());
-          obj.userData.grabOffset.sub(worldPos);
+          if (stableLayoutRef.current) {
+            interactables = stableLayoutRef.current.getInteractables();
+          } else {
+            // Fallback: get from assets group only (NOT full scene traversal)
+            const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
+            if (assetsGroup) {
+              assetsGroup.children.forEach((child) => {
+                if (child.userData.isInteractable && child.visible) {
+                  interactables.push(child);
+                }
+              });
+            }
+          }
           
-          addDebug(`Grabbed: ${obj.name || 'object'}`);
+          console.log(`[XRLessonPlayerV3] Raycasting against ${interactables.length} interactables`);
+          
+          const objectIntersects = raycaster.intersectObjects(interactables, true);
+          if (objectIntersects.length > 0) {
+            const hitObject = objectIntersects[0].object;
+            const objId = hitObject.uuid || hitObject.name || 'unknown';
+            
+            // Debounce grabs
+            const lastGrab = lastGrabTimeRef.current.get(objId) || 0;
+            if (now - lastGrab < 300) {
+              guard.isProcessing = false;
+              return;
+            }
+            lastGrabTimeRef.current.set(objId, now);
+            
+            // Priority 1: Stable Layout System (crash-safe)
+            if (stableLayoutRef.current) {
+              const grabbed = stableLayoutRef.current.startGrab(hitObject, controller);
+              if (grabbed) {
+                addDebug(`🎯 Grabbed: ${hitObject.name || 'object'} (Stable Layout)`);
+              }
+            }
+            // Priority 2: VR Experience (legacy)
+            else if (vrExperienceRef.current) {
+              const grabbed = vrExperienceRef.current.startGrab(hitObject, controller);
+              if (grabbed) {
+                hitObject.userData.isGrabbed = true;
+                hitObject.userData.grabController = controller;
+                addDebug(`🎯 Grabbed: ${hitObject.name || 'object'} (VR Experience)`);
+              }
+            }
+          }
+        } catch (grabErr) {
+          console.error('[XRLessonPlayerV3] CRASH GUARD: Error in grab:', grabErr);
+        } finally {
+          guard.isProcessing = false;
         }
       } catch (err: any) {
         console.error('[XRLessonPlayerV3] Error in handleControllerSelect:', err);
       }
     };
     
-    // Handle controller release
+    // Handle controller release (CRASH-SAFE)
     const handleControllerRelease = (controller: THREE.Group) => {
       try {
-        // Find grabbed object
-        if (sceneRef.current) {
-          sceneRef.current.traverse((obj) => {
+        // ═══════════════════════════════════════════════════════════════
+        // CRASH-SAFE RELEASE - Priority order for stability
+        // ═══════════════════════════════════════════════════════════════
+        
+        // Priority 1: Stable Layout System
+        if (stableLayoutRef.current && stableLayoutRef.current.isGrabbing()) {
+          const grabbedModel = stableLayoutRef.current.getGrabbedModel();
+          stableLayoutRef.current.releaseGrab();
+          
+          if (grabbedModel) {
+            grabbedModel.userData.isGrabbed = false;
+            grabbedModel.userData.grabController = null;
+            addDebug(`🎯 Released: ${grabbedModel.name || 'object'} (Stable Layout)`);
+          }
+          return;
+        }
+        
+        // Priority 2: VR Experience
+        if (vrExperienceRef.current && vrExperienceRef.current.isGrabbing()) {
+          const grabbedObj = vrExperienceRef.current.getGrabbedObject();
+          vrExperienceRef.current.releaseGrab();
+          
+          if (grabbedObj) {
+            grabbedObj.userData.isGrabbed = false;
+            grabbedObj.userData.grabController = null;
+            addDebug(`🎯 Released: ${grabbedObj.name || 'object'} (VR Experience)`);
+          }
+          return;
+        }
+        
+        // Priority 3: Fallback (NO SCENE TRAVERSAL - only check assets group)
+        const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
+        if (assetsGroup) {
+          assetsGroup.children.forEach((obj) => {
             if (obj.userData.isGrabbed && obj.userData.grabController === controller) {
               obj.userData.isGrabbed = false;
               obj.userData.grabController = null;
@@ -1409,7 +1516,7 @@ const XRLessonPlayerV3: React.FC = () => {
           });
         }
       } catch (err: any) {
-        console.error('[XRLessonPlayerV3] Error in handleControllerRelease:', err);
+        console.error('[XRLessonPlayerV3] CRASH GUARD: Error in handleControllerRelease:', err);
       }
     };
     
@@ -1656,81 +1763,38 @@ const XRLessonPlayerV3: React.FC = () => {
               }
             }
             
-            sceneRef.current.traverse((obj) => {
-              if (obj.userData.isGrabbed && obj.userData.grabController) {
-                const controller = obj.userData.grabController;
-                const worldPos = new THREE.Vector3();
-                controller.getWorldPosition(worldPos);
-                worldPos.add(obj.userData.grabOffset);
+            // ═══════════════════════════════════════════════════════════════
+            // CRASH-SAFE GRAB UPDATE - Use Stable Layout System
+            // NO TRAVERSAL - uses cached interactables only
+            // ═══════════════════════════════════════════════════════════════
+            try {
+              // Priority 1: Stable Layout System (crash-safe)
+              if (stableLayoutRef.current && stableLayoutRef.current.isGrabbing()) {
+                stableLayoutRef.current.updateGrab();
                 
-                // ═══════════════════════════════════════════════════════════════
-                // COLLISION-AWARE MOVEMENT: Check for collisions before moving
-                // ═══════════════════════════════════════════════════════════════
-                let finalPosition = worldPos.clone();
-                
-                if (professionalLayoutRef.current) {
-                  // Use the layout system to constrain movement
-                  finalPosition = professionalLayoutRef.current.constrainMovement(obj, worldPos);
-                }
-                
-                // Smooth interpolation for stable movement
-                obj.position.lerp(finalPosition, 0.15);
-                
-                // ═══════════════════════════════════════════════════════════════
-                // THUMBSTICK ROTATION: Rotate grabbed object with thumbstick X
-                // ═══════════════════════════════════════════════════════════════
-                if (Math.abs(thumbstickX) > 0.1) {
-                  // Rotate around Y axis (horizontal rotation)
-                  obj.rotation.y += thumbstickX * 0.05;
-                }
-                
-                // ═══════════════════════════════════════════════════════════════
-                // THUMBSTICK SCALE: Scale object with thumbstick Y (push up = bigger)
-                // ═══════════════════════════════════════════════════════════════
-                if (Math.abs(thumbstickY) > 0.1) {
-                  const scaleFactor = 1 + thumbstickY * 0.02;
-                  const currentScale = obj.scale.x;
-                  const newScale = Math.max(0.1, Math.min(5.0, currentScale * scaleFactor));
-                  obj.scale.setScalar(newScale);
-                }
-                
-                // Visual feedback - slight glow effect (emissive)
-                obj.traverse((child: any) => {
-                  if (child.isMesh && child.material) {
-                    const mats = Array.isArray(child.material) ? child.material : [child.material];
-                    mats.forEach((mat: any) => {
-                      if (!mat.userData.originalEmissive) {
-                        mat.userData.originalEmissive = mat.emissive ? mat.emissive.clone() : new THREE.Color(0x000000);
-                      }
-                      // Slight cyan glow when grabbed
-                      if (mat.emissive) {
-                        mat.emissive.setHex(0x003344);
-                        mat.emissiveIntensity = 0.3;
-                      }
-                    });
+                // Apply thumbstick controls to grabbed model
+                const grabbedModel = stableLayoutRef.current.getGrabbedModel();
+                if (grabbedModel) {
+                  // Thumbstick rotation
+                  if (Math.abs(thumbstickX) > 0.1) {
+                    grabbedModel.rotation.y += thumbstickX * 0.05;
                   }
-                });
-              } else if (obj.userData.wasGrabbed) {
-                // Reset visual feedback when released
-                obj.traverse((child: any) => {
-                  if (child.isMesh && child.material) {
-                    const mats = Array.isArray(child.material) ? child.material : [child.material];
-                    mats.forEach((mat: any) => {
-                      if (mat.userData.originalEmissive && mat.emissive) {
-                        mat.emissive.copy(mat.userData.originalEmissive);
-                        mat.emissiveIntensity = 0;
-                      }
-                    });
+                  // Thumbstick scale
+                  if (Math.abs(thumbstickY) > 0.1) {
+                    const scaleFactor = 1 + thumbstickY * 0.02;
+                    const currentScale = grabbedModel.scale.x;
+                    const newScale = Math.max(0.1, Math.min(5.0, currentScale * scaleFactor));
+                    grabbedModel.scale.setScalar(newScale);
                   }
-                });
-                obj.userData.wasGrabbed = false;
+                }
               }
-              
-              // Track grab state for visual feedback reset
-              if (obj.userData.isGrabbed) {
-                obj.userData.wasGrabbed = true;
+              // Priority 2: VR Experience (legacy)
+              else if (vrExperienceRef.current && vrExperienceRef.current.isGrabbing()) {
+                vrExperienceRef.current.updateGrab();
               }
-            });
+            } catch (grabErr) {
+              console.error('[XRLessonPlayerV3] CRASH GUARD: Error in grab update:', grabErr);
+            }
           }
           
           if (rendererRef.current && sceneRef.current && cameraRef.current) {
@@ -1887,6 +1951,16 @@ const XRLessonPlayerV3: React.FC = () => {
           addDebug(`⚠️ Assets exist but not visible, removing and reloading...`);
           scene.remove(existingGroup);
           assetsGroupRef.current = null;
+          
+          // Unlock StableLayoutSystem and reset interaction state
+          if (stableLayoutRef.current) {
+            stableLayoutRef.current.unlockLayout();
+            stableLayoutRef.current.releaseGrab(); // Release any grabbed models
+          }
+          // Reset interaction guard
+          interactionGuardRef.current = { lastInteractionTime: 0, interactionCount: 0, isProcessing: false };
+          lastGrabTimeRef.current.clear();
+          hoveredObjectRef.current = null;
         }
       }
       
@@ -1895,6 +1969,16 @@ const XRLessonPlayerV3: React.FC = () => {
         console.log('[XRLessonPlayerV3] Removing incomplete assets group');
         scene.remove(existingGroup);
         assetsGroupRef.current = null;
+        
+        // Unlock StableLayoutSystem and reset interaction state
+        if (stableLayoutRef.current) {
+          stableLayoutRef.current.unlockLayout();
+          stableLayoutRef.current.releaseGrab(); // Release any grabbed models
+        }
+        // Reset interaction guard
+        interactionGuardRef.current = { lastInteractionTime: 0, interactionCount: 0, isProcessing: false };
+        lastGrabTimeRef.current.clear();
+        hoveredObjectRef.current = null;
       }
       
       addDebug('[XRLessonPlayerV3] Loading 3D assets into scene...');
@@ -1938,16 +2022,6 @@ const XRLessonPlayerV3: React.FC = () => {
         const sizeMB = (asset as any).fileSize ? ((asset as any).fileSize / (1024 * 1024)).toFixed(2) : 'unknown';
         addDebug(`Asset ${idx + 1}: ${asset.name || asset.id} (${sizeMB}MB)`);
       });
-      
-      // Prevent duplicate loading
-      if (assetsGroupRef.current && sceneRef.current) {
-        const existing = sceneRef.current.getObjectByName('assetsGroup');
-        if (existing && existing.children.length > 0) {
-          console.warn(`[XRLessonPlayerV3] Assets already loading/loaded, skipping duplicate load`);
-          addDebug(`⚠️ Assets already exist (${existing.children.length} children), skipping duplicate load`);
-          return;
-        }
-      }
       
       // Reset loaded count
       setAssetsLoaded(0);
@@ -2347,6 +2421,10 @@ const XRLessonPlayerV3: React.FC = () => {
           }
           
           assetsGroup.add(assetGroup);
+          
+          // Store asset reference for dock control
+          assetRefs.current.set(asset.id, assetGroup);
+          
           const newCount = i + 1;
           setAssetsLoaded(newCount);
           
@@ -2446,96 +2524,65 @@ const XRLessonPlayerV3: React.FC = () => {
         }
         
         // ═══════════════════════════════════════════════════════════════════
-        // CRITICAL: If already in VR, reposition assets to camera-relative position
-        // This handles the case where assets load AFTER VR session starts
-        // Uses GROUND PLANE as reference (Y = GROUND_LEVEL + TABLE_HEIGHT)
+        // STABLE LAYOUT SYSTEM - Deterministic Asset Staging
+        // Uses StableLayoutSystem for crash-safe, professional placement
+        // All assets are staged with proper spacing (no overlap/merging)
         // ═══════════════════════════════════════════════════════════════════
-        if (loadingState === 'in-vr' && cameraRef.current && foundGroup && foundGroup.children.length > 0) {
-          console.log(`\n🎯 [POST-LOAD REPOSITION] Already in VR - repositioning assets`);
-          addDebug(`═══ POST-LOAD REPOSITION ═══`);
-          addDebug(`Assets loaded while in VR: ${foundGroup.children.length}`);
-          addDebug(`Ground Level: ${GROUND_LEVEL}m`);
-          addDebug(`Table Height: ${TABLE_HEIGHT}m`);
-          addDebug(`Target Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`);
+        if (cameraRef.current && foundGroup && foundGroup.children.length > 0) {
+          console.log(`\n🎯 [STABLE LAYOUT] ═══════════════════════════════════════`);
+          console.log(`🎯 [STABLE LAYOUT] Total assets to stage: ${foundGroup.children.length}`);
           
-          const cameraPos = new THREE.Vector3();
-          cameraRef.current.getWorldPosition(cameraPos);
+          // Initialize Stable Layout System if not already done
+          if (!stableLayoutRef.current) {
+            stableLayoutRef.current = new StableLayoutSystem({
+              stageDistance: 2.5,
+              stageWidth: 4.0,
+              stageDepth: 2.5,
+              horizontalOffset: 0.8,
+              floorHeight: GROUND_LEVEL,
+              modelSpacing: 0.5,
+              normalizedSize: 0.8,
+              environmentThreshold: 10.0,
+            });
+          }
           
-          // Get camera forward direction (flattened)
-          const rawForward = new THREE.Vector3(0, 0, -1);
-          rawForward.applyQuaternion(cameraRef.current.quaternion);
-          const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z);
-          if (flatForward.lengthSq() < 0.001) flatForward.set(0, 0, -1);
-          flatForward.normalize();
+          // Initialize layout with camera pose
+          if (!stableLayoutRef.current.isReady()) {
+            stableLayoutRef.current.initialize(cameraRef.current, GROUND_LEVEL);
+          } else if (loadingState === 'in-vr') {
+            // Recompute anchors for VR mode
+            stableLayoutRef.current.recomputeAnchors(cameraRef.current, GROUND_LEVEL);
+          }
           
-          // Get right direction
-          const rightDir = new THREE.Vector3();
-          rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
-          
-          // Ground Plane Referenced Positioning + Multi-Asset Layout
-          // ═══════════════════════════════════════════════════════════════════════
-          // POST-LOAD REPOSITION: Same strategy as VR START
-          // - Primary: RIGHT side of user
-          // - Secondary: LEFT side of user, at 45° intervals
-          // ═══════════════════════════════════════════════════════════════════════
-          const totalAssets = foundGroup.children.length;
-          const SECONDARY_ARC_ANGLE = 45;               // 45° between assets
-          const SECONDARY_LEFT_OFFSET = 1.2;            // 1.2m to the left
-          
-          console.log(`🎯 [POST-LOAD] ═══════════════════════════════════════`);
-          console.log(`🎯 [POST-LOAD] MULTI-ASSET LAYOUT for ${totalAssets} assets`);
-          console.log(`🎯 [POST-LOAD] Camera: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
-          console.log(`🎯 [POST-LOAD] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
-          console.log(`🎯 [POST-LOAD] Right: (${rightDir.x.toFixed(3)}, 0, ${rightDir.z.toFixed(3)})`);
-          
-          foundGroup.children.forEach((assetWrapper, index) => {
-            const oldPos = assetWrapper.position.clone();
-            
-            // Y is ALWAYS: GROUND_LEVEL + TABLE_HEIGHT (model bottom at table level)
-            const newY = GROUND_LEVEL + TABLE_HEIGHT;
-            
-            let newX: number, newZ: number, layoutType: string;
-            
-            if (index === 0 || totalAssets === 1) {
-              // PRIMARY ASSET: Front-right of user
-              newX = cameraPos.x + flatForward.x * ASSET_DISTANCE + rightDir.x * ASSET_RIGHT_OFFSET;
-              newZ = cameraPos.z + flatForward.z * ASSET_DISTANCE + rightDir.z * ASSET_RIGHT_OFFSET;
-              layoutType = 'PRIMARY_RIGHT';
-            } else {
-              // SECONDARY ASSETS: To the LEFT of user, at 45° intervals
-              const angleOffset = -index * SECONDARY_ARC_ANGLE; // Negative = LEFT
-              const angleRad = THREE.MathUtils.degToRad(angleOffset);
-              
-              const rotatedForward = new THREE.Vector3(
-                flatForward.x * Math.cos(angleRad) - flatForward.z * Math.sin(angleRad),
-                0,
-                flatForward.x * Math.sin(angleRad) + flatForward.z * Math.cos(angleRad)
-              ).normalize();
-              
-              // Position to the LEFT of center
-              newX = cameraPos.x + rotatedForward.x * ASSET_DISTANCE - rightDir.x * SECONDARY_LEFT_OFFSET;
-              newZ = cameraPos.z + rotatedForward.z * ASSET_DISTANCE - rightDir.z * SECONDARY_LEFT_OFFSET;
-              layoutType = `SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
+          // Check if layout is locked (models were staged before)
+          // We need to unlock to allow re-staging
+          if (stableLayoutRef.current.isReady()) {
+            const existingStagedModels = stableLayoutRef.current.getStagedModels();
+            if (existingStagedModels.size > 0) {
+              stableLayoutRef.current.unlockLayout();
+              addDebug('Unlocked layout for re-staging');
             }
-            
-            assetWrapper.position.set(newX, newY, newZ);
-            assetWrapper.lookAt(cameraPos.x, newY, cameraPos.z);
-            
-            // Store original position for reset
-            assetWrapper.userData.originalPosition = assetWrapper.position.clone();
-            assetWrapper.userData.originalRotation = assetWrapper.rotation.clone();
-            assetWrapper.userData.originalScale = assetWrapper.scale.clone();
-            
-            console.log(`🎯 [POST-LOAD] Asset ${index + 1}/${totalAssets} [${layoutType}]:`);
-            console.log(`🎯 [POST-LOAD]   Old: (${oldPos.x.toFixed(2)}, ${oldPos.y.toFixed(2)}, ${oldPos.z.toFixed(2)})`);
-            console.log(`🎯 [POST-LOAD]   New: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
-            
-            addDebug(`Asset ${index + 1} [${layoutType}]:`);
-            addDebug(`  Position: (${newX.toFixed(2)}, ${newY.toFixed(2)}, ${newZ.toFixed(2)})`);
-          });
-          console.log(`🎯 [POST-LOAD] ═══════════════════════════════════════`);
+          }
           
-          // Force another render after repositioning
+          // Stage all models with proper spacing
+          const modelsToStage = foundGroup.children as THREE.Object3D[];
+          const stagedModels = stableLayoutRef.current.stageModels(modelsToStage);
+          
+          addDebug(`═══ STABLE LAYOUT COMPLETE ═══`);
+          addDebug(`Layout Engine Ready: ${stableLayoutRef.current.isReady()}`);
+          addDebug(`Models staged: ${stagedModels.length}/${foundGroup.children.length}`);
+          
+          // Log final positions
+          stagedModels.forEach((staged, index) => {
+            const pos = staged.model.position;
+            const type = staged.isEnvironment ? 'ENV' : 'MODEL';
+            console.log(`🎯 [STABLE LAYOUT] ${type} ${index + 1}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+            addDebug(`${type} ${index + 1}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+          });
+          
+          console.log(`🎯 [STABLE LAYOUT] ═══════════════════════════════════════`);
+          
+          // Force render after layout
           if (rendererRef.current) {
             rendererRef.current.render(sceneRef.current, cameraRef.current);
           }
@@ -2553,9 +2600,27 @@ const XRLessonPlayerV3: React.FC = () => {
     
     return () => {
       try {
+        // Release any grabbed models
+        if (stableLayoutRef.current?.isGrabbing()) {
+          stableLayoutRef.current.releaseGrab();
+        }
+        
+        // Unlock layout
+        if (stableLayoutRef.current) {
+          stableLayoutRef.current.unlockLayout();
+        }
+        
+        // Remove assets from scene
         if (assetsGroupRef.current && sceneRef.current) {
           sceneRef.current.remove(assetsGroupRef.current);
         }
+        
+        // Reset interaction state
+        interactionGuardRef.current = { lastInteractionTime: 0, interactionCount: 0, isProcessing: false };
+        lastGrabTimeRef.current.clear();
+        hoveredObjectRef.current = null;
+        assetRefs.current.clear();
+        
       } catch (cleanupErr: any) {
         console.error('[XRLessonPlayerV3] Asset cleanup error:', cleanupErr);
       }
@@ -3808,6 +3873,18 @@ const XRLessonPlayerV3: React.FC = () => {
   // 3D Model Reset & Focus Functions
   // ============================================================================
   
+  const toggleAssetsVisibility = useCallback(() => {
+    const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
+    if (assetsGroup) {
+      const newVisibility = !assetsVisible;
+      assetsGroup.traverse((obj) => {
+        obj.visible = newVisibility;
+      });
+      setAssetsVisible(newVisibility);
+      addDebug(`Assets ${newVisibility ? 'shown' : 'hidden'}`);
+    }
+  }, [assetsVisible, addDebug]);
+  
   const resetModel = useCallback(() => {
     if (primaryAssetRef.current && primaryAssetRef.current.userData.originalPosition) {
       const asset = primaryAssetRef.current;
@@ -4065,6 +4142,39 @@ const XRLessonPlayerV3: React.FC = () => {
           </div>
         </div>
       )}
+      
+      {/* Asset Dock - Similar to panel dock */}
+      <div className="fixed bottom-4 right-4 z-50">
+        <button
+          onClick={() => setAssetDockExpanded(!assetDockExpanded)}
+          className="bg-slate-800/90 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-2"
+        >
+          <span>3D Assets</span>
+          <span className={`text-xs transition-transform ${assetDockExpanded ? 'rotate-180' : ''}`}>▼</span>
+        </button>
+        
+        {assetDockExpanded && (
+          <div className="mt-2 bg-slate-900/95 border border-slate-600 rounded-lg p-3 min-w-[200px]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-300">Asset Controls</span>
+              <button
+                onClick={toggleAssetsVisibility}
+                className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded"
+              >
+                {assetsVisible ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <div className="text-xs text-slate-400">
+              Loaded: {assetsLoaded}/{meshyAssets.length}
+            </div>
+            {meshyAssets.map((asset, idx) => (
+              <div key={asset.id} className="text-xs text-slate-300 mt-1">
+                {idx + 1}. {asset.name || asset.id}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       
       {/* COMPREHENSIVE DEBUG PANEL */}
       <div className="absolute bottom-4 left-4 z-50 max-w-xl">
