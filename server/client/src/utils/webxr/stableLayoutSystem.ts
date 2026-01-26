@@ -1,6 +1,12 @@
 /**
  * Stable Layout System for XR Lessons
  * 
+ * FIXED ISSUES:
+ * - Removed environment threshold that was excluding assets
+ * - ALL assets are now registered as interactable
+ * - Improved root model finding for raycasts
+ * - Better crash protection
+ * 
  * World-class VR training layout with:
  * - Deterministic asset staging (no random spawning)
  * - Proper spacing based on bounding boxes
@@ -32,6 +38,8 @@ export interface StagedModel {
   originalRotation: THREE.Euler;
   originalScale: THREE.Vector3;
   isEnvironment: boolean;
+  uuid: string;
+  name: string;
 }
 
 export interface LayoutConfig {
@@ -42,7 +50,7 @@ export interface LayoutConfig {
   floorHeight: number;        // Height of stage floor
   modelSpacing: number;       // Minimum spacing between models
   normalizedSize: number;     // Target size for normalization
-  environmentThreshold: number; // Size threshold for environment detection
+  environmentThreshold: number; // Size threshold for environment detection (INCREASED)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -53,11 +61,11 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   stageDistance: 2.5,
   stageWidth: 4.0,
   stageDepth: 2.5,
-  horizontalOffset: 0.8,
+  horizontalOffset: 0.0, // Centered (was 0.8 offset)
   floorHeight: 0.0,
   modelSpacing: 0.5,
   normalizedSize: 0.8,
-  environmentThreshold: 10.0, // Models larger than 10m are considered environments
+  environmentThreshold: 50.0, // INCREASED from 10m to 50m - only truly huge skyboxes are "environment"
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,6 +91,9 @@ export class StableLayoutSystem {
   private stagedModels: Map<string, StagedModel> = new Map();
   private interactableCache: THREE.Object3D[] = [];
   private interactableCacheDirty: boolean = true;
+  
+  // UUID to model mapping for fast lookup
+  private uuidToModel: Map<string, THREE.Object3D> = new Map();
   
   // Interaction state (single source of truth)
   private grabbedModel: THREE.Object3D | null = null;
@@ -153,7 +164,7 @@ export class StableLayoutSystem {
   private computeStageAnchor(): void {
     const config = this.config;
     
-    // Stage is positioned in front and to the right of user
+    // Stage is positioned in front of user (centered)
     this.stageAnchor.set(
       this.userPosition.x + this.userForward.x * config.stageDistance + this.userRight.x * config.horizontalOffset,
       this.floorY + config.floorHeight,
@@ -186,7 +197,8 @@ export class StableLayoutSystem {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
-   * Stage all models with proper spacing (called ONCE after loading)
+   * Stage all models for interaction (NO filtering, ALL models staged)
+   * CRITICAL FIX: Removed environment filtering that was excluding assets
    */
   public stageModels(models: THREE.Object3D[]): StagedModel[] {
     if (this.isLayoutLocked) {
@@ -195,58 +207,92 @@ export class StableLayoutSystem {
     }
     
     console.log('[StableLayoutSystem] ═══════════════════════════════════════');
-    console.log(`[StableLayoutSystem] STAGING ${models.length} MODELS`);
+    console.log(`[StableLayoutSystem] STAGING ${models.length} MODELS (ALL)`);
     
     // Clear previous staging
     this.stagedModels.clear();
+    this.uuidToModel.clear();
     this.interactableCacheDirty = true;
     
-    // Separate environment models from regular models
-    const regularModels: THREE.Object3D[] = [];
-    const environmentModels: THREE.Object3D[] = [];
-    
+    // CRITICAL FIX: Stage ALL models, no filtering
     models.forEach((model, index) => {
       const analysisResult = this.analyzeModel(model);
       
-      console.log(`[StableLayoutSystem] Model ${index + 1}:`, {
-        name: model.name,
-        isEnvironment: analysisResult.isEnvironment,
+      console.log(`[StableLayoutSystem] Model ${index + 1}/${models.length}:`, {
+        name: model.name || 'unnamed',
+        uuid: model.uuid,
         size: `${analysisResult.size.x.toFixed(2)} x ${analysisResult.size.y.toFixed(2)} x ${analysisResult.size.z.toFixed(2)}`,
         maxDim: analysisResult.maxDim.toFixed(2),
+        isLargeModel: analysisResult.maxDim > this.config.environmentThreshold,
       });
       
-      if (analysisResult.isEnvironment) {
-        environmentModels.push(model);
-      } else {
-        regularModels.push(model);
+      // REMOVED: Environment filtering - now ALL models are staged
+      // Only filter truly massive models (skyboxes > 50m)
+      if (analysisResult.maxDim > this.config.environmentThreshold) {
+        console.log(`[StableLayoutSystem] Model ${index + 1} is VERY large (${analysisResult.maxDim.toFixed(1)}m) - treating as environment but STILL making it interactable`);
+        // Still mark as interactable, just don't reposition it
+        model.userData.isEnvironment = true;
       }
-    });
-    
-    console.log(`[StableLayoutSystem] Regular models: ${regularModels.length}, Environment models: ${environmentModels.length}`);
-    
-    // Handle environment models (place as background, lock interaction)
-    environmentModels.forEach((model) => {
-      this.placeEnvironmentModel(model);
-    });
-    
-    // Stage regular models with proper spacing
-    const slots = this.computeSlots(regularModels.length);
-    
-    regularModels.forEach((model, index) => {
-      this.stageModelAtSlot(model, index, slots);
+      
+      // Register ALL models for interaction
+      this.registerModelForInteraction(model, index);
     });
     
     // Lock layout to prevent re-staging
     this.isLayoutLocked = true;
     
     console.log(`[StableLayoutSystem] STAGING COMPLETE - ${this.stagedModels.size} models staged`);
+    console.log(`[StableLayoutSystem] Interactables: ${this.getInteractables().length}`);
     console.log('[StableLayoutSystem] ═══════════════════════════════════════');
     
     return Array.from(this.stagedModels.values());
   }
 
   /**
-   * Analyze a model to determine its type and bounds
+   * Register a model for interaction (CRITICAL: makes it grabbable)
+   */
+  private registerModelForInteraction(model: THREE.Object3D, slotIndex: number): void {
+    const analysis = this.analyzeModel(model);
+    
+    // Mark as interactable
+    model.userData.isInteractable = true;
+    model.userData.slotIndex = slotIndex;
+    model.userData.rootModel = model; // Self-reference for finding root
+    
+    // CRITICAL: Mark ALL descendants with reference to root
+    model.traverse((child) => {
+      child.userData.isInteractable = true;
+      child.userData.rootModel = model;
+      child.userData.slotIndex = slotIndex;
+      
+      // Store UUID mapping for fast lookup
+      this.uuidToModel.set(child.uuid, model);
+    });
+    
+    // Store the root model UUID
+    this.uuidToModel.set(model.uuid, model);
+    
+    // Create staged model record
+    const staged: StagedModel = {
+      model,
+      slot: slotIndex,
+      bounds: analysis.bounds.clone(),
+      size: analysis.size.clone(),
+      originalPosition: model.position.clone(),
+      originalRotation: model.rotation.clone(),
+      originalScale: model.scale.clone(),
+      isEnvironment: model.userData.isEnvironment || false,
+      uuid: model.uuid,
+      name: model.name || `model_${slotIndex}`,
+    };
+    
+    this.stagedModels.set(model.uuid, staged);
+    
+    console.log(`[StableLayoutSystem] ✅ Registered model ${slotIndex + 1}: "${staged.name}" (${model.uuid.substring(0, 8)}...)`);
+  }
+
+  /**
+   * Analyze a model to determine its bounds
    */
   private analyzeModel(model: THREE.Object3D): {
     bounds: THREE.Box3;
@@ -264,194 +310,6 @@ export class StableLayoutSystem {
     return { bounds, size, center, maxDim, isEnvironment };
   }
 
-  /**
-   * Place an environment model as background
-   */
-  private placeEnvironmentModel(model: THREE.Object3D): void {
-    // Environment models are placed at origin, locked from interaction
-    model.position.set(0, 0, 0);
-    model.userData.isEnvironment = true;
-    model.userData.isInteractable = false; // Can't grab environments
-    
-    const staged: StagedModel = {
-      model,
-      slot: -1,
-      bounds: new THREE.Box3().setFromObject(model),
-      size: new THREE.Vector3(),
-      originalPosition: model.position.clone(),
-      originalRotation: model.rotation.clone(),
-      originalScale: model.scale.clone(),
-      isEnvironment: true,
-    };
-    
-    this.stagedModels.set(model.uuid, staged);
-    
-    console.log(`[StableLayoutSystem] Environment model placed: ${model.name || model.uuid}`);
-  }
-
-  /**
-   * Compute slots for model placement based on count
-   */
-  private computeSlots(count: number): AssetSlot[] {
-    const slots: AssetSlot[] = [];
-    
-    if (count === 0) return slots;
-    
-    const config = this.config;
-    
-    if (count === 1) {
-      // Single model: centered on stage
-      slots.push({
-        position: this.stageAnchor.clone(),
-        rotation: this.stageRotation.clone(),
-        width: config.stageWidth,
-        depth: config.stageDepth,
-        occupied: false,
-        modelId: null,
-      });
-    } else if (count <= 4) {
-      // Arc layout
-      const arcSpread = Math.min(90, count * 25); // Degrees
-      const arcRadius = config.stageDistance * 0.6;
-      
-      for (let i = 0; i < count; i++) {
-        const angleOffset = (i - (count - 1) / 2) * (arcSpread / Math.max(1, count - 1));
-        const angleRad = THREE.MathUtils.degToRad(angleOffset);
-        
-        // Rotate around stage anchor
-        const slotX = this.stageAnchor.x + Math.sin(angleRad) * arcRadius;
-        const slotZ = this.stageAnchor.z - Math.cos(angleRad) * arcRadius + arcRadius;
-        
-        slots.push({
-          position: new THREE.Vector3(slotX, this.stageAnchor.y, slotZ),
-          rotation: new THREE.Euler(0, this.stageRotation.y + angleRad, 0),
-          width: config.normalizedSize + config.modelSpacing,
-          depth: config.normalizedSize + config.modelSpacing,
-          occupied: false,
-          modelId: null,
-        });
-      }
-    } else {
-      // Grid layout (2 rows max)
-      const cols = Math.ceil(count / 2);
-      const rows = Math.ceil(count / cols);
-      const cellWidth = config.normalizedSize + config.modelSpacing;
-      const cellDepth = config.normalizedSize + config.modelSpacing;
-      
-      for (let i = 0; i < count; i++) {
-        const row = Math.floor(i / cols);
-        const col = i % cols;
-        
-        const offsetX = (col - (cols - 1) / 2) * cellWidth;
-        const offsetZ = row * cellDepth;
-        
-        // Transform to world space
-        const worldOffset = new THREE.Vector3(offsetX, 0, offsetZ);
-        const stageQuat = new THREE.Quaternion().setFromEuler(this.stageRotation);
-        worldOffset.applyQuaternion(stageQuat);
-        
-        slots.push({
-          position: new THREE.Vector3(
-            this.stageAnchor.x + worldOffset.x,
-            this.stageAnchor.y,
-            this.stageAnchor.z + worldOffset.z
-          ),
-          rotation: this.stageRotation.clone(),
-          width: cellWidth,
-          depth: cellDepth,
-          occupied: false,
-          modelId: null,
-        });
-      }
-    }
-    
-    return slots;
-  }
-
-  /**
-   * Stage a model at a specific slot
-   */
-  private stageModelAtSlot(model: THREE.Object3D, index: number, slots: AssetSlot[]): void {
-    if (index >= slots.length) {
-      console.warn(`[StableLayoutSystem] No slot available for model ${index}`);
-      return;
-    }
-    
-    const slot = slots[index];
-    const analysis = this.analyzeModel(model);
-    
-    // Step 1: Normalize transform (center pivot, bottom at Y=0)
-    this.normalizeModelTransform(model, analysis);
-    
-    // Step 2: Scale to normalized size
-    this.scaleToNormalizedSize(model, analysis.maxDim);
-    
-    // Step 3: Position at slot
-    const heightAboveStage = this.config.normalizedSize * 0.5 + 0.1; // Half height + small lift
-    model.position.set(
-      slot.position.x,
-      slot.position.y + heightAboveStage,
-      slot.position.z
-    );
-    
-    // Step 4: Rotate to face user
-    model.rotation.copy(slot.rotation);
-    
-    // Step 5: Mark as interactable
-    model.userData.isInteractable = true;
-    model.userData.slotIndex = index;
-    model.traverse((child) => {
-      child.userData.isInteractable = true;
-      child.userData.rootModel = model;
-    });
-    
-    // Step 6: Store staging info
-    slot.occupied = true;
-    slot.modelId = model.uuid;
-    
-    const staged: StagedModel = {
-      model,
-      slot: index,
-      bounds: new THREE.Box3().setFromObject(model),
-      size: analysis.size,
-      originalPosition: model.position.clone(),
-      originalRotation: model.rotation.clone(),
-      originalScale: model.scale.clone(),
-      isEnvironment: false,
-    };
-    
-    this.stagedModels.set(model.uuid, staged);
-    
-    console.log(`[StableLayoutSystem] Model ${index + 1} staged at (${model.position.x.toFixed(2)}, ${model.position.y.toFixed(2)}, ${model.position.z.toFixed(2)})`);
-  }
-
-  /**
-   * Normalize model transform (center pivot, bottom at Y=0)
-   */
-  private normalizeModelTransform(model: THREE.Object3D, analysis: ReturnType<typeof this.analyzeModel>): void {
-    const { bounds, center } = analysis;
-    const modelBottom = bounds.min.y;
-    
-    // Move children so center is at origin and bottom is at Y=0
-    model.traverse((child) => {
-      if (child !== model) {
-        child.position.x -= center.x;
-        child.position.y -= modelBottom;
-        child.position.z -= center.z;
-      }
-    });
-  }
-
-  /**
-   * Scale model to normalized size
-   */
-  private scaleToNormalizedSize(model: THREE.Object3D, maxDim: number): void {
-    if (maxDim > 0) {
-      const scale = this.config.normalizedSize / maxDim;
-      model.scale.setScalar(scale);
-    }
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
   // CRASH-SAFE INTERACTION SYSTEM
   // ═══════════════════════════════════════════════════════════════════════════
@@ -467,7 +325,8 @@ export class StableLayoutSystem {
     // Rebuild cache from staged models
     this.interactableCache = [];
     this.stagedModels.forEach((staged) => {
-      if (!staged.isEnvironment && staged.model.userData.isInteractable) {
+      // CRITICAL FIX: ALL staged models are interactable
+      if (staged.model.userData.isInteractable) {
         this.interactableCache.push(staged.model);
       }
     });
@@ -479,37 +338,79 @@ export class StableLayoutSystem {
   }
 
   /**
+   * Get all mesh descendants for raycasting (CRITICAL for interaction)
+   */
+  public getAllInteractableMeshes(): THREE.Object3D[] {
+    const meshes: THREE.Object3D[] = [];
+    
+    this.stagedModels.forEach((staged) => {
+      staged.model.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          meshes.push(child);
+        }
+      });
+    });
+    
+    console.log(`[StableLayoutSystem] Total interactable meshes: ${meshes.length}`);
+    return meshes;
+  }
+
+  /**
    * Find the root interactable model from any child object
-   * (Crash-safe: doesn't traverse, uses userData)
+   * CRITICAL FIX: Now uses UUID mapping for reliable lookup
    */
   public findRootModel(object: THREE.Object3D): THREE.Object3D | null {
-    // Check if this object has a rootModel reference
-    if (object.userData.rootModel) {
-      return object.userData.rootModel;
-    }
-    
-    // Check if this IS the root model
-    if (object.userData.isInteractable && this.stagedModels.has(object.uuid)) {
-      return object;
-    }
-    
-    // Walk up parent chain (limited to prevent infinite loops)
-    let current: THREE.Object3D | null = object;
-    let depth = 0;
-    const maxDepth = 20;
-    
-    while (current && depth < maxDepth) {
-      if (current.userData.rootModel) {
-        return current.userData.rootModel;
+    try {
+      // Method 1: Direct lookup in UUID map (fastest)
+      const directLookup = this.uuidToModel.get(object.uuid);
+      if (directLookup) {
+        return directLookup;
       }
-      if (current.userData.isInteractable && this.stagedModels.has(current.uuid)) {
-        return current;
+      
+      // Method 2: Check userData.rootModel reference
+      if (object.userData.rootModel) {
+        const root = object.userData.rootModel as THREE.Object3D;
+        if (this.stagedModels.has(root.uuid)) {
+          return root;
+        }
       }
-      current = current.parent;
-      depth++;
+      
+      // Method 3: Walk up parent chain (fallback)
+      let current: THREE.Object3D | null = object;
+      let depth = 0;
+      const maxDepth = 30;
+      
+      while (current && depth < maxDepth) {
+        // Check UUID map
+        const mapped = this.uuidToModel.get(current.uuid);
+        if (mapped) {
+          return mapped;
+        }
+        
+        // Check if this is a staged model
+        if (this.stagedModels.has(current.uuid)) {
+          return current;
+        }
+        
+        // Check userData
+        if (current.userData.rootModel) {
+          const root = current.userData.rootModel as THREE.Object3D;
+          if (this.stagedModels.has(root.uuid)) {
+            return root;
+          }
+        }
+        
+        current = current.parent;
+        depth++;
+      }
+      
+      console.warn(`[StableLayoutSystem] Could not find root model for object: ${object.name || object.uuid}`);
+      return null;
+      
+    } catch (err) {
+      console.error('[StableLayoutSystem] CRASH GUARD: Error in findRootModel:', err);
+      return null;
     }
-    
-    return null;
   }
 
   /**
@@ -520,7 +421,7 @@ export class StableLayoutSystem {
       // Find root model
       const rootModel = this.findRootModel(object);
       if (!rootModel) {
-        console.log('[StableLayoutSystem] Cannot grab: no root model found');
+        console.log('[StableLayoutSystem] Cannot grab: no root model found for', object.name || object.uuid);
         return false;
       }
       
@@ -548,7 +449,7 @@ export class StableLayoutSystem {
       this.applyGrabVisual(rootModel, true);
       
       const grabDistance = this.grabOffset.length();
-      console.log(`[StableLayoutSystem] 🎯 GRAB START: ${rootModel.name || rootModel.uuid}, distance: ${grabDistance.toFixed(2)}m`);
+      console.log(`[StableLayoutSystem] 🎯 GRAB START: "${rootModel.name || rootModel.uuid}" (slot ${rootModel.userData.slotIndex}), distance: ${grabDistance.toFixed(2)}m`);
       
       return true;
     } catch (err) {
@@ -613,7 +514,7 @@ export class StableLayoutSystem {
       // Remove visual feedback
       this.applyGrabVisual(this.grabbedModel, false);
       
-      console.log(`[StableLayoutSystem] 🎯 RELEASED: ${this.grabbedModel.name || this.grabbedModel.uuid}`);
+      console.log(`[StableLayoutSystem] 🎯 RELEASED: "${this.grabbedModel.name || this.grabbedModel.uuid}"`);
       
       // Clear grab state
       this.grabbedModel = null;
@@ -734,6 +635,7 @@ export class StableLayoutSystem {
   public unlockLayout(): void {
     this.isLayoutLocked = false;
     this.stagedModels.clear();
+    this.uuidToModel.clear();
     this.interactableCacheDirty = true;
     console.log('[StableLayoutSystem] Layout unlocked');
   }
@@ -752,6 +654,21 @@ export class StableLayoutSystem {
 
   public getConfig(): LayoutConfig {
     return this.config;
+  }
+  
+  /**
+   * Debug: Print all staged models
+   */
+  public debugPrintStagedModels(): void {
+    console.log('[StableLayoutSystem] ═══ DEBUG: Staged Models ═══');
+    console.log(`Total staged: ${this.stagedModels.size}`);
+    this.stagedModels.forEach((staged, uuid) => {
+      console.log(`  [${staged.slot}] "${staged.name}" (${uuid.substring(0, 8)}...)`);
+      console.log(`      Size: ${staged.size.x.toFixed(2)} x ${staged.size.y.toFixed(2)} x ${staged.size.z.toFixed(2)}`);
+      console.log(`      Position: (${staged.model.position.x.toFixed(2)}, ${staged.model.position.y.toFixed(2)}, ${staged.model.position.z.toFixed(2)})`);
+      console.log(`      Interactable: ${staged.model.userData.isInteractable}`);
+    });
+    console.log('═════════════════════════════════════════');
   }
 }
 
