@@ -135,6 +135,9 @@ export function disposeWebXRSystems(systems: WebXRSystems, scene?: THREE.Scene):
   systems.assetManager.dispose(scene);
 }
 
+// Import THREE at the end to avoid circular dependency issues
+import * as THREE from 'three';
+
 // Default export
 export default {
   createWebXRSystems,

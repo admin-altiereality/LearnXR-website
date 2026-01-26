@@ -26,6 +26,7 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
 import { VRLessonExperience } from '../utils/webxr/vrLessonExperience';
 import { StableLayoutSystem } from '../utils/webxr/stableLayoutSystem';
+import { SceneLayoutSystem, PlacementStrategy, AssetPlacement } from '../utils/webxr/sceneLayoutSystem';
 import { db } from '../config/firebase';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home, Play } from 'lucide-react';
@@ -198,6 +199,7 @@ const XRLessonPlayerV3: React.FC = () => {
   const hoveredObjectRef = useRef<THREE.Object3D | null>(null);
   const lastGrabTimeRef = useRef<Map<string, number>>(new Map());
   const controllersSetupRef = useRef<Set<number>>(new Set());
+  const inputSourcesRef = useRef<(XRInputSource | null)[]>([null, null]); // Store input sources for haptic feedback
   
   // VR UI refs
   const scriptPanelRef = useRef<THREE.Mesh | null>(null);
@@ -250,6 +252,11 @@ const XRLessonPlayerV3: React.FC = () => {
   
   // Asset references map for dock control
   const assetRefs = useRef<Map<string, THREE.Object3D>>(new Map());
+  
+  // Scene Layout System (production-grade, scalable layout)
+  const sceneLayoutRef = useRef<SceneLayoutSystem | null>(null);
+  const [placementStrategy, setPlacementStrategy] = useState<PlacementStrategy>('curved-arc');
+  const assetPlacementsRef = useRef<AssetPlacement[]>([]);
   
   // Debug logger with category support - enhanced with timestamps and structured output
   const addDebug = useCallback((msg: string, category?: keyof typeof DEBUG_CATEGORIES) => {
@@ -923,6 +930,11 @@ const XRLessonPlayerV3: React.FC = () => {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.0;
         
+        // STATE-OF-ART RENDERING: Enable high-quality shadows
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Soft shadows
+        renderer.shadowMap.autoUpdate = true;
+        
         // CRITICAL: Enable XR
         renderer.xr.enabled = true;
         
@@ -970,6 +982,7 @@ const XRLessonPlayerV3: React.FC = () => {
       }
     
       // Add VR Button if supported (only if renderer was created successfully)
+      // BUT: Hide until asset calculations are complete
       if (isVRSupported && containerRef.current && rendererRef.current) {
         try {
           const vrButton = VRButton.createButton(rendererRef.current);
@@ -978,12 +991,25 @@ const XRLessonPlayerV3: React.FC = () => {
           vrButton.style.left = '50%';
           vrButton.style.transform = 'translateX(-50%)';
           vrButton.style.zIndex = '100';
+          vrButton.style.display = 'none'; // Hidden until calculations done
           containerRef.current.appendChild(vrButton);
           vrButtonRef.current = vrButton;
           
           // Listen for session start/end
           rendererRef.current.xr.addEventListener('sessionstart', () => {
             console.log(`${DEBUG_CATEGORIES.XR} VR session started`);
+            
+            // Store input sources for haptic feedback
+            const session = rendererRef.current.xr.getSession();
+            if (session && session.inputSources) {
+              session.inputSources.forEach((inputSource, index) => {
+                if (index < 2) {
+                  inputSourcesRef.current[index] = inputSource;
+                }
+              });
+              console.log(`[HAPTIC] Stored ${session.inputSources.length} input sources for haptic feedback`);
+              addDebug(`Input sources stored: ${session.inputSources.length}`);
+            }
             setLoadingState('in-vr');
             
             // Initialize layout engine and compute anchor from current head pose
@@ -1126,12 +1152,35 @@ const XRLessonPlayerV3: React.FC = () => {
     // Setup lighting
     // High ambient light since skybox uses MeshBasicMaterial (self-illuminating)
     // These lights are mainly for future 3D assets inside the skybox
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+    // STATE-OF-ART LIGHTING: High-quality lighting for asset rendering
+    // Ambient light for base illumination
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // Main directional light with shadows
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
     directionalLight.position.set(5, 10, 5);
+    directionalLight.castShadow = true;
+    directionalLight.shadow.mapSize.width = 2048;
+    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.camera.near = 0.5;
+    directionalLight.shadow.camera.far = 50;
+    directionalLight.shadow.camera.left = -10;
+    directionalLight.shadow.camera.right = 10;
+    directionalLight.shadow.camera.top = 10;
+    directionalLight.shadow.camera.bottom = -10;
+    directionalLight.shadow.bias = -0.0001;
     scene.add(directionalLight);
+    
+    // Fill light from opposite side
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    fillLight.position.set(-5, 5, -5);
+    scene.add(fillLight);
+    
+    // Rim light for edge definition
+    const rimLight = new THREE.DirectionalLight(0x88ccff, 0.3);
+    rimLight.position.set(0, 5, -10);
+    scene.add(rimLight);
     
     // Add hemisphere light for natural lighting (sky/ground gradient)
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
@@ -1303,6 +1352,18 @@ const XRLessonPlayerV3: React.FC = () => {
       line.scale.z = 5;
       controller.add(line);
       
+      // Store input source for haptic feedback (update if session available)
+      if (rendererRef.current?.xr?.getSession()) {
+        const session = rendererRef.current.xr.getSession();
+        if (session.inputSources && session.inputSources[controllerIndex]) {
+          if (!inputSourcesRef.current) {
+            inputSourcesRef.current = [];
+          }
+          inputSourcesRef.current[controllerIndex] = session.inputSources[controllerIndex];
+          console.log(`[HAPTIC] Input source ${controllerIndex} stored for haptic feedback`);
+        }
+      }
+      
       // Controller select handlers (debounced)
       const debouncedSelect = (() => {
         let timeout: NodeJS.Timeout | null = null;
@@ -1348,8 +1409,18 @@ const XRLessonPlayerV3: React.FC = () => {
           if (panel.userData.hasButtons && panel.userData.buttons && intersect.uv) {
             // Convert UV to canvas coordinates
             const uv = intersect.uv;
-            const canvasWidth = 1400;
-            const canvasHeight = panel.userData.panelType === 'mcq' ? 1000 : 800;
+            // Use actual canvas dimensions from panel userData or defaults
+            const canvasWidth = panel.userData.canvasWidth || (
+              panel.userData.panelType === 'start' ? 1000 :
+              panel.userData.panelType === 'strategy' ? 400 :
+              1400
+            );
+            const canvasHeight = panel.userData.canvasHeight || (
+              panel.userData.panelType === 'mcq' ? 1000 :
+              panel.userData.panelType === 'start' ? 700 :
+              panel.userData.panelType === 'strategy' ? 120 :
+              800
+            );
             const pixelX = uv.x * canvasWidth;
             const pixelY = (1 - uv.y) * canvasHeight;
             
@@ -1358,24 +1429,59 @@ const XRLessonPlayerV3: React.FC = () => {
               const { bounds, action } = button;
               if (pixelX >= bounds.x && pixelX <= bounds.x + bounds.width &&
                   pixelY >= bounds.y && pixelY <= bounds.y + bounds.height) {
-                // Debounce button clicks
+                // Debounce button clicks - reduced from 300ms to 100ms for more responsive clicks
                 const buttonId = `${panel.name}_${bounds.x}_${bounds.y}`;
                 const now = Date.now();
                 const lastClick = lastGrabTimeRef.current.get(buttonId) || 0;
-                if (now - lastClick < 300) {
+                if (now - lastClick < 100) {
+                  console.log('[START BUTTON] Click debounced');
                   return;
                 }
                 lastGrabTimeRef.current.set(buttonId, now);
                 
-                // Execute button action
+                // CRITICAL: Trigger haptic feedback for ALL button clicks
+                if (controller1Ref.current) {
+                  triggerHapticFeedback(controller1Ref.current);
+                } else if (controller2Ref.current) {
+                  triggerHapticFeedback(controller2Ref.current);
+                }
+                
+                // Add explicit logging
+                const buttonType = panel.userData.panelType === 'strategy' ? 'STRATEGY' : 'START';
+                console.log(`[${buttonType} BUTTON] Click detected:`, {
+                  buttonId,
+                  pixelX: pixelX.toFixed(1),
+                  pixelY: pixelY.toFixed(1),
+                  bounds: {
+                    x: bounds.x,
+                    y: bounds.y,
+                    width: bounds.width,
+                    height: bounds.height
+                  },
+                  uv: { x: uv.x.toFixed(3), y: uv.y.toFixed(3) },
+                  canvasSize: { width: canvasWidth, height: canvasHeight }
+                });
+                
+                // Execute immediately with error handling
                 try {
                   if (action && typeof action === 'function') {
+                    const buttonType = panel.userData.panelType === 'strategy' ? 'STRATEGY' : 'START';
+                    console.log(`[${buttonType} BUTTON] Executing action`);
                     action();
-                    addDebug(`Button clicked on ${panel.name}`);
+                    // Trigger haptic feedback for button clicks
+                    triggerHapticFeedback(controller);
+                    if (panel.userData.panelType === 'strategy') {
+                      addDebug(`✅ Strategy button clicked - changing layout`);
+                    } else {
+                      addDebug(`✅ START button clicked - lesson starting`);
+                    }
+                  } else {
+                    console.warn(`[BUTTON] Action is not a function:`, action);
+                    addDebug(`⚠️ Button action invalid`);
                   }
                 } catch (err: any) {
-                  console.error('[XRLessonPlayerV3] Button action error:', err);
-                  addDebug(`Button action error: ${err?.message || err}`);
+                  console.error(`[BUTTON] Action error:`, err);
+                  addDebug(`❌ Button error: ${err?.message || err}`);
                 }
                 return;
               }
@@ -1412,29 +1518,100 @@ const XRLessonPlayerV3: React.FC = () => {
         guard.isProcessing = true;
         
         try {
-          // Get interactables from Stable Layout System (cached, no traversal)
-          let interactables: THREE.Object3D[] = [];
+          // Separate UI and asset layers for clean interaction
+          const uiPanels: THREE.Mesh[] = [];
+          const assetObjects: THREE.Object3D[] = [];
           
-          if (stableLayoutRef.current) {
-            interactables = stableLayoutRef.current.getInteractables();
-          } else {
-            // Fallback: get from assets group only (NOT full scene traversal)
-            const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
-            if (assetsGroup) {
-              assetsGroup.children.forEach((child) => {
-                if (child.userData.isInteractable && child.visible) {
-                  interactables.push(child);
-                }
-              });
+          // Collect UI panels first (priority)
+          [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].forEach(panel => {
+            if (panel && panel.userData.layer === 'ui' && panel.visible) {
+              uiPanels.push(panel);
             }
+          });
+          
+          // Collect asset objects (only if not hitting UI)
+          // CRITICAL FIX: Use getAllInteractableMeshes() for reliable raycast hit detection
+          if (stableLayoutRef.current) {
+            const interactableMeshes = stableLayoutRef.current.getAllInteractableMeshes();
+            interactableMeshes.forEach((mesh) => {
+              if (mesh.visible) {
+                assetObjects.push(mesh);
+              }
+            });
+            console.log(`[RAYCAST] Interactable meshes: ${assetObjects.length}`);
           }
           
-          console.log(`[XRLessonPlayerV3] Raycasting against ${interactables.length} interactables`);
+          // Raycast UI layer first (priority)
+          const uiIntersects = raycaster.intersectObjects(uiPanels, false);
+          if (uiIntersects.length > 0) {
+            const hitObject = uiIntersects[0].object;
+            
+            // Handle UI panel button clicks
+            if (hitObject.userData.hasButtons && hitObject.userData.buttons) {
+              const buttons = hitObject.userData.buttons;
+              const canvasWidth = hitObject.userData.canvasWidth || 1000;
+              const canvasHeight = hitObject.userData.canvasHeight || 700;
+              
+              // Convert 3D intersection to 2D canvas coordinates
+              // Panel geometry is 2.0 x 1.4 units (width x height)
+              const localPoint = new THREE.Vector3();
+              hitObject.worldToLocal(localPoint.copy(uiIntersects[0].point));
+              
+              // Convert from local space (-1 to 1) to canvas coordinates (0 to width/height)
+              // Panel extends from -1.0 to +1.0 in X, -0.7 to +0.7 in Y
+              const canvasX = ((localPoint.x + 1.0) / 2.0) * canvasWidth;
+              const canvasY = ((1.0 - localPoint.y) / 1.4) * canvasHeight; // Flip Y axis
+              
+              console.log(`[UI] Raycast hit at local (${localPoint.x.toFixed(3)}, ${localPoint.y.toFixed(3)}) -> canvas (${canvasX.toFixed(0)}, ${canvasY.toFixed(0)})`);
+              
+              // Check which button was clicked
+              for (const button of buttons) {
+                const { bounds, action } = button;
+                if (
+                  canvasX >= bounds.x &&
+                  canvasX <= bounds.x + bounds.width &&
+                  canvasY >= bounds.y &&
+                  canvasY <= bounds.y + bounds.height
+                ) {
+                  console.log(`[UI] Button clicked at (${canvasX.toFixed(0)}, ${canvasY.toFixed(0)})`);
+                  triggerHapticFeedback(controller);
+                  action();
+                  guard.isProcessing = false;
+                  return;
+                }
+              }
+            }
+            
+            guard.isProcessing = false;
+            return; // UI handled, don't process as asset grab
+          }
           
-          const objectIntersects = raycaster.intersectObjects(interactables, true);
-          if (objectIntersects.length > 0) {
-            const hitObject = objectIntersects[0].object;
-            const objId = hitObject.uuid || hitObject.name || 'unknown';
+          // If no UI hit, check asset layer
+          // CRITICAL FIX: Now raycasting against all meshes, not just root models
+          const assetIntersects = raycaster.intersectObjects(assetObjects, false); // false = we already have meshes
+          
+          if (assetIntersects.length > 0) {
+            const hitMesh = assetIntersects[0].object;
+            
+            // CRITICAL: Find the root model from the hit mesh
+            let rootModel: THREE.Object3D | null = null;
+            if (stableLayoutRef.current) {
+              rootModel = stableLayoutRef.current.findRootModel(hitMesh);
+            }
+            
+            // Log hit details for debugging
+            console.log(`[RAYCAST] Hit mesh: "${hitMesh.name}" (${hitMesh.uuid.substring(0, 8)})`);
+            console.log(`[RAYCAST] Root model: "${rootModel?.name || 'NOT FOUND'}" (${rootModel?.uuid.substring(0, 8) || 'N/A'})`);
+            console.log(`[RAYCAST] Slot index: ${rootModel?.userData.slotIndex ?? 'N/A'}`);
+            
+            if (!rootModel) {
+              console.warn(`[RAYCAST] ⚠️ Could not find root model for hit mesh "${hitMesh.name}"`);
+              addDebug(`⚠️ Raycast hit mesh but no root model found`);
+              guard.isProcessing = false;
+              return;
+            }
+            
+            const objId = rootModel.uuid || rootModel.name || 'unknown';
             
             // Debounce grabs
             const lastGrab = lastGrabTimeRef.current.get(objId) || 0;
@@ -1446,18 +1623,27 @@ const XRLessonPlayerV3: React.FC = () => {
             
             // Priority 1: Stable Layout System (crash-safe)
             if (stableLayoutRef.current) {
-              const grabbed = stableLayoutRef.current.startGrab(hitObject, controller);
+              const grabbed = stableLayoutRef.current.startGrab(rootModel, controller);
               if (grabbed) {
-                addDebug(`🎯 Grabbed: ${hitObject.name || 'object'} (Stable Layout)`);
+                // Mark root model as grabbed to disable gravity
+                rootModel.userData.isGrabbed = true;
+                // Trigger haptic feedback on successful grab
+                triggerHapticFeedback(controller);
+                console.log(`[GRAB] ✅ Successfully grabbed: "${rootModel.name}" (slot ${rootModel.userData.slotIndex})`);
+                addDebug(`🎯 Grabbed: ${rootModel.name || 'object'} (slot ${rootModel.userData.slotIndex})`);
+              } else {
+                console.warn(`[GRAB] ❌ Failed to grab: "${rootModel.name}"`);
+                addDebug(`❌ Grab failed: ${rootModel.name || 'object'}`);
               }
             }
             // Priority 2: VR Experience (legacy)
             else if (vrExperienceRef.current) {
-              const grabbed = vrExperienceRef.current.startGrab(hitObject, controller);
+              const grabbed = vrExperienceRef.current.startGrab(rootModel, controller);
               if (grabbed) {
-                hitObject.userData.isGrabbed = true;
-                hitObject.userData.grabController = controller;
-                addDebug(`🎯 Grabbed: ${hitObject.name || 'object'} (VR Experience)`);
+                rootModel.userData.isGrabbed = true;
+                rootModel.userData.grabController = controller;
+                triggerHapticFeedback(controller);
+                addDebug(`🎯 Grabbed: ${rootModel.name || 'object'} (VR Experience)`);
               }
             }
           }
@@ -1670,6 +1856,40 @@ const XRLessonPlayerV3: React.FC = () => {
             startPanelRef.current.lookAt(cameraRef.current.position);
           }
           
+          // Gravity simulation: Make assets rest on dock when not grabbed
+          if (assetsGroupRef.current && sceneLayoutRef.current && stableLayoutRef.current) {
+            const isGrabbing = stableLayoutRef.current.isGrabbing();
+            const dockSurfaceY = sceneLayoutRef.current.getAssetDockSurfaceY(GROUND_LEVEL);
+            
+            assetsGroupRef.current.children.forEach((asset) => {
+              const obj = asset as THREE.Object3D;
+              
+              // Check if this specific asset is being grabbed
+              const isThisAssetGrabbed = obj.userData.isGrabbed || isGrabbing;
+              
+              // Only apply gravity if asset rests on dock and is not being grabbed
+              if (obj.userData.restsOnDock && !isThisAssetGrabbed && obj.userData.dockSurfaceY !== undefined) {
+                const box = new THREE.Box3().setFromObject(obj);
+                const size = box.getSize(new THREE.Vector3());
+                const currentY = obj.position.y;
+                const targetY = obj.userData.dockSurfaceY + size.y / 2;
+                
+                // If asset is above dock, apply gentle gravity
+                if (currentY > targetY + 0.01) {
+                  const gravity = 0.015; // Gentle downward force
+                  obj.position.y = Math.max(targetY, currentY - gravity);
+                  obj.updateMatrixWorld(true);
+                } else if (currentY < targetY - 0.01) {
+                  // If below dock, snap to surface
+                  obj.position.y = targetY;
+                  obj.updateMatrixWorld(true);
+                }
+              }
+            });
+          }
+          
+          // Ground plane is always transparent (no conditional visibility)
+          
           // Update raycast for controllers (for hover feedback)
           if (raycasterRef.current && reticleRef.current && controller1Ref.current) {
             const raycaster = raycasterRef.current;
@@ -1688,17 +1908,31 @@ const XRLessonPlayerV3: React.FC = () => {
               
               raycaster.set(origin, direction);
               
-              // Check panels and 3D objects for hover - include start panel
-              const panels = [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].filter(Boolean) as THREE.Mesh[];
-              const interactables: THREE.Object3D[] = [];
-              sceneRef.current.traverse((obj) => {
-                if (obj.userData.isInteractable && obj.visible) {
-                  interactables.push(obj);
+              // Separate UI layer from asset layer for clean raycast
+              const uiPanels: THREE.Mesh[] = [];
+              const assetObjects: THREE.Object3D[] = [];
+              
+              // Collect UI panels (layer: 'ui')
+              [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].forEach(panel => {
+                if (panel && panel.userData.layer === 'ui') {
+                  uiPanels.push(panel);
                 }
               });
               
-              const allObjects = [...panels, ...interactables];
-              const intersects = raycaster.intersectObjects(allObjects, false);
+              // Collect asset objects (layer: 'asset')
+              sceneRef.current.traverse((obj) => {
+                if (obj.userData.isInteractable && obj.visible && obj.userData.layer === 'asset') {
+                  assetObjects.push(obj);
+                }
+              });
+              
+              // Priority: UI layer first, then assets
+              const uiIntersects = raycaster.intersectObjects(uiPanels, false);
+              const assetIntersects = uiIntersects.length === 0 
+                ? raycaster.intersectObjects(assetObjects, false)
+                : [];
+              
+              const intersects = [...uiIntersects, ...assetIntersects];
               
               if (intersects.length > 0) {
                 const intersect = intersects[0];
@@ -2212,122 +2446,17 @@ const XRLessonPlayerV3: React.FC = () => {
           gltf.scene.frustumCulled = false; // Disable frustum culling for large/complex models
           
           // ═══════════════════════════════════════════════════════════════════════
-          // ASSET POSITION CALCULATION - GROUND PLANE REFERENCED
-          // Uses model analysis to place model's BOTTOM at table height
-          // Multi-asset layout: Primary asset right, others in arc formation
+          // ASSET POSITION - PLACEHOLDER SYSTEM
+          // Assets will be positioned using placeholder system after all are loaded
+          // For now, set temporary position (will be updated by placeholder system)
           // ═══════════════════════════════════════════════════════════════════════
-          console.log(`\n🎯 [ASSET POSITION] ════════════════════════════════════════`);
-          console.log(`🎯 [ASSET POSITION] Asset ${i + 1}/${meshyAssets.length} | Scaled Height: ${scaledHeight.toFixed(2)}m`);
-          console.log(`🎯 [ASSET POSITION] Loading State: ${loadingState}`);
-          console.log(`🎯 [ASSET POSITION] Ground Level: ${GROUND_LEVEL}m, Table Height: ${TABLE_HEIGHT}m`);
+          console.log(`[ASSET_PLACEHOLDER] Asset ${i + 1}/${meshyAssets.length} loaded, will be positioned by placeholder system`);
+          addDebug(`Asset ${i + 1} loaded (placeholder positioning pending)`);
           
-          let x: number, y: number, z: number;
-          let positionSource: string = 'unknown';
-          
-          // Get camera info for direction calculation
-          const cameraPos = new THREE.Vector3();
-          let cameraValid = false;
-          
-          if (cameraRef.current) {
-            cameraRef.current.getWorldPosition(cameraPos);
-            cameraValid = !isNaN(cameraPos.x) && !isNaN(cameraPos.y) && !isNaN(cameraPos.z) &&
-                Math.abs(cameraPos.x) < 100 && Math.abs(cameraPos.y) < 100 && Math.abs(cameraPos.z) < 100;
-          }
-          
-          // ═══════════════════════════════════════════════════════════════════════
-          // MULTI-ASSET LAYOUT STRATEGY (INITIAL LOAD)
-          // - Primary (Asset 0): To the RIGHT of UI panel, in front of user
-          // - Secondary (Asset 1+): To the LEFT of user, at 45° intervals
-          // This creates a "showcase" arrangement where assets don't overlap
-          // ═══════════════════════════════════════════════════════════════════════
-          const totalAssets = meshyAssets.length;
-          const assetIndex = i;
-          
-          // Layout constants for multi-asset arrangement
-          const PRIMARY_DISTANCE = ASSET_DISTANCE;         // 3m for primary
-          const PRIMARY_RIGHT_OFFSET = ASSET_RIGHT_OFFSET; // Right offset for primary
-          const SECONDARY_ARC_ANGLE = 45;                  // 45° between secondary assets
-          const SECONDARY_LEFT_OFFSET = 1.2;               // 1.2m to the left
-          
-          // Y position: TABLE_HEIGHT above ground
-          // Since model's bottom is now at local Y=0, placing at TABLE_HEIGHT puts bottom at table level
-          y = GROUND_LEVEL + TABLE_HEIGHT;
-          
-          console.log(`🎯 [ASSET POSITION] ═══════════════════════════════════════`);
-          console.log(`🎯 [ASSET POSITION] Asset ${assetIndex + 1}/${totalAssets} | Total: ${totalAssets}`);
-          
-          // Check if we should use camera direction (in VR with valid camera)
-          if (loadingState === 'in-vr' && cameraValid && cameraRef.current) {
-            // Get camera forward direction (flattened to horizontal plane)
-            const rawForward = new THREE.Vector3(0, 0, -1);
-            rawForward.applyQuaternion(cameraRef.current.quaternion);
-            const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z);
-            if (flatForward.lengthSq() < 0.001) flatForward.set(0, 0, -1);
-            flatForward.normalize();
-            
-            // Get right direction
-            const rightDir = new THREE.Vector3();
-            rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
-            
-            console.log(`🎯 [ASSET POSITION] VR Mode - Camera: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
-            console.log(`🎯 [ASSET POSITION] Forward: (${flatForward.x.toFixed(3)}, 0, ${flatForward.z.toFixed(3)})`);
-            
-            if (assetIndex === 0 || totalAssets === 1) {
-              // PRIMARY ASSET: Front-right of user (to the right of UI panel)
-              x = cameraPos.x + flatForward.x * PRIMARY_DISTANCE + rightDir.x * PRIMARY_RIGHT_OFFSET;
-              z = cameraPos.z + flatForward.z * PRIMARY_DISTANCE + rightDir.z * PRIMARY_RIGHT_OFFSET;
-              positionSource = 'VR_PRIMARY_RIGHT';
-            } else {
-              // SECONDARY ASSETS: To the LEFT of user, at 45° intervals
-              const angleOffset = -assetIndex * SECONDARY_ARC_ANGLE; // Negative = LEFT
-              const angleRad = THREE.MathUtils.degToRad(angleOffset);
-              
-              // Rotate forward direction by angle (around Y axis) - LEFT rotation
-              const rotatedForward = new THREE.Vector3(
-                flatForward.x * Math.cos(angleRad) - flatForward.z * Math.sin(angleRad),
-                0,
-                flatForward.x * Math.sin(angleRad) + flatForward.z * Math.cos(angleRad)
-              ).normalize();
-              
-              // Position to the LEFT of center
-              x = cameraPos.x + rotatedForward.x * PRIMARY_DISTANCE - rightDir.x * SECONDARY_LEFT_OFFSET;
-              z = cameraPos.z + rotatedForward.z * PRIMARY_DISTANCE - rightDir.z * SECONDARY_LEFT_OFFSET;
-              positionSource = `VR_SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
-            }
-          } else {
-            // PRE-VR: Fixed positions relative to origin (for preview before VR)
-            if (assetIndex === 0 || totalAssets === 1) {
-              // Primary asset: front-right
-              x = PRIMARY_RIGHT_OFFSET;
-              z = -PRIMARY_DISTANCE;
-              positionSource = 'FIXED_PRIMARY_RIGHT';
-            } else {
-              // Secondary assets: to the LEFT at 45° intervals
-              const angleOffset = -assetIndex * SECONDARY_ARC_ANGLE; // Negative = LEFT
-              const angleRad = THREE.MathUtils.degToRad(angleOffset);
-              
-              // Rotate the forward direction (-Z) by angleOffset
-              x = -SECONDARY_LEFT_OFFSET + Math.sin(angleRad) * PRIMARY_DISTANCE;
-              z = -PRIMARY_DISTANCE * Math.cos(angleRad);
-              positionSource = `FIXED_SECONDARY_LEFT_${Math.abs(angleOffset)}deg`;
-            }
-            
-            console.log(`🎯 [ASSET POSITION] Pre-VR Mode`);
-          }
-          
-          console.log(`🎯 [ASSET POSITION] FINAL: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}) [${positionSource}]`);
-          console.log(`🎯 [ASSET POSITION] Model bottom at Y=${y.toFixed(2)}m (TABLE_HEIGHT above ground)`);
-          console.log(`🎯 [ASSET POSITION] Model top at Y=${(y + scaledHeight).toFixed(2)}m`);
-          console.log(`🎯 [ASSET POSITION] ════════════════════════════════════════\n`);
-          
-          addDebug(`═══ ASSET ${i + 1} POSITION ═══`);
-          addDebug(`Type: ${assetIndex === 0 ? 'PRIMARY' : 'SECONDARY'} | Layout: ${positionSource}`);
-          addDebug(`Position: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`);
-          addDebug(`Bottom Y: ${y.toFixed(2)}m | Top Y: ${(y + scaledHeight).toFixed(2)}m`)
-          
-          // Make materials work with scene lighting (preserve original materials)
+          // STATE-OF-ART RENDERING: Enhance materials and lighting
           gltf.scene.traverse((child: any) => {
             if (child instanceof THREE.Mesh) {
+              // Enable high-quality shadows
               child.castShadow = true;
               child.receiveShadow = true;
               child.userData.isInteractable = true;
@@ -2337,24 +2466,46 @@ const XRLessonPlayerV3: React.FC = () => {
               if (child.material) {
                 const mats = Array.isArray(child.material) ? child.material : [child.material];
                 mats.forEach((mat: any) => {
-                  // Ensure material is visible
+                  // Ensure material is visible and properly configured
                   mat.visible = true;
                   mat.transparent = false; // Ensure not transparent unless explicitly set
                   if (mat.opacity !== undefined) {
                     mat.opacity = 1.0; // Ensure fully opaque
                   }
                   
-                  // Preserve texture settings
+                  // High-quality texture settings
                   if (mat.map) {
                     mat.map.colorSpace = THREE.SRGBColorSpace;
-                    // Preserve flipY and other texture properties
-                    const originalFlipY = mat.map.flipY;
-                    mat.map.flipY = originalFlipY; // Don't change
+                    mat.map.generateMipmaps = true;
+                    mat.map.minFilter = THREE.LinearMipmapLinearFilter;
+                    mat.map.magFilter = THREE.LinearFilter;
+                    mat.map.anisotropy = rendererRef.current?.capabilities.getMaxAnisotropy() || 1;
                   }
+                  
+                  // Normal maps for better detail
+                  if (mat.normalMap) {
+                    mat.normalMap.colorSpace = THREE.LinearSRGBColorSpace;
+                  }
+                  
+                  // Environment maps for reflections
+                  if (mat.envMap) {
+                    mat.envMapIntensity = 1.0;
+                  }
+                  
+                  // Material quality settings
                   if (!mat.colorSpace) {
                     mat.colorSpace = THREE.SRGBColorSpace;
                   }
-                  // Mark as updated once, then don't touch
+                  
+                  // Ensure proper roughness and metalness for PBR
+                  if (mat.roughness !== undefined) {
+                    mat.roughness = Math.max(0, Math.min(1, mat.roughness));
+                  }
+                  if (mat.metalness !== undefined) {
+                    mat.metalness = Math.max(0, Math.min(1, mat.metalness));
+                  }
+                  
+                  // Mark as updated
                   mat.needsUpdate = true;
                 });
               }
@@ -2365,11 +2516,24 @@ const XRLessonPlayerV3: React.FC = () => {
           const assetGroup = new THREE.Group();
           assetGroup.name = `assetGroup_${asset.id}`;
           assetGroup.add(gltf.scene);
-          assetGroup.position.set(x, y, z);
+          
+          // CRITICAL: Do NOT set temporary position - assets will be placed ONLY on dock
+          // Position will be set by SceneLayoutSystem.placeAssetOnDock()
+          // Start at origin (0,0,0) - will be moved to dock position by layout system
+          assetGroup.position.set(0, 0, 0);
+          
+          // Mark as asset layer for raycast filtering
+          assetGroup.userData.layer = 'asset';
+          assetGroup.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.userData.layer = 'asset';
+            }
+          });
           assetGroup.userData.isInteractable = true;
           assetGroup.userData.originalPosition = new THREE.Vector3().copy(assetGroup.position);
           assetGroup.userData.originalRotation = new THREE.Euler().copy(assetGroup.rotation);
           assetGroup.userData.originalScale = new THREE.Vector3().setScalar(1.0);
+          assetGroup.userData.assetIndex = i; // Store index for placeholder assignment
           
           // Make sure the group and all children are visible
           assetGroup.visible = true;
@@ -2524,15 +2688,161 @@ const XRLessonPlayerV3: React.FC = () => {
         }
         
         // ═══════════════════════════════════════════════════════════════════
-        // STABLE LAYOUT SYSTEM - Deterministic Asset Staging
-        // Uses StableLayoutSystem for crash-safe, professional placement
-        // All assets are staged with proper spacing (no overlap/merging)
+        // SCENE LAYOUT SYSTEM - Production-grade, scalable asset placement
         // ═══════════════════════════════════════════════════════════════════
         if (cameraRef.current && foundGroup && foundGroup.children.length > 0) {
-          console.log(`\n🎯 [STABLE LAYOUT] ═══════════════════════════════════════`);
-          console.log(`🎯 [STABLE LAYOUT] Total assets to stage: ${foundGroup.children.length}`);
+          const assetCount = foundGroup.children.length;
+          console.log(`\n[SCENE_LAYOUT] ═══════════════════════════════════════`);
+          console.log(`[SCENE_LAYOUT] Total assets to place: ${assetCount}`);
+          console.log(`[SCENE_LAYOUT] Strategy: ${placementStrategy}`);
           
-          // Initialize Stable Layout System if not already done
+          // Initialize Scene Layout System
+          if (!sceneLayoutRef.current) {
+            sceneLayoutRef.current = new SceneLayoutSystem({
+              assetDock: {
+                distance: 0.7,      // Hands distance
+                height: 0.9,       // Desk height
+                width: 1.8,         // Wider for more assets
+                depth: 0.8,
+                maxAssetSize: 0.25, // 25cm max
+              },
+              introDock: {
+                distance: 2.5,      // Further away from asset dock
+                height: 1.2,        // Eye level
+                width: 2.0,
+                height_panel: 1.4,
+                spacing: 1.5,       // Clear spacing between zones
+              },
+              ground: {
+                size: 20,
+                gridDivisions: 20,
+                fadeAngle: 30,
+              },
+            }, placementStrategy);
+            addDebug(`✅ Scene Layout System initialized (strategy: ${placementStrategy})`);
+          } else {
+            // Update strategy if changed
+            sceneLayoutRef.current.setStrategy(placementStrategy);
+          }
+          
+          // Create asset dock in scene
+          if (sceneRef.current && cameraRef.current) {
+            sceneLayoutRef.current.createAssetDock(sceneRef.current, cameraRef.current, GROUND_LEVEL);
+            addDebug(`✅ Asset dock created at hands distance`);
+          }
+          
+          // Create ground plane
+          if (sceneRef.current) {
+            sceneLayoutRef.current.createGroundPlane(sceneRef.current, GROUND_LEVEL);
+            addDebug(`✅ Ground plane created`);
+          }
+          
+          // Calculate dynamic N placements for N assets
+          // CRITICAL: N assets MUST produce N placements
+          const placements = sceneLayoutRef.current.calculatePlacements(
+            assetCount,
+            cameraRef.current,
+            GROUND_LEVEL
+          );
+          
+          // Store placements for reference
+          assetPlacementsRef.current = placements;
+          
+          // ═══════════════════════════════════════════════════════════════
+          // CRITICAL VERIFICATION: N assets = N placements
+          // ═══════════════════════════════════════════════════════════════
+          console.log(`[SCENE_LAYOUT] ═══════════════════════════════════════`);
+          console.log(`[SCENE_LAYOUT] ASSET COUNT VERIFICATION:`);
+          console.log(`[SCENE_LAYOUT]   Total assets loaded: ${assetCount}`);
+          console.log(`[SCENE_LAYOUT]   Placements generated: ${placements.length}`);
+          console.log(`[SCENE_LAYOUT]   Match: ${assetCount === placements.length ? '✅ YES' : '❌ NO - BUG!'}`);
+          
+          if (assetCount !== placements.length) {
+            console.error(`[SCENE_LAYOUT] ❌ CRITICAL BUG: Asset count (${assetCount}) != Placement count (${placements.length})`);
+            addDebug(`❌ BUG: ${assetCount} assets but only ${placements.length} placements!`);
+          }
+          
+          // Log each asset and its corresponding placement
+          console.log(`[SCENE_LAYOUT] Asset → Placement mapping:`);
+          foundGroup.children.forEach((asset, idx) => {
+            const placement = placements[idx];
+            console.log(`[SCENE_LAYOUT]   [${idx}] "${asset.name}" → Slot ${placement?.slotIndex ?? 'NONE'} at (${placement?.position.x.toFixed(2) ?? 'N/A'}, ${placement?.position.y.toFixed(2) ?? 'N/A'}, ${placement?.position.z.toFixed(2) ?? 'N/A'})`);
+          });
+          
+          addDebug(`═══ SCENE LAYOUT SYSTEM ═══`);
+          addDebug(`Strategy: ${placementStrategy}`);
+          addDebug(`Assets: ${assetCount} | Placements: ${placements.length} ${assetCount === placements.length ? '✅' : '❌'}`);
+          addDebug(`Dock surface Y: ${placements[0]?.dockSurfaceY.toFixed(2)}m`);
+          
+          // Place each asset with fit-to-dock scaling
+          // CRITICAL: Pass total asset count for proper per-asset scaling
+          const modelsToPlace = foundGroup.children as THREE.Object3D[];
+          const totalAssets = modelsToPlace.length;
+          
+          console.log(`[SCENE_LAYOUT] Placing ${totalAssets} assets with ${placements.length} placements`);
+          
+          modelsToPlace.forEach((assetGroup, index) => {
+            if (index < placements.length) {
+              const placement = placements[index];
+              
+              console.log(`[SCENE_LAYOUT] Placing asset ${index + 1}/${totalAssets} (slot ${placement.slotIndex}):`, {
+                assetName: assetGroup.name,
+                assetUUID: assetGroup.uuid.substring(0, 8),
+                targetPosition: `(${placement.position.x.toFixed(2)}, ${placement.position.y.toFixed(2)}, ${placement.position.z.toFixed(2)})`,
+                strategy: placement.strategy,
+                strategyScale: placement.scale,
+              });
+              
+              // Place asset with fit-to-dock scaling, passing total count for proper sizing
+              sceneLayoutRef.current!.placeAssetOnDock(
+                assetGroup,
+                placement,
+                cameraRef.current!,
+                GROUND_LEVEL,
+                totalAssets // Pass total count for collision-aware scaling
+              );
+              
+              // Store placement reference
+              assetGroup.userData.placementIndex = index;
+              assetGroup.userData.slotIndex = placement.slotIndex;
+              assetGroup.userData.placementPosition = new THREE.Vector3().copy(placement.position);
+              assetGroup.userData.placementRotation = new THREE.Euler().copy(placement.rotation);
+              assetGroup.userData.dockSurfaceY = placement.dockSurfaceY;
+              
+              // Store original position for reset
+              assetGroup.userData.originalPosition = new THREE.Vector3().copy(assetGroup.position);
+              assetGroup.userData.originalRotation = new THREE.Euler().copy(assetGroup.rotation);
+              
+              // Verify placement
+              const pos = assetGroup.position;
+              const heightOnDock = pos.y - placement.dockSurfaceY;
+              console.log(`[SCENE_LAYOUT] Asset ${index + 1} placed: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+              addDebug(`[DOCK] Asset ${index + 1} (slot ${placement.slotIndex}): (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+              
+              // Ensure asset is resting on dock
+              if (Math.abs(heightOnDock) > 0.1) {
+                console.warn(`[SCENE_LAYOUT] ⚠️ Asset ${index + 1} height ${heightOnDock.toFixed(2)}m - adjusting to dock surface`);
+                const box = new THREE.Box3().setFromObject(assetGroup);
+                const size = box.getSize(new THREE.Vector3());
+                assetGroup.position.y = placement.dockSurfaceY + size.y / 2;
+                assetGroup.updateMatrixWorld(true);
+              }
+            } else {
+              console.warn(`[SCENE_LAYOUT] ⚠️ No placement for asset ${index + 1} (${assetCount} assets, ${placements.length} placements)`);
+              addDebug(`⚠️ Asset ${index + 1}: No placement available`);
+            }
+          });
+          
+          console.log(`[SCENE_LAYOUT] ═══════════════════════════════════════`);
+          
+          // CRITICAL: Show VR button only after all calculations are complete
+          if (vrButtonRef.current) {
+            vrButtonRef.current.style.display = 'block';
+            addDebug(`✅ VR button enabled - calculations complete`);
+            console.log(`[SCENE_LAYOUT] VR button enabled - all assets placed`);
+          }
+          
+          // Initialize Stable Layout System for interaction handling (not placement)
           if (!stableLayoutRef.current) {
             stableLayoutRef.current = new StableLayoutSystem({
               stageDistance: 2.5,
@@ -2546,43 +2856,56 @@ const XRLessonPlayerV3: React.FC = () => {
             });
           }
           
-          // Initialize layout with camera pose
+          // Initialize layout with camera pose (for interaction only)
           if (!stableLayoutRef.current.isReady()) {
             stableLayoutRef.current.initialize(cameraRef.current, GROUND_LEVEL);
           } else if (loadingState === 'in-vr') {
-            // Recompute anchors for VR mode
             stableLayoutRef.current.recomputeAnchors(cameraRef.current, GROUND_LEVEL);
           }
           
-          // Check if layout is locked (models were staged before)
-          // We need to unlock to allow re-staging
+          // CRITICAL: Stage assets with StableLayoutSystem for interaction
+          // This registers them in the interactable cache so they can be grabbed
           if (stableLayoutRef.current.isReady()) {
             const existingStagedModels = stableLayoutRef.current.getStagedModels();
             if (existingStagedModels.size > 0) {
               stableLayoutRef.current.unlockLayout();
               addDebug('Unlocked layout for re-staging');
             }
+            
+            // Stage all models (for interaction cache, not positioning)
+            const modelsToStage = foundGroup.children as THREE.Object3D[];
+            const stagedModels = stableLayoutRef.current.stageModels(modelsToStage);
+            
+            // ═══════════════════════════════════════════════════════════════
+            // CRITICAL VERIFICATION: All assets must be staged for interaction
+            // ═══════════════════════════════════════════════════════════════
+            console.log(`[INTERACTION] ═══════════════════════════════════════`);
+            console.log(`[INTERACTION] STAGING VERIFICATION:`);
+            console.log(`[INTERACTION]   Models to stage: ${modelsToStage.length}`);
+            console.log(`[INTERACTION]   Models staged: ${stagedModels.length}`);
+            console.log(`[INTERACTION]   Match: ${modelsToStage.length === stagedModels.length ? '✅ YES' : '❌ NO - BUG!'}`);
+            
+            if (modelsToStage.length !== stagedModels.length) {
+              console.error(`[INTERACTION] ❌ CRITICAL BUG: ${modelsToStage.length - stagedModels.length} models NOT staged!`);
+              addDebug(`❌ BUG: ${modelsToStage.length - stagedModels.length} models not staged!`);
+            }
+            
+            // Verify interactables are available
+            const interactables = stableLayoutRef.current.getInteractables();
+            const allMeshes = stableLayoutRef.current.getAllInteractableMeshes();
+            
+            console.log(`[INTERACTION]   Interactable root models: ${interactables.length}`);
+            console.log(`[INTERACTION]   Total interactable meshes: ${allMeshes.length}`);
+            
+            // Debug print all staged models
+            stableLayoutRef.current.debugPrintStagedModels();
+            
+            addDebug(`✅ Assets staged: ${stagedModels.length} models`);
+            addDebug(`Interactables: ${interactables.length} roots, ${allMeshes.length} meshes`);
+            console.log(`[INTERACTION] ═══════════════════════════════════════`);
           }
           
-          // Stage all models with proper spacing
-          const modelsToStage = foundGroup.children as THREE.Object3D[];
-          const stagedModels = stableLayoutRef.current.stageModels(modelsToStage);
-          
-          addDebug(`═══ STABLE LAYOUT COMPLETE ═══`);
-          addDebug(`Layout Engine Ready: ${stableLayoutRef.current.isReady()}`);
-          addDebug(`Models staged: ${stagedModels.length}/${foundGroup.children.length}`);
-          
-          // Log final positions
-          stagedModels.forEach((staged, index) => {
-            const pos = staged.model.position;
-            const type = staged.isEnvironment ? 'ENV' : 'MODEL';
-            console.log(`🎯 [STABLE LAYOUT] ${type} ${index + 1}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-            addDebug(`${type} ${index + 1}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-          });
-          
-          console.log(`🎯 [STABLE LAYOUT] ═══════════════════════════════════════`);
-          
-          // Force render after layout
+          // Force render after placement
           if (rendererRef.current) {
             rendererRef.current.render(sceneRef.current, cameraRef.current);
           }
@@ -2620,6 +2943,13 @@ const XRLessonPlayerV3: React.FC = () => {
         lastGrabTimeRef.current.clear();
         hoveredObjectRef.current = null;
         assetRefs.current.clear();
+        
+        // Cleanup scene layout system
+        if (sceneLayoutRef.current && sceneRef.current) {
+          sceneLayoutRef.current.dispose(sceneRef.current);
+        }
+        sceneLayoutRef.current = null;
+        assetPlacementsRef.current = [];
         
       } catch (cleanupErr: any) {
         console.error('[XRLessonPlayerV3] Asset cleanup error:', cleanupErr);
@@ -2884,6 +3214,50 @@ const XRLessonPlayerV3: React.FC = () => {
   }, [mcqData.length, stopAudio, addDebug]);
   
   // ============================================================================
+  // Haptic Feedback Helper
+  // ============================================================================
+  
+  const triggerHapticFeedback = useCallback((controller: THREE.Group) => {
+    try {
+      // Find which controller this is (0 or 1)
+      let controllerIndex = -1;
+      if (controller === controller1Ref.current) {
+        controllerIndex = 0;
+      } else if (controller === controller2Ref.current) {
+        controllerIndex = 1;
+      }
+      
+      if (controllerIndex >= 0 && inputSourcesRef.current[controllerIndex]) {
+        const inputSource = inputSourcesRef.current[controllerIndex];
+        const gamepad = inputSource.gamepad;
+        
+        if (gamepad?.hapticActuators?.[0]) {
+          // Trigger haptic pulse: intensity 0.5, duration 50ms
+          gamepad.hapticActuators[0].pulse(0.5, 50);
+          console.log(`[HAPTIC] Vibration triggered on controller ${controllerIndex}`);
+          addDebug(`[HAPTIC] Controller ${controllerIndex} vibrated`);
+        } else {
+          console.log(`[HAPTIC] No haptic actuators available on controller ${controllerIndex}`);
+        }
+      } else {
+        // Fallback: try to get from XR session
+        if (rendererRef.current?.xr?.getSession()) {
+          const session = rendererRef.current.xr.getSession();
+          if (session.inputSources && session.inputSources.length > 0) {
+            const inputSource = session.inputSources[controllerIndex >= 0 ? controllerIndex : 0];
+            if (inputSource?.gamepad?.hapticActuators?.[0]) {
+              inputSource.gamepad.hapticActuators[0].pulse(0.5, 50);
+              console.log(`[HAPTIC] Vibration triggered via session fallback`);
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('[HAPTIC] Error triggering haptic feedback:', err);
+    }
+  }, [addDebug]);
+  
+  // ============================================================================
   // START Button Panel (Gate before lesson begins)
   // ============================================================================
   
@@ -2908,6 +3282,20 @@ const XRLessonPlayerV3: React.FC = () => {
       debugUI('Start panel removed');
     }
     
+    // Strategy rotation: Select a random strategy for this lesson (only 3 remaining strategies)
+    const strategies: PlacementStrategy[] = [
+      'curved-arc',
+      'focus-secondary',
+      'carousel'
+    ];
+    const selectedStrategy = strategies[Math.floor(Math.random() * strategies.length)];
+    setPlacementStrategy(selectedStrategy);
+    if (sceneLayoutRef.current) {
+      sceneLayoutRef.current.setStrategy(selectedStrategy);
+      addDebug(`Placement strategy rotated to: ${selectedStrategy}`);
+      console.log(`[LESSON START] Placement strategy: ${selectedStrategy}`);
+    }
+    
     // Mark lesson as started and transition to intro phase
     setLessonStarted(true);
     setLessonPhase('intro');
@@ -2922,7 +3310,124 @@ const XRLessonPlayerV3: React.FC = () => {
       layoutEngineRef.current.computeAnchor(cameraRef.current);
       debugLayout('Layout anchor recomputed at lesson start');
     }
-  }, [addDebug, lessonPhase, lessonStarted, ttsData, mcqData, debugXR, debugUI, debugLayout]);
+  }, [addDebug, lessonPhase, lessonStarted, ttsData, mcqData, debugXR, debugUI, debugLayout, loadingState]);
+  
+  // ============================================================================
+  // Change Placement Strategy - MUST be defined BEFORE createStartPanel
+  // ============================================================================
+  
+  // Change placement strategy and reposition assets
+  const changePlacementStrategy = useCallback((newStrategy: PlacementStrategy) => {
+    if (!sceneLayoutRef.current || !cameraRef.current || !assetsGroupRef.current || !sceneRef.current) {
+      console.warn('[STRATEGY] Cannot change strategy: missing refs');
+      addDebug(`⚠️ Cannot change strategy: missing refs`);
+      return;
+    }
+    
+    console.log(`[STRATEGY] Changing placement strategy to: ${newStrategy}`);
+    addDebug(`🔄 Changing strategy to: ${newStrategy}`);
+    
+    // Update state and system strategy
+    setPlacementStrategy(newStrategy);
+    sceneLayoutRef.current.setStrategy(newStrategy);
+    
+    const assetCount = assetsGroupRef.current.children.length;
+    
+    // Recalculate dynamic N placements with new strategy
+    const placements = sceneLayoutRef.current.calculatePlacements(
+      assetCount,
+      cameraRef.current,
+      GROUND_LEVEL
+    );
+    
+    // Store placements
+    assetPlacementsRef.current = placements;
+    
+    console.log(`[STRATEGY] Recalculated ${placements.length} placements for ${assetCount} assets`);
+    addDebug(`📐 Placements: ${placements.length} for ${assetCount} assets`);
+    
+    // CRITICAL: Force immediate repositioning of all assets
+    // Reposition all assets with fit-to-dock scaling, passing total count for proper sizing
+    const totalAssets = assetsGroupRef.current.children.length;
+    
+    assetsGroupRef.current.children.forEach((assetGroup, index) => {
+      if (index < placements.length) {
+        const placement = placements[index];
+        const asset = assetGroup as THREE.Object3D;
+        
+        console.log(`[STRATEGY] Repositioning asset ${index + 1}/${totalAssets} to slot ${placement.slotIndex}:`, {
+          oldPosition: `(${asset.position.x.toFixed(2)}, ${asset.position.y.toFixed(2)}, ${asset.position.z.toFixed(2)})`,
+          newPosition: `(${placement.position.x.toFixed(2)}, ${placement.position.y.toFixed(2)}, ${placement.position.z.toFixed(2)})`,
+        });
+        
+        // Place asset on dock with fit-to-dock scaling, passing total count
+        sceneLayoutRef.current!.placeAssetOnDock(
+          asset,
+          placement,
+          cameraRef.current!,
+          GROUND_LEVEL,
+          totalAssets
+        );
+        
+        // Update placement reference
+        asset.userData.placementIndex = index;
+        asset.userData.slotIndex = placement.slotIndex;
+        asset.userData.placementPosition = new THREE.Vector3().copy(placement.position);
+        asset.userData.placementRotation = new THREE.Euler().copy(placement.rotation);
+        asset.userData.dockSurfaceY = placement.dockSurfaceY;
+        
+        // Store original position
+        asset.userData.originalPosition = new THREE.Vector3().copy(asset.position);
+        
+        // CRITICAL: Force update matrix to ensure position is applied
+        asset.updateMatrixWorld(true);
+        
+        // Verify placement on dock
+        const finalPos = asset.position;
+        const distanceFromTarget = finalPos.distanceTo(placement.position);
+        const heightOnDock = finalPos.y - placement.dockSurfaceY;
+        
+        console.log(`[STRATEGY] Asset ${index + 1} repositioned:`, {
+          finalPosition: `(${finalPos.x.toFixed(2)}, ${finalPos.y.toFixed(2)}, ${finalPos.z.toFixed(2)})`,
+          targetPosition: `(${placement.position.x.toFixed(2)}, ${placement.position.y.toFixed(2)}, ${placement.position.z.toFixed(2)})`,
+          distanceFromTarget: distanceFromTarget.toFixed(3) + 'm',
+          heightOnDock: heightOnDock.toFixed(3) + 'm',
+        });
+        
+        if (distanceFromTarget > 0.1) {
+          console.warn(`[STRATEGY] ⚠️ Asset ${index} is ${distanceFromTarget.toFixed(2)}m from target - forcing position`);
+          asset.position.copy(placement.position);
+          const box = new THREE.Box3().setFromObject(asset);
+          const size = box.getSize(new THREE.Vector3());
+          asset.position.y = placement.dockSurfaceY + size.y / 2;
+          asset.updateMatrixWorld(true);
+        }
+      } else {
+        console.warn(`[STRATEGY] ⚠️ Asset ${index} has no placement (${assetCount} assets, ${placements.length} placements)`);
+        addDebug(`⚠️ Asset ${index}: No placement`);
+      }
+    });
+    
+    // Force render to show changes immediately
+    if (rendererRef.current && sceneRef.current && cameraRef.current) {
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+    }
+    
+    // Re-stage assets for interaction
+    if (stableLayoutRef.current && stableLayoutRef.current.isReady()) {
+      stableLayoutRef.current.unlockLayout();
+      const modelsToStage = assetsGroupRef.current.children as THREE.Object3D[];
+      stableLayoutRef.current.stageModels(modelsToStage);
+      addDebug(`✅ Assets re-staged for interaction: ${modelsToStage.length} models`);
+    }
+    
+    addDebug(`✅ Strategy changed to: ${newStrategy} (${placements.length} placements)`);
+    console.log(`[STRATEGY] Strategy changed to ${newStrategy}, ${placements.length} placements, assets repositioned`);
+  }, [addDebug, loadingState, lessonStarted]);
+  
+  // ============================================================================
+  // START Panel Creation
+  // ============================================================================
   
   const createStartPanel = useCallback(() => {
     try {
@@ -3017,6 +3522,80 @@ const XRLessonPlayerV3: React.FC = () => {
         ctx.fillText(`🔊 Audio narration included`, infoX, infoY);
       }
       
+      // Initialize buttons array for this panel
+      const panelButtons: Array<{ bounds: { x: number; y: number; width: number; height: number }; action: () => void }> = [];
+      
+      // Placement Strategy Toggle (always visible in panel when assets exist)
+      if (hasAssets && meshyAssets.length > 0) {
+        infoY += 50;
+        ctx.fillStyle = '#a78bfa';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('🎯 Asset Layout:', infoX, infoY);
+        
+        // Strategy buttons
+        const strategyNames: Record<PlacementStrategy, string> = {
+          'curved-arc': 'Curved Arc',
+          'focus-secondary': 'Focus + Secondary',
+          'carousel': 'Carousel',
+          'grid': 'Grid'
+        };
+        
+        const buttonWidth = 200;
+        const buttonHeight = 40;
+        const buttonSpacing = 20;
+        const startX = infoX;
+        let currentX = startX;
+        const strategyButtonY = infoY + 15;
+        
+        // Show all strategies including grid (dynamic N placements)
+        const strategies: PlacementStrategy[] = ['curved-arc', 'focus-secondary', 'carousel', 'grid'];
+        strategies.forEach((strategy, idx) => {
+          const isActive = placementStrategy === strategy;
+          
+          // Button background
+          ctx.fillStyle = isActive ? '#8b5cf6' : 'rgba(51, 65, 85, 0.8)';
+          ctx.fillRect(currentX, strategyButtonY, buttonWidth, buttonHeight);
+          
+          // Button border
+          ctx.strokeStyle = isActive ? '#a78bfa' : 'rgba(139, 92, 246, 0.3)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(currentX, strategyButtonY, buttonWidth, buttonHeight);
+          
+          // Button text
+          ctx.fillStyle = isActive ? '#ffffff' : '#94a3b8';
+          ctx.font = isActive ? 'bold 18px Arial' : '18px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText(strategyNames[strategy] || strategy, currentX + buttonWidth / 2, strategyButtonY + 28);
+          
+          // Store button bounds for click detection
+          panelButtons.push({
+            bounds: {
+              x: currentX,
+              y: strategyButtonY,
+              width: buttonWidth,
+              height: buttonHeight
+            },
+            action: () => {
+              changePlacementStrategy(strategy);
+              addDebug(`Strategy changed to: ${strategyNames[strategy] || strategy}`);
+            }
+          });
+          
+          currentX += buttonWidth + buttonSpacing;
+        });
+        
+        // Show placement count info
+        const placementCount = assetPlacementsRef.current.length;
+        const assetCount = meshyAssets.length;
+        ctx.fillStyle = '#64748b';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Placements: ${placementCount}/${assetCount}`, infoX, strategyButtonY + buttonHeight + 25);
+        
+        infoY += 70; // Space for strategy buttons
+      }
+      
       // START Button
       const buttonWidth = 300;
       const buttonHeight = 90;
@@ -3055,6 +3634,25 @@ const XRLessonPlayerV3: React.FC = () => {
       ctx.font = '24px Arial';
       ctx.fillText('Point and click to begin', canvas.width / 2, canvas.height - 40);
       
+      // CRITICAL: Add START button to panelButtons for click detection
+      panelButtons.push({
+        bounds: {
+          x: buttonX,
+          y: buttonY,
+          width: buttonWidth,
+          height: buttonHeight
+        },
+        action: () => {
+          console.log('[START_BUTTON] START button clicked!');
+          handleLessonStart();
+        }
+      });
+      
+      console.log(`[START_PANEL] Button bounds registered: ${panelButtons.length} buttons total`);
+      panelButtons.forEach((btn, idx) => {
+        console.log(`  [${idx}] Bounds: x=${btn.bounds.x}, y=${btn.bounds.y}, w=${btn.bounds.width}, h=${btn.bounds.height}`);
+      });
+      
       // Create texture from canvas
       const texture = new THREE.CanvasTexture(canvas);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -3083,28 +3681,50 @@ const XRLessonPlayerV3: React.FC = () => {
       rawForward.applyQuaternion(camera.quaternion);
       const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z).normalize();
       
-      // Position START panel DIRECTLY IN FRONT of user (center), not to the side
-      // Distance: 2 meters in front
-      const distance = 2.0;
-      const panelPosition = new THREE.Vector3();
-      panelPosition.copy(cameraPos);
-      panelPosition.add(flatForward.clone().multiplyScalar(distance));
-      panelPosition.y = cameraPos.y; // At eye level
+      // Position START panel using Scene Layout System (Introduction Dock Zone)
+      let panelPosition: THREE.Vector3;
+      if (sceneLayoutRef.current) {
+        panelPosition = sceneLayoutRef.current.getIntroDockPosition(camera, GROUND_LEVEL);
+        // Ensure panel is at eye level
+        panelPosition.y = cameraPos.y;
+      } else {
+        // Fallback: 2.5m in front
+        panelPosition = new THREE.Vector3();
+        panelPosition.copy(cameraPos);
+        panelPosition.add(flatForward.clone().multiplyScalar(2.5));
+        panelPosition.y = cameraPos.y;
+      }
+      
+      // CRITICAL FIX: Ensure panel is centered horizontally
+      const rightDir = new THREE.Vector3();
+      rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
+      const horizontalOffset = panelPosition.clone().sub(cameraPos).dot(rightDir);
+      panelPosition.sub(rightDir.clone().multiplyScalar(horizontalOffset));
+      
+      // Mark panel as UI layer for raycast filtering
+      panel.userData.layer = 'ui';
       
       console.log(`🎯 [START PANEL] ════════════════════════════════════════`);
       console.log(`🎯 [START PANEL] Camera Position: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
       console.log(`🎯 [START PANEL] Forward Direction: (${flatForward.x.toFixed(2)}, ${flatForward.y.toFixed(2)}, ${flatForward.z.toFixed(2)})`);
+      console.log(`🎯 [START PANEL] Right Direction: (${rightDir.x.toFixed(2)}, ${rightDir.y.toFixed(2)}, ${rightDir.z.toFixed(2)})`);
+      console.log(`🎯 [START PANEL] Horizontal Offset (before fix): ${horizontalOffset.toFixed(3)}`);
       console.log(`🎯 [START PANEL] Panel Position: (${panelPosition.x.toFixed(2)}, ${panelPosition.y.toFixed(2)}, ${panelPosition.z.toFixed(2)})`);
       console.log(`🎯 [START PANEL] ════════════════════════════════════════`);
+      
+      addDebug(`[START PANEL] Position: (${panelPosition.x.toFixed(2)}, ${panelPosition.y.toFixed(2)}, ${panelPosition.z.toFixed(2)})`);
+      addDebug(`[START PANEL] Horizontal offset corrected: ${horizontalOffset.toFixed(3)}`);
       
       panel.position.copy(panelPosition);
       panel.userData.isInteractable = true;
       panel.userData.panelType = 'start';
       panel.userData.hasButtons = true;
-      panel.userData.buttons = [{
-        bounds: { x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight },
-        action: handleLessonStart,
-      }];
+      panel.userData.canvasWidth = canvas.width;
+      panel.userData.canvasHeight = canvas.height;
+      panel.userData.layer = 'ui'; // Mark as UI layer for raycast filtering
+      
+      // Store all buttons (strategy buttons + START button)
+      panel.userData.buttons = panelButtons;
       
       // Make it face camera
       panel.lookAt(cameraPos);
@@ -3120,7 +3740,7 @@ const XRLessonPlayerV3: React.FC = () => {
       addDebug(`ERROR creating start panel: ${error?.message || error}`);
       return null;
     }
-  }, [sceneRef, cameraRef, lessonData, mcqData.length, meshyAssets.length, ttsData.length, handleLessonStart, addDebug]);
+  }, [sceneRef, cameraRef, lessonData, mcqData.length, meshyAssets.length, ttsData.length, handleLessonStart, addDebug, placementStrategy, changePlacementStrategy]);
   
   // Auto-play TTS when phase changes (intro/content/outro) - ONLY if lesson has started
   useEffect(() => {
@@ -3175,6 +3795,7 @@ const XRLessonPlayerV3: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [loadingState, lessonPhase, ttsData, playTTSForPhase, lessonStarted]);
+  
   
   // ============================================================================
   // Create VR Script Panel UI (3D Billboard)
@@ -3386,9 +4007,18 @@ const XRLessonPlayerV3: React.FC = () => {
       panel.userData.isInteractable = true;
       panel.userData.panelType = 'script';
       panel.userData.hasButtons = true;
+      panel.userData.layer = 'ui'; // Mark as UI layer for raycast filtering
       panel.userData.buttons = buttons.map(btn => ({
         bounds: { x: btn.x - buttonSize/2, y: controlsY, width: buttonSize, height: buttonSize },
-        action: btn.action,
+        action: () => {
+          // CRITICAL: Trigger haptic feedback for script panel button clicks
+          if (controller1Ref.current) {
+            triggerHapticFeedback(controller1Ref.current);
+          } else if (controller2Ref.current) {
+            triggerHapticFeedback(controller2Ref.current);
+          }
+          btn.action();
+        },
       }));
       
       // Make it face camera (billboard)
@@ -3720,7 +4350,15 @@ const XRLessonPlayerV3: React.FC = () => {
         if (!mcqAnswered) {
           buttonBounds.push({
             bounds: { x: optionX, y: optionY, width: optionWidth, height: optionHeight },
-            action: () => handleMCQOptionSelect(index),
+            action: () => {
+              // CRITICAL: Trigger haptic feedback for quiz button click
+              if (controller1Ref.current) {
+                triggerHapticFeedback(controller1Ref.current);
+              } else if (controller2Ref.current) {
+                triggerHapticFeedback(controller2Ref.current);
+              }
+              handleMCQOptionSelect(index);
+            },
           });
         }
       });
@@ -3775,7 +4413,15 @@ const XRLessonPlayerV3: React.FC = () => {
         
         buttonBounds.push({
           bounds: { x: nextButtonX - nextButtonWidth/2, y: nextButtonY - nextButtonHeight/2, width: nextButtonWidth, height: nextButtonHeight },
-          action: handleMCQNext,
+          action: () => {
+            // CRITICAL: Trigger haptic feedback for Next button click
+            if (controller1Ref.current) {
+              triggerHapticFeedback(controller1Ref.current);
+            } else if (controller2Ref.current) {
+              triggerHapticFeedback(controller2Ref.current);
+            }
+            handleMCQNext();
+          },
         });
       }
       
@@ -3823,6 +4469,7 @@ const XRLessonPlayerV3: React.FC = () => {
       panel.userData.panelType = 'mcq';
       panel.userData.hasButtons = true;
       panel.userData.buttons = buttonBounds;
+      panel.userData.layer = 'ui'; // Mark as UI layer for raycast filtering
       
       scene.add(panel);
       mcqPanelRef.current = panel;
@@ -4247,11 +4894,13 @@ const XRLessonPlayerV3: React.FC = () => {
                     `All assets scaled to: ${NORMALIZED_SIZE}m max dimension`,
                     `This ensures consistent sizing regardless of original model size`,
                     ``,
-                    `=== MULTI-ASSET LAYOUT ===`,
+                    `=== SIMPLE ASSET PLACER SYSTEM ===`,
+                    `Placement Strategy: ${placementStrategy}`,
                     `Total Assets: ${meshyAssets.length}`,
-                    `Primary (Asset 1): RIGHT side at ${ASSET_DISTANCE}m, ${ASSET_RIGHT_OFFSET}m right`,
-                    `Secondary (Asset 2+): LEFT side at 45° intervals, 1.2m left`,
-                    `Layout: PRIMARY_RIGHT → SECONDARY_LEFT_45deg → SECONDARY_LEFT_90deg...`,
+                    `Placements Calculated: ${assetPlacementsRef.current.length}`,
+                    ...(assetPlacementsRef.current.map((p, i) => 
+                      `Placement ${i + 1}: (${p.position.x.toFixed(2)}, ${p.position.y.toFixed(2)}, ${p.position.z.toFixed(2)}) scale ${p.scale.toFixed(2)}`
+                    )),
                     ``,
                     `=== DEBUG MESSAGES ===`,
                     ...debugInfo,
@@ -4320,6 +4969,54 @@ const XRLessonPlayerV3: React.FC = () => {
                     Quiz: Q{currentMcqIndex + 1}/{mcqData.length} | Score: {mcqScore}/{mcqData.length}
                   </div>
                 )}
+              </div>
+              
+              {/* Asset Placement System Controls - IN PANEL (not floating) */}
+              <div className="mb-2 p-2 bg-slate-800/50 rounded border border-purple-500/30">
+                <div className="text-xs font-bold text-purple-400 mb-2">🎯 Asset Placement Strategy</div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-slate-300 text-xs">Current Strategy:</span>
+                  <span className="px-2 py-0.5 bg-purple-600/50 text-purple-200 rounded text-xs font-bold">
+                    {placementStrategy === 'curved-arc' ? 'Curved Arc' :
+                     placementStrategy === 'focus-secondary' ? 'Focus + Secondary' :
+                     'Carousel'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <button
+                    onClick={() => changePlacementStrategy('curved-arc')}
+                    className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
+                      placementStrategy === 'curved-arc' 
+                        ? 'bg-purple-600 text-white font-bold' 
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    Curved Arc
+                  </button>
+                  <button
+                    onClick={() => changePlacementStrategy('focus-secondary')}
+                    className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
+                      placementStrategy === 'focus-secondary' 
+                        ? 'bg-purple-600 text-white font-bold' 
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    Focus + Secondary
+                  </button>
+                  <button
+                    onClick={() => changePlacementStrategy('carousel')}
+                    className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
+                      placementStrategy === 'carousel' 
+                        ? 'bg-purple-600 text-white font-bold' 
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    Carousel
+                  </button>
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  Assets: {assetsLoaded}/{meshyAssets.length} | Placements: {assetPlacementsRef.current.length}
+                </div>
               </div>
               
               {/* Log Messages */}
