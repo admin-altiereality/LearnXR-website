@@ -269,20 +269,21 @@ Be precise: scores should reflect the actual content. For "both", both scores ca
     }
 
     try {
-      const systemPrompt = `You are an expert at extracting 3D object names from prompts for In3D.ai.
+      const systemPrompt = `You are an expert at extracting EDUCATIONAL 3D object names from educational content prompts for In3D.ai, an educational VR/AR platform.
 
-YOUR TASK: Extract ONLY the exact phrases from the prompt that describe 3D objects/assets that can be created as standalone 3D models. NEVER extract environment/skybox words.
+YOUR TASK: Extract ONLY the exact phrases from the prompt that describe EDUCATIONAL 3D objects/assets that are educationally valuable and can be created as standalone 3D models for learning. Focus on objects that help students understand concepts, visualize abstract ideas, or explore subjects interactively. NEVER extract environment/skybox words.
 
-=== 3D OBJECTS TO EXTRACT (standalone models) ===
-- Furniture: table, chair, desk, sofa, bed, cabinet, shelf, lamp, vase, mirror, clock
-- Vehicles: car, bike, motorcycle, plane, ship, boat, truck, bus, train, helicopter, drone, spaceship
-- Characters & Figures: character, figure, model, doll, robot, android, creature, monster, person, human
-- Weapons & Tools: sword, gun, shield, armor, helmet, axe, hammer, wrench, screwdriver
-- Statues & Sculptures: statue, sculpture, bust, monument, totem
-- Nature Objects: plant, flower, crystal, gem, rock, stone, boulder, log, branch
-- Decorative Items: artwork, painting, trophy, award, chandelier
-- Electronics: phone, computer, laptop, tablet, camera, speaker
-- Containers: box, crate, barrel, bottle, jar, can
+=== EDUCATIONAL 3D OBJECTS TO EXTRACT (prioritize these) ===
+- Educational Tools & Instruments: globe, map, compass, telescope, microscope, ruler, protractor, calculator, abacus, periodic table model, molecular model, atom model, DNA model
+- Scientific Models: planet models, solar system models, cell models, organ models, skeleton models, plant models, animal models, fossil models, crystal structures, geometric shapes
+- Historical & Cultural Artifacts: ancient artifacts, historical monuments, sculptures, statues, coins, pottery, tools, weapons, armor, manuscripts, scrolls
+- Mathematical Objects: geometric shapes (cube, sphere, pyramid, cylinder, cone), 3D graphs, mathematical models, fractals, polyhedra
+- Biological Specimens: plant specimens, animal models, insect models, bird models, fish models, reptile models, mammal models, human anatomy models
+- Physics & Chemistry: lab equipment (beaker, flask, test tube, Bunsen burner), circuit components, magnets, gears, pulleys, levers, simple machines
+- Geography & Earth Science: landform models, volcano models, mountain models, rock samples, mineral samples, fossil models, weather instruments
+- Technology & Engineering: simple machines, gears, pulleys, levers, wheel and axle, inclined plane, wedge, screw, bridge models, building models
+- Art & Design: sculptures, art pieces, architectural models, design objects, craft items
+- General Educational Objects: furniture (table, chair, desk, cabinet, shelf), containers (box, crate, barrel, bottle, jar), tools (hammer, wrench, screwdriver), decorative items (vase, mirror, clock, lamp)
 
 === NEVER EXTRACT (these are environments/skyboxes, NOT 3D objects) ===
 - Locations: beach, desert, forest, jungle, ocean, mountain, valley, cave, canyon, meadow, field
@@ -295,38 +296,41 @@ YOUR TASK: Extract ONLY the exact phrases from the prompt that describe 3D objec
 - Roads: road, street, path, highway, bridge
 - Background elements: background, horizon, landscape, scenery
 
-=== CRITICAL RULES ===
-1. Extract EXACT phrases from the original prompt - preserve original wording
-2. NEVER include environment/skybox words (see list above)
-3. NEVER include location prepositions (in, on, at, with) unless they're part of the object name
-4. Extract complete object names, not partial phrases
-5. If multiple objects exist, extract EACH one separately as a separate array item
-6. Objects IN an environment = extract the objects, NOT the environment
-7. Objects that ARE the environment = do NOT extract (e.g., "cityscape with vehicles" = no extraction)
+=== CRITICAL RULES FOR EDUCATIONAL CONTENT ===
+1. PRIORITIZE educational value - extract objects that help students learn, visualize, or understand concepts
+2. Extract EXACT phrases from the original prompt - preserve original wording
+3. NEVER include environment/skybox words (see list above)
+4. NEVER include location prepositions (in, on, at, with) unless they're part of the object name
+5. Extract complete object names, not partial phrases
+6. If multiple objects exist, extract EACH one separately as a separate array item
+7. Objects IN an environment = extract the objects, NOT the environment
+8. Objects that ARE the environment = do NOT extract (e.g., "cityscape with vehicles" = no extraction)
+9. Focus on objects that are educationally relevant - skip purely decorative or non-educational items
+10. When in doubt, prefer extracting objects that can be used for interactive learning or visualization
 
-=== EXAMPLES ===
-Prompt: "A vintage red convertible car, a wooden chair, and a crystal vase in a modern living room"
-→ Extract: ["vintage red convertible car", "wooden chair", "crystal vase"]
-→ Do NOT extract: "modern living room" (environment)
+=== EDUCATIONAL EXAMPLES ===
+Prompt: "A classroom scene with a large globe showing latitude and longitude lines, a wall map, a teacher pointing at the globe, and a student holding a ruler"
+→ Extract: ["globe", "wall map", "ruler"] (educational tools)
+→ Do NOT extract: "classroom scene", "teacher", "student" (environment/people)
 
-Prompt: "A medieval sword and shield on a beach at sunset"
-→ Extract: ["medieval sword", "shield"]
-→ Do NOT extract: "beach" or "sunset" (environment)
+Prompt: "A science lab with a microscope, beaker, test tubes, and a periodic table on the wall"
+→ Extract: ["microscope", "beaker", "test tubes", "periodic table"] (educational equipment)
+→ Do NOT extract: "science lab", "wall" (environment)
 
-Prompt: "jupiter with alien ship and the cricket bat"
-→ Extract: ["alien ship", "cricket bat"]
-→ Do NOT extract: "jupiter" (environment/planet)
+Prompt: "A detailed model of the solar system with planets, a globe showing Earth, and a telescope"
+→ Extract: ["solar system model", "planets", "globe", "telescope"] (educational models)
+→ Do NOT extract: "Earth" (part of globe description)
 
-Prompt: "A detailed wooden table and ornate crystal chandelier in a grand ballroom"
-→ Extract: ["detailed wooden table", "ornate crystal chandelier"]
-→ Do NOT extract: "grand ballroom" (environment)
+Prompt: "A medieval sword and shield displayed in a museum"
+→ Extract: ["medieval sword", "shield"] (historical artifacts - educational)
+→ Do NOT extract: "museum" (environment)
+
+Prompt: "A classroom with a wooden table, a chair, a globe, and a map on the wall"
+→ Extract: ["wooden table", "chair", "globe", "map"] (educational furniture and tools)
+→ Do NOT extract: "classroom", "wall" (environment)
 
 Prompt: "A futuristic cityscape with flying vehicles"
-→ Extract: [] (vehicles are part of environment description, not standalone objects)
-
-Prompt: "A vintage red convertible car parked on a desert road at sunset"
-→ Extract: ["vintage red convertible car"] or ["car"]
-→ Do NOT extract: "desert road" or "sunset" (environment)
+→ Extract: [] (vehicles are part of environment description, not standalone educational objects)
 
 Respond with JSON:
 {

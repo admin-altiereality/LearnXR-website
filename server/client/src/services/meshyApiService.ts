@@ -6,11 +6,20 @@ export interface MeshyGenerationRequest {
   negative_prompt?: string;
   art_style?: 'realistic' | 'sculpture';
   seed?: number;
-  ai_model?: 'meshy-4' | 'meshy-5';
+  ai_model?: 'meshy-4' | 'meshy-5' | 'meshy-6' | 'latest';
   topology?: 'quad' | 'triangle';
   target_polycount?: number;
   should_remesh?: boolean;
   symmetry_mode?: 'off' | 'auto' | 'on';
+  moderation?: boolean;
+}
+
+export interface MeshyRefineRequest {
+  preview_task_id: string;
+  enable_pbr?: boolean; // Generate PBR maps (metallic, roughness, normal) in addition to base color
+  texture_prompt?: string; // Additional text prompt to guide texturing (max 600 chars)
+  texture_image_url?: string; // 2D image to guide texturing
+  ai_model?: 'meshy-5' | 'latest';
   moderation?: boolean;
 }
 
@@ -341,7 +350,87 @@ export class MeshyApiService {
   }
 
   /**
-   * Generate a 3D asset using Meshy.ai (Preview stage)
+   * Create a refine task to add textures to a preview task
+   */
+  async createRefineTask(request: MeshyRefineRequest): Promise<MeshyGenerationResponse> {
+    if (!this.isConfigured()) {
+      throw new Error('Meshy API key not configured');
+    }
+
+    try {
+      console.log('🎨 Creating Meshy refine task:', {
+        preview_task_id: request.preview_task_id,
+        enable_pbr: request.enable_pbr,
+        texture_prompt: request.texture_prompt?.substring(0, 50) + '...'
+      });
+
+      const payload = {
+        mode: 'refine',
+        preview_task_id: request.preview_task_id,
+        enable_pbr: request.enable_pbr !== false, // Default to true for full textures
+        ...(request.texture_prompt && { texture_prompt: request.texture_prompt.trim() }),
+        ...(request.texture_image_url && { texture_image_url: request.texture_image_url }),
+        ai_model: request.ai_model || 'latest',
+        moderation: request.moderation || false,
+      };
+
+      console.log('📤 Sending refine request to Meshy API:', {
+        url: `${this.baseUrl}/text-to-3d`,
+        payload: payload
+      });
+
+      const response = await this.makeRequest('/text-to-3d', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Meshy refine API error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: errorData
+        });
+        throw new Error(`Meshy refine API error: ${response.status} ${response.statusText} - ${errorData.error?.message || errorData.message || 'Unknown error'}`);
+      }
+
+      let responseData = await response.json();
+      console.log('📥 Meshy refine API response:', responseData);
+      
+      // Handle proxy response wrapper (if using Firebase proxy)
+      if (responseData.success && responseData.data) {
+        responseData = responseData.data;
+        console.log('📥 Unwrapped proxy response:', responseData);
+      }
+      
+      // Handle different response formats
+      let taskId: string | undefined;
+      
+      if (responseData.result) {
+        taskId = responseData.result;
+      } else if (responseData.id) {
+        taskId = responseData.id;
+      } else if (responseData.task_id) {
+        taskId = responseData.task_id;
+      } else if (typeof responseData === 'string') {
+        taskId = responseData;
+      }
+      
+      if (!taskId || taskId === 'undefined' || taskId.trim() === '') {
+        console.error('❌ No task ID in refine response:', responseData);
+        throw new Error(`Invalid response from Meshy refine API: No task ID received. Response: ${JSON.stringify(responseData)}`);
+      }
+      
+      console.log('✅ Meshy refine task created with task ID:', taskId);
+      return { result: taskId };
+    } catch (error) {
+      console.error('❌ Error creating refine task with Meshy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a 3D asset using Meshy.ai (Preview stage - mesh only, no texture)
    */
   async generateAsset(request: MeshyGenerationRequest): Promise<MeshyGenerationResponse> {
     if (!this.isConfigured()) {
@@ -361,18 +450,28 @@ export class MeshyApiService {
         ai_model: request.ai_model
       });
 
-      const payload = {
+      // Use latest model (meshy-6) by default for better quality
+      const aiModel = request.ai_model || 'latest';
+      
+      const payload: any = {
         mode: 'preview',
         prompt: request.prompt.trim(),
-        art_style: request.art_style || 'realistic',
-        seed: request.seed || Math.floor(Math.random() * 1000000),
-        ai_model: request.ai_model || 'meshy-4',
+        ai_model: aiModel,
         topology: request.topology || 'triangle',
-        target_polycount: request.target_polycount || 30000,
-        should_remesh: request.should_remesh !== false, // Default to true
+        target_polycount: request.target_polycount || (aiModel === 'meshy-6' || aiModel === 'latest' ? 30000 : 30000),
+        should_remesh: request.should_remesh !== undefined ? request.should_remesh : (aiModel === 'meshy-6' || aiModel === 'latest' ? false : true),
         symmetry_mode: request.symmetry_mode || 'auto',
         moderation: request.moderation || false,
       };
+
+      // Only include art_style for legacy models (meshy-4, meshy-5)
+      // Meshy-6/latest ignores art_style and may cause errors if included
+      if (aiModel === 'meshy-4' || aiModel === 'meshy-5') {
+        payload.art_style = request.art_style || 'realistic';
+        if (request.seed) {
+          payload.seed = request.seed;
+        }
+      }
 
       console.log('📤 Sending request to Meshy API:', {
         url: `${this.baseUrl}/text-to-3d`,
@@ -612,6 +711,7 @@ export class MeshyApiService {
         art_style: status.art_style,
         seed: status.seed,
         texture_prompt: status.texture_prompt,
+        texture_urls: status.texture_urls, // Include texture URLs for separate download
         model_urls: status.model_urls // Include full model_urls for reference
       }
     };

@@ -10,7 +10,7 @@ import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
 import { RoleGuard, TeacherGuard, AdminGuard, SuperAdminGuard } from './Components/auth/RoleGuard';
 import { Signup } from './Components/auth/Signup';
-import ErrorBoundary from './Components/ErrorBoundary';
+import { ErrorBoundary } from './Components/ErrorBoundary';
 import MinimalFooter from './Components/MinimalFooter';
 import Sidebar from './Components/Sidebar';
 import MainSection from './Components/MainSection';
