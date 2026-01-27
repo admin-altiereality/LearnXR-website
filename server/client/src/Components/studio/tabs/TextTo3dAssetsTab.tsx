@@ -17,6 +17,8 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { canDeleteAsset, canEditLesson, isSuperadmin } from '../../../utils/rbac';
 import { db } from '../../../config/firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { textTo3dGenerationService } from '../../../services/textTo3dGenerationService';
+import type { GenerationProgress } from '../../../services/textTo3dGenerationService';
 import {
   Box,
   Loader2,
@@ -31,6 +33,8 @@ import {
   AlertCircle,
   Package,
   Sparkles,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 
 interface TextTo3dAssetsTabProps {
@@ -45,7 +49,11 @@ interface TextTo3dAsset {
   topic_id?: string;
   prompt?: string;
   approval_status?: boolean;
-  status?: string;
+  status?: 'pending' | 'approved' | 'generating' | 'uploaded' | 'ready' | 'failed';
+  generation_progress?: number; // 0-100
+  generation_message?: string;
+  generation_error?: string;
+  meshy_asset_id?: string; // ID of the generated meshy_asset
   model_urls?: {
     glb?: string;
     fbx?: string;
@@ -71,6 +79,8 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
   const [selectedAsset, setSelectedAsset] = useState<TextTo3dAsset | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending'>('all');
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
+  const [generatingAssetId, setGeneratingAssetId] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<{ [assetId: string]: GenerationProgress }>({});
 
   const canEdit = canEditLesson(profile);
   const isSuperAdmin = isSuperadmin(profile);
@@ -131,32 +141,205 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
     setUpdatingApproval(assetId);
     try {
       const assetRef = doc(db, 'text_to_3d_assets', assetId);
+      const asset = assets.find(a => a.id === assetId);
+      
+      if (!asset) {
+        throw new Error('Asset not found');
+      }
+
+      // Update approval status
       await updateDoc(assetRef, {
         approval_status: approve,
         approved_at: approve ? serverTimestamp() : null,
         approved_by: approve ? user?.email : null,
         updated_at: serverTimestamp(),
+        // If approving, set status to 'generating'
+        ...(approve && !asset.meshy_asset_id ? { status: 'generating' } : {}),
       });
 
       // Update local state
       setAssets(prev =>
-        prev.map(asset =>
-          asset.id === assetId
-            ? { ...asset, approval_status: approve, approved_at: approve ? new Date().toISOString() : null, approved_by: approve ? user?.email : null }
-            : asset
+        prev.map(a =>
+          a.id === assetId
+            ? { 
+                ...a, 
+                approval_status: approve, 
+                approved_at: approve ? new Date().toISOString() : null, 
+                approved_by: approve ? user?.email : null,
+                ...(approve && !a.meshy_asset_id ? { status: 'generating' } : {})
+              }
+            : a
         )
       );
 
       if (selectedAsset?.id === assetId) {
-        setSelectedAsset(prev => (prev ? { ...prev, approval_status: approve } : null));
+        setSelectedAsset(prev => prev ? { 
+          ...prev, 
+          approval_status: approve,
+          ...(approve && !prev.meshy_asset_id ? { status: 'generating' } : {})
+        } : null);
       }
 
       toast.success(`Asset ${approve ? 'approved' : 'unapproved'} successfully`);
+
+      // If approving and no meshy_asset_id exists, trigger generation
+      if (approve && !asset.meshy_asset_id && asset.prompt) {
+        await handleGenerate3DAsset(assetId, asset);
+      }
     } catch (error) {
       console.error('Error updating approval status:', error);
       toast.error('Failed to update approval status');
     } finally {
       setUpdatingApproval(null);
+    }
+  };
+
+  const handleGenerate3DAsset = async (assetId: string, asset: TextTo3dAsset) => {
+    if (!asset.prompt || !chapterId || !topicId || !user?.uid) {
+      toast.error('Missing required information for generation');
+      return;
+    }
+
+    setGeneratingAssetId(assetId);
+    setGenerationProgress(prev => ({
+      ...prev,
+      [assetId]: {
+        stage: 'generating',
+        progress: 0,
+        message: 'Starting generation...'
+      }
+    }));
+
+    try {
+      // Update status to generating
+      const assetRef = doc(db, 'text_to_3d_assets', assetId);
+      await updateDoc(assetRef, {
+        status: 'generating',
+        updated_at: serverTimestamp(),
+      });
+
+      // Generate 3D asset
+      let generatedMeshyAssetId: string | undefined;
+      const result = await textTo3dGenerationService.generateFromApprovedAsset(
+        {
+          textTo3dAssetId: assetId,
+          prompt: asset.prompt,
+          chapterId,
+          topicId,
+          userId: user.uid,
+          artStyle: 'realistic',
+          aiModel: 'meshy-4'
+        },
+        (progress) => {
+          setGenerationProgress(prev => ({
+            ...prev,
+            [assetId]: progress
+          }));
+
+          // Update asset status in Firestore
+          // Only include fields that are not undefined (Firestore doesn't accept undefined)
+          const updateData: any = {
+            status: progress.stage === 'completed' ? 'ready' : 
+                    progress.stage === 'failed' ? 'failed' : 'generating',
+            generation_progress: progress.progress,
+            generation_message: progress.message,
+            updated_at: serverTimestamp(),
+          };
+          
+          // Only include error if it exists (not undefined)
+          if (progress.error !== undefined) {
+            updateData.generation_error = progress.error;
+          }
+          
+          updateDoc(assetRef, updateData).catch(err => console.error('Error updating generation progress:', err));
+        }
+      );
+
+      // Store the meshy asset ID if generation was successful
+      if (result.success && result.meshyAssetId) {
+        generatedMeshyAssetId = result.meshyAssetId;
+        
+        // Update Firestore with the meshy asset ID
+        await updateDoc(assetRef, {
+          meshy_asset_id: result.meshyAssetId,
+          status: 'ready',
+          updated_at: serverTimestamp(),
+        }).catch(err => console.error('Error updating meshy asset ID:', err));
+      }
+
+      if (result.success && result.meshyAssetId) {
+        // Update local state
+        setAssets(prev =>
+          prev.map(a =>
+            a.id === assetId
+              ? { 
+                  ...a, 
+                  status: 'ready',
+                  meshy_asset_id: result.meshyAssetId!,
+                  generation_progress: 100,
+                  generation_message: 'Asset generated and ready!'
+                }
+              : a
+          )
+        );
+
+        if (selectedAsset?.id === assetId) {
+          setSelectedAsset(prev => prev ? {
+            ...prev,
+            status: 'ready',
+            meshy_asset_id: result.meshyAssetId!,
+            generation_progress: 100,
+            generation_message: 'Asset generated and ready!'
+          } : null);
+        }
+
+        toast.success('3D asset generated successfully! It is now available in the 3D Assets section.');
+      } else {
+        throw new Error(result.error || 'Generation failed');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Error generating 3D asset:', error);
+
+      // Update status to failed
+      const assetRef = doc(db, 'text_to_3d_assets', assetId);
+      await updateDoc(assetRef, {
+        status: 'failed',
+        generation_error: errorMessage,
+        updated_at: serverTimestamp(),
+      }).catch(err => console.error('Error updating failed status:', err));
+
+      // Update local state
+      setAssets(prev =>
+        prev.map(a =>
+          a.id === assetId
+            ? { 
+                ...a, 
+                status: 'failed',
+                generation_error: errorMessage
+              }
+            : a
+        )
+      );
+
+      if (selectedAsset?.id === assetId) {
+        setSelectedAsset(prev => prev ? {
+          ...prev,
+          status: 'failed',
+          generation_error: errorMessage
+        } : null);
+      }
+
+      toast.error(`Failed to generate 3D asset: ${errorMessage}`);
+    } finally {
+      setGeneratingAssetId(null);
+    }
+  };
+
+  const handleRetryGeneration = async (assetId: string) => {
+    const asset = assets.find(a => a.id === assetId);
+    if (asset) {
+      await handleGenerate3DAsset(assetId, asset);
     }
   };
 
@@ -265,8 +448,25 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
                         {asset.approval_status === true ? 'Approved' : 'Pending'}
                       </span>
                       {asset.status && (
-                        <span className="px-2 py-0.5 rounded bg-slate-700/50 text-slate-400">
-                          {asset.status}
+                        <span className={`px-2 py-0.5 rounded ${
+                          asset.status === 'ready' || asset.status === 'uploaded'
+                            ? 'bg-cyan-500/10 text-cyan-400'
+                            : asset.status === 'generating'
+                            ? 'bg-blue-500/10 text-blue-400'
+                            : asset.status === 'failed'
+                            ? 'bg-red-500/10 text-red-400'
+                            : 'bg-slate-700/50 text-slate-400'
+                        }`}>
+                          {asset.status === 'ready' ? 'Ready' :
+                           asset.status === 'uploaded' ? 'Uploaded' :
+                           asset.status === 'generating' ? 'Generating...' :
+                           asset.status === 'failed' ? 'Failed' :
+                           asset.status}
+                        </span>
+                      )}
+                      {generatingAssetId === asset.id && generationProgress[asset.id] && (
+                        <span className="text-xs text-blue-400">
+                          {Math.round(generationProgress[asset.id].progress)}%
                         </span>
                       )}
                     </div>
@@ -285,7 +485,7 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
                     <h3 className="text-lg font-semibold text-white mb-2">
                       {selectedAsset.prompt || selectedAsset.name || 'Text-to-3D Asset'}
                     </h3>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       {selectedAsset.approval_status === true ? (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
                           <CheckCircle className="w-3.5 h-3.5" />
@@ -298,9 +498,47 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
                         </span>
                       )}
                       {selectedAsset.status && (
-                        <span className="px-3 py-1 text-xs font-medium rounded-lg bg-slate-700/50 text-slate-300 border border-slate-600/30">
-                          {selectedAsset.status}
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg border ${
+                          selectedAsset.status === 'ready' || selectedAsset.status === 'uploaded'
+                            ? 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
+                            : selectedAsset.status === 'generating'
+                            ? 'text-blue-400 bg-blue-500/10 border-blue-500/20'
+                            : selectedAsset.status === 'failed'
+                            ? 'text-red-400 bg-red-500/10 border-red-500/20'
+                            : 'text-slate-300 bg-slate-700/50 border-slate-600/30'
+                        }`}>
+                          {selectedAsset.status === 'generating' && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          )}
+                          {selectedAsset.status === 'failed' && (
+                            <AlertCircle className="w-3.5 h-3.5" />
+                          )}
+                          {selectedAsset.status === 'ready' && (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          )}
+                          {selectedAsset.status === 'ready' ? 'Ready' :
+                           selectedAsset.status === 'uploaded' ? 'Uploaded' :
+                           selectedAsset.status === 'generating' ? 'Generating...' :
+                           selectedAsset.status === 'failed' ? 'Failed' :
+                           selectedAsset.status}
+                          {selectedAsset.status === 'generating' && generationProgress[selectedAsset.id] && (
+                            <span className="ml-1">({Math.round(generationProgress[selectedAsset.id].progress)}%)</span>
+                          )}
                         </span>
+                      )}
+                      {selectedAsset.status === 'failed' && canEdit && (
+                        <button
+                          onClick={() => handleRetryGeneration(selectedAsset.id)}
+                          disabled={generatingAssetId === selectedAsset.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                        >
+                          {generatingAssetId === selectedAsset.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          )}
+                          Retry
+                        </button>
                       )}
                     </div>
                   </div>
@@ -348,6 +586,66 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
                     </p>
                   </div>
                 </div>
+
+                {/* Generation Progress */}
+                {selectedAsset.status === 'generating' && generationProgress[selectedAsset.id] && (
+                  <div className="mb-4 p-4 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-blue-400">Generation Progress</span>
+                      <span className="text-xs text-blue-300">{Math.round(generationProgress[selectedAsset.id].progress)}%</span>
+                    </div>
+                    <div className="w-full bg-slate-900/50 rounded-full h-2 mb-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${generationProgress[selectedAsset.id].progress}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-blue-300">{generationProgress[selectedAsset.id].message}</p>
+                  </div>
+                )}
+
+                {/* Generation Error */}
+                {selectedAsset.status === 'failed' && selectedAsset.generation_error && (
+                  <div className="mb-4 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="w-4 h-4 text-red-400" />
+                      <span className="text-sm font-medium text-red-400">Generation Failed</span>
+                    </div>
+                    <p className="text-xs text-red-300 mb-3">{selectedAsset.generation_error}</p>
+                    {canEdit && (
+                      <button
+                        onClick={() => handleRetryGeneration(selectedAsset.id)}
+                        disabled={generatingAssetId === selectedAsset.id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-red-500/20 border border-red-500/30 hover:bg-red-500/30 transition-all disabled:opacity-50"
+                      >
+                        {generatingAssetId === selectedAsset.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        )}
+                        Retry Generation
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Success Message */}
+                {selectedAsset.status === 'ready' && selectedAsset.meshy_asset_id && (
+                  <div className="mb-4 p-4 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                      <span className="text-sm font-medium text-cyan-400">Asset Generated Successfully</span>
+                    </div>
+                    <p className="text-xs text-cyan-300">
+                      The 3D asset is now available in the <strong>3D Assets</strong> section of this lesson.
+                    </p>
+                    {selectedAsset.meshy_asset_id && (
+                      <p className="text-xs text-slate-400 mt-2 font-mono">
+                        Meshy Asset ID: {selectedAsset.meshy_asset_id}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Prompt */}
                 {selectedAsset.prompt && (
