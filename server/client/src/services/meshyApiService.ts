@@ -146,9 +146,17 @@ export class MeshyApiService {
     this.baseUrl = import.meta.env.VITE_MESHY_API_BASE_URL || 'https://api.meshy.ai/openapi/v2';
     this.proxyBaseUrl = getApiBaseUrl();
     
-    // Use proxy if API key is not available (for preview channels) or if explicitly configured
-    // In preview channels, environment variables might not be available, so use proxy
-    this.useProxy = !this.apiKey || import.meta.env.VITE_USE_MESHY_PROXY === 'true';
+    // Check if we're in a preview channel (preview channels typically don't have env vars)
+    const isPreviewChannel = window.location.hostname.includes('--') || 
+                            window.location.hostname.includes('web.app');
+    
+    // Use proxy if:
+    // 1. API key is not available
+    // 2. Explicitly configured to use proxy
+    // 3. We're in a preview channel (safer to use proxy)
+    this.useProxy = !this.apiKey || 
+                    import.meta.env.VITE_USE_MESHY_PROXY === 'true' ||
+                    (isPreviewChannel && !import.meta.env.VITE_MESHY_API_KEY);
     
     if (!this.apiKey && !this.useProxy) {
       console.warn('Meshy API key not configured. Will attempt to use Firebase proxy.');
@@ -205,6 +213,15 @@ export class MeshyApiService {
     try {
       const response = await fetch(url, defaultOptions);
       clearTimeout(timeoutId); // Clear timeout on successful fetch
+      
+      // Handle 401 (Unauthorized) - Invalid API key, fall back to proxy
+      if (response.status === 401 && !this.useProxy) {
+        console.warn('⚠️ Invalid API key detected (401). Falling back to Firebase proxy...');
+        // Switch to proxy mode for this and future requests
+        this.useProxy = true;
+        // Retry with proxy
+        return this.makeProxyRequest(endpoint, options, 0);
+      }
       
       // Handle rate limiting
       if (response.status === 429) {
