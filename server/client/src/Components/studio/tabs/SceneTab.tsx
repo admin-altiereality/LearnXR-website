@@ -11,7 +11,7 @@
  * Skybox GLB URLs are now stored in the skybox_glb_urls collection
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-toastify';
 import { Scene, SkyboxGLBUrl } from '../../../types/curriculum';
 import { skyboxApiService } from '../../../services/skyboxApiService';
@@ -19,6 +19,8 @@ import { getTopicSkybox, getSkyboxGLBUrls, SkyboxData } from '../../../lib/fires
 import { AssetViewerWithSkybox } from '../../AssetViewerWithSkybox';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { uploadSkyboxImage } from '../../../services/skyboxImageService';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
   Sparkles,
   Image,
@@ -35,6 +37,8 @@ import {
   Zap,
   Globe,
   ImageIcon,
+  Upload,
+  X,
 } from 'lucide-react';
 
 interface SkyboxStyle {
@@ -89,6 +93,12 @@ export const SceneTab = ({
   const [view360, setView360] = useState(true); // Default to 360° view like /main
   const [imageLoaded, setImageLoaded] = useState(false);
   const [viewer360Error, setViewer360Error] = useState(false);
+  
+  // Skybox image upload state
+  const [uploadingSkybox, setUploadingSkybox] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuth();
   
   // Prompt state (local editing)
   const [localPrompt, setLocalPrompt] = useState(sceneFormState.in3d_prompt || '');
@@ -194,6 +204,92 @@ export const SceneTab = ({
     setCopiedId(label);
     toast.success(`${label} copied to clipboard`);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Handle skybox image upload/replacement
+  const handleSkyboxImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!user?.uid) {
+      toast.error('User not authenticated');
+      return;
+    }
+
+    if (isReadOnly) {
+      toast.error('Read-only mode: Cannot replace skybox');
+      return;
+    }
+
+    setUploadingSkybox(true);
+    setUploadProgress(10);
+
+    try {
+      // Validate and upload
+      setUploadProgress(20);
+      const result = await uploadSkyboxImage({
+        chapterId,
+        topicId,
+        file,
+        userId: user.uid,
+        existingSkyboxId: selectedSkyboxGLB?.skybox_id || selectedSkyboxGLB?.id,
+      });
+      
+      setUploadProgress(80);
+
+      if (!result.success) {
+        toast.error(result.error || 'Failed to upload skybox image');
+        return;
+      }
+
+      setUploadProgress(90);
+      
+      // Show warning if aspect ratio is not ideal (non-blocking)
+      if (result.warning) {
+        toast.warning(result.warning, { autoClose: 5000 });
+      }
+      
+      toast.success('Skybox image replaced successfully!');
+
+      // Reload skybox data to reflect the change
+      const glbUrls = await getSkyboxGLBUrls(chapterId, topicId);
+      setUploadProgress(100);
+      setSkyboxGLBUrls(glbUrls);
+      
+      if (glbUrls.length > 0) {
+        const primarySkybox = glbUrls[0];
+        setSelectedSkyboxGLB(primarySkybox);
+        setSkyboxData({
+          id: primarySkybox.skybox_id || primarySkybox.id,
+          imageUrl: primarySkybox.preview_url || primarySkybox.glb_url,
+          file_url: primarySkybox.glb_url,
+          promptUsed: primarySkybox.prompt_used || '',
+          styleId: primarySkybox.style_id,
+          styleName: primarySkybox.style_name,
+          status: primarySkybox.status,
+        });
+      }
+
+      // Clear file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Error uploading skybox image:', error);
+      toast.error('Failed to upload skybox image');
+    } finally {
+      setUploadingSkybox(false);
+      setUploadProgress(0);
+    }
+  };
+
+  // Trigger file input click
+  const triggerFileUpload = () => {
+    if (isReadOnly) {
+      toast.error('Read-only mode: Cannot replace skybox');
+      return;
+    }
+    fileInputRef.current?.click();
   };
   
   // Generate skybox
@@ -503,6 +599,37 @@ export const SceneTab = ({
             <div className="flex items-center gap-2">
               {isValidSkyboxUrl && (
                 <>
+                  {/* Replace Skybox Button */}
+                  {!isReadOnly && (
+                    <div className="relative">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleSkyboxImageUpload}
+                        className="hidden"
+                        disabled={uploadingSkybox}
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingSkybox || isReadOnly}
+                        className="p-2.5 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl backdrop-blur-sm border border-amber-500/30 text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        title="Replace skybox image (equirectangular 2:1 recommended, but any image will work)"
+                      >
+                        {uploadingSkybox ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Upload className="w-5 h-5" />
+                        )}
+                      </button>
+                      {uploadingSkybox && uploadProgress > 0 && (
+                        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-amber-400 bg-black/80 px-2 py-1 rounded z-50">
+                          {Math.round(uploadProgress)}%
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
                   {/* View Mode Toggle */}
                   <div className="flex items-center bg-black/60 backdrop-blur-sm rounded-xl border border-white/10 p-1">
                     <button

@@ -25,6 +25,7 @@ export interface TextTo3dGenerationOptions {
   userId: string;
   artStyle?: 'realistic' | 'sculpture';
   aiModel?: 'meshy-4' | 'meshy-5';
+  collectionName?: 'text_to_3d_assets' | 'avatar_to_3d_assets'; // Collection to update
 }
 
 export interface GenerationProgress {
@@ -48,7 +49,7 @@ export class TextTo3dGenerationService {
     options: TextTo3dGenerationOptions,
     onProgress?: (progress: GenerationProgress) => void
   ): Promise<{ success: boolean; meshyAssetId?: string; error?: string }> {
-    const { textTo3dAssetId, prompt, chapterId, topicId, userId, artStyle = 'realistic', aiModel = 'meshy-4' } = options;
+    const { textTo3dAssetId, prompt, chapterId, topicId, userId, artStyle = 'realistic', aiModel = 'meshy-4', collectionName = 'text_to_3d_assets' } = options;
 
     try {
       // Step 1: Generate 3D model using Meshy
@@ -58,58 +59,110 @@ export class TextTo3dGenerationService {
         message: 'Initiating 3D model generation...'
       });
 
+      // Use latest model (meshy-6) for better quality
+      const modelToUse = aiModel === 'meshy-4' ? 'meshy-5' : (aiModel || 'latest');
+      
       const generationRequest = {
         prompt: prompt.trim(),
         art_style: artStyle,
-        ai_model: aiModel,
+        ai_model: modelToUse as 'meshy-5' | 'meshy-6' | 'latest',
         topology: 'triangle' as const,
-        target_polycount: aiModel === 'meshy-5' ? 50000 : 30000,
-        should_remesh: true,
+        target_polycount: modelToUse === 'meshy-5' ? 50000 : 30000,
+        should_remesh: modelToUse === 'meshy-6' || modelToUse === 'latest' ? false : true,
         symmetry_mode: 'auto' as const,
         moderation: false
       };
 
-      console.log('🚀 Starting Meshy generation for text-to-3D asset:', {
+      console.log('🚀 Starting Meshy generation (Preview stage) for text-to-3D asset:', {
         textTo3dAssetId,
         prompt: prompt.substring(0, 50) + '...',
         artStyle,
-        aiModel
+        aiModel: modelToUse
       });
 
-      const generationResponse = await this.meshyApiService.generateAsset(generationRequest);
-      const taskId = generationResponse.result;
+      // Step 1: Create preview task (mesh only, no texture)
+      onProgress?.({
+        stage: 'generating',
+        progress: 5,
+        message: 'Creating preview (mesh generation)...'
+      });
 
-      if (!taskId) {
-        throw new Error('Failed to start generation: No task ID received');
+      const previewResponse = await this.meshyApiService.generateAsset(generationRequest);
+      const previewTaskId = previewResponse.result;
+
+      if (!previewTaskId) {
+        throw new Error('Failed to start preview generation: No task ID received');
       }
 
       onProgress?.({
         stage: 'generating',
         progress: 10,
-        message: 'Generation started, waiting for completion...'
+        message: 'Generating mesh (preview stage)...'
       });
 
-      // Step 2: Poll for completion
+      // Step 2: Poll for preview completion
+      const previewAsset = await this.meshyApiService.pollForCompletion(
+        previewTaskId,
+        120, // max attempts
+        3000, // base interval
+      );
+
+      if (previewAsset.status !== 'completed') {
+        throw new Error(`Preview generation failed: ${previewAsset.error?.message || 'Unknown error'}`);
+      }
+
+      console.log('✅ Preview stage completed, starting refine stage (texturing)...');
+
+      // Step 3: Create refine task (add textures)
+      onProgress?.({
+        stage: 'generating',
+        progress: 50,
+        message: 'Adding textures (refine stage)...'
+      });
+
+      const refineResponse = await this.meshyApiService.createRefineTask({
+        preview_task_id: previewTaskId,
+        enable_pbr: true, // Generate full PBR textures (base_color, metallic, normal, roughness)
+        ai_model: modelToUse === 'meshy-4' ? 'meshy-5' : 'latest',
+        moderation: false
+      });
+
+      const refineTaskId = refineResponse.result;
+
+      if (!refineTaskId) {
+        throw new Error('Failed to start refine generation: No task ID received');
+      }
+
+      onProgress?.({
+        stage: 'generating',
+        progress: 60,
+        message: 'Applying textures (refine stage)...'
+      });
+
+      // Step 4: Poll for refine completion (this is the final textured model)
       const meshyAsset = await this.meshyApiService.pollForCompletion(
-        taskId,
+        refineTaskId,
         120, // max attempts
         3000, // base interval
       );
 
       if (meshyAsset.status !== 'completed') {
-        throw new Error(`Generation failed: ${meshyAsset.error?.message || 'Unknown error'}`);
+        throw new Error(`Refine generation failed: ${meshyAsset.error?.message || 'Unknown error'}`);
       }
+
+      console.log('✅ Refine stage completed - textured model ready!');
 
       onProgress?.({
         stage: 'downloading',
-        progress: 50,
-        message: 'Downloading generated files...'
+        progress: 80,
+        message: 'Downloading textured model and files...'
       });
 
       // Step 3: Download and upload files
       const uploadedUrls = await this.downloadAndUploadFiles(
         meshyAsset,
         textTo3dAssetId,
+        collectionName,
         onProgress
       );
 
@@ -131,17 +184,20 @@ export class TextTo3dGenerationService {
         fbx_url: uploadedUrls.fbx || meshyAsset.metadata?.model_urls?.fbx || '',
         usdz_url: uploadedUrls.usdz || meshyAsset.metadata?.model_urls?.usdz || '',
         thumbnail_url: uploadedUrls.thumbnail || meshyAsset.thumbnailUrl || '',
-        meshy_id: taskId,
+        meshy_id: refineTaskId, // Store the refine task ID (final textured model)
+        meshy_preview_id: previewTaskId, // Also store preview ID for reference
         status: 'complete' as const,
         isCore: false,
         assetTier: 'optional' as const,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp(),
         metadata: {
-          source: 'text_to_3d_asset',
-          text_to_3d_asset_id: textTo3dAssetId,
+          source: collectionName === 'avatar_to_3d_assets' ? 'avatar_to_3d_asset' : 'text_to_3d_asset',
+          source_asset_id: textTo3dAssetId,
+          source_collection: collectionName,
           art_style: artStyle,
           ai_model: aiModel,
+          texture_urls: uploadedUrls.textures || meshyAsset.metadata?.texture_urls || undefined,
           ...meshyAsset.metadata
         }
       };
@@ -170,10 +226,10 @@ export class TextTo3dGenerationService {
         // Don't throw - asset is created, just not linked
       }
 
-      // Step 6: Update the text_to_3d_assets document with generated URLs
+      // Step 6: Update the source document (text_to_3d_assets or avatar_to_3d_assets) with generated URLs
       try {
-        const textTo3dAssetRef = doc(db, 'text_to_3d_assets', textTo3dAssetId);
-        await updateDoc(textTo3dAssetRef, {
+        const sourceAssetRef = doc(db, collectionName, textTo3dAssetId);
+        await updateDoc(sourceAssetRef, {
           meshy_asset_id: meshyAssetId,
           glb_url: uploadedUrls.glb || meshyAsset.metadata?.model_urls?.glb || '',
           fbx_url: uploadedUrls.fbx || meshyAsset.metadata?.model_urls?.fbx || '',
@@ -186,10 +242,10 @@ export class TextTo3dGenerationService {
           },
           updated_at: serverTimestamp(),
         });
-        console.log('✅ Updated text_to_3d_assets document with generated URLs');
+        console.log(`✅ Updated ${collectionName} document with generated URLs`);
       } catch (error) {
-        console.warn('⚠️ Failed to update text_to_3d_assets document:', error);
-        // Don't throw - asset is created, just URLs not updated in text_to_3d_assets
+        console.warn(`⚠️ Failed to update ${collectionName} document:`, error);
+        // Don't throw - asset is created, just URLs not updated in source document
       }
 
       onProgress?.({
@@ -222,28 +278,43 @@ export class TextTo3dGenerationService {
 
   /**
    * Download files from Meshy URLs and upload to Firebase Storage
+   * Includes 3D models (GLB, FBX, USDZ) and textures
    */
   private async downloadAndUploadFiles(
     meshyAsset: MeshyAsset,
     textTo3dAssetId: string,
+    collectionName: string = 'text_to_3d_assets',
     onProgress?: (progress: GenerationProgress) => void
   ): Promise<{
     glb?: string;
     fbx?: string;
     usdz?: string;
     thumbnail?: string;
+    textures?: {
+      base_color?: string;
+      metallic?: string;
+      normal?: string;
+      roughness?: string;
+    };
   }> {
     const uploadedUrls: {
       glb?: string;
       fbx?: string;
       usdz?: string;
       thumbnail?: string;
+      textures?: {
+        base_color?: string;
+        metallic?: string;
+        normal?: string;
+        roughness?: string;
+      };
     } = {};
 
     const modelUrls = meshyAsset.metadata?.model_urls || {};
-    const filesToDownload: Array<{ url: string; key: 'glb' | 'fbx' | 'usdz' | 'thumbnail'; filename: string }> = [];
+    const textureUrls = meshyAsset.metadata?.texture_urls || [];
+    const filesToDownload: Array<{ url: string; key: string; filename: string }> = [];
 
-    // Collect all files to download
+    // Collect 3D model files to download
     if (modelUrls.glb) {
       filesToDownload.push({ url: modelUrls.glb, key: 'glb', filename: 'model.glb' });
     }
@@ -255,6 +326,23 @@ export class TextTo3dGenerationService {
     }
     if (meshyAsset.thumbnailUrl) {
       filesToDownload.push({ url: meshyAsset.thumbnailUrl, key: 'thumbnail', filename: 'thumbnail.jpg' });
+    }
+
+    // Collect texture files if available (Meshy provides separate texture URLs)
+    if (textureUrls && Array.isArray(textureUrls) && textureUrls.length > 0) {
+      const textureSet = textureUrls[0]; // Use first texture set
+      if (textureSet.base_color) {
+        filesToDownload.push({ url: textureSet.base_color, key: 'texture_base_color', filename: 'textures/base_color.jpg' });
+      }
+      if (textureSet.metallic) {
+        filesToDownload.push({ url: textureSet.metallic, key: 'texture_metallic', filename: 'textures/metallic.jpg' });
+      }
+      if (textureSet.normal) {
+        filesToDownload.push({ url: textureSet.normal, key: 'texture_normal', filename: 'textures/normal.jpg' });
+      }
+      if (textureSet.roughness) {
+        filesToDownload.push({ url: textureSet.roughness, key: 'texture_roughness', filename: 'textures/roughness.jpg' });
+      }
     }
 
     // Download and upload each file
@@ -279,7 +367,7 @@ export class TextTo3dGenerationService {
         const blob = await response.blob();
 
         // Upload to Firebase Storage
-        const storagePath = `text_to_3d_assets/${textTo3dAssetId}/${file.filename}`;
+        const storagePath = `${collectionName}/${textTo3dAssetId}/${file.filename}`;
         const storageRef = ref(storage, storagePath);
 
         onProgress?.({
@@ -291,7 +379,17 @@ export class TextTo3dGenerationService {
         await uploadBytes(storageRef, blob);
         const downloadUrl = await getDownloadURL(storageRef);
 
-        uploadedUrls[file.key] = downloadUrl;
+        // Store URLs appropriately
+        if (file.key.startsWith('texture_')) {
+          if (!uploadedUrls.textures) {
+            uploadedUrls.textures = {};
+          }
+          const textureKey = file.key.replace('texture_', '') as 'base_color' | 'metallic' | 'normal' | 'roughness';
+          uploadedUrls.textures[textureKey] = downloadUrl;
+        } else {
+          uploadedUrls[file.key as 'glb' | 'fbx' | 'usdz' | 'thumbnail'] = downloadUrl;
+        }
+        
         console.log(`✅ Uploaded ${file.filename}: ${downloadUrl.substring(0, 100)}...`);
       } catch (error) {
         console.error(`❌ Error downloading/uploading ${file.filename}:`, error);

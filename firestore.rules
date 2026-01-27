@@ -214,11 +214,29 @@ service cloud.firestore {
         (!isCoreAsset(resource.data) || isSuperadmin());
     }
     
+    // Avatar to 3D Assets collection - read access for authenticated users
+    match /avatar_to_3d_assets/{assetId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdminOrSuperadmin();
+      // Admin can delete non-core assets, superadmin can delete all
+      allow delete: if isAdminOrSuperadmin() && 
+        (!isCoreAsset(resource.data) || isSuperadmin());
+    }
+    
     // Meshy Assets collection - 3D assets from meshy_assets
     match /meshy_assets/{assetId} {
       allow read: if isAuthenticated();
       allow create, update: if isAdminOrSuperadmin();
       // Admin can delete non-core assets, superadmin can delete all
+      allow delete: if isAdminOrSuperadmin() && 
+        (!isCoreAsset(resource.data) || isSuperadmin());
+    }
+    
+    // Skybox GLB URLs collection - read access for authenticated users
+    match /skybox_glb_urls/{urlId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdminOrSuperadmin();
+      // Admin can delete non-core skyboxes, superadmin can delete all
       allow delete: if isAdminOrSuperadmin() && 
         (!isCoreAsset(resource.data) || isSuperadmin());
     }

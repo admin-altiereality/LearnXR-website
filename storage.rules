@@ -34,6 +34,13 @@ service firebase.storage {
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
+    // Avatar-to-3D assets storage
+    match /avatar_to_3d_assets/{assetId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+    }
+    
     // Chapter images storage
     match /chapter_images/{imageId}/{allPaths=**} {
       allow read: if isAuthenticated();

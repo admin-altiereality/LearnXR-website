@@ -87,9 +87,13 @@ export const extractAssets = async (req: Request, res: Response) => {
 
     // Check if AI is configured
     if (!aiPromptDetectionService.isAIConfigured()) {
-      console.warn(`[${requestId}] AI not configured, returning empty assets`);
+      console.warn(`[${requestId}] AI not configured, using keyword-based fallback`);
+      
+      // Use keyword-based fallback extraction
+      const fallbackAssets = extractAssetsFallback(prompt.trim());
+      
       return res.status(200).json({
-        assets: [],
+        assets: fallbackAssets,
         success: true,
         method: 'fallback',
         requestId
@@ -113,12 +117,66 @@ export const extractAssets = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(`[${requestId}] Asset extraction error:`, error);
     
-    return res.status(200).json({
-      assets: [],
-      success: false,
-      error: error instanceof Error ? error.message : 'Asset extraction failed',
-      requestId
-    });
+    // Try fallback on error
+    try {
+      const fallbackAssets = extractAssetsFallback(prompt.trim());
+      return res.status(200).json({
+        assets: fallbackAssets,
+        success: true,
+        method: 'fallback-error',
+        requestId
+      });
+    } catch (fallbackError) {
+      return res.status(200).json({
+        assets: [],
+        success: false,
+        error: error instanceof Error ? error.message : 'Asset extraction failed',
+        requestId
+      });
+    }
   }
+};
+
+/**
+ * Fallback keyword-based asset extraction
+ */
+function extractAssetsFallback(prompt: string): string[] {
+  const assets: string[] = [];
+  const lowerPrompt = prompt.toLowerCase();
+  
+  // Common 3D object keywords
+  const objectKeywords = [
+    'globe', 'map', 'ruler', 'compass', 'telescope', 'microscope',
+    'table', 'chair', 'desk', 'sofa', 'bed', 'cabinet', 'shelf', 'lamp', 'vase', 'mirror', 'clock',
+    'car', 'bike', 'motorcycle', 'plane', 'ship', 'boat', 'truck', 'bus', 'train', 'helicopter', 'drone', 'spaceship',
+    'sword', 'gun', 'shield', 'armor', 'helmet', 'axe', 'hammer', 'wrench', 'screwdriver',
+    'statue', 'sculpture', 'bust', 'monument', 'totem',
+    'plant', 'flower', 'crystal', 'gem', 'rock', 'stone', 'boulder', 'log', 'branch',
+    'artwork', 'painting', 'trophy', 'award', 'chandelier',
+    'phone', 'computer', 'laptop', 'tablet', 'camera', 'speaker',
+    'box', 'crate', 'barrel', 'bottle', 'jar', 'can'
+  ];
+  
+  // Find objects in prompt
+  for (const keyword of objectKeywords) {
+    if (lowerPrompt.includes(keyword)) {
+      // Extract the phrase containing the keyword
+      const words = prompt.split(/\s+/);
+      const keywordIndex = words.findIndex(w => w.toLowerCase().includes(keyword));
+      
+      if (keywordIndex >= 0) {
+        // Extract 2-3 words around the keyword for context
+        const start = Math.max(0, keywordIndex - 1);
+        const end = Math.min(words.length, keywordIndex + 2);
+        const phrase = words.slice(start, end).join(' ').trim();
+        
+        if (phrase && !assets.includes(phrase)) {
+          assets.push(phrase);
+        }
+      }
+    }
+  }
+  
+  return assets;
 };
 
