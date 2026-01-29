@@ -22,7 +22,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { db } from '../config/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
@@ -705,9 +706,11 @@ const VRLessonPlayerInner = () => {
   
   // Initialize Auth context
   let user: any = null;
+  let profile: any = null;
   try {
     const authContext = useAuth();
     user = authContext?.user ?? null;
+    profile = authContext?.profile ?? null;
   } catch (e) {
     // Continue without user - some features won't work
   }
@@ -858,6 +861,10 @@ const VRLessonPlayerInner = () => {
   // UI State
   const [showDragHint, setShowDragHint] = useState(true);
   const [sceneReady, setSceneReady] = useState(false);
+
+  // LMS Tracking State
+  const [currentLaunchId, setCurrentLaunchId] = useState<string | null>(null);
+  const [lessonStartTime, setLessonStartTime] = useState<number | null>(null);
 
   // Derived State
   const lessonId = activeLesson ? `${activeLesson.chapter?.chapter_id || 'unknown'}_${activeLesson.topic?.topic_id || 'unknown'}` : '';
@@ -1255,14 +1262,31 @@ const VRLessonPlayerInner = () => {
   const lastPlayedPhaseRef = useRef<string | null>(null);
 
   // Lesson only starts when user explicitly clicks the Start button
-  const handleStartLesson = useCallback(() => {
+  const handleStartLesson = useCallback(async () => {
     log('▶️', 'User clicked Start Lesson');
     setShowWelcomeScreen(false);
     setLessonReady(true);
     setPhase('intro');
+    setLessonStartTime(Date.now());
     // Reset the last played phase so TTS can play
     lastPlayedPhaseRef.current = null;
-  }, [setPhase]);
+
+    // Track lesson launch for LMS
+    if (profile && effectiveLesson?.chapter && effectiveLesson?.topic) {
+      const launchId = await trackLessonLaunch(
+        profile,
+        effectiveLesson.chapter.chapter_id || '',
+        effectiveLesson.topic.topic_id || '',
+        effectiveLesson.chapter.curriculum || 'CBSE',
+        effectiveLesson.chapter.class_name?.toString() || '',
+        effectiveLesson.chapter.subject || ''
+      );
+      if (launchId) {
+        setCurrentLaunchId(launchId);
+        log('✅', 'Lesson launch tracked:', launchId);
+      }
+    }
+  }, [setPhase, profile, effectiveLesson]);
 
   // Stop lesson and return to welcome screen
   const handleStopLesson = useCallback(() => {
@@ -1677,12 +1701,22 @@ const VRLessonPlayerInner = () => {
   // Save lesson completion without quiz (when lesson ends without MCQs)
   // IMPORTANT: This must be defined BEFORE handleContinue which uses it
   const saveLessonCompletionToFirestore = useCallback(async () => {
-    if (!user || !activeLesson) return;
+    if (!user || !activeLesson || !profile) return;
     
     const chapterId = activeLesson.chapter?.chapter_id;
     const topicId = activeLesson.topic?.topic_id;
     
+    if (!chapterId || !topicId) return;
+
     try {
+      // Update lesson launch completion status
+      if (currentLaunchId) {
+        const durationSeconds = lessonStartTime ? Math.round((Date.now() - lessonStartTime) / 1000) : undefined;
+        await updateLessonLaunch(currentLaunchId, 'completed', durationSeconds);
+        log('✅', 'Lesson launch marked as completed');
+      }
+
+      // Legacy: Save/Update lesson progress in user_lesson_progress collection
       const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
       await setDoc(progressRef, {
         userId: user.uid,
@@ -1705,7 +1739,7 @@ const VRLessonPlayerInner = () => {
     } catch (error) {
       console.error('Failed to save lesson completion:', error);
     }
-  }, [user, activeLesson]);
+  }, [user, profile, activeLesson, currentLaunchId, lessonStartTime]);
 
   // ============================================================================
   // Lesson Navigation - Progress through stages in order
@@ -1856,13 +1890,61 @@ const VRLessonPlayerInner = () => {
 
   // Save quiz results and lesson completion to Firestore
   const saveQuizResultsToFirestore = useCallback(async (correct: number, total: number, answers: Record<string, number>) => {
-    if (!user || !activeLesson) return;
+    if (!user || !activeLesson || !profile) return;
     
     const chapterId = activeLesson.chapter?.chapter_id;
     const topicId = activeLesson.topic?.topic_id;
     
+    if (!chapterId || !topicId) {
+      console.warn('Cannot save quiz results: missing chapterId or topicId');
+      return;
+    }
+
     try {
-      // 1. Save to user_quiz_results collection
+      // Calculate duration if we have start time
+      const durationSeconds = lessonStartTime ? Math.round((Date.now() - lessonStartTime) / 1000) : undefined;
+
+      // 1. Save to new student_scores collection (LMS)
+      const score = {
+        correct,
+        total,
+        percentage: Math.round((correct / total) * 100),
+      };
+
+      // Get attempt number (check existing scores for this lesson)
+      let attemptNumber = 1;
+      try {
+        const existingScoresQuery = query(
+          collection(db, 'student_scores'),
+          where('student_id', '==', user.uid),
+          where('chapter_id', '==', chapterId),
+          where('topic_id', '==', topicId)
+        );
+        const existingScores = await getDocs(existingScoresQuery);
+        attemptNumber = existingScores.size + 1;
+      } catch (e) {
+        console.warn('Could not determine attempt number, using 1');
+      }
+
+      const scoreId = await saveQuizScore(
+        profile,
+        chapterId,
+        topicId,
+        activeLesson.chapter?.curriculum || 'CBSE',
+        activeLesson.chapter?.class_name?.toString() || '',
+        activeLesson.chapter?.subject || '',
+        score,
+        answers,
+        attemptNumber,
+        durationSeconds,
+        currentLaunchId || undefined
+      );
+
+      if (scoreId) {
+        log('✅', 'Quiz score saved to student_scores:', scoreId);
+      }
+
+      // 2. Also save to legacy user_quiz_results for backward compatibility
       const resultsRef = doc(db, 'user_quiz_results', `${user.uid}_${lessonId}`);
       await setDoc(resultsRef, {
         userId: user.uid,
@@ -1873,19 +1955,16 @@ const VRLessonPlayerInner = () => {
         className: activeLesson.chapter?.class_name,
         subject: activeLesson.chapter?.subject,
         topicName: activeLesson.topic?.topic_name,
-        score: {
-          correct,
-          total,
-          percentage: Math.round((correct / total) * 100),
-        },
+        score,
         answers,
+        attempt_number: attemptNumber,
         completedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }, { merge: true });
       
-      log('✅', 'Quiz results saved to user_quiz_results');
+      log('✅', 'Quiz results saved to user_quiz_results (legacy)');
       
-      // 2. Save/Update lesson progress in user_lesson_progress collection
+      // 3. Save/Update lesson progress in user_lesson_progress collection (legacy)
       const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
       await setDoc(progressRef, {
         userId: user.uid,
@@ -1899,22 +1978,18 @@ const VRLessonPlayerInner = () => {
         topicName: activeLesson.topic?.topic_name,
         completed: true,
         quizCompleted: total > 0,
-        quizScore: total > 0 ? {
-          correct,
-          total,
-          percentage: Math.round((correct / total) * 100),
-        } : null,
+        quizScore: total > 0 ? score : null,
         completedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }, { merge: true });
       
-      log('✅', 'Lesson progress saved to user_lesson_progress');
+      log('✅', 'Lesson progress saved to user_lesson_progress (legacy)');
       
     } catch (error) {
       console.error('Failed to save quiz results/progress to Firestore:', error);
       log('❌', 'Failed to save results:', error);
     }
-  }, [user, activeLesson, lessonId]);
+  }, [user, profile, activeLesson, lessonId, lessonStartTime, currentLaunchId]);
 
   const handleMcqNext = () => {
     setShowMcqResult(false);

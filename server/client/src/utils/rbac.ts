@@ -9,7 +9,7 @@
 // Types
 // ============================================================================
 
-export type UserRole = 'student' | 'teacher' | 'school' | 'admin' | 'superadmin';
+export type UserRole = 'student' | 'teacher' | 'school' | 'admin' | 'superadmin' | 'principal' | 'associate';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | null;
 
 export interface UserProfile {
@@ -37,6 +37,15 @@ export interface UserProfile {
   teamSize?: string;
   usageType?: string[];
   newsletterSubscription?: boolean;
+  
+  // ============================================
+  // LMS-specific fields (Multi-School LMS)
+  // ============================================
+  school_id?: string; // Reference to schools collection
+  class_ids?: string[]; // Array of class IDs (for students)
+  teacher_id?: string; // For students: primary teacher UID
+  managed_class_ids?: string[]; // For teachers: classes they teach
+  managed_school_id?: string; // For principals: school they manage
 }
 
 // Route categories for permission checking
@@ -44,8 +53,11 @@ export type RouteCategory =
   | 'public'           // No auth required
   | 'auth'             // Auth required, no role check
   | 'lessons'          // Lesson viewing
-  | 'create'           // Content creation (Create/Studio pages)
-  | 'admin'            // Admin pages
+  | 'create'           // Content creation (Create/Explore/History - no Studio/Chapter Editor)
+  | 'studio'           // Chapter Editor / Content Library - school, admin, superadmin only (no student, teacher, principal)
+  | 'developer'        // API Keys / Developer - admin, superadmin only
+  | 'class_management' // Class management - school, principal, admin, superadmin
+  | 'admin'            // Admin pages (system, etc.)
   | 'superadmin';      // Superadmin-only pages
 
 // ============================================================================
@@ -59,6 +71,8 @@ export const ROLE_HIERARCHY: Record<UserRole, number> = {
   student: 1,
   teacher: 2,
   school: 2,
+  principal: 2,
+  associate: 2,
   admin: 3,
   superadmin: 4,
 };
@@ -66,12 +80,13 @@ export const ROLE_HIERARCHY: Record<UserRole, number> = {
 /**
  * Roles that require approval before accessing protected features
  */
-export const APPROVAL_REQUIRED_ROLES: UserRole[] = ['teacher', 'school'];
+// All roles that require approval (hierarchical: student -> teacher -> school -> admin)
+export const APPROVAL_REQUIRED_ROLES: UserRole[] = ['student', 'teacher', 'school'];
 
 /**
- * Roles that can approve other users (admin and superadmin)
+ * Roles that can approve other users (hierarchical: teachers, schools, admins)
  */
-export const CAN_APPROVE_ROLES: UserRole[] = ['admin', 'superadmin'];
+export const CAN_APPROVE_ROLES: UserRole[] = ['teacher', 'school', 'admin', 'superadmin'];
 
 /**
  * Roles that can approve chapters/content (admin and superadmin)
@@ -88,12 +103,15 @@ export const STUDENT_ONBOARDING_ROLES: UserRole[] = ['student'];
  * Defines which roles can access which route categories
  */
 export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
-  public: ['student', 'teacher', 'school', 'admin', 'superadmin'],
-  auth: ['student', 'teacher', 'school', 'admin', 'superadmin'],
-  lessons: ['student', 'teacher', 'school', 'admin', 'superadmin'],
+  public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
+  auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
+  lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
   create: ['teacher', 'school', 'admin', 'superadmin'],
+  studio: ['admin', 'superadmin'],
+  developer: ['admin', 'superadmin'],
+  class_management: ['school', 'principal', 'admin', 'superadmin'],
   admin: ['admin', 'superadmin'],
-  superadmin: ['admin', 'superadmin'], // Admin can also access approval pages
+  superadmin: ['superadmin'],
 };
 
 /**
@@ -122,7 +140,7 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   '/vrlessonplayer': 'lessons',
   '/xrlessonplayer': 'lessons',
   
-  // Create/Studio routes (teacher, school, admin, superadmin)
+  // Create routes (teacher, school, admin, superadmin) - no Studio/Chapter Editor
   '/main': 'create',
   '/explore': 'create',
   '/history': 'create',
@@ -130,19 +148,31 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   '/asset-generator': 'create',
   '/unified-prompt': 'create',
   '/preview': 'create',
-  '/studio': 'create',
-  '/developer': 'create',
-  '/docs': 'create',
   '/teacher-avatar-demo': 'create',
   '/learnxr': 'create',
+  
+  // Studio / Chapter Editor - school, admin, superadmin only (no student, teacher, principal)
+  '/studio/content': 'studio',
+  '/studio': 'studio',
+  
+  // Developer / API Keys - admin, superadmin only
+  '/developer': 'developer',
+  '/docs/api': 'developer',
+  '/docs/n8n': 'developer',
+  '/docs': 'developer',
+  
+  // Class management - school, principal, admin, superadmin
+  '/admin/classes': 'class_management',
   
   // Admin routes
   '/admin': 'admin',
   '/system-status': 'admin',
   
-  // Superadmin routes (admin can also access)
+  // Superadmin routes
   '/admin/approvals': 'superadmin',
-  '/admin/chapter-approvals': 'superadmin', // NEW: Chapter/content approval
+  '/admin/chapter-approvals': 'superadmin',
+  '/admin/schools': 'admin',
+  '/admin/logs': 'superadmin',
 };
 
 // ============================================================================
@@ -151,22 +181,73 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
 
 /**
  * Check if a role requires approval before accessing protected features
+ * All roles except admin/superadmin require approval in hierarchical system:
+ * - Students need teacher approval
+ * - Teachers need school approval  
+ * - Schools need admin/superadmin approval
  */
 export function requiresApproval(role: UserRole): boolean {
   return APPROVAL_REQUIRED_ROLES.includes(role);
 }
 
 /**
+ * Get the role that can approve a given role (hierarchical approval chain)
+ */
+export function getApproverRole(role: UserRole): UserRole | null {
+  switch (role) {
+    case 'student':
+      return 'teacher'; // Teachers approve students
+    case 'teacher':
+      return 'school'; // Schools approve teachers
+    case 'school':
+      return 'admin'; // Admins/superadmins approve schools
+    default:
+      return null; // No approval needed
+  }
+}
+
+/**
+ * Check if a user can approve another user based on hierarchical approval system
+ */
+export function canApproveUser(approver: UserProfile | null, targetUser: UserProfile | null): boolean {
+  if (!approver || !targetUser) return false;
+  
+  // Superadmins can approve anyone
+  if (approver.role === 'superadmin') return true;
+  
+  // Admins can approve schools
+  if (approver.role === 'admin' && targetUser.role === 'school') return true;
+  
+  // Schools can approve teachers in their school
+  if (approver.role === 'school' && targetUser.role === 'teacher') {
+    return approver.school_id === targetUser.school_id || 
+           approver.managed_school_id === targetUser.school_id;
+  }
+  
+  // Teachers can approve students in their classes
+  if (approver.role === 'teacher' && targetUser.role === 'student') {
+    // Check if student is in any of teacher's classes
+    const teacherClassIds = approver.managed_class_ids || [];
+    const studentClassIds = targetUser.class_ids || [];
+    return teacherClassIds.some(classId => studentClassIds.includes(classId));
+  }
+  
+  return false;
+}
+
+/**
  * Check if a user is approved (or doesn't need approval)
+ * In hierarchical system, all roles except admin/superadmin need approval
  */
 export function isApproved(profile: UserProfile | null): boolean {
   if (!profile) return false;
   
-  // Roles that don't require approval
-  if (!requiresApproval(profile.role)) {
+  // Admin and superadmin don't need approval
+  if (profile.role === 'admin' || profile.role === 'superadmin') {
     return true;
   }
   
+  // All other roles need approval
   return profile.approvalStatus === 'approved';
 }
 
@@ -314,16 +395,16 @@ export function checkAccess(
   
   const role = profile.role;
   
-  // Special case: approval-pending page - always accessible for pending users
+  // Special case: approval-pending page - only for users who completed onboarding and are pending approval
   if (path === '/approval-pending') {
-    if (requiresApproval(role) && profile.approvalStatus !== 'approved') {
+    if (requiresApproval(role) && profile.approvalStatus === 'pending') {
       return { allowed: true };
     }
-    // If approved, redirect to main content
+    // If approved or not yet in queue, redirect away
     return { 
       allowed: false, 
       redirectTo: '/lessons',
-      reason: 'Already approved'
+      reason: 'Already approved or complete onboarding first'
     };
   }
   
@@ -351,7 +432,8 @@ export function checkAccess(
   }
   
   // Check approval status for roles that require it (after onboarding is done)
-  if (requiresApproval(role) && !isApproved(profile)) {
+  // Only redirect to approval-pending when explicitly pending; null = not yet in queue
+  if (requiresApproval(role) && profile.approvalStatus === 'pending') {
     return { 
       allowed: false, 
       redirectTo: '/approval-pending',
@@ -387,8 +469,15 @@ export function canAccess(
 /**
  * Check if user can approve other users
  */
+/**
+ * Check if a user can approve other users (hierarchical approval system)
+ * - Teachers can approve students in their classes
+ * - Schools can approve teachers in their school
+ * - Admins/superadmins can approve schools
+ */
 export function canApproveUsers(profile: UserProfile | null): boolean {
   if (!profile) return false;
+  // All these roles can approve users in the hierarchical system
   return CAN_APPROVE_ROLES.includes(profile.role);
 }
 
@@ -414,13 +503,16 @@ export function hasMinimumRole(profile: UserProfile | null, minimumRole: UserRol
 export function getDefaultPage(role: UserRole): string {
   switch (role) {
     case 'student':
-      return '/lessons';
+      return '/dashboard/student';
     case 'teacher':
+      return '/dashboard/teacher';
+    case 'principal':
+      return '/dashboard/principal';
     case 'school':
-      return '/lessons'; // Students, teachers, schools go to lessons
+      return '/lessons';
     case 'admin':
     case 'superadmin':
-      return '/studio/content'; // Admin/Superadmin go to Dashboard (Studio)
+      return '/studio/content';
     default:
       return '/lessons';
   }
@@ -516,6 +608,8 @@ export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   student: 'Student',
   teacher: 'Teacher',
   school: 'School Administrator',
+  principal: 'Principal',
+  associate: 'Associate',
   admin: 'Administrator',
   superadmin: 'Super Administrator',
 };
@@ -524,6 +618,8 @@ export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   student: 'Access lessons and complete quizzes',
   teacher: 'Create and manage educational content',
   school: 'Manage school-wide content and teachers',
+  principal: 'School principal with administrative access',
+  associate: 'Associate user with limited access',
   admin: 'Full platform administration access',
   superadmin: 'Complete system control and user approvals',
 };
@@ -532,6 +628,8 @@ export const ROLE_COLORS: Record<UserRole, { bg: string; text: string; border: s
   student: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
   teacher: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
   school: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/30' },
+  principal: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/30' },
+  associate: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30' },
   admin: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
   superadmin: { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/30' },
 };

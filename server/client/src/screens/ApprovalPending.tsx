@@ -133,6 +133,10 @@ const ApprovalPending = () => {
             <p className="text-white/60">
               {isRejected 
                 ? 'Unfortunately, your application was not approved'
+                : profile?.role === 'student'
+                ? 'Your account is being reviewed by your teacher'
+                : profile?.role === 'teacher'
+                ? 'Your account is being reviewed by your school administrator'
                 : 'Your account is being reviewed by our admin team'}
             </p>
           </motion.div>
@@ -222,7 +226,13 @@ const ApprovalPending = () => {
                       </div>
                       <div>
                         <p className="text-white/80 text-sm">Under Review</p>
-                        <p className="text-white/40 text-xs">Our admin team is reviewing your profile</p>
+                        <p className="text-white/40 text-xs">
+                          {profile?.role === 'student' 
+                            ? 'Your teacher is reviewing your profile'
+                            : profile?.role === 'teacher'
+                            ? 'Your school administrator is reviewing your profile'
+                            : 'Our admin team is reviewing your profile'}
+                        </p>
                       </div>
                     </li>
                     <li className="flex items-start gap-3">
@@ -261,8 +271,10 @@ const ApprovalPending = () => {
                 </div>
               )}
 
-              {/* Switch to Student Option (only for pending approval) */}
-              {profile?.approvalStatus === 'pending' && (
+              {/* Switch to Student Option (only for teachers/schools with pending approval) */}
+              {profile?.approvalStatus === 'pending' && 
+               profile?.role !== 'student' && 
+               (profile?.role === 'teacher' || profile?.role === 'school') && (
                 <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 mb-6">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">

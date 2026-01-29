@@ -91,6 +91,7 @@ const getApp = (): express.Application => {
     const assistantRoutes = require('./routes/assistant').default;
     const apiKeyRoutes = require('./routes/apiKey').default;
     const curriculumRoutes = require('./routes/curriculum').default;
+    const lmsRoutes = require('./routes/lms').default;
     
     app.use('/', healthRoutes);
     app.use('/skybox', skyboxRoutes);
@@ -103,6 +104,7 @@ const getApp = (): express.Application => {
     app.use('/assistant', assistantRoutes);
     app.use('/dev/api-keys', apiKeyRoutes);
     app.use('/curriculum', curriculumRoutes);
+    app.use('/lms', lmsRoutes);
     
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {

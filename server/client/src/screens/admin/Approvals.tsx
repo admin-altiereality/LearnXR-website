@@ -38,13 +38,26 @@ import {
   FaChevronUp,
   FaBuilding,
   FaUserGraduate,
-  FaExclamationTriangle
+  FaExclamationTriangle,
+  FaCog,
+  FaUserShield
 } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../config/firebase';
+
+/** Generate a unique 6-character uppercase alphanumeric school code */
+function generateSchoolCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 import { 
   canApproveUsers, 
   UserProfile,
+  UserRole,
   ROLE_DISPLAY_NAMES,
   ROLE_COLORS,
   APPROVAL_STATUS_DISPLAY
@@ -79,17 +92,27 @@ const Approvals = () => {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
+  const [approvedUsers, setApprovedUsers] = useState<PendingUser[]>([]);
+  const [pendingSchools, setPendingSchools] = useState<any[]>([]);
+  const [approvedSchools, setApprovedSchools] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingApproved, setLoadingApproved] = useState(true);
+  const [loadingSchools, setLoadingSchools] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [changingRoleId, setChangingRoleId] = useState<string | null>(null);
+  const [processingSchoolId, setProcessingSchoolId] = useState<string | null>(null);
+  const [processingSchoolCodeId, setProcessingSchoolCodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterRole, setFilterRole] = useState<'all' | 'teacher' | 'school'>('all');
+  const [filterRole, setFilterRole] = useState<'all' | 'teacher' | 'school' | 'student' | 'principal' | 'associate' | 'admin' | 'superadmin'>('all');
+  const [activeTab, setActiveTab] = useState<'pending' | 'approved'>('pending');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     pending: 0,
     approved: 0,
     rejected: 0,
     teachers: 0,
-    schools: 0
+    schools: 0,
+    pendingSchools: 0
   });
 
   // Check if user can approve
@@ -130,8 +153,8 @@ const Approvals = () => {
           email: data.email
         });
         
-        // Include teachers and schools
-        if (role === 'teacher' || role === 'school') {
+        // Include teachers and schools only after they've completed onboarding (approval happens after onboarding)
+        if ((role === 'teacher' || role === 'school') && data.onboardingCompleted === true) {
           users.push({
             id: docSnapshot.id,
             uid: docSnapshot.id,
@@ -174,6 +197,131 @@ const Approvals = () => {
     };
   }, [profile]);
 
+  // Fetch approved users
+  useEffect(() => {
+    if (!profile || !canApproveUsers(profile)) return;
+
+    console.log('🔍 Approvals: Setting up listener for approved users...');
+    
+    const usersRef = collection(db, 'users');
+    
+    // Query for approved users
+    const approvedQuery = query(
+      usersRef,
+      where('approvalStatus', '==', 'approved')
+    );
+
+    const unsubscribe = onSnapshot(approvedQuery, (snapshot) => {
+      console.log('🔍 Approvals: Received approved users snapshot with', snapshot.docs.length, 'documents');
+      
+      const users: PendingUser[] = [];
+      snapshot.forEach((docSnapshot) => {
+        const data = docSnapshot.data();
+        users.push({
+          id: docSnapshot.id,
+          uid: docSnapshot.id,
+          ...data,
+          role: (data.role || '').toLowerCase() as any
+        } as PendingUser);
+      });
+      
+      // Sort by approvedAt or createdAt descending (newest first)
+      users.sort((a, b) => {
+        const dateA = (a as any).approvedAt 
+          ? new Date((a as any).approvedAt).getTime() 
+          : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const dateB = (b as any).approvedAt 
+          ? new Date((b as any).approvedAt).getTime() 
+          : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return dateB - dateA;
+      });
+      
+      console.log('🔍 Approvals: Found', users.length, 'approved users');
+      setApprovedUsers(users);
+      setLoadingApproved(false);
+    }, (error: any) => {
+      console.error('❌ Approvals Error (approved users):', error);
+      toast.error('Failed to load approved users: ' + error.message);
+      setLoadingApproved(false);
+    });
+
+    return () => {
+      console.log('🔍 Approvals: Cleaning up approved users listener');
+      unsubscribe();
+    };
+  }, [profile]);
+
+  // Fetch pending schools from schools collection
+  useEffect(() => {
+    if (!profile || !canApproveUsers(profile)) return;
+
+    console.log('🔍 Approvals: Setting up listener for pending schools...');
+    
+    const schoolsRef = collection(db, 'schools');
+    const pendingSchoolsQuery = query(
+      schoolsRef,
+      where('approvalStatus', '==', 'pending')
+    );
+
+    const unsubscribe = onSnapshot(pendingSchoolsQuery, (snapshot) => {
+      const schools: any[] = [];
+      snapshot.forEach((docSnapshot) => {
+        schools.push({
+          id: docSnapshot.id,
+          ...docSnapshot.data(),
+        });
+      });
+
+      schools.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      console.log('🔍 Approvals: Found', schools.length, 'pending schools');
+      setPendingSchools(schools);
+      setLoadingSchools(false);
+    }, (error: any) => {
+      console.error('❌ Approvals Error (schools):', error);
+      setLoadingSchools(false);
+    });
+
+    return () => unsubscribe();
+  }, [profile]);
+
+  // Fetch approved schools
+  useEffect(() => {
+    if (!profile || !canApproveUsers(profile)) return;
+
+    const schoolsRef = collection(db, 'schools');
+    const approvedSchoolsQuery = query(
+      schoolsRef,
+      where('approvalStatus', '==', 'approved')
+    );
+
+    const unsubscribe = onSnapshot(approvedSchoolsQuery, (snapshot) => {
+      const schools: any[] = [];
+      snapshot.forEach((docSnapshot) => {
+        schools.push({
+          id: docSnapshot.id,
+          ...docSnapshot.data(),
+        });
+      });
+
+      schools.sort((a, b) => {
+        const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      setApprovedSchools(schools);
+    }, (error: any) => {
+      console.error('❌ Error fetching approved schools:', error);
+    });
+
+    return () => unsubscribe();
+  }, [profile]);
+
   // Toggle expanded user details (data is already in users collection)
   const toggleExpandUser = (userId: string) => {
     setExpandedUserId(expandedUserId === userId ? null : userId);
@@ -187,13 +335,8 @@ const Approvals = () => {
       try {
         const usersRef = collection(db, 'users');
         
-        // Get all teachers and schools
-        const rolesQuery = query(
-          usersRef,
-          where('role', 'in', ['teacher', 'school'])
-        );
-        
-        const snapshot = await getDocs(rolesQuery);
+        // Get all users (not just teachers/schools for stats)
+        const snapshot = await getDocs(usersRef);
         
         let pending = 0, approved = 0, rejected = 0, teachers = 0, schools = 0;
         
@@ -207,14 +350,14 @@ const Approvals = () => {
           else if (data.role === 'school') schools++;
         });
         
-        setStats({ pending, approved, rejected, teachers, schools });
+        setStats({ pending, approved, rejected, teachers, schools, pendingSchools: pendingSchools.length });
       } catch (error) {
         console.error('Error fetching stats:', error);
       }
     };
 
     fetchStats();
-  }, [profile, pendingUsers]);
+  }, [profile, pendingUsers, approvedUsers]);
 
   const handleApprove = async (userId: string) => {
     setProcessingId(userId);
@@ -271,8 +414,144 @@ const Approvals = () => {
     }
   };
 
-  // Filter users
-  const filteredUsers = pendingUsers.filter(user => {
+  // Resolve the school user ID (createdBy or fallback: user with role school linked to this school)
+  const resolveSchoolUserId = async (schoolId: string, school?: { createdBy?: string }): Promise<string | null> => {
+    if (school?.createdBy) return school.createdBy;
+    const usersRef = collection(db, 'users');
+    const q = query(
+      usersRef,
+      where('role', '==', 'school'),
+      where('school_id', '==', schoolId)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) return snap.docs[0].id;
+    const q2 = query(
+      usersRef,
+      where('role', '==', 'school'),
+      where('managed_school_id', '==', schoolId)
+    );
+    const snap2 = await getDocs(q2);
+    if (!snap2.empty) return snap2.docs[0].id;
+    return null;
+  };
+
+  // Handle role change for approved users
+  const handleApproveSchool = async (schoolId: string) => {
+    setProcessingSchoolId(schoolId);
+    try {
+      const now = new Date().toISOString();
+      const school = pendingSchools.find(s => s.id === schoolId);
+      const schoolRef = doc(db, 'schools', schoolId);
+      const updateData: Record<string, unknown> = {
+        approvalStatus: 'approved',
+        updatedAt: now,
+      };
+      if (!school?.schoolCode) {
+        updateData.schoolCode = generateSchoolCode();
+      }
+      await updateDoc(schoolRef, updateData);
+
+      const userId = await resolveSchoolUserId(schoolId, school);
+      if (userId) {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, {
+          approvalStatus: 'approved',
+          approvedAt: now,
+          approvedBy: profile?.uid,
+          updatedAt: now,
+        });
+      }
+
+      const code = (updateData.schoolCode as string) || school?.schoolCode;
+      if (code) {
+        toast.success(`School approved. Share this code with teachers: ${code}`);
+      } else {
+        toast.success('School approved successfully');
+      }
+    } catch (error: any) {
+      console.error('Error approving school:', error);
+      toast.error('Failed to approve school: ' + error.message);
+    } finally {
+      setProcessingSchoolId(null);
+    }
+  };
+
+  const handleRejectSchool = async (schoolId: string) => {
+    setProcessingSchoolId(schoolId);
+    try {
+      const now = new Date().toISOString();
+      const schoolRef = doc(db, 'schools', schoolId);
+      await updateDoc(schoolRef, {
+        approvalStatus: 'rejected',
+        updatedAt: now,
+      });
+
+      const school = pendingSchools.find(s => s.id === schoolId);
+      const userId = await resolveSchoolUserId(schoolId, school);
+      if (userId) {
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, {
+          approvalStatus: 'rejected',
+          updatedAt: now,
+        });
+      }
+
+      toast.success('School rejected');
+    } catch (error: any) {
+      console.error('Error rejecting school:', error);
+      toast.error('Failed to reject school: ' + error.message);
+    } finally {
+      setProcessingSchoolId(null);
+    }
+  };
+
+  const handleGenerateSchoolCode = async (schoolId: string) => {
+    setProcessingSchoolCodeId(schoolId);
+    try {
+      const schoolRef = doc(db, 'schools', schoolId);
+      const newCode = generateSchoolCode();
+      await updateDoc(schoolRef, {
+        schoolCode: newCode,
+        updatedAt: new Date().toISOString(),
+      });
+      setApprovedSchools(prev =>
+        prev.map(s => (s.id === schoolId ? { ...s, schoolCode: newCode } : s))
+      );
+      toast.success(`School code set: ${newCode}. Share this with teachers.`);
+    } catch (error: any) {
+      console.error('Error generating school code:', error);
+      toast.error('Failed to set school code: ' + error.message);
+    } finally {
+      setProcessingSchoolCodeId(null);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: UserRole) => {
+    setChangingRoleId(userId);
+    try {
+      const userRef = doc(db, 'users', userId);
+      const now = new Date().toISOString();
+      
+      await updateDoc(userRef, {
+        role: newRole,
+        updatedAt: now,
+        roleChangedAt: now,
+        roleChangedBy: profile?.uid,
+      });
+      
+      const user = approvedUsers.find(u => u.id === userId);
+      toast.success(`Role changed to ${ROLE_DISPLAY_NAMES[newRole]} for ${user?.name || user?.email}`);
+      console.log(`✅ Changed role for user ${userId} to ${newRole}`);
+    } catch (error: any) {
+      console.error('Error changing role:', error);
+      toast.error(`Failed to change role: ${error.message || 'Unknown error'}`);
+    } finally {
+      setChangingRoleId(null);
+    }
+  };
+
+  // Filter users based on active tab
+  const filteredUsers = (activeTab === 'pending' ? pendingUsers : approvedUsers).filter(user => {
     const matchesSearch = 
       user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -331,10 +610,10 @@ const Approvals = () => {
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
                   <FaUserCheck className="text-white" />
                 </div>
-                User Approvals
+                User Management
               </h1>
               <p className="text-white/50 mt-1">
-                Review and approve teacher and school registrations
+                Review approvals and manage user roles
               </p>
             </div>
             
@@ -352,9 +631,39 @@ const Approvals = () => {
           </div>
         </motion.div>
 
-        {/* Filters */}
+        {/* Tabs */}
         <motion.div
           custom={1}
+          variants={fadeUpVariants}
+          initial="hidden"
+          animate="visible"
+          className="flex gap-2 mb-6 border-b border-white/10"
+        >
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`px-6 py-3 text-sm font-medium transition-all border-b-2 ${
+              activeTab === 'pending'
+                ? 'text-cyan-400 border-cyan-400'
+                : 'text-white/50 border-transparent hover:text-white/80'
+            }`}
+          >
+            Pending Approvals ({stats.pending})
+          </button>
+          <button
+            onClick={() => setActiveTab('approved')}
+            className={`px-6 py-3 text-sm font-medium transition-all border-b-2 ${
+              activeTab === 'approved'
+                ? 'text-cyan-400 border-cyan-400'
+                : 'text-white/50 border-transparent hover:text-white/80'
+            }`}
+          >
+            Approved Users ({stats.approved})
+          </button>
+        </motion.div>
+
+        {/* Filters */}
+        <motion.div
+          custom={2}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
@@ -374,48 +683,192 @@ const Approvals = () => {
           </div>
           
           {/* Role Filter */}
-          <div className="flex gap-2">
-            {['all', 'teacher', 'school'].map((role) => (
-              <button
-                key={role}
-                onClick={() => setFilterRole(role as typeof filterRole)}
-                className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                  filterRole === role
-                    ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
-                    : 'bg-white/[0.03] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
-                }`}
-              >
-                {role === 'all' ? 'All Roles' : role.charAt(0).toUpperCase() + role.slice(1) + 's'}
-              </button>
-            ))}
+          <div className="flex gap-2 flex-wrap">
+            {activeTab === 'pending' 
+              ? ['all', 'teacher', 'school'].map((role) => (
+                  <button
+                    key={role}
+                    onClick={() => setFilterRole(role as typeof filterRole)}
+                    className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                      filterRole === role
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
+                        : 'bg-white/[0.03] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    {role === 'all' ? 'All Roles' : role.charAt(0).toUpperCase() + role.slice(1) + 's'}
+                  </button>
+                ))
+              : ['all', 'student', 'teacher', 'school', 'principal', 'associate', 'admin', 'superadmin'].map((role) => (
+                  <button
+                    key={role}
+                    onClick={() => setFilterRole(role as typeof filterRole)}
+                    className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                      filterRole === role
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
+                        : 'bg-white/[0.03] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    {role === 'all' ? 'All Roles' : ROLE_DISPLAY_NAMES[role as UserRole] || role}
+                  </button>
+                ))
+            }
           </div>
         </motion.div>
 
+        {/* Pending Schools Section (only on pending tab) */}
+        {activeTab === 'pending' && pendingSchools.length > 0 && (
+          <motion.div
+            custom={2.5}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="mb-6"
+          >
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <FaSchool className="text-purple-400" />
+              Pending Schools ({pendingSchools.length})
+            </h2>
+            <div className="space-y-3">
+              {pendingSchools.map((school, index) => (
+                <motion.div
+                  key={school.id}
+                  custom={index}
+                  variants={fadeUpVariants}
+                  initial="hidden"
+                  animate="visible"
+                  className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-white font-medium mb-1">{school.name}</h3>
+                      <div className="flex flex-wrap gap-3 text-sm text-white/60">
+                        {school.city && <span>{school.city}, {school.state}</span>}
+                        {school.contactPhone && <span>{school.contactPhone}</span>}
+                        {school.boardAffiliation && <span>{school.boardAffiliation}</span>}
+                        {school.schoolCode && <span className="text-cyan-400 font-mono">Code: {school.schoolCode}</span>}
+                      </div>
+                      {!school.schoolCode && <p className="text-xs text-white/40 mt-1">A unique code will be assigned when approved (teachers use it to join this school).</p>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleRejectSchool(school.id)}
+                        disabled={processingSchoolId === school.id}
+                        className="px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {processingSchoolId === school.id ? (
+                          <FaSpinner className="animate-spin" />
+                        ) : (
+                          <FaTimes />
+                        )}
+                        Reject
+                      </button>
+                      <button
+                        onClick={() => handleApproveSchool(school.id)}
+                        disabled={processingSchoolId === school.id}
+                        className="px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {processingSchoolId === school.id ? (
+                          <FaSpinner className="animate-spin" />
+                        ) : (
+                          <FaCheck />
+                        )}
+                        Approve
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Approved schools – codes for teacher onboarding */}
+        {approvedSchools.length > 0 && (
+          <motion.div
+            custom={2.6}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="mb-6"
+          >
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <FaSchool className="text-emerald-400" />
+              Approved schools (share code with teachers)
+            </h2>
+            <div className="space-y-3">
+              {approvedSchools.map((school) => (
+                <motion.div
+                  key={school.id}
+                  className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center justify-between flex-wrap gap-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-medium">{school.name}</h3>
+                    <div className="flex flex-wrap gap-3 text-sm text-white/60 mt-1">
+                      {school.city && <span>{school.city}, {school.state}</span>}
+                      {school.schoolCode ? (
+                        <span className="text-cyan-400 font-mono font-medium">Code: {school.schoolCode}</span>
+                      ) : (
+                        <span className="text-amber-400">No code – teachers cannot join by code</span>
+                      )}
+                    </div>
+                  </div>
+                  {!school.schoolCode && (
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSchoolCode(school.id)}
+                      disabled={processingSchoolCodeId === school.id}
+                      className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {processingSchoolCodeId === school.id ? (
+                        <FaSpinner className="animate-spin" />
+                      ) : null}
+                      Generate code
+                    </button>
+                  )}
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
         {/* Users List */}
         <motion.div
-          custom={2}
+          custom={3}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
         >
-          {filteredUsers.length === 0 ? (
+          {(activeTab === 'pending' && loading) || (activeTab === 'approved' && loadingApproved) ? (
+            <div className="text-center py-16 rounded-2xl border border-white/10 bg-white/[0.02]">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+              <p className="text-white/60">Loading {activeTab === 'pending' ? 'pending' : 'approved'} users...</p>
+            </div>
+          ) : filteredUsers.length === 0 ? (
             <div className="text-center py-16 rounded-2xl border border-white/10 bg-white/[0.02]">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/[0.05] flex items-center justify-center">
                 <FaUsers className="text-2xl text-white/30" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">No Pending Approvals</h3>
+              <h3 className="text-xl font-semibold text-white mb-2">
+                {activeTab === 'pending' ? 'No Pending Approvals' : 'No Approved Users'}
+              </h3>
               <p className="text-white/50">
                 {searchQuery || filterRole !== 'all' 
                   ? 'No users match your search criteria'
-                  : 'All user registrations have been reviewed'}
+                  : activeTab === 'pending' 
+                    ? 'All user registrations have been reviewed'
+                    : 'No users have been approved yet'}
               </p>
             </div>
           ) : (
             <div className="space-y-4">
               <AnimatePresence mode="popLayout">
                 {filteredUsers.map((user, index) => {
-                  const roleColors = ROLE_COLORS[user.role];
-                  const RoleIcon = user.role === 'teacher' ? FaChalkboardTeacher : FaSchool;
+                  const roleColors = ROLE_COLORS[user.role] || ROLE_COLORS.teacher;
+                  const RoleIcon = user.role === 'teacher' ? FaChalkboardTeacher 
+                    : user.role === 'school' ? FaSchool 
+                    : user.role === 'principal' ? FaUserShield
+                    : user.role === 'admin' || user.role === 'superadmin' ? FaUserShield
+                    : FaUserGraduate;
                   const isProcessing = processingId === user.id;
 
                   return (
@@ -444,8 +897,13 @@ const Approvals = () => {
                                   {user.name || user.displayName || 'Unknown User'}
                                 </h3>
                                 <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${roleColors.bg} ${roleColors.text} ${roleColors.border} border`}>
-                                  {ROLE_DISPLAY_NAMES[user.role]}
+                                  {ROLE_DISPLAY_NAMES[user.role] || user.role}
                                 </span>
+                                {activeTab === 'approved' && (user as any).approvedAt && (
+                                  <span className="text-xs text-emerald-400/70">
+                                    Approved {new Date((user as any).approvedAt).toLocaleDateString()}
+                                  </span>
+                                )}
                               </div>
                               
                               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/50">
@@ -463,6 +921,16 @@ const Approvals = () => {
                                       })
                                     : 'Unknown date'}
                                 </span>
+                                {activeTab === 'approved' && (user as any).approvedAt && (
+                                  <span className="flex items-center gap-1.5 text-emerald-400/70">
+                                    <FaCheck className="text-xs" />
+                                    Approved {new Date((user as any).approvedAt).toLocaleDateString('en-US', {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      year: 'numeric'
+                                    })}
+                                  </span>
+                                )}
                                 {/* Onboarding Status Badge */}
                                 {user.onboardingCompleted ? (
                                   <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs">
@@ -494,37 +962,65 @@ const Approvals = () => {
                               {expandedUserId === user.id ? <FaChevronUp className="text-xs" /> : <FaChevronDown className="text-xs" />}
                             </motion.button>
                             
-                            <motion.button
-                              onClick={() => handleReject(user.id)}
-                              disabled={isProcessing}
-                              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 
-                                       text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                            >
-                              {isProcessing ? (
-                                <FaSpinner className="animate-spin" />
-                              ) : (
-                                <FaTimes />
-                              )}
-                              <span className="font-medium">Reject</span>
-                            </motion.button>
-                            
-                            <motion.button
-                              onClick={() => handleApprove(user.id)}
-                              disabled={isProcessing}
-                              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 
-                                       text-emerald-400 hover:bg-emerald-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                            >
-                              {isProcessing ? (
-                                <FaSpinner className="animate-spin" />
-                              ) : (
-                                <FaCheck />
-                              )}
-                              <span className="font-medium">Approve</span>
-                            </motion.button>
+                            {activeTab === 'pending' ? (
+                              <>
+                                <motion.button
+                                  onClick={() => handleReject(user.id)}
+                                  disabled={isProcessing}
+                                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 
+                                           text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.98 }}
+                                >
+                                  {isProcessing ? (
+                                    <FaSpinner className="animate-spin" />
+                                  ) : (
+                                    <FaTimes />
+                                  )}
+                                  <span className="font-medium">Reject</span>
+                                </motion.button>
+                                
+                                <motion.button
+                                  onClick={() => handleApprove(user.id)}
+                                  disabled={isProcessing}
+                                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 
+                                           text-emerald-400 hover:bg-emerald-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                  whileHover={{ scale: 1.02 }}
+                                  whileTap={{ scale: 0.98 }}
+                                >
+                                  {isProcessing ? (
+                                    <FaSpinner className="animate-spin" />
+                                  ) : (
+                                    <FaCheck />
+                                  )}
+                                  <span className="font-medium">Approve</span>
+                                </motion.button>
+                              </>
+                            ) : (
+                              <div className="relative">
+                                <select
+                                  value={user.role}
+                                  onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
+                                  disabled={changingRoleId === user.id}
+                                  className="appearance-none px-4 py-2.5 pr-10 rounded-xl bg-slate-800/50 border border-white/20 
+                                           text-white text-sm font-medium focus:outline-none focus:border-cyan-400/50
+                                           disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer min-w-[160px]"
+                                >
+                                  <option value="student">Student</option>
+                                  <option value="teacher">Teacher</option>
+                                  <option value="school">School Administrator</option>
+                                  <option value="principal">Principal</option>
+                                  <option value="associate">Associate</option>
+                                  <option value="admin">Administrator</option>
+                                  <option value="superadmin">Super Administrator</option>
+                                </select>
+                                {changingRoleId === user.id ? (
+                                  <FaSpinner className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-400 animate-spin pointer-events-none" />
+                                ) : (
+                                  <FaCog className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

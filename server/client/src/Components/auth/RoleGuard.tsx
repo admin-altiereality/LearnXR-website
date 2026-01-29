@@ -66,6 +66,7 @@ export const RoleGuard = ({
         const roleHierarchy: Record<UserRole, number> = {
           student: 1,
           teacher: 2,
+          principal: 2,
           school: 2,
           admin: 3,
           superadmin: 4,
@@ -148,7 +149,17 @@ export const TeacherGuard = ({ children }: { children: React.ReactNode }) => (
 );
 
 /**
- * AdminGuard - Only allows admin and superadmin
+ * AdminOrSchoolGuard - Only allows school, admin, superadmin (no student, teacher, principal).
+ * Use for Chapter Editor / Studio / Content Library.
+ */
+export const AdminOrSchoolGuard = ({ children }: { children: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['school', 'admin', 'superadmin']}>
+    {children}
+  </RoleGuard>
+);
+
+/**
+ * AdminGuard - Only allows admin and superadmin (no API Keys for school/teacher/principal)
  */
 export const AdminGuard = ({ children }: { children: React.ReactNode }) => (
   <RoleGuard allowedRoles={['admin', 'superadmin']}>

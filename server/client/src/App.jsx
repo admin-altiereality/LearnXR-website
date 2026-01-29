@@ -57,6 +57,14 @@ import ChapterEditor from './screens/studio/ChapterEditor';
 import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
 import VRLessonPlayer from './screens/VRLessonPlayer';
 import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
+import StudentDashboard from './screens/dashboard/StudentDashboard';
+import TeacherDashboard from './screens/dashboard/TeacherDashboard';
+import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
+import ClassManagement from './screens/admin/ClassManagement';
+import SchoolManagement from './screens/admin/SchoolManagement';
+import ProductionLogs from './screens/admin/ProductionLogs';
+import TeacherApprovals from './screens/admin/TeacherApprovals';
+import SchoolApprovals from './screens/admin/SchoolApprovals';
 
 // Conditional Footer - Shows minimal footer on all pages except VR player and studio
 const ConditionalFooter = () => {
@@ -446,12 +454,12 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* Admin/SuperAdmin Approvals Dashboard */}
+                      {/* SuperAdmin User Approvals Dashboard */}
                       <Route path="/admin/approvals" element={
                         <ProtectedRoute>
-                          <AdminGuard>
+                          <SuperAdminGuard>
                             <Approvals />
-                          </AdminGuard>
+                          </SuperAdminGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -582,49 +590,49 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* Developer tools - Teachers and above */}
+                      {/* Developer / API Keys - admin and superadmin only */}
                       <Route path="/developer" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <DeveloperSettings />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/api" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <ApiDocumentation />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/n8n" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <N8nWorkflows />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* Studio Content Editor Routes - Teachers and above */}
+                      {/* Studio / Chapter Editor - admin and superadmin only (no school) */}
                       <Route path="/studio/content" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <ContentLibrary />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/content/:chapterId" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <ChapterEditor />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/firestore-debug" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <FirestoreDebugScreen />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -785,12 +793,12 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* Admin/SuperAdmin Approvals Dashboard */}
+                      {/* SuperAdmin User Approvals Dashboard */}
                       <Route path="/admin/approvals" element={
                         <ProtectedRoute>
-                          <AdminGuard>
+                          <SuperAdminGuard>
                             <Approvals />
-                          </AdminGuard>
+                          </SuperAdminGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -920,49 +928,117 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* Developer tools - Teachers and above */}
+                      {/* LMS Dashboards - Role-based */}
+                      <Route path="/dashboard/student" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student']}>
+                            <StudentDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/dashboard/teacher" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher']}>
+                            <TeacherDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/dashboard/principal" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['principal']}>
+                            <PrincipalDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Class Management - School Administrator, Principal, Admin */}
+                      <Route path="/admin/classes" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['school', 'principal', 'admin', 'superadmin']}>
+                            <ClassManagement />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* School Management - Admin and Superadmin only */}
+                      <Route path="/admin/schools" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['admin', 'superadmin']}>
+                            <SchoolManagement />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Production Logs - Superadmin only */}
+                      <Route path="/admin/logs" element={
+                        <ProtectedRoute>
+                          <SuperAdminGuard>
+                            <ProductionLogs />
+                          </SuperAdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Teacher Approvals - Teachers can approve students */}
+                      <Route path="/teacher/approvals" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher']}>
+                            <TeacherApprovals />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* School Approvals - Schools can approve teachers */}
+                      <Route path="/school/approvals" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['school']}>
+                            <SchoolApprovals />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Developer / API Keys - admin and superadmin only */}
                       <Route path="/developer" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <DeveloperSettings />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/api" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <ApiDocumentation />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/docs/n8n" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <N8nWorkflows />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* Studio Content Editor Routes - Teachers and above */}
+                      {/* Studio / Chapter Editor - admin and superadmin only (no school) */}
                       <Route path="/studio/content" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <ContentLibrary />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/content/:chapterId" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <ChapterEditor />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/firestore-debug" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <AdminGuard>
                             <FirestoreDebugScreen />
-                          </TeacherGuard>
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -1016,7 +1092,13 @@ function App() {
                           </TeacherGuard>
                         </ProtectedRoute>
                       } />
-                      <Route path="/system-status" element={<SystemStatus />} />
+                      <Route path="/system-status" element={
+                        <ProtectedRoute>
+                          <AdminGuard>
+                            <SystemStatus />
+                          </AdminGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Teacher Avatar Routes - Teachers and above */}
                       <Route path="/teacher-avatar-demo" element={

@@ -21,7 +21,9 @@ import {
   FaCog,
   FaBars,
   FaTimes,
-  FaServer
+  FaServer,
+  FaUsers,
+  FaFileAlt
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
@@ -119,6 +121,7 @@ const Sidebar = () => {
   // Role checks
   const isStudent = userRole === 'student';
   const isTeacher = userRole === 'teacher';
+  const isPrincipal = userRole === 'principal';
   const isSchool = userRole === 'school';
   const isAdmin = userRole === 'admin';
   const isSuperadmin = userRole === 'superadmin';
@@ -127,36 +130,63 @@ const Sidebar = () => {
   const canCreate = isTeacherOrSchool || isAdminOrSuperadmin;
 
   // Build navigation items based on role according to the spec:
-  // Student: Lessons, Profile
-  // Teacher/School: Lessons, Create, Explore, History, Studio, Profile, Settings
-  // Admin/Superadmin: Dashboard, Lessons, Create, Explore, History, Approvals, System, Profile, Settings
+  // Student: Dashboard, Lessons, Profile
+  // Teacher: Dashboard, Lessons, Create, Explore, History, Studio, Profile, Settings
+  // Principal: Dashboard, Lessons, Profile, Settings
+  // Admin/Superadmin: Dashboard (Content), Lessons, Create, Explore, History, Approvals, System, Profile, Settings
   const getNavItems = (): NavItem[] => {
     const items: NavItem[] = [];
 
-    // Dashboard - only for admin/superadmin (shown first)
-    if (isAdminOrSuperadmin) {
+    // LMS Dashboards - role-based
+    if (isStudent) {
+      items.push({ path: '/dashboard/student', label: 'Dashboard', icon: FaTachometerAlt });
+    } else if (isTeacher) {
+      items.push({ path: '/dashboard/teacher', label: 'Dashboard', icon: FaTachometerAlt });
+    } else if (isPrincipal) {
+      items.push({ path: '/dashboard/principal', label: 'Dashboard', icon: FaTachometerAlt });
+    } else if (isAdminOrSuperadmin) {
+      // Admin/Superadmin see content dashboard
       items.push({ path: '/studio/content', label: 'Dashboard', icon: FaTachometerAlt });
     }
 
     // Lessons - everyone can see
     items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
 
-    // Creator tools - teachers, schools, admin, superadmin
+    // Creator tools - teachers, schools, admin, superadmin (no Studio for teacher/principal/school)
     if (canCreate) {
       items.push({ path: '/main', label: 'Create', icon: FaFlask });
       items.push({ path: '/explore', label: 'Explore', icon: FaCubes });
       items.push({ path: '/history', label: 'History', icon: FaHistory });
-      
-      // Studio - only for teachers/schools (admin/superadmin see it as Dashboard)
-      if (isTeacherOrSchool) {
-        items.push({ path: '/studio/content', label: 'Studio', icon: FaCode });
-      }
+      // Studio / Chapter Editor - admin and superadmin only (no school)
+    }
+
+    // Teacher tools - approve students
+    if (isTeacher) {
+      items.push({ path: '/teacher/approvals', label: 'Student Approvals', icon: FaUserCheck });
+    }
+
+    // School administrator tools - approve teachers, manage classes
+    if (isSchool) {
+      items.push({ path: '/school/approvals', label: 'Teacher Approvals', icon: FaUserCheck });
+      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
     }
 
     // Admin tools - only for admin/superadmin
     if (isAdminOrSuperadmin) {
       items.push({ path: '/admin/approvals', label: 'Approvals', icon: FaUserCheck });
+      items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });
+      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/system-status', label: 'System', icon: FaServer });
+    }
+
+    // Superadmin only tools
+    if (isSuperadmin) {
+      items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
+    }
+
+    // Principal can also access class management
+    if (isPrincipal) {
+      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
     }
 
     return items;
@@ -169,6 +199,7 @@ const Sidebar = () => {
     switch (userRole) {
       case 'student': return FaGraduationCap;
       case 'teacher': return FaChalkboardTeacher;
+      case 'principal': return FaSchool;
       case 'school': return FaSchool;
       case 'admin': return FaShieldAlt;
       case 'superadmin': return FaCrown;
@@ -181,6 +212,7 @@ const Sidebar = () => {
     switch (userRole) {
       case 'student': return 'text-emerald-400';
       case 'teacher': return 'text-blue-400';
+      case 'principal': return 'text-indigo-400';
       case 'school': return 'text-purple-400';
       case 'admin': return 'text-amber-400';
       case 'superadmin': return 'text-rose-400';
@@ -192,6 +224,7 @@ const Sidebar = () => {
     switch (userRole) {
       case 'student': return 'bg-emerald-500/20';
       case 'teacher': return 'bg-blue-500/20';
+      case 'principal': return 'bg-indigo-500/20';
       case 'school': return 'bg-purple-500/20';
       case 'admin': return 'bg-amber-500/20';
       case 'superadmin': return 'bg-rose-500/20';
@@ -359,8 +392,8 @@ const Sidebar = () => {
               </Link>
             </li>
             
-            {/* Settings - only for creators */}
-            {canCreate && (
+            {/* Settings (Developer / API Keys) - admin and superadmin only */}
+            {isAdminOrSuperadmin && (
               <li>
                 <Link
                   to="/developer"
