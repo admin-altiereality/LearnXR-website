@@ -611,7 +611,7 @@ const Profile = () => {
             </button>
           )}
 
-          {(userRole === 'teacher' || userRole === 'school' || userRole === 'admin' || userRole === 'superadmin') && (
+          {(userRole === 'school' || userRole === 'admin' || userRole === 'superadmin') && (
             <button
               onClick={() => navigate('/studio/content')}
               className="p-5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/30 hover:border-purple-400/50 transition-all group text-left"

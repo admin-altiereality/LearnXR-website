@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { auth } from './firebase';
+import { productionLogger } from '../services/productionLogger';
 
 // Debug function to check auth state (can be called from browser console)
 if (typeof window !== 'undefined') {
@@ -75,8 +76,17 @@ const api = axios.create({
   validateStatus: (status: number) => status < 500 // Don't throw on 4xx errors, let us handle them
 });
 
+// Track request start time for duration calculation
+const requestStartTimes = new Map<string, number>();
+
 // Add request interceptor to include Firebase auth token
 api.interceptors.request.use(async (config) => {
+  const requestId = `${config.method}_${config.url}`;
+  requestStartTimes.set(requestId, Date.now());
+  
+  // Store requestId in config for response interceptor
+  (config as any).__requestId = requestId;
+  
   try {
     // Log request method to debug
     if (config.url?.includes('enhance')) {
@@ -205,12 +215,50 @@ api.interceptors.request.use(async (config) => {
 // Add response interceptor to log errors and handle 401s
 api.interceptors.response.use(
   (response) => {
+    const requestId = (response.config as any).__requestId || `${response.config.method}_${response.config.url}`;
+    const startTime = requestStartTimes.get(requestId);
+    const duration = startTime ? Date.now() - startTime : undefined;
+    requestStartTimes.delete(requestId);
+
+    const method = response.config.method?.toUpperCase() || 'GET';
+    const url = response.config.url || 'unknown';
+    const status = response.status;
+
+    // Enhanced console logging for API calls
     if (response.config.url?.includes('enhance')) {
-      console.log('✅ Response interceptor - Actual method used:', response.config.method?.toUpperCase(), 'Status:', response.status);
+      console.log(
+        `%c✅ API Response: ${method} ${url} - Status: ${status}${duration ? ` (${duration}ms)` : ''}`,
+        'color: #10b981; font-weight: bold;',
+        response.data
+      );
+    } else {
+      // Log all API calls to console for debugging (F12)
+      const logLevel = status >= 400 ? 'warn' : 'log';
+      const emoji = status >= 500 ? '❌' : status >= 400 ? '⚠️' : '✅';
+      const color = status >= 500 ? '#f87171' : status >= 400 ? '#fbbf24' : '#10b981';
+      
+      console[logLevel](
+        `%c${emoji} API: ${method} ${url} [${status}]${duration ? ` (${duration}ms)` : ''}`,
+        `color: ${color}; font-weight: bold;`,
+        response.data
+      );
     }
+
+    // Log successful API call to production logger
+    productionLogger.logApiCall(
+      url,
+      method,
+      status,
+      duration
+    );
+
     return response;
   },
   async (error) => {
+    const requestId = (error.config as any)?.__requestId || `${error.config?.method}_${error.config?.url}`;
+    const startTime = requestStartTimes.get(requestId);
+    const duration = startTime ? Date.now() - startTime : undefined;
+    requestStartTimes.delete(requestId);
     // Handle 401 errors - might need to refresh token
     if (error.response?.status === 401) {
       const url = error.config?.url || 'unknown';
@@ -236,15 +284,42 @@ api.interceptors.response.use(
       }
     }
     
-    if (error.config?.url?.includes('enhance')) {
-      console.error('❌ Response error - Method used:', error.config.method?.toUpperCase(), 'Status:', error.response?.status);
-      console.error('❌ Error details:', {
-        method: error.config?.method,
-        url: error.config?.url,
-        status: error.response?.status,
-        data: error.response?.data
-      });
+    const method = error.config?.method?.toUpperCase() || 'GET';
+    const url = error.config?.url || 'unknown';
+    const status = error.response?.status;
+
+    // Enhanced console logging for API errors
+    console.groupCollapsed(
+      `%c❌ API Error: ${method} ${url}${status ? ` [${status}]` : ''}${duration ? ` (${duration}ms)` : ''}`,
+      'color: #f87171; font-weight: bold; background: #fee2e2; padding: 2px 4px; border-radius: 2px;'
+    );
+    console.error('Method:', method);
+    console.error('URL:', url);
+    console.error('Status:', status || 'No response');
+    if (error.response?.data) {
+      console.error('Response data:', error.response.data);
     }
+    if (error.message) {
+      console.error('Error message:', error.message);
+    }
+    if (error.stack) {
+      console.error('Stack:', error.stack);
+    }
+    console.groupEnd();
+
+    // Log failed API call to production logger
+    const apiError = error.response 
+      ? new Error(`API Error: ${error.response.status} ${error.response.statusText}`)
+      : error;
+    
+    productionLogger.logApiCall(
+      url,
+      method,
+      status,
+      duration,
+      apiError
+    );
+
     return Promise.reject(error);
   }
 );

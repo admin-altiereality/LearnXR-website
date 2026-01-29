@@ -258,9 +258,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       const { user: newUser } = await createUserWithEmailAndPassword(auth, email, password);
       
-      // Determine approval status
-      const needsApproval = requiresApproval(role);
-      const approvalStatus: ApprovalStatus = needsApproval ? 'pending' : null;
+      // Approval status set only after onboarding; until then null so they don't appear in approval queue
+      const approvalStatus: ApprovalStatus = null;
       const now = new Date().toISOString();
       
       // Create user document with role in main users collection
@@ -330,9 +329,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       
       if (!userDoc.exists()) {
         // New user - use selected role or default to student
+        // Approval status set only after onboarding; until then null
         const userRole = role || selectedRole || 'student';
-        const needsApproval = requiresApproval(userRole);
-        const approvalStatus: ApprovalStatus = needsApproval ? 'pending' : null;
+        const approvalStatus: ApprovalStatus = null;
         const now = new Date().toISOString();
         
         const userData = {

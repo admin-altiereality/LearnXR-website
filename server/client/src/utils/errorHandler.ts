@@ -6,6 +6,7 @@
 
 import { getUserErrorMessage, getErrorAction, isErrorRetryable } from './errorMessages';
 import { isPermissionError, isRetryableError } from './permissionHelpers';
+import { productionLogger } from '../services/productionLogger';
 
 /**
  * Error classification
@@ -103,6 +104,7 @@ export function classifyError(error: any): ErrorClassification {
 export function logError(error: any, context?: string): void {
   const classification = classifyError(error);
   
+  // Log to console for immediate visibility
   console.error(`[Error${context ? `: ${context}` : ''}]`, {
     type: classification.type,
     code: classification.code,
@@ -110,6 +112,20 @@ export function logError(error: any, context?: string): void {
     technicalMessage: classification.technicalMessage,
     error: error,
   });
+
+  // Log to production logger for Firestore storage
+  const errorObj = error instanceof Error ? error : new Error(classification.technicalMessage);
+  productionLogger.error(
+    `Error: ${classification.userMessage}`,
+    context || 'error-handler',
+    errorObj,
+    {
+      type: classification.type,
+      code: classification.code,
+      canRetry: classification.canRetry,
+      requiresRole: classification.requiresRole,
+    }
+  );
 }
 
 /**

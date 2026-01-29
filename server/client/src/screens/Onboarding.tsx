@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, setDoc, serverTimestamp, query, where, getDocs, onSnapshot, arrayUnion } from 'firebase/firestore';
 import { 
   FaRocket, 
   FaArrowRight,
@@ -47,8 +47,10 @@ interface StudentOnboardingData {
   age: string;
   dateOfBirth: string;
   class: string;
+  classId: string; // Selected class ID
   curriculum: string;
   schoolName: string;
+  schoolId: string; // Selected school ID
   city: string;
   state: string;
   parentEmail: string;
@@ -63,6 +65,7 @@ interface StudentOnboardingData {
 // Teacher onboarding data
 interface TeacherOnboardingData {
   schoolName: string;
+  schoolId: string; // Selected school ID
   subjectsTaught: string[];
   experienceYears: string;
   qualifications: string;
@@ -115,6 +118,16 @@ const subjectOptions = [
   'Computer Science', 'Economics', 'Business Studies', 'Accountancy',
   'Physical Education', 'Art', 'Music', 'Other'
 ];
+
+/** Generate a unique 6-character uppercase alphanumeric school code */
+function generateSchoolCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 
 const experienceOptions = [
   { id: '0-2', label: '0-2 years' },
@@ -180,13 +193,30 @@ const Onboarding = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   
-  // Student form data
+  
+  // Teacher form data
+  const [teacherData, setTeacherData] = useState<TeacherOnboardingData>({
+    schoolName: '',
+    schoolId: '', // Store selected school ID
+    subjectsTaught: [],
+    experienceYears: '',
+    qualifications: '',
+    phoneNumber: '',
+    city: '',
+    state: '',
+    boardAffiliation: '',
+    classesHandled: [],
+  });
+
+  // Student form data - with class and school selection
   const [studentData, setStudentData] = useState<StudentOnboardingData>({
     age: '',
     dateOfBirth: '',
     class: '',
+    classId: '', // Store selected class ID
     curriculum: '',
     schoolName: '',
+    schoolId: '', // Store selected school ID
     city: '',
     state: '',
     parentEmail: '',
@@ -197,19 +227,21 @@ const Onboarding = () => {
     learningPreferences: [],
     languagePreference: 'english',
   });
-  
-  // Teacher form data
-  const [teacherData, setTeacherData] = useState<TeacherOnboardingData>({
-    schoolName: '',
-    subjectsTaught: [],
-    experienceYears: '',
-    qualifications: '',
-    phoneNumber: '',
-    city: '',
-    state: '',
-    boardAffiliation: '',
-    classesHandled: [],
-  });
+
+  // Approved schools and classes
+  const [approvedSchools, setApprovedSchools] = useState<any[]>([]);
+  const [schoolClasses, setSchoolClasses] = useState<any[]>([]);
+  const [loadingSchools, setLoadingSchools] = useState(true);
+  const [schoolsLoadError, setSchoolsLoadError] = useState<string | null>(null);
+  const [retrySchoolsKey, setRetrySchoolsKey] = useState(0);
+  // Teacher: unique school code input and verify state
+  const [schoolCodeInput, setSchoolCodeInput] = useState('');
+  const [schoolCodeError, setSchoolCodeError] = useState('');
+  const [schoolCodeVerifying, setSchoolCodeVerifying] = useState(false);
+  // Student: school code only (no dropdown, no class selection)
+  const [studentSchoolCodeInput, setStudentSchoolCodeInput] = useState('');
+  const [studentSchoolCodeError, setStudentSchoolCodeError] = useState('');
+  const [studentSchoolCodeVerifying, setStudentSchoolCodeVerifying] = useState(false);
   
   // School form data
   const [schoolData, setSchoolData] = useState<SchoolOnboardingData>({
@@ -273,12 +305,139 @@ const Onboarding = () => {
     checkOnboardingStatus();
   }, [user, profile, navigate, isSchoolRole]);
 
+  // Fetch approved schools for teacher onboarding only (student uses code-only lookup)
+  useEffect(() => {
+    if (!isTeacherRole) return;
+
+    setSchoolsLoadError(null);
+    const schoolsRef = collection(db, 'schools');
+    const approvedSchoolsQuery = query(
+      schoolsRef,
+      where('approvalStatus', '==', 'approved')
+    );
+
+    const unsubscribe = onSnapshot(approvedSchoolsQuery, (snapshot) => {
+      const schools: any[] = [];
+      snapshot.forEach((docSnapshot) => {
+        schools.push({
+          id: docSnapshot.id,
+          ...docSnapshot.data(),
+        });
+      });
+      setApprovedSchools(schools);
+      setLoadingSchools(false);
+      setSchoolsLoadError(null);
+    }, (error: unknown) => {
+      const msg = error instanceof Error ? error.message : 'Permission or network error';
+      console.error('Error fetching approved schools:', error);
+      setSchoolsLoadError(msg);
+      setLoadingSchools(false);
+    });
+
+    return () => unsubscribe();
+  }, [isTeacherRole, retrySchoolsKey]);
+
+  // Verify teacher's school code and associate with school
+  // Prefer client-side match from loaded list; fallback to direct query if list empty (e.g. load failed)
+  const handleVerifySchoolCode = async () => {
+    const code = schoolCodeInput.trim().toUpperCase().replace(/\s/g, '');
+    if (!code) {
+      setSchoolCodeError('Please enter your school code.');
+      return;
+    }
+    setSchoolCodeError('');
+    setSchoolCodeVerifying(true);
+    try {
+      const normalizeCode = (c: unknown) => String(c ?? '').trim().toUpperCase().replace(/\s/g, '');
+      let found = approvedSchools.find(
+        (s: { schoolCode?: unknown }) => normalizeCode(s.schoolCode) === code
+      );
+      if (!found) {
+        const schoolsRef = collection(db, 'schools');
+        const q = query(
+          schoolsRef,
+          where('approvalStatus', '==', 'approved'),
+          where('schoolCode', '==', code)
+        );
+        const snapshot = await getDocs(q);
+        if (!snapshot.empty) {
+          const doc = snapshot.docs[0];
+          found = { id: doc.id, ...doc.data() } as { id: string; name?: string; city?: string; state?: string; boardAffiliation?: string; schoolCode?: string };
+        }
+      }
+      if (!found) {
+        setSchoolCodeError(
+          'Invalid or unapproved school code. Get the code from your school admin.'
+        );
+        return;
+      }
+      const school = found as { id: string; name?: string; city?: string; state?: string; boardAffiliation?: string };
+      setTeacherData(prev => ({
+        ...prev,
+        schoolId: school.id,
+        schoolName: school.name || prev.schoolName,
+        city: school.city || prev.city,
+        state: school.state || prev.state,
+        boardAffiliation: school.boardAffiliation || prev.boardAffiliation,
+      }));
+      setSchoolCodeError('');
+      toast.success(`Associated with ${school.name || 'school'}`);
+    } catch (err: unknown) {
+      console.error('Error verifying school code:', err);
+      setSchoolCodeError('Could not verify school code. Please try again.');
+    } finally {
+      setSchoolCodeVerifying(false);
+    }
+  };
+
+  // Verify student's school code (code only; no dropdown, no class selection)
+  const handleVerifyStudentSchoolCode = async () => {
+    const code = studentSchoolCodeInput.trim().toUpperCase().replace(/\s/g, '');
+    if (!code) {
+      setStudentSchoolCodeError('Please enter your school code.');
+      return;
+    }
+    setStudentSchoolCodeError('');
+    setStudentSchoolCodeVerifying(true);
+    try {
+      const schoolsRef = collection(db, 'schools');
+      const q = query(
+        schoolsRef,
+        where('approvalStatus', '==', 'approved'),
+        where('schoolCode', '==', code)
+      );
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        setStudentSchoolCodeError('Invalid or unapproved school code. Get the code from your school.');
+        return;
+      }
+      const docSnap = snapshot.docs[0];
+      const school = { id: docSnap.id, ...docSnap.data() } as { id: string; name?: string; city?: string; state?: string };
+      setStudentData(prev => ({
+        ...prev,
+        schoolId: school.id,
+        schoolName: school.name || prev.schoolName,
+        city: school.city || prev.city,
+        state: school.state || prev.state,
+        classId: '',
+        class: '',
+      }));
+      setStudentSchoolCodeError('');
+      toast.success(`School: ${school.name || 'Verified'}`);
+    } catch (err: unknown) {
+      console.error('Error verifying school code:', err);
+      setStudentSchoolCodeError('Could not verify school code. Please try again.');
+    } finally {
+      setStudentSchoolCodeVerifying(false);
+    }
+  };
+
   const canProceed = () => {
     if (isStudentRole) {
       switch (step) {
         case 1: return studentData.age !== '';
-        case 2: return studentData.class !== '' && studentData.curriculum !== '';
-        case 3: return studentData.schoolName.trim() !== '';
+        case 2: return studentData.curriculum !== '';
+        case 3: return studentData.schoolId !== '';
         case 4: return studentData.learningPreferences.length > 0;
         case 5: // GDPR consent step
           if (isMinor) {
@@ -295,7 +454,7 @@ const Onboarding = () => {
     
     if (isTeacherRole) {
       switch (step) {
-        case 1: return teacherData.schoolName.trim() !== '' && teacherData.city.trim() !== '';
+        case 1: return teacherData.schoolId !== '' && teacherData.city.trim() !== '';
         case 2: return teacherData.subjectsTaught.length > 0 && teacherData.classesHandled.length > 0;
         case 3: return teacherData.experienceYears !== '' && teacherData.qualifications !== '';
         case 4: return teacherData.phoneNumber.trim().length >= 10;
@@ -342,12 +501,14 @@ const Onboarding = () => {
       if (isStudentRole) {
         updateData = {
           ...updateData,
-          // Student onboarding data
+          // Student onboarding data (school by code only; class assigned later by school/teacher)
           age: parseInt(studentData.age) || null,
           dateOfBirth: studentData.dateOfBirth || null,
-          class: studentData.class,
+          class: '',
           curriculum: studentData.curriculum,
           school: studentData.schoolName.trim(),
+          school_id: studentData.schoolId,
+          class_ids: [], // To be assigned by school/teacher on approval or in Class Management
           city: studentData.city || null,
           state: studentData.state || null,
           languagePreference: studentData.languagePreference,
@@ -360,6 +521,8 @@ const Onboarding = () => {
           gdprConsentAt: studentData.gdprConsent ? now : null,
           dataProcessingConsent: studentData.dataProcessingConsent,
           marketingConsent: studentData.marketingConsent,
+          // Set approval status to pending for students (they need teacher approval)
+          approvalStatus: 'pending',
         };
         console.log('✅ Student onboarding data prepared');
       }
@@ -369,6 +532,7 @@ const Onboarding = () => {
           ...updateData,
           // Teacher onboarding data
           schoolName: teacherData.schoolName,
+          school_id: teacherData.schoolId, // Store school_id
           subjectsTaught: teacherData.subjectsTaught,
           experienceYears: teacherData.experienceYears,
           qualifications: teacherData.qualifications,
@@ -377,6 +541,8 @@ const Onboarding = () => {
           state: teacherData.state,
           boardAffiliation: teacherData.boardAffiliation,
           classesHandled: teacherData.classesHandled,
+          // Set approval status to pending for teachers (they need admin approval)
+          approvalStatus: 'pending',
         };
         console.log('✅ Teacher onboarding data prepared');
       }
@@ -397,8 +563,37 @@ const Onboarding = () => {
           boardAffiliation: schoolData.boardAffiliation,
           establishedYear: schoolData.establishedYear,
           schoolType: schoolData.schoolType,
+          // Set approval status to pending for schools (they need admin approval)
+          approvalStatus: 'pending',
         };
         console.log('✅ School onboarding data prepared');
+
+        // Create school document in schools collection with unique school code
+        const schoolRef = doc(collection(db, 'schools'));
+        const schoolCode = generateSchoolCode();
+        await setDoc(schoolRef, {
+          name: schoolData.schoolName.trim(),
+          address: schoolData.address || '',
+          city: schoolData.city || '',
+          state: schoolData.state || '',
+          pincode: schoolData.pincode || '',
+          contactPerson: schoolData.contactPerson || '',
+          contactPhone: schoolData.contactPhone || '',
+          website: schoolData.website || '',
+          boardAffiliation: schoolData.boardAffiliation || '',
+          establishedYear: schoolData.establishedYear || '',
+          schoolType: schoolData.schoolType || '',
+          approvalStatus: 'pending',
+          schoolCode, // Unique code for teachers to associate (share with teachers after approval)
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdBy: user.uid,
+        });
+
+        // Store school_id in user profile
+        updateData.school_id = schoolRef.id;
+        updateData.managed_school_id = schoolRef.id; // School user manages their own school
+        console.log('✅ School document created in schools collection:', schoolRef.id);
       }
 
       // Update users collection with ALL data
@@ -407,10 +602,15 @@ const Onboarding = () => {
 
       toast.success("Welcome aboard! Your profile has been updated.");
       
-      if (requiresApproval(profile?.role || 'student') && profile?.approvalStatus !== 'approved') {
+      // All roles (student, teacher, school) need approval in hierarchical system
+      // Redirect to approval pending screen
+      const userRole = profile?.role || 'student';
+      if (requiresApproval(userRole)) {
+        // All roles need approval: students (teacher), teachers (school), schools (admin)
         navigate('/approval-pending');
       } else {
-        navigate(getDefaultPage(profile?.role || 'student'));
+        // Only admin/superadmin don't need approval
+        navigate(getDefaultPage(userRole));
       }
     } catch (error) {
       console.error('Error saving onboarding data:', error);
@@ -488,7 +688,7 @@ const Onboarding = () => {
           </motion.div>
         );
 
-      case 2: // Class & Curriculum
+      case 2: // Curriculum (Class selection moved to step 3 with school)
         return (
           <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
@@ -501,7 +701,7 @@ const Onboarding = () => {
             
             <div className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-3">Which class are you in? *</label>
+                <label className="block text-sm font-medium text-white/70 mb-3">Which class level are you in? (For reference)</label>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {classOptions.map((cls) => (
                     <button key={cls.id} type="button" onClick={() => setStudentData(prev => ({ ...prev, class: cls.id }))}
@@ -510,6 +710,7 @@ const Onboarding = () => {
                     </button>
                   ))}
                 </div>
+                <p className="text-xs text-white/40 mt-1">You'll select your actual class in the next step</p>
               </div>
               
               <div>
@@ -528,7 +729,7 @@ const Onboarding = () => {
           </motion.div>
         );
 
-      case 3: // School & Location
+      case 3: // School & Location (school by code only; no class selection)
         return (
           <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
@@ -536,16 +737,42 @@ const Onboarding = () => {
                 <FaSchool className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">School Information</h2>
-              <p className="text-white/50 text-sm">Help us connect you with your school community</p>
+              <p className="text-white/50 text-sm">Enter your school code to connect with your school. Your class will be assigned by your school.</p>
             </div>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">School Name *</label>
-                <input type="text" value={studentData.schoolName} 
-                  onChange={(e) => setStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
-                  placeholder="Enter your school name"
-                  className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-violet-400/60" />
+                <label className="block text-sm font-medium text-white/70 mb-2">School code *</label>
+                <p className="text-xs text-white/50 mb-2">Get the code from your school to join</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={studentSchoolCodeInput}
+                    onChange={(e) => {
+                      setStudentSchoolCodeInput(e.target.value.toUpperCase().slice(0, 10));
+                      setStudentSchoolCodeError('');
+                    }}
+                    placeholder="e.g. ABC123"
+                    className="flex-1 rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-violet-400/60 uppercase"
+                    maxLength={10}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifyStudentSchoolCode}
+                    disabled={studentSchoolCodeVerifying || !studentSchoolCodeInput.trim()}
+                    className="px-4 py-3 rounded-xl bg-violet-500/20 border border-violet-400/50 text-violet-300 font-medium hover:bg-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {studentSchoolCodeVerifying ? 'Verifying...' : 'Verify'}
+                  </button>
+                </div>
+                {studentSchoolCodeError && (
+                  <p className="text-xs text-red-400 mt-1">{studentSchoolCodeError}</p>
+                )}
+                {studentData.schoolId && (
+                  <p className="text-xs text-white/50 mt-1">
+                    Selected: {studentData.schoolName}
+                  </p>
+                )}
               </div>
               
               <div className="grid grid-cols-2 gap-4">
@@ -762,8 +989,9 @@ const Onboarding = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="text-white/50">Age</div><div className="text-white">{studentData.age} years</div>
-                  <div className="text-white/50">Class</div><div className="text-white">Class {studentData.class}</div>
-                  <div className="text-white/50">Curriculum</div><div className="text-white uppercase">{studentData.curriculum}</div>
+                  <div className="text-white/50">Class</div><div className="text-white">To be assigned by school</div>
+                  <div className="text-white/50">Curriculum</div><div className="text-white uppercase">{studentData.curriculum || 'Not selected'}</div>
+                  <div className="text-white/50">School</div><div className="text-white">{studentData.schoolName || 'Not selected'}</div>
                 </div>
               </div>
 
@@ -845,9 +1073,37 @@ const Onboarding = () => {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">School/Institution Name *</label>
-                <input type="text" value={teacherData.schoolName} onChange={(e) => setTeacherData(prev => ({ ...prev, schoolName: e.target.value }))}
-                  placeholder="Enter school name" className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-blue-400/60" />
+                <label className="block text-sm font-medium text-white/70 mb-2">School unique code *</label>
+                <p className="text-xs text-white/50 mb-2">Enter the unique code provided by your school to get associated</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={schoolCodeInput}
+                    onChange={(e) => {
+                      setSchoolCodeInput(e.target.value.toUpperCase().slice(0, 10));
+                      setSchoolCodeError('');
+                    }}
+                    placeholder="e.g. ABC123"
+                    className="flex-1 rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-blue-400/60 uppercase"
+                    maxLength={10}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifySchoolCode}
+                    disabled={schoolCodeVerifying || !schoolCodeInput.trim()}
+                    className="px-4 py-3 rounded-xl bg-blue-500/20 border border-blue-400/50 text-blue-300 font-medium hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {schoolCodeVerifying ? 'Verifying...' : 'Verify'}
+                  </button>
+                </div>
+                {schoolCodeError && (
+                  <p className="text-xs text-red-400 mt-1">{schoolCodeError}</p>
+                )}
+                {teacherData.schoolId && (
+                  <p className="text-xs text-white/50 mt-1">
+                    Selected: {teacherData.schoolName}
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1238,8 +1494,14 @@ const Onboarding = () => {
                       </>
                     ) : (
                       <>
-                        <span className="relative">Start Learning</span>
-                        <FaRocket className="relative" />
+                        <span className="relative">
+                          {isSchoolRole ? "Let's Onboard" : isTeacherRole ? "Complete Onboarding" : "Start Learning"}
+                        </span>
+                        {isSchoolRole || isTeacherRole ? (
+                          <FaCheckCircle className="relative" />
+                        ) : (
+                          <FaRocket className="relative" />
+                        )}
                       </>
                     )}
                   </motion.button>

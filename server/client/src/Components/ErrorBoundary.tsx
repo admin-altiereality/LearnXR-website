@@ -6,6 +6,7 @@
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { productionLogger } from '../services/productionLogger';
 
 interface Props {
   children: ReactNode;
@@ -43,6 +44,17 @@ export class ErrorBoundary extends Component<Props, State> {
       error,
       errorInfo,
     });
+
+    // Log to production logger
+    productionLogger.critical(
+      `ErrorBoundary: ${error.message}`,
+      'error-boundary',
+      error,
+      {
+        componentStack: errorInfo.componentStack,
+        errorName: error.name,
+      }
+    );
 
     if (this.props.onError) {
       this.props.onError(error, errorInfo);

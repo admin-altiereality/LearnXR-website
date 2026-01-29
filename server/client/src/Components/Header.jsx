@@ -236,6 +236,7 @@ const Header = () => {
                         </svg>
                       }
                     />
+                    {['school', 'admin', 'superadmin'].includes(profile?.role) && (
                     <NavLink
                       to="/studio/content"
                       label="Studio"
@@ -247,6 +248,7 @@ const Header = () => {
                         </svg>
                       }
                     />
+                    )}
                     {/* Pricing removed */}
                   </div>
                 )}
@@ -397,6 +399,7 @@ const Header = () => {
                               </svg>
                               <span>Help & Support</span>
                             </Link>
+                            {['school', 'admin', 'superadmin'].includes(profile?.role) && (
                             <Link
                               to="/studio/content"
                               className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:bg-white/[0.05] hover:text-white transition-colors"
@@ -407,6 +410,7 @@ const Header = () => {
                               </svg>
                               <span>Content Studio</span>
                             </Link>
+                            )}
                           </div>
 
                           {/* Logout */}
@@ -592,6 +596,7 @@ const Header = () => {
                       Create
                     </Link>
 
+                    {['school', 'admin', 'superadmin'].includes(profile?.role) && (
                     <Link
                       to="/studio/content"
                       className={` 
@@ -608,6 +613,7 @@ const Header = () => {
                       </svg>
                       Content Studio
                     </Link>
+                    )}
 
                     {/* Pricing removed */}
 

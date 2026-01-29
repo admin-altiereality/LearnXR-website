@@ -98,7 +98,7 @@ export const Signup = () => {
         return;
       }
       
-      if (requiresApproval(profile.role) && profile.approvalStatus !== 'approved') {
+      if (requiresApproval(profile.role) && profile.approvalStatus === 'pending') {
         navigate('/approval-pending');
         return;
       }
