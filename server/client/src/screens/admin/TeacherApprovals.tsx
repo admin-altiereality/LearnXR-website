@@ -1,10 +1,15 @@
 /**
- * Teacher Approvals Page
+ * Student Approvals Page
  * 
  * Allows teachers to approve students in their classes
+ * Allows principals to approve students in their school
+ * 
+ * Filtering:
+ * - Teachers: Filter by school_id matching, then by class_ids intersection
+ * - Principals: Filter by school_id matching (managed_school_id)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   collection, 
@@ -13,7 +18,8 @@ import {
   getDocs, 
   doc, 
   updateDoc,
-  onSnapshot
+  onSnapshot,
+  getDoc
 } from 'firebase/firestore';
 import { 
   FaUserCheck, 
@@ -26,20 +32,24 @@ import {
   FaSpinner,
   FaClock,
   FaSchool,
-  FaBook
+  FaBook,
+  FaHashtag
 } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../config/firebase';
 import { 
   canApproveUser,
   UserProfile,
-  ROLE_DISPLAY_NAMES,
-  ROLE_COLORS
 } from '../../utils/rbac';
 import { toast } from 'react-toastify';
+import type { School, Class } from '../../types/lms';
+import { getSchoolById } from '../../services/schoolManagementService';
+import { assignStudentToClass } from '../../services/classManagementService';
 
 interface PendingStudent extends UserProfile {
   id: string;
+  schoolCode?: string; // School code for display
+  className?: string; // Class name for display
 }
 
 const TeacherApprovals = () => {
@@ -50,106 +60,463 @@ const TeacherApprovals = () => {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'pending' | 'approved'>('pending');
+  const [schoolsCache, setSchoolsCache] = useState<Map<string, School>>(new Map());
+  const [classesCache, setClassesCache] = useState<Map<string, Class>>(new Map());
 
-  // Check if user is a teacher
+  // Check if user is a teacher or principal
   useEffect(() => {
-    if (profile && profile.role !== 'teacher') {
-      toast.error('Only teachers can access this page');
+    if (profile && profile.role !== 'teacher' && profile.role !== 'principal') {
+      toast.error('Only teachers and principals can access this page');
       return;
     }
   }, [profile]);
 
-  // Fetch pending students in teacher's classes
+  // Fetch school and class data for display
   useEffect(() => {
-    if (!profile || profile.role !== 'teacher' || !profile.managed_class_ids) {
-      setLoading(false);
+    if (!profile || (profile.role !== 'teacher' && profile.role !== 'principal')) {
       return;
     }
 
-    const teacherClassIds = profile.managed_class_ids;
-    
+    const fetchSchoolAndClassData = async () => {
+      const schoolsMap = new Map<string, School>();
+      const classesMap = new Map<string, Class>();
+
+      // Get teacher's/principal's school_id
+      const schoolId = profile.role === 'teacher' 
+        ? profile.school_id 
+        : profile.managed_school_id;
+
+      if (schoolId) {
+        // Fetch school to get school code
+        const school = await getSchoolById(schoolId);
+        if (school) {
+          schoolsMap.set(schoolId, school);
+        }
+      }
+
+      // For teachers, fetch their classes
+      if (profile.role === 'teacher' && profile.managed_class_ids) {
+        let firstClassSchoolId: string | null = null;
+        
+        for (const classId of profile.managed_class_ids) {
+          try {
+            const classDoc = await getDoc(doc(db, 'classes', classId));
+            if (classDoc.exists()) {
+              const classData = { id: classDoc.id, ...classDoc.data() } as Class;
+              classesMap.set(classId, classData);
+              
+              // Store first class's school_id for auto-assignment if needed
+              if (!firstClassSchoolId && classData.school_id) {
+                firstClassSchoolId = classData.school_id;
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching class ${classId}:`, error);
+          }
+        }
+        
+        // Auto-assign school_id if teacher is missing it but has classes
+        if (!profile.school_id && firstClassSchoolId && profile.uid) {
+          try {
+            console.log('🔧 TeacherApprovals: Auto-assigning school_id from class', {
+              teacherId: profile.uid,
+              schoolId: firstClassSchoolId,
+            });
+            await updateDoc(doc(db, 'users', profile.uid), {
+              school_id: firstClassSchoolId,
+              updatedAt: new Date().toISOString(),
+            });
+            console.log('✅ TeacherApprovals: Successfully assigned school_id to teacher');
+            // Note: The profile will update via AuthContext listener
+          } catch (error: any) {
+            console.error('❌ TeacherApprovals: Error auto-assigning school_id', {
+              error,
+              errorCode: error.code,
+              errorMessage: error.message,
+            });
+          }
+        }
+      }
+
+      setSchoolsCache(schoolsMap);
+      setClassesCache(classesMap);
+    };
+
+    fetchSchoolAndClassData();
+  }, [profile]);
+
+  // Helper function to filter and enrich students with display data
+  // NOTE: For pending students, we don't filter by class_ids (they don't have classes yet)
+  // For approved students, we can optionally filter by class_ids if needed
+  const filterStudents = (students: UserProfile[], isPending: boolean = false): PendingStudent[] => {
+    if (!profile) return [];
+
+    const filtered: PendingStudent[] = [];
+
+    for (const student of students) {
+      // School ID check (already filtered at DB level, but verify for safety)
+      if (profile.role === 'teacher') {
+        const teacherSchoolId = profile.school_id;
+        const studentSchoolId = student.school_id;
+        if (!teacherSchoolId || !studentSchoolId || teacherSchoolId !== studentSchoolId) {
+          continue; // Skip if not in same school
+        }
+        
+        // For PENDING students: Don't filter by class_ids (they don't have classes yet)
+        // Teachers can approve any pending student in their school
+        // For APPROVED students: Only show students where this teacher is the class teacher
+        if (!isPending) {
+          const studentClassIds = student.class_ids || [];
+          if (studentClassIds.length === 0) {
+            continue; // Skip students without classes
+          }
+          
+          // Check if teacher is the class_teacher_id for any of student's classes
+          let isClassTeacher = false;
+          for (const classId of studentClassIds) {
+            const classData = classesCache.get(classId);
+            if (classData && classData.class_teacher_id === profile.uid) {
+              isClassTeacher = true;
+              break;
+            }
+          }
+          
+          if (!isClassTeacher) {
+            continue; // Skip if teacher is not the class teacher for this student
+          }
+        }
+      }
+
+      // For principals: check school_id match (already filtered at DB level)
+      if (profile.role === 'principal') {
+        const principalSchoolId = profile.managed_school_id;
+        const studentSchoolId = student.school_id;
+        if (!principalSchoolId || !studentSchoolId || principalSchoolId !== studentSchoolId) {
+          continue; // Skip if not in same school
+        }
+      }
+
+      // Get school code and class name for display
+      const studentSchoolId = student.school_id;
+      const school = studentSchoolId ? schoolsCache.get(studentSchoolId) : null;
+      const schoolCode = school?.schoolCode || 'N/A';
+
+      // Get class name
+      let className = student.class || 'Not Assigned';
+      if (student.class_ids && student.class_ids.length > 0) {
+        const firstClassId = student.class_ids[0];
+        const classData = classesCache.get(firstClassId);
+        if (classData) {
+          className = classData.class_name;
+        }
+      }
+
+      filtered.push({
+        ...student,
+        id: (student as any).id || student.uid,
+        schoolCode,
+        className,
+      } as PendingStudent);
+    }
+
+    return filtered;
+  };
+
+  // Helper function to set up the pending students query
+  const setupPendingStudentsQuery = (schoolId: string) => {
+    if (!profile) return null;
+
+    console.log('🔍 TeacherApprovals: Fetching students for', {
+      role: profile.role,
+      schoolId,
+      teacherClassIds: profile.role === 'teacher' ? profile.managed_class_ids : undefined,
+      profileSchoolId: profile.school_id,
+      profileManagedSchoolId: profile.managed_school_id,
+    });
+
     const usersRef = collection(db, 'users');
+    
+    // Query pending students filtered by school_id at database level
     const pendingQuery = query(
       usersRef,
       where('role', '==', 'student'),
+      where('school_id', '==', schoolId),
       where('approvalStatus', '==', 'pending')
     );
 
-    const unsubscribe = onSnapshot(pendingQuery, (snapshot) => {
-      const students: PendingStudent[] = [];
+    const unsubscribe = onSnapshot(pendingQuery, async (snapshot) => {
+      const allStudents: UserProfile[] = [];
       
       snapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data() as UserProfile;
-        const studentClassIds = data.class_ids || [];
-        
-        // Check if student is in any of teacher's classes
-        const isInTeacherClass = teacherClassIds.some(classId => 
-          studentClassIds.includes(classId)
-        );
-        
-        if (isInTeacherClass && canApproveUser(profile, data)) {
-          students.push({
-            id: docSnapshot.id,
-            ...data,
-          } as PendingStudent);
-        }
+        allStudents.push({
+          ...data,
+          uid: docSnapshot.id,
+          id: docSnapshot.id,
+        } as any);
       });
 
-      setPendingStudents(students);
+      console.log('🔍 TeacherApprovals: Raw query results', {
+        totalFromDB: allStudents.length,
+        schoolId,
+        students: allStudents.map(s => ({
+          uid: s.uid,
+          name: s.name || s.email,
+          school_id: s.school_id,
+          approvalStatus: s.approvalStatus,
+          class_ids: s.class_ids,
+        })),
+      });
+
+      // For pending students: Don't filter by class_ids (they don't have classes yet)
+      // School_id already filtered at DB level
+      const filtered = filterStudents(allStudents, true); // true = isPending
+
+      console.log('🔍 TeacherApprovals: Filtered pending students', {
+        totalFromDB: allStudents.length,
+        filtered: filtered.length,
+        schoolId,
+        role: profile.role,
+        teacherClassIds: profile.role === 'teacher' ? profile.managed_class_ids : undefined,
+        filteredStudents: filtered.map(s => ({
+          id: s.id || s.uid,
+          name: s.name || s.email,
+          school_id: s.school_id,
+        })),
+      });
+
+      if (allStudents.length > 0 && filtered.length === 0) {
+        console.warn('⚠️ TeacherApprovals: Students found but filtered out', {
+          totalFromDB: allStudents.length,
+          schoolId,
+          role: profile.role,
+        });
+      }
+
+      setPendingStudents(filtered);
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching pending students:', error);
+      console.error('❌ TeacherApprovals: Error fetching pending students', {
+        error,
+        errorCode: error.code,
+        errorMessage: error.message,
+        schoolId,
+        role: profile.role,
+      });
+      toast.error(`Failed to load pending students: ${error.message || 'Unknown error'}`);
       setLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [profile]);
+    return unsubscribe;
+  };
 
-  // Fetch approved students
+  // Fetch pending students
   useEffect(() => {
-    if (!profile || profile.role !== 'teacher' || !profile.managed_class_ids) {
+    if (!profile || (profile.role !== 'teacher' && profile.role !== 'principal')) {
+      setLoading(false);
       return;
     }
 
-    const teacherClassIds = profile.managed_class_ids;
-    
+    // Get the school_id to filter by - use the most reliable source
+    let schoolId = profile.role === 'teacher' 
+      ? (profile.school_id || profile.managed_school_id)
+      : profile.managed_school_id;
+
+    // For teachers: if school_id is missing but they have classes, fetch it directly from a class
+    if (!schoolId && profile.role === 'teacher' && profile.managed_class_ids && profile.managed_class_ids.length > 0) {
+      // First check cache
+      const firstClass = Array.from(classesCache.values())[0];
+      if (firstClass?.school_id) {
+        schoolId = firstClass.school_id;
+        console.log('🔧 TeacherApprovals: Using school_id from class cache', {
+          schoolId,
+          classId: firstClass.id,
+        });
+      } else {
+        // If not in cache, fetch directly from Firestore
+        const fetchSchoolIdFromClass = async () => {
+          try {
+            const firstClassId = profile.managed_class_ids[0];
+            const classDoc = await getDoc(doc(db, 'classes', firstClassId));
+            if (classDoc.exists()) {
+              const classData = classDoc.data();
+              if (classData.school_id) {
+                const fetchedSchoolId = classData.school_id;
+                console.log('🔧 TeacherApprovals: Fetched school_id directly from class', {
+                  schoolId: fetchedSchoolId,
+                  classId: firstClassId,
+                });
+                
+                // Auto-assign to profile if missing
+                if (!profile.school_id && profile.uid) {
+                  await updateDoc(doc(db, 'users', profile.uid), {
+                    school_id: fetchedSchoolId,
+                    updatedAt: new Date().toISOString(),
+                  });
+                  console.log('✅ TeacherApprovals: Auto-assigned school_id to teacher profile');
+                }
+                
+                // Set up the query immediately with the fetched school_id
+                const unsubscribe = setupPendingStudentsQuery(fetchedSchoolId);
+                if (unsubscribe) {
+                  return () => unsubscribe();
+                }
+              } else {
+                console.warn('⚠️ TeacherApprovals: Class found but no school_id', {
+                  classId: firstClassId,
+                });
+                setLoading(false);
+              }
+            } else {
+              console.warn('⚠️ TeacherApprovals: Class not found', {
+                classId: firstClassId,
+              });
+              setLoading(false);
+            }
+          } catch (error: any) {
+            console.error('❌ TeacherApprovals: Error fetching school_id from class', {
+              error,
+              errorCode: error.code,
+              errorMessage: error.message,
+            });
+            setLoading(false);
+          }
+          return undefined;
+        };
+        
+        // Note: We can't return from an async function in useEffect, so we'll set up the query here
+        // The async function will handle the query setup
+        fetchSchoolIdFromClass();
+        return; // Exit early, will continue in fetchSchoolIdFromClass
+      }
+    }
+
+    if (!schoolId) {
+      console.warn('⚠️ TeacherApprovals: No school_id found for', profile.role, {
+        role: profile.role,
+        hasSchoolId: !!profile.school_id,
+        hasManagedSchoolId: !!profile.managed_school_id,
+        hasClasses: profile.role === 'teacher' ? !!profile.managed_class_ids?.length : undefined,
+        profileUid: profile.uid,
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Set up the student query
+    const unsubscribe = setupPendingStudentsQuery(schoolId);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [profile, schoolsCache, classesCache]);
+
+  // Fetch approved students
+  useEffect(() => {
+    if (!profile || (profile.role !== 'teacher' && profile.role !== 'principal')) {
+      return;
+    }
+
+    const schoolId = profile.role === 'teacher' 
+      ? profile.school_id 
+      : profile.managed_school_id;
+
+    if (!schoolId) {
+      return;
+    }
+
     const usersRef = collection(db, 'users');
     const approvedQuery = query(
       usersRef,
       where('role', '==', 'student'),
+      where('school_id', '==', schoolId),
       where('approvalStatus', '==', 'approved')
     );
 
-    const unsubscribe = onSnapshot(approvedQuery, (snapshot) => {
-      const students: PendingStudent[] = [];
+    const unsubscribe = onSnapshot(approvedQuery, async (snapshot) => {
+      const allStudents: UserProfile[] = [];
       
       snapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data() as UserProfile;
-        const studentClassIds = data.class_ids || [];
-        
-        const isInTeacherClass = teacherClassIds.some(classId => 
-          studentClassIds.includes(classId)
-        );
-        
-        if (isInTeacherClass && canApproveUser(profile, data)) {
-          students.push({
-            id: docSnapshot.id,
-            ...data,
-          } as PendingStudent);
-        }
+        allStudents.push({
+          ...data,
+          uid: docSnapshot.id,
+          id: docSnapshot.id,
+        } as any);
       });
 
-      setApprovedStudents(students);
+      // For approved students: School_id already filtered at DB level
+      // Optionally filter by class_ids if needed (currently showing all approved students in school)
+      const filtered = filterStudents(allStudents, false); // false = not pending
+      
+      console.log('🔍 TeacherApprovals: Approved students', {
+        total: allStudents.length,
+        filtered: filtered.length,
+        schoolId,
+      });
+      
+      setApprovedStudents(filtered);
     }, (error) => {
       console.error('Error fetching approved students:', error);
     });
 
     return () => unsubscribe();
-  }, [profile]);
+  }, [profile, schoolsCache, classesCache]);
 
   const handleApprove = async (studentId: string) => {
-    if (!profile || !canApproveUser(profile, { role: 'student' } as UserProfile)) {
-      toast.error('You do not have permission to approve this student');
+    if (!profile) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    // Verify we can approve this student
+    const student = pendingStudents.find(s => s.id === studentId || s.uid === studentId);
+    if (!student) {
+      console.error('❌ TeacherApprovals: Student not found', {
+        studentId,
+        pendingStudentsIds: pendingStudents.map(s => s.id || s.uid),
+      });
+      toast.error('Student not found in pending list');
+      return;
+    }
+
+    // Check permission with detailed logging
+    const canApprove = canApproveUser(profile, student);
+    
+    // Additional check: For approved students (with classes), verify teacher is class teacher
+    if (profile.role === 'teacher' && student.approvalStatus !== 'pending' && student.class_ids && student.class_ids.length > 0) {
+      let isClassTeacher = false;
+      for (const classId of student.class_ids) {
+        const classData = classesCache.get(classId);
+        if (classData && classData.class_teacher_id === profile.uid) {
+          isClassTeacher = true;
+          break;
+        }
+      }
+      
+      if (!isClassTeacher) {
+        toast.error('Only the class teacher can approve students in this class');
+        return;
+      }
+    }
+    
+    console.log('🔍 TeacherApprovals: Checking approval permission', {
+      studentId,
+      studentName: student.name || student.email,
+      studentSchoolId: student.school_id,
+      approverRole: profile.role,
+      approverSchoolId: profile.role === 'teacher' ? profile.school_id : profile.managed_school_id,
+      canApprove,
+      studentApprovalStatus: student.approvalStatus,
+    });
+
+    if (!canApprove) {
+      console.warn('⚠️ TeacherApprovals: Permission denied', {
+        studentId,
+        approverRole: profile.role,
+        studentSchoolId: student.school_id,
+        approverSchoolId: profile.role === 'teacher' ? profile.school_id : profile.managed_school_id,
+      });
+      toast.error('You do not have permission to approve this student. Check that the student is in your school.');
       return;
     }
 
@@ -157,24 +524,152 @@ const TeacherApprovals = () => {
     try {
       const now = new Date().toISOString();
       const userRef = doc(db, 'users', studentId);
-      await updateDoc(userRef, {
+      
+      // Get the approver's school_id to ensure student has correct school_id
+      const approverSchoolId = profile.role === 'teacher' 
+        ? profile.school_id 
+        : profile.managed_school_id;
+      
+      // Prepare update data - ensure school_id is preserved or set correctly
+      const updateData: Record<string, unknown> = {
         approvalStatus: 'approved',
         approvedBy: profile.uid,
         approvedAt: now,
         updatedAt: now,
+      };
+      
+      // If student doesn't have school_id, set it from approver's school
+      // If student has school_id but it doesn't match approver, update it
+      if (!student.school_id || (approverSchoolId && student.school_id !== approverSchoolId)) {
+        if (approverSchoolId) {
+          updateData.school_id = approverSchoolId;
+          console.log('🔧 TeacherApprovals: Setting/updating student school_id', {
+            studentId,
+            oldSchoolId: student.school_id,
+            newSchoolId: approverSchoolId,
+          });
+        } else {
+          console.warn('⚠️ TeacherApprovals: Approver missing school_id, preserving student school_id', {
+            studentId,
+            studentSchoolId: student.school_id,
+            approverRole: profile.role,
+          });
+        }
+      }
+      
+      console.log('🔍 TeacherApprovals: Approving student', {
+        studentId,
+        studentName: student.name || student.email,
+        approverUid: profile.uid,
+        approverRole: profile.role,
+        schoolId: updateData.school_id || student.school_id,
       });
 
-      toast.success('Student approved successfully');
+      await updateDoc(userRef, updateData);
+
+      console.log('✅ TeacherApprovals: Student approved successfully', { studentId });
+
+      // If approver is a teacher, assign student to teacher's class
+      if (profile.role === 'teacher' && profile.managed_class_ids && profile.managed_class_ids.length > 0) {
+        try {
+          // Find the class where this teacher is the class_teacher_id, or use the first class
+          let targetClassId: string | null = null;
+          
+          // First, try to find a class where teacher is the class_teacher_id
+          for (const classId of profile.managed_class_ids) {
+            const classData = classesCache.get(classId);
+            if (classData && classData.class_teacher_id === profile.uid) {
+              targetClassId = classId;
+              break;
+            }
+          }
+          
+          // If no class found where teacher is class_teacher_id, use the first class
+          if (!targetClassId) {
+            targetClassId = profile.managed_class_ids[0];
+          }
+          
+          if (targetClassId) {
+            console.log('🔧 TeacherApprovals: Assigning student to teacher\'s class', {
+              studentId,
+              classId: targetClassId,
+              teacherUid: profile.uid,
+            });
+            
+            // Assign student to class (this updates both class.student_ids and user.class_ids)
+            const assigned = await assignStudentToClass(profile, studentId, targetClassId);
+            
+            if (assigned) {
+              console.log('✅ TeacherApprovals: Student assigned to class successfully', {
+                studentId,
+                classId: targetClassId,
+              });
+              toast.success('Student approved and assigned to your class successfully');
+            } else {
+              console.warn('⚠️ TeacherApprovals: Failed to assign student to class', {
+                studentId,
+                classId: targetClassId,
+              });
+              toast.success('Student approved successfully (class assignment may have failed)');
+            }
+          } else {
+            console.warn('⚠️ TeacherApprovals: No class found to assign student', {
+              studentId,
+              teacherManagedClasses: profile.managed_class_ids,
+            });
+            toast.success('Student approved successfully');
+          }
+        } catch (classAssignError: any) {
+          console.error('❌ TeacherApprovals: Error assigning student to class', {
+            error: classAssignError,
+            studentId,
+            errorCode: classAssignError.code,
+            errorMessage: classAssignError.message,
+          });
+          // Don't fail the approval if class assignment fails - student is already approved
+          toast.success('Student approved successfully (class assignment failed)');
+        }
+      } else {
+        // For principals or teachers without classes, just show success
+        toast.success('Student approved successfully');
+      }
     } catch (error: any) {
-      console.error('Error approving student:', error);
-      toast.error('Failed to approve student: ' + error.message);
+      console.error('❌ TeacherApprovals: Error approving student', {
+        error,
+        studentId,
+        errorCode: error.code,
+        errorMessage: error.message,
+        errorStack: error.stack,
+      });
+      toast.error(`Failed to approve student: ${error.message || 'Unknown error'}`);
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleReject = async (studentId: string) => {
-    if (!profile || !canApproveUser(profile, { role: 'student' } as UserProfile)) {
+    if (!profile) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    // Verify we can approve this student - check both id and uid
+    const student = pendingStudents.find(s => (s.id === studentId) || (s.uid === studentId));
+    if (!student) {
+      console.error('❌ TeacherApprovals: Student not found for rejection', {
+        studentId,
+        pendingStudentsIds: pendingStudents.map(s => ({ id: s.id, uid: s.uid })),
+      });
+      toast.error('Student not found in pending list');
+      return;
+    }
+
+    const canReject = canApproveUser(profile, student);
+    if (!canReject) {
+      console.warn('⚠️ TeacherApprovals: Permission denied for rejection', {
+        studentId,
+        approverRole: profile.role,
+      });
       toast.error('You do not have permission to reject this student');
       return;
     }
@@ -199,21 +694,31 @@ const TeacherApprovals = () => {
     }
   };
 
-  const filteredPending = pendingStudents.filter(student =>
-    student.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    student.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredPending = useMemo(() => {
+    return pendingStudents.filter(student =>
+      student.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.schoolCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.className?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [pendingStudents, searchQuery]);
 
-  const filteredApproved = approvedStudents.filter(student =>
-    student.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    student.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredApproved = useMemo(() => {
+    return approvedStudents.filter(student =>
+      student.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.schoolCode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      student.className?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [approvedStudents, searchQuery]);
 
-  if (profile?.role !== 'teacher') {
+  if (profile?.role !== 'teacher' && profile?.role !== 'principal') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
         <div className="text-center">
-          <p className="text-white">Only teachers can access this page.</p>
+          <p className="text-white text-lg mb-2">Access Denied</p>
+          <p className="text-slate-400">Only teachers and principals can access this page.</p>
+          <p className="text-slate-500 text-sm mt-2">Your role: {profile?.role || 'Unknown'}</p>
         </div>
       </div>
     );
@@ -223,8 +728,55 @@ const TeacherApprovals = () => {
     <div className="min-h-screen bg-[#0a0f1a] p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Student Approvals</h1>
-          <p className="text-slate-400">Approve students in your classes</p>
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">Student Approvals</h1>
+              <p className="text-slate-400">
+                {profile?.role === 'teacher' 
+                  ? 'Approve students in your school' 
+                  : 'Approve students in your school'}
+              </p>
+            </div>
+            {pendingStudents.length > 0 && (
+              <div className="px-4 py-2 bg-amber-500/20 border border-amber-500/50 rounded-lg">
+                <p className="text-amber-300 font-semibold">
+                  {pendingStudents.length} Pending Approval{pendingStudents.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="bg-slate-800/50 rounded-lg p-3 mt-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+              {profile?.role === 'teacher' && (
+                <>
+                  <div>
+                    <span className="text-slate-400">School ID: </span>
+                    <span className="text-white font-mono">{profile.school_id || '❌ Not Set'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Classes Assigned: </span>
+                    <span className="text-white">{profile.managed_class_ids?.length || 0}</span>
+                  </div>
+                </>
+              )}
+              {profile?.role === 'principal' && (
+                <div>
+                  <span className="text-slate-400">School ID: </span>
+                  <span className="text-white font-mono">{profile.managed_school_id || '❌ Not Set'}</span>
+                </div>
+              )}
+            </div>
+            {!profile?.school_id && profile?.role === 'teacher' && (
+              <p className="text-amber-400 text-xs mt-2">
+                ⚠️ Warning: You don't have a school_id set. Contact your administrator.
+              </p>
+            )}
+            {!profile?.managed_school_id && profile?.role === 'principal' && (
+              <p className="text-amber-400 text-xs mt-2">
+                ⚠️ Warning: You don't have a managed_school_id set. Contact your administrator.
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -233,7 +785,7 @@ const TeacherApprovals = () => {
             <FaSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search students..."
+              placeholder="Search by name, email, school code, or class..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
@@ -275,7 +827,39 @@ const TeacherApprovals = () => {
           filteredPending.length === 0 ? (
             <div className="text-center py-12">
               <FaUserGraduate className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400">No pending students in your classes</p>
+              <p className="text-slate-400 text-lg mb-2">
+                {profile?.role === 'teacher' 
+                  ? 'No pending students found' 
+                  : 'No pending students in your school'}
+              </p>
+              <p className="text-slate-500 text-sm mb-4">
+                {profile?.role === 'teacher' 
+                  ? 'Students who join your school will appear here for approval.' 
+                  : 'Students who join your school will appear here for approval.'}
+              </p>
+              <div className="bg-slate-800/50 rounded-lg p-4 max-w-md mx-auto text-left">
+                <p className="text-slate-300 text-sm font-semibold mb-2">Troubleshooting:</p>
+                <ul className="text-slate-400 text-xs space-y-1 list-disc list-inside">
+                  {profile?.role === 'teacher' && (
+                    <>
+                      <li>Check that you have a school_id: {profile.school_id || '❌ Missing'}</li>
+                      <li>Check browser console (F12) for debug logs</li>
+                      <li>Verify students have completed onboarding</li>
+                      <li>Verify students have approvalStatus: 'pending'</li>
+                      <li>Verify students have the same school_id as you</li>
+                    </>
+                  )}
+                  {profile?.role === 'principal' && (
+                    <>
+                      <li>Check that you have a managed_school_id: {profile.managed_school_id || '❌ Missing'}</li>
+                      <li>Check browser console (F12) for debug logs</li>
+                      <li>Verify students have completed onboarding</li>
+                      <li>Verify students have approvalStatus: 'pending'</li>
+                      <li>Verify students have the same school_id as your managed school</li>
+                    </>
+                  )}
+                </ul>
+              </div>
             </div>
           ) : (
             <div className="space-y-4">
@@ -287,37 +871,67 @@ const TeacherApprovals = () => {
                   className="bg-slate-900 rounded-lg border border-slate-700 p-6"
                 >
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-1">
                       <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
                         <FaUserGraduate className="text-emerald-400" />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h3 className="text-white font-semibold">{student.name || student.email}</h3>
                         <p className="text-slate-400 text-sm">{student.email}</p>
-                        {student.class && (
-                          <p className="text-slate-500 text-xs mt-1">Class: {student.class}</p>
-                        )}
+                        <div className="flex items-center gap-4 mt-2">
+                          {student.schoolCode && (
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                              <FaHashtag className="text-slate-600" />
+                              <span>Code: {student.schoolCode}</span>
+                            </div>
+                          )}
+                          {student.className && (
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                              <FaBook className="text-slate-600" />
+                              <span>{student.className}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => handleApprove(student.id)}
-                        disabled={processingId === student.id}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                        onClick={() => {
+                          const studentId = student.id || student.uid;
+                          console.log('🔍 TeacherApprovals: Approve button clicked', {
+                            studentId,
+                            studentUid: student.uid,
+                            studentName: student.name || student.email,
+                            studentSchoolId: student.school_id,
+                          });
+                          handleApprove(studentId);
+                        }}
+                        disabled={processingId === (student.id || student.uid)}
+                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg hover:shadow-emerald-500/50"
                       >
-                        {processingId === student.id ? (
-                          <FaSpinner className="animate-spin" />
+                        {processingId === (student.id || student.uid) ? (
+                          <>
+                            <FaSpinner className="animate-spin" />
+                            Approving...
+                          </>
                         ) : (
                           <>
                             <FaCheck />
-                            Approve
+                            Approve Student
                           </>
                         )}
                       </button>
                       <button
-                        onClick={() => handleReject(student.id)}
-                        disabled={processingId === student.id}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                        onClick={() => {
+                          const studentId = student.id || student.uid;
+                          console.log('🔍 TeacherApprovals: Reject button clicked', {
+                            studentId,
+                            studentUid: student.uid,
+                          });
+                          handleReject(studentId);
+                        }}
+                        disabled={processingId === (student.id || student.uid)}
+                        className="flex items-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-lg hover:shadow-red-500/50"
                       >
                         <FaTimes />
                         Reject
@@ -346,12 +960,23 @@ const TeacherApprovals = () => {
                     <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
                       <FaUserGraduate className="text-emerald-400" />
                     </div>
-                    <div>
+                    <div className="flex-1">
                       <h3 className="text-white font-semibold">{student.name || student.email}</h3>
                       <p className="text-slate-400 text-sm">{student.email}</p>
-                      {student.class && (
-                        <p className="text-slate-500 text-xs mt-1">Class: {student.class}</p>
-                      )}
+                      <div className="flex items-center gap-4 mt-2">
+                        {student.schoolCode && (
+                          <div className="flex items-center gap-1 text-xs text-slate-500">
+                            <FaHashtag className="text-slate-600" />
+                            <span>Code: {student.schoolCode}</span>
+                          </div>
+                        )}
+                        {student.className && (
+                          <div className="flex items-center gap-1 text-xs text-slate-500">
+                            <FaBook className="text-slate-600" />
+                            <span>{student.className}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </motion.div>

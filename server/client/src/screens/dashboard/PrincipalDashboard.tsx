@@ -11,22 +11,88 @@ import { collection, query, where, orderBy, getDocs, onSnapshot } from 'firebase
 import { db } from '../../config/firebase';
 import type { StudentScore, LessonLaunch } from '../../types/lms';
 import { Link } from 'react-router-dom';
-import { FaSchool, FaUsers, FaChalkboardTeacher, FaChartLine, FaGraduationCap, FaArrowRight } from 'react-icons/fa';
+import { FaSchool, FaUsers, FaChalkboardTeacher, FaChartLine, FaGraduationCap, FaArrowRight, FaUserCheck, FaBell } from 'react-icons/fa';
 
 const PrincipalDashboard = () => {
   const { user, profile } = useAuth();
   const [teachers, setTeachers] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
+  const [pendingStudents, setPendingStudents] = useState<any[]>([]);
+  const [pendingTeachers, setPendingTeachers] = useState<any[]>([]);
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [launches, setLaunches] = useState<LessonLaunch[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalTeachers: 0,
+    approvedTeachers: 0,
+    pendingTeachersCount: 0,
     totalStudents: 0,
+    approvedStudents: 0,
+    pendingStudentsCount: 0,
     averageSchoolScore: 0,
     totalLessonLaunches: 0,
     completedLessons: 0,
   });
+
+  // Fetch pending students for approval count
+  useEffect(() => {
+    if (!user?.uid || !profile || profile.role !== 'principal' || !profile.managed_school_id) return;
+
+    const schoolId = profile.managed_school_id;
+
+    // Fetch all pending students in the school
+    const pendingStudentsQuery = query(
+      collection(db, 'users'),
+      where('role', '==', 'student'),
+      where('school_id', '==', schoolId),
+      where('approvalStatus', '==', 'pending')
+    );
+
+    const unsubscribePendingStudents = onSnapshot(pendingStudentsQuery, (snapshot) => {
+      const pendingData = snapshot.docs.map(doc => ({
+        uid: doc.id,
+        ...doc.data(),
+      }));
+      
+      console.log('🔍 PrincipalDashboard: Pending students', {
+        total: pendingData.length,
+        schoolId,
+      });
+      
+      setPendingStudents(pendingData);
+    }, (error) => {
+      console.error('Error fetching pending students:', error);
+    });
+
+    // Fetch all pending teachers in the school
+    const pendingTeachersQuery = query(
+      collection(db, 'users'),
+      where('role', '==', 'teacher'),
+      where('school_id', '==', schoolId),
+      where('approvalStatus', '==', 'pending')
+    );
+
+    const unsubscribePendingTeachers = onSnapshot(pendingTeachersQuery, (snapshot) => {
+      const pendingData = snapshot.docs.map(doc => ({
+        uid: doc.id,
+        ...doc.data(),
+      }));
+      
+      console.log('🔍 PrincipalDashboard: Pending teachers', {
+        total: pendingData.length,
+        schoolId,
+      });
+      
+      setPendingTeachers(pendingData);
+    }, (error) => {
+      console.error('Error fetching pending teachers:', error);
+    });
+
+    return () => {
+      unsubscribePendingStudents();
+      unsubscribePendingTeachers();
+    };
+  }, [user?.uid, profile]);
 
   useEffect(() => {
     if (!user?.uid || !profile || profile.role !== 'principal' || !profile.managed_school_id) return;
@@ -34,7 +100,7 @@ const PrincipalDashboard = () => {
     setLoading(true);
     const schoolId = profile.managed_school_id;
 
-    // Get all teachers in school
+    // Get all teachers in school (both approved and pending)
     const teachersQuery = query(
       collection(db, 'users'),
       where('role', '==', 'teacher'),
@@ -49,7 +115,7 @@ const PrincipalDashboard = () => {
       setTeachers(teachersData);
     });
 
-    // Get all students in school
+    // Get all students in school (both approved and pending)
     const studentsQuery = query(
       collection(db, 'users'),
       where('role', '==', 'student'),
@@ -112,7 +178,11 @@ const PrincipalDashboard = () => {
     launchesData: LessonLaunch[]
   ) => {
     const totalTeachers = teachersData.length;
+    const approvedTeachers = teachersData.filter(t => t.approvalStatus === 'approved').length;
+    const pendingTeachersCount = teachersData.filter(t => t.approvalStatus === 'pending').length;
     const totalStudents = studentsData.length;
+    const approvedStudents = studentsData.filter(s => s.approvalStatus === 'approved').length;
+    const pendingStudentsCount = studentsData.filter(s => s.approvalStatus === 'pending').length;
     const averageSchoolScore = scoresData.length > 0
       ? scoresData.reduce((sum, s) => sum + (s.score?.percentage || 0), 0) / scoresData.length
       : 0;
@@ -121,7 +191,11 @@ const PrincipalDashboard = () => {
 
     setStats({
       totalTeachers,
+      approvedTeachers,
+      pendingTeachersCount,
       totalStudents,
+      approvedStudents,
+      pendingStudentsCount,
       averageSchoolScore: Math.round(averageSchoolScore),
       totalLessonLaunches,
       completedLessons,
@@ -163,6 +237,12 @@ const PrincipalDashboard = () => {
               <div>
                 <p className="text-white/50 text-sm">Teachers</p>
                 <p className="text-2xl font-bold text-white">{stats.totalTeachers}</p>
+                <div className="flex gap-2 mt-1">
+                  <span className="text-xs text-emerald-400">{stats.approvedTeachers} approved</span>
+                  {stats.pendingTeachersCount > 0 && (
+                    <span className="text-xs text-amber-400">{stats.pendingTeachersCount} pending</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -175,6 +255,12 @@ const PrincipalDashboard = () => {
               <div>
                 <p className="text-white/50 text-sm">Students</p>
                 <p className="text-2xl font-bold text-white">{stats.totalStudents}</p>
+                <div className="flex gap-2 mt-1">
+                  <span className="text-xs text-emerald-400">{stats.approvedStudents} approved</span>
+                  {stats.pendingStudentsCount > 0 && (
+                    <span className="text-xs text-amber-400">{stats.pendingStudentsCount} pending</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -212,6 +298,111 @@ const PrincipalDashboard = () => {
                 <p className="text-white/50 text-sm">Completed</p>
                 <p className="text-2xl font-bold text-white">{stats.completedLessons}</p>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Approval Cards Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          {/* Student Approvals Card */}
+          <div className={`rounded-2xl border p-6 ${
+            pendingStudents.length > 0 
+              ? 'border-amber-500/50 bg-amber-500/10' 
+              : 'border-blue-500/30 bg-blue-500/10'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center relative ${
+                  pendingStudents.length > 0 ? 'bg-amber-500/20' : 'bg-blue-500/20'
+                }`}>
+                  <FaUserCheck className={`text-2xl ${
+                    pendingStudents.length > 0 ? 'text-amber-400' : 'text-blue-400'
+                  }`} />
+                  {pendingStudents.length > 0 && (
+                    <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                      {pendingStudents.length}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-semibold text-white">Student Approvals</h2>
+                    {pendingStudents.length > 0 && (
+                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-xs font-medium rounded-full border border-amber-500/30 flex items-center gap-1">
+                        <FaBell className="text-xs" />
+                        {pendingStudents.length} pending
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white/60 text-sm mt-1">
+                    {pendingStudents.length > 0 
+                      ? `${pendingStudents.length} student(s) waiting for approval.`
+                      : 'Review and approve students joining your school.'}
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/teacher/approvals"
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-colors border ${
+                  pendingStudents.length > 0
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'
+                    : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-blue-500/30'
+                }`}
+              >
+                {pendingStudents.length > 0 ? 'Review Students' : 'Student Approvals'}
+                <FaArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+
+          {/* Teacher Approvals Card */}
+          <div className={`rounded-2xl border p-6 ${
+            pendingTeachers.length > 0 
+              ? 'border-amber-500/50 bg-amber-500/10' 
+              : 'border-purple-500/30 bg-purple-500/10'
+          }`}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center relative ${
+                  pendingTeachers.length > 0 ? 'bg-amber-500/20' : 'bg-purple-500/20'
+                }`}>
+                  <FaChalkboardTeacher className={`text-2xl ${
+                    pendingTeachers.length > 0 ? 'text-amber-400' : 'text-purple-400'
+                  }`} />
+                  {pendingTeachers.length > 0 && (
+                    <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                      {pendingTeachers.length}
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-semibold text-white">Teacher Approvals</h2>
+                    {pendingTeachers.length > 0 && (
+                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-xs font-medium rounded-full border border-amber-500/30 flex items-center gap-1">
+                        <FaBell className="text-xs" />
+                        {pendingTeachers.length} pending
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-white/60 text-sm mt-1">
+                    {pendingTeachers.length > 0 
+                      ? `${pendingTeachers.length} teacher(s) waiting for approval.`
+                      : 'Review and approve teachers joining your school.'}
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/school/approvals"
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-colors border ${
+                  pendingTeachers.length > 0
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'
+                    : 'bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border-purple-500/30'
+                }`}
+              >
+                {pendingTeachers.length > 0 ? 'Review Teachers' : 'Teacher Approvals'}
+                <FaArrowRight className="w-4 h-4" />
+              </Link>
             </div>
           </div>
         </div>
@@ -263,9 +454,22 @@ const PrincipalDashboard = () => {
                     key={teacher.uid}
                     className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
                   >
-                    <h3 className="text-white font-medium mb-2">
-                      {teacher.name || teacher.displayName || 'Unknown Teacher'}
-                    </h3>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="text-white font-medium">
+                        {teacher.name || teacher.displayName || 'Unknown Teacher'}
+                      </h3>
+                      {teacher.approvalStatus && (
+                        <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                          teacher.approvalStatus === 'approved' 
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : teacher.approvalStatus === 'pending'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                        }`}>
+                          {teacher.approvalStatus}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-white/50 text-sm mb-3">{teacher.email}</p>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-white/50">
@@ -301,9 +505,22 @@ const PrincipalDashboard = () => {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <h3 className="text-white font-medium">
-                          {student?.name || student?.displayName || 'Unknown Student'}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-white font-medium">
+                            {student?.name || student?.displayName || 'Unknown Student'}
+                          </h3>
+                          {student?.approvalStatus && (
+                            <span className={`px-1.5 py-0.5 text-xs rounded-full ${
+                              student.approvalStatus === 'approved' 
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                : student.approvalStatus === 'pending'
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            }`}>
+                              {student.approvalStatus}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-white/50 text-sm mt-1">
                           {score.subject} - {score.curriculum} Class {score.class_name}
                         </p>

@@ -370,16 +370,33 @@ export const getTopics = async (
     const data = snapshot.data() as CurriculumChapter;
     const topics = data.topics || [];
     
-    // Map to Topic interface
-    return topics.map((t: FirebaseTopic, index: number) => ({
-      id: t.topic_id || `topic_${index}`,
-      topic_name: t.topic_name,
-      topic_priority: t.topic_priority || index + 1,
-      scene_type: t.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
-      has_scene: !!(t.skybox_id || t.skybox_ids?.length || t.asset_ids?.length),
-      has_mcqs: false, // MCQs would need separate check
-      last_updated: t.generatedAt,
-    }));
+    // Map to Topic interface, preserving all fields including approval
+    return topics.map((t: FirebaseTopic, index: number) => {
+      // Preserve approval field, handling Firestore Timestamp conversion
+      let approval = t.approval;
+      if (approval && approval.approvedAt) {
+        // Convert Firestore Timestamp to plain object if needed
+        if (approval.approvedAt.toDate) {
+          approval = {
+            ...approval,
+            approvedAt: approval.approvedAt.toDate().toISOString(),
+          };
+        }
+      }
+      
+      return {
+        id: t.topic_id || `topic_${index}`,
+        topic_name: t.topic_name || '', // Ensure topic_name is always a string
+        topic_priority: t.topic_priority || index + 1,
+        scene_type: t.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
+        has_scene: !!(t.skybox_id || t.skybox_ids?.length || t.asset_ids?.length),
+        has_mcqs: false, // MCQs would need separate check
+        last_updated: t.generatedAt,
+        // Preserve topic_id and approval for approval functionality
+        topic_id: t.topic_id,
+        approval: approval,
+      } as Topic & { topic_id?: string; approval?: any };
+    });
   } catch (error) {
     console.error('Error fetching topics:', error);
     return [];
@@ -403,15 +420,32 @@ export const subscribeToTopics = (
     const data = snapshot.data() as CurriculumChapter;
     const topics = data.topics || [];
     
-    const mappedTopics = topics.map((t: FirebaseTopic, index: number) => ({
-      id: t.topic_id || `topic_${index}`,
-      topic_name: t.topic_name,
-      topic_priority: t.topic_priority || index + 1,
-      scene_type: t.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
-      has_scene: !!(t.skybox_id || t.skybox_ids?.length || t.asset_ids?.length),
-      has_mcqs: false,
-      last_updated: t.generatedAt,
-    }));
+    const mappedTopics = topics.map((t: FirebaseTopic, index: number) => {
+      // Preserve approval field, handling Firestore Timestamp conversion
+      let approval = t.approval;
+      if (approval && approval.approvedAt) {
+        // Convert Firestore Timestamp to plain object if needed
+        if (approval.approvedAt.toDate) {
+          approval = {
+            ...approval,
+            approvedAt: approval.approvedAt.toDate().toISOString(),
+          };
+        }
+      }
+      
+      return {
+        id: t.topic_id || `topic_${index}`,
+        topic_name: t.topic_name || '', // Ensure topic_name is always a string
+        topic_priority: t.topic_priority || index + 1,
+        scene_type: t.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
+        has_scene: !!(t.skybox_id || t.skybox_ids?.length || t.asset_ids?.length),
+        has_mcqs: false,
+        last_updated: t.generatedAt,
+        // Preserve topic_id and approval for approval functionality
+        topic_id: t.topic_id,
+        approval: approval,
+      } as Topic & { topic_id?: string; approval?: any };
+    });
     
     callback(mappedTopics);
   });

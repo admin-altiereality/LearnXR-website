@@ -102,6 +102,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           teamSize: data.teamSize,
           usageType: data.usageType,
           newsletterSubscription: data.newsletterSubscription,
+          // LMS-specific fields
+          school_id: data.school_id,
+          class_ids: data.class_ids,
+          teacher_id: data.teacher_id,
+          managed_class_ids: data.managed_class_ids,
+          managed_school_id: data.managed_school_id,
         };
       }
       return null;
@@ -185,6 +191,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 teamSize: data.teamSize,
                 usageType: data.usageType,
                 newsletterSubscription: data.newsletterSubscription,
+                // LMS-specific fields
+                school_id: data.school_id,
+                class_ids: data.class_ids,
+                teacher_id: data.teacher_id,
+                managed_class_ids: data.managed_class_ids,
+                managed_school_id: data.managed_school_id,
               };
               setProfile(profileData);
             } else {
@@ -241,6 +253,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           teamSize: data.teamSize,
           usageType: data.usageType,
           newsletterSubscription: data.newsletterSubscription,
+          // LMS-specific fields
+          school_id: data.school_id,
+          class_ids: data.class_ids,
+          teacher_id: data.teacher_id,
+          managed_class_ids: data.managed_class_ids,
+          managed_school_id: data.managed_school_id,
         };
         setProfile(profileData);
       }

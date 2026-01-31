@@ -1,66 +1,56 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { doc } from 'firebase/firestore';
+import {
+    AlertCircle,
+    AlertTriangle,
+    ArrowLeft,
+    BookOpen,
+    ChevronDown,
+    EyeOff,
+    Loader2,
+    Save,
+    Send,
+    Trash2
+} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { useAuth } from '../../contexts/AuthContext';
-import { canDeleteLesson, canEditLesson } from '../../utils/rbac';
-import {
-  getChapterWithDetails,
-  getTopics,
-  getCurrentScene,
-  getMCQs,
-  getEditHistory,
-  checkForFlattenedMCQs,
-  EditHistoryEntry,
-  // extractTopicScriptsForLanguage is still used by getLessonBundle internally
-  extractTopicScriptsForLanguage,
-} from '../../lib/firestore/queries';
-import {
-  updateTopic,
-  updateScene,
-  createScene,
-  publishScene,
-  updateMCQs,
-  normalizeFlattenedMCQs,
-} from '../../lib/firestore/updateHelpers';
-import { TopicList } from '../../Components/studio/TopicList';
-import { TopicEditor } from '../../Components/studio/TopicEditor';
-import { LaunchLessonButton } from '../../Components/studio/LaunchLessonButton';
 import { LanguageSelector } from '../../Components/LanguageSelector';
-import {
-  Chapter,
-  ChapterVersion,
-  Topic,
-  Scene,
-  MCQ,
-  MCQFormState,
-  FlattenedMCQ,
-  LanguageCode,
-} from '../../types/curriculum';
-import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { LaunchLessonButton } from '../../Components/studio/LaunchLessonButton';
+import { TopicEditor } from '../../Components/studio/TopicEditor';
+import { TopicList } from '../../Components/studio/TopicList';
 import { db } from '../../config/firebase';
-import { 
-  getChapterNameByLanguage,
-  getTopicNameByLanguage,
-  getLearningObjectiveByLanguage
+import { useAuth } from '../../contexts/AuthContext';
+import {
+    getChapterNameByLanguage,
+    getTopicNameByLanguage
 } from '../../lib/firebase/utils/languageAvailability';
 import {
-  ArrowLeft,
-  BookOpen,
-  GitBranch,
-  Loader2,
-  AlertCircle,
-  Save,
-  Send,
-  ChevronDown,
-  Eye,
-  EyeOff,
-  Rocket,
-  Trash2,
-  AlertTriangle,
-} from 'lucide-react';
+    checkForFlattenedMCQs,
+    EditHistoryEntry,
+    getChapterWithDetails,
+    getCurrentScene,
+    getEditHistory,
+    getTopics
+} from '../../lib/firestore/queries';
+import {
+    createScene,
+    publishScene,
+    updateMCQs,
+    updateScene,
+    updateTopic
+} from '../../lib/firestore/updateHelpers';
+import {
+    Chapter,
+    ChapterVersion,
+    LanguageCode,
+    MCQ,
+    MCQFormState,
+    Scene,
+    Topic
+} from '../../types/curriculum';
+import { canDeleteLesson } from '../../utils/rbac';
 
 const ChapterEditor = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
@@ -384,7 +374,6 @@ const ChapterEditor = () => {
     setTopicFormState({ ...topic });
     setMcqs([]);
     setMcqFormState([]);
-    setMcqsLoaded(false); // Reset MCQ loaded state for new topic
     setEditHistory([]);
     loadTopicData(topic);
   };
@@ -790,6 +779,13 @@ const ChapterEditor = () => {
             selectedTopic={selectedTopic}
             onSelectTopic={handleSelectTopic}
             loading={loadingTopic}
+            chapterId={chapterId!}
+            onApprovalChange={() => {
+              // Reload topics after approval change
+              if (chapterId && selectedVersionId) {
+                getTopics(chapterId, selectedVersionId).then(setTopics).catch(console.error);
+              }
+            }}
           />
         </aside>
         

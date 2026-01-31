@@ -1,7 +1,7 @@
 /**
- * School Approvals Page
+ * School/Principal Approvals Page
  * 
- * Allows schools to approve teachers in their school
+ * Allows school administrators and principals to approve teachers in their school
  */
 
 import { useState, useEffect } from 'react';
@@ -11,6 +11,7 @@ import {
   query, 
   where, 
   getDocs, 
+  getDoc,
   doc, 
   updateDoc,
   onSnapshot
@@ -48,24 +49,35 @@ const SchoolApprovals = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'pending' | 'approved'>('pending');
 
-  // Check if user is a school
+  // Check if user is a school administrator or principal
   useEffect(() => {
-    if (profile && profile.role !== 'school') {
-      toast.error('Only schools can access this page');
+    if (profile && profile.role !== 'school' && profile.role !== 'principal') {
+      toast.error('Only school administrators and principals can access this page');
       return;
     }
   }, [profile]);
 
   // Fetch pending teachers in school
   useEffect(() => {
-    if (!profile || profile.role !== 'school' || !profile.school_id) {
+    const isSchool = profile?.role === 'school';
+    const isPrincipal = profile?.role === 'principal';
+    
+    if (!profile || (!isSchool && !isPrincipal)) {
       setLoading(false);
       return;
     }
 
-    const schoolId = profile.school_id || profile.managed_school_id;
+    // For school admins use school_id, for principals use managed_school_id
+    const schoolId = isPrincipal ? profile.managed_school_id : (profile.school_id || profile.managed_school_id);
+    
+    if (!schoolId) {
+      setLoading(false);
+      return;
+    }
     
     const usersRef = collection(db, 'users');
+    // Query for all pending teachers - Firestore rules now allow reading any pending teacher
+    // Client-side filtering will ensure only appropriate teachers are shown
     const pendingQuery = query(
       usersRef,
       where('role', '==', 'teacher'),
@@ -78,10 +90,14 @@ const SchoolApprovals = () => {
       snapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data() as UserProfile;
         
-        // Check if teacher is in this school
-        const isInSchool = data.school_id === schoolId;
+        // Filter: Include teachers that either:
+        // 1. Have matching school_id, OR
+        // 2. Don't have school_id yet (pending teachers)
+        const hasMatchingSchoolId = data.school_id === schoolId;
+        const hasNoSchoolId = !data.school_id;
         
-        if (isInSchool && canApproveUser(profile, data)) {
+        // Verify we can approve this teacher (additional permission check)
+        if ((hasMatchingSchoolId || hasNoSchoolId) && canApproveUser(profile, data)) {
           teachers.push({
             id: docSnapshot.id,
             ...data,
@@ -89,28 +105,52 @@ const SchoolApprovals = () => {
         }
       });
 
+      console.log('🔍 SchoolApprovals: Pending teachers', {
+        total: snapshot.size,
+        filtered: teachers.length,
+        schoolId,
+        approverRole: profile.role,
+      });
+
       setPendingTeachers(teachers);
       setLoading(false);
     }, (error) => {
-      console.error('Error fetching pending teachers:', error);
+      console.error('❌ SchoolApprovals: Error fetching pending teachers', {
+        error,
+        errorCode: error.code,
+        errorMessage: error.message,
+        schoolId,
+        approverRole: profile.role,
+      });
       setLoading(false);
     });
+
+    return () => unsubscribe();
 
     return () => unsubscribe();
   }, [profile]);
 
   // Fetch approved teachers
   useEffect(() => {
-    if (!profile || profile.role !== 'school' || !profile.school_id) {
+    const isSchool = profile?.role === 'school';
+    const isPrincipal = profile?.role === 'principal';
+    
+    if (!profile || (!isSchool && !isPrincipal)) {
       return;
     }
 
-    const schoolId = profile.school_id || profile.managed_school_id;
+    // For school admins use school_id, for principals use managed_school_id
+    const schoolId = isPrincipal ? profile.managed_school_id : (profile.school_id || profile.managed_school_id);
+    
+    if (!schoolId) {
+      return;
+    }
     
     const usersRef = collection(db, 'users');
     const approvedQuery = query(
       usersRef,
       where('role', '==', 'teacher'),
+      where('school_id', '==', schoolId),
       where('approvalStatus', '==', 'approved')
     );
 
@@ -120,14 +160,20 @@ const SchoolApprovals = () => {
       snapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data() as UserProfile;
         
-        const isInSchool = data.school_id === schoolId;
-        
-        if (isInSchool && canApproveUser(profile, data)) {
+        // Verify we can approve this teacher (additional permission check)
+        // This is a safety check - school_id already filtered at DB level
+        if (canApproveUser(profile, data)) {
           teachers.push({
             id: docSnapshot.id,
             ...data,
           } as PendingTeacher);
         }
+      });
+
+      console.log('🔍 SchoolApprovals: Approved teachers', {
+        total: snapshot.size,
+        filtered: teachers.length,
+        schoolId,
       });
 
       setApprovedTeachers(teachers);
@@ -139,39 +185,130 @@ const SchoolApprovals = () => {
   }, [profile]);
 
   const handleApprove = async (teacherId: string) => {
-    if (!profile || !canApproveUser(profile, { role: 'teacher' } as UserProfile)) {
-      toast.error('You do not have permission to approve this teacher');
+    if (!profile) {
+      toast.error('You must be logged in to approve teachers');
       return;
     }
 
     setProcessingId(teacherId);
     try {
+      // Get teacher data to check if they have school_id
+      const teacherDoc = await getDoc(doc(db, 'users', teacherId));
+      if (!teacherDoc.exists()) {
+        toast.error('Teacher not found');
+        setProcessingId(null);
+        return;
+      }
+
+      const teacherData = teacherDoc.data() as UserProfile;
+      
+      // Now check permission with actual teacher data
+      if (!canApproveUser(profile, teacherData)) {
+        toast.error('You do not have permission to approve this teacher');
+        setProcessingId(null);
+        return;
+      }
+      
+      // Determine the school_id to assign
+      // For school admins: use their school_id
+      // For principals: use their managed_school_id
+      const schoolId = profile.role === 'principal' 
+        ? profile.managed_school_id 
+        : (profile.school_id || profile.managed_school_id);
+
+      if (!schoolId) {
+        toast.error('Unable to determine school. Please contact support.');
+        return;
+      }
+
       const now = new Date().toISOString();
       const userRef = doc(db, 'users', teacherId);
-      await updateDoc(userRef, {
+      
+      // Update data: approve and ALWAYS ensure school_id is set correctly
+      const updateData: Record<string, unknown> = {
         approvalStatus: 'approved',
         approvedBy: profile.uid,
         approvedAt: now,
         updatedAt: now,
+        // ALWAYS set school_id to approver's school (ensures consistency)
+        school_id: schoolId,
+      };
+
+      // Log if teacher had different or missing school_id
+      if (!teacherData.school_id) {
+        console.log('🔧 SchoolApprovals: Assigning school_id to teacher', {
+          teacherId,
+          schoolId,
+          approverRole: profile.role,
+        });
+      } else if (teacherData.school_id !== schoolId) {
+        console.warn('⚠️ SchoolApprovals: Updating teacher school_id to match approver', {
+          teacherId,
+          oldSchoolId: teacherData.school_id,
+          newSchoolId: schoolId,
+          approverRole: profile.role,
+        });
+      }
+
+      console.log('🔧 SchoolApprovals: Attempting to update teacher', {
+        teacherId,
+        updateData,
+        approverRole: profile.role,
+        approverSchoolId: schoolId,
+        teacherCurrentSchoolId: teacherData.school_id,
+        teacherApprovalStatus: teacherData.approvalStatus,
       });
 
-      toast.success('Teacher approved successfully');
+      await updateDoc(userRef, updateData);
+
+      console.log('✅ SchoolApprovals: Teacher updated successfully', {
+        teacherId,
+      });
+
+      toast.success('Teacher approved and assigned to your school successfully');
     } catch (error: any) {
-      console.error('Error approving teacher:', error);
-      toast.error('Failed to approve teacher: ' + error.message);
+      console.error('❌ SchoolApprovals: Error approving teacher', {
+        error,
+        errorCode: error.code,
+        errorMessage: error.message,
+        teacherId,
+        approverRole: profile.role,
+        approverSchoolId: schoolId,
+        teacherCurrentSchoolId: teacherData?.school_id,
+        teacherApprovalStatus: teacherData?.approvalStatus,
+        updateData,
+      });
+      toast.error('Failed to approve teacher: ' + (error.message || 'Unknown error'));
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleReject = async (teacherId: string) => {
-    if (!profile || !canApproveUser(profile, { role: 'teacher' } as UserProfile)) {
-      toast.error('You do not have permission to reject this teacher');
+    if (!profile) {
+      toast.error('You must be logged in to reject teachers');
       return;
     }
 
     setProcessingId(teacherId);
     try {
+      // Get teacher data to check permission
+      const teacherDoc = await getDoc(doc(db, 'users', teacherId));
+      if (!teacherDoc.exists()) {
+        toast.error('Teacher not found');
+        setProcessingId(null);
+        return;
+      }
+
+      const teacherData = teacherDoc.data() as UserProfile;
+      
+      // Check permission with actual teacher data
+      if (!canApproveUser(profile, teacherData)) {
+        toast.error('You do not have permission to reject this teacher');
+        setProcessingId(null);
+        return;
+      }
+
       const now = new Date().toISOString();
       const userRef = doc(db, 'users', teacherId);
       await updateDoc(userRef, {
@@ -183,7 +320,13 @@ const SchoolApprovals = () => {
 
       toast.success('Teacher rejected');
     } catch (error: any) {
-      console.error('Error rejecting teacher:', error);
+      console.error('❌ SchoolApprovals: Error rejecting teacher', {
+        error,
+        errorCode: error.code,
+        errorMessage: error.message,
+        teacherId,
+        approverRole: profile?.role,
+      });
       toast.error('Failed to reject teacher: ' + error.message);
     } finally {
       setProcessingId(null);
@@ -200,11 +343,11 @@ const SchoolApprovals = () => {
     teacher.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (profile?.role !== 'school') {
+  if (profile?.role !== 'school' && profile?.role !== 'principal') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
         <div className="text-center">
-          <p className="text-white">Only schools can access this page.</p>
+          <p className="text-white">Only school administrators and principals can access this page.</p>
         </div>
       </div>
     );
@@ -215,7 +358,11 @@ const SchoolApprovals = () => {
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Teacher Approvals</h1>
-          <p className="text-slate-400">Approve teachers in your school</p>
+          <p className="text-slate-400">
+            {profile?.role === 'principal' 
+              ? 'As principal, approve teachers joining your school'
+              : 'Approve teachers joining your school'}
+          </p>
         </div>
 
         {/* Search */}

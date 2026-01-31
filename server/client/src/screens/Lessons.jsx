@@ -9,52 +9,47 @@
  * - Memoized components to prevent flickering
  */
 
-import { collection, onSnapshot, query, where, doc, getDoc, getDocs } from 'firebase/firestore';
-import { AnimatePresence, motion } from 'framer-motion';
-import React, { useEffect, useState, useMemo, useCallback, memo } from "react";
-import { useNavigate } from "react-router-dom";
-import { db } from '../config/firebase';
-import { useLesson } from '../contexts/LessonContext';
-import { useAuth } from '../contexts/AuthContext';
-import { 
-  BookOpen, 
-  Play, 
-  GraduationCap, 
-  ChevronDown,
-  Grid3X3, 
-  List, 
+import { collection, getDocs, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore';
+import {
+  AlertCircle,
+  AlertTriangle,
+  BookOpen,
+  Box,
+  CheckCircle,
+  CheckCircle2,
+  Clock,
+  Glasses,
+  GraduationCap,
+  Grid3X3,
+  HelpCircle,
+  List,
+  Loader2,
+  Mic,
+  Play,
+  RefreshCw,
   Search,
   Sparkles,
-  HelpCircle,
-  Volume2,
-  Box,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
-  X,
   Target,
-  CheckCircle,
-  Mic,
   Trophy,
-  Star,
-  Glasses,
-  Monitor,
-  AlertTriangle,
-  Clock,
-  CheckCircle2,
+  Volume2,
+  X,
   XCircle
 } from 'lucide-react';
-import { getVRCapabilities, getVRRecommendation } from '../utils/vrDetection';
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { LanguageToggle } from '../Components/LanguageSelector';
-import { 
-  chapterHasContentForLanguage,
+import { db } from '../config/firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { useLesson } from '../contexts/LessonContext';
+import {
   getChapterNameByLanguage,
-  getTopicNameByLanguage,
   getLearningObjectiveByLanguage,
-  getSubjectNameByLanguage
+  getSubjectNameByLanguage,
+  getTopicNameByLanguage
 } from '../lib/firebase/utils/languageAvailability';
 import { updateTopicApproval } from '../lib/firestore/updateHelpers';
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
+import { getVRCapabilities } from '../utils/vrDetection';
 
 // Content indicators (simple badges) - Memoized
 const ContentBadges = memo(({ chapter }) => (
@@ -82,14 +77,15 @@ const ContentBadges = memo(({ chapter }) => (
   </div>
 ));
 
-// GRID VIEW - Chapter Card - Memoized to prevent flickering
-const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en' }) => {
-  const thumbnail = getThumbnail(chapter);
-  const firstTopic = chapter.topics?.find(t => t.skybox_url || t.topic_avatar_intro) || chapter.topics?.[0];
+// GRID VIEW - Lesson Card (Topic-based) - Memoized to prevent flickering
+const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en' }) => {
+  const { topic, chapter, chapterInfo } = lessonItem;
+  const thumbnail = topic.skybox_url || chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
   
-  // Get language-specific chapter name
+  // Get language-specific topic name (primary) and chapter name (secondary)
+  const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || 'Untitled Topic';
   const chapterName = getChapterNameByLanguage(chapter._rawData || chapter, selectedLanguage) || chapter.chapter_name;
 
   return (
@@ -101,14 +97,14 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
                  ${isCompleted 
                    ? 'border-emerald-500/50 hover:border-emerald-400/60 hover:shadow-emerald-500/10' 
                    : 'border-slate-700/50 hover:border-cyan-500/50 hover:shadow-cyan-500/10'}`}
-      onClick={() => onOpenModal(chapter, firstTopic)}
+      onClick={() => onOpenModal(chapter, topic)}
     >
       {/* Thumbnail */}
       <div className="relative aspect-video overflow-hidden bg-slate-800">
         {thumbnail ? (
           <img
             src={thumbnail}
-            alt={chapterName}
+            alt={topicName}
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
@@ -126,10 +122,10 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
         {/* Badges */}
         <div className="absolute top-3 left-3 flex flex-wrap gap-2">
           <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 backdrop-blur-sm">
-            {chapter.curriculum}
+            {chapterInfo.curriculum}
           </span>
           <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 backdrop-blur-sm">
-            Class {chapter.class}
+            Class {chapterInfo.class}
           </span>
         </div>
         
@@ -141,7 +137,7 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
             </span>
           )}
           <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-black/50 text-white border border-white/20 backdrop-blur-sm">
-            Ch {chapter.chapter_number}
+            Ch {chapterInfo.chapterNumber}
           </span>
         </div>
         
@@ -161,19 +157,20 @@ const ChapterCard = memo(({ chapter, completedLessons, onOpenModal, getThumbnail
           <h3 className={`text-sm font-semibold mb-2 line-clamp-2 transition-colors flex-1 ${
             isCompleted ? 'text-emerald-300 group-hover:text-emerald-200' : 'text-white group-hover:text-cyan-300'
           }`}>
-            {chapterName}
+            {topicName}
           </h3>
           {isCompleted && (
             <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
           )}
         </div>
         
-        <p className="text-xs text-slate-400 mb-3">{getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}</p>
+        <p className="text-xs text-slate-400 mb-1">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</p>
+        <p className="text-[10px] text-slate-500 mb-3">{chapterName}</p>
         
         {/* Stats */}
         <div className="flex items-center justify-between">
           <div className="text-[10px] text-slate-500">
-            {chapter.topicCount} topic{chapter.topicCount !== 1 ? 's' : ''}
+            Topic {topic.topic_priority || '?'}
           </div>
           <ContentBadges chapter={chapter} />
         </div>
@@ -339,13 +336,16 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
   );
 });
 
-// LIST VIEW - Chapter Item - Memoized
-const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onOpenModal, onToggleChapter, selectedLanguage = 'en', onApprovalChange }) => {
-  const isExpanded = expandedChapters.has(chapter.id);
-  const topics = chapter.topics || [];
-  const firstTopic = topics.find(t => t.skybox_url || t.topic_avatar_intro) || topics[0];
+// LIST VIEW - Lesson Item (Topic-based) - Memoized
+const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', onApprovalChange }) => {
+  const { topic, chapter, chapterInfo } = lessonItem;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
+  
+  // Get language-specific topic name (primary) and chapter name (secondary)
+  const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || 'Untitled Topic';
+  const chapterName = getChapterNameByLanguage(chapter._rawData || chapter, selectedLanguage) || chapter.chapter_name;
+  const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective;
 
   return (
     <div
@@ -357,7 +357,7 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
         className={`flex items-center gap-4 p-4 cursor-pointer transition-colors ${
           isCompleted ? 'hover:bg-emerald-900/10' : 'hover:bg-slate-800/30'
         }`}
-        onClick={() => topics.length > 1 ? onToggleChapter(chapter.id) : onOpenModal(chapter, firstTopic)}
+        onClick={() => onOpenModal(chapter, topic)}
       >
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
           isCompleted 
@@ -367,17 +367,19 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
           {isCompleted ? (
             <Trophy className="w-5 h-5 text-emerald-400" />
           ) : (
-            <span className="text-lg font-bold text-cyan-300">{chapter.chapter_number || '?'}</span>
+            <span className="text-lg font-bold text-cyan-300">{topic.topic_priority || '?'}</span>
           )}
         </div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-[10px] font-semibold text-cyan-400 uppercase">{chapter.curriculum}</span>
+            <span className="text-[10px] font-semibold text-cyan-400 uppercase">{chapterInfo.curriculum}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-[10px] font-medium text-purple-400">Class {chapter.class}</span>
+            <span className="text-[10px] font-medium text-purple-400">Class {chapterInfo.class}</span>
             <span className="text-slate-600">•</span>
-            <span className="text-[10px] font-medium text-slate-400">{getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}</span>
+            <span className="text-[10px] font-medium text-slate-400">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</span>
+            <span className="text-slate-600">•</span>
+            <span className="text-[10px] font-medium text-slate-500">Ch {chapterInfo.chapterNumber}</span>
             {isCompleted && (
               <>
                 <span className="text-slate-600">•</span>
@@ -388,57 +390,32 @@ const ChapterListItem = memo(({ chapter, completedLessons, expandedChapters, onO
               </>
             )}
           </div>
-          <h3 className={`text-base font-semibold truncate ${
+          <h3 className={`text-base font-semibold truncate mb-1 ${
             isCompleted ? 'text-emerald-300' : 'text-white'
-          }`}>{getChapterNameByLanguage(chapter, selectedLanguage) || chapter.chapter_name}</h3>
+          }`}>{topicName}</h3>
+          <p className="text-xs text-slate-500 truncate mb-1">{chapterName}</p>
+          {learningObjective && (
+            <p className="text-xs text-slate-600 truncate">{learningObjective}</p>
+          )}
         </div>
         
         <ContentBadges chapter={chapter} />
         
-        {topics.length > 1 ? (
-          <div
-            className={`w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center transition-transform ${
-              isExpanded ? 'rotate-180' : ''
-            }`}
-          >
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          </div>
-        ) : (
-          <button 
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold shadow-lg ${
-              isCompleted 
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 shadow-emerald-500/20'
-                : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-cyan-500/20'
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenModal(chapter, firstTopic);
-            }}
-          >
-            <Play className="w-4 h-4" />
-            {isCompleted ? 'Replay' : 'View'}
-          </button>
-        )}
+        <button 
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold shadow-lg ${
+            isCompleted 
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 shadow-emerald-500/20'
+              : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-cyan-500/20'
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenModal(chapter, topic);
+          }}
+        >
+          <Play className="w-4 h-4" />
+          {isCompleted ? 'Replay' : 'View'}
+        </button>
       </div>
-      
-      {/* Expanded Topics */}
-      {isExpanded && topics.length > 0 && (
-        <div className="border-t border-slate-800/50">
-          <div className="py-2">
-            {topics.map((topic, index) => (
-              <TopicRow 
-                key={topic.topic_id || index} 
-                topic={topic} 
-                chapter={chapter}
-                index={index}
-                onOpenModal={onOpenModal}
-                selectedLanguage={selectedLanguage}
-                onApprovalChange={onApprovalChange}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 });
@@ -483,7 +460,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const { startLesson: contextStartLesson } = useLesson();
   
   // Get current user for tracking completed lessons
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  
+  // Student class data
+  const [studentClasses, setStudentClasses] = useState([]);
+  const isStudent = profile?.role === 'student';
 
   // Check VR capabilities on mount
   useEffect(() => {
@@ -500,6 +481,51 @@ const Lessons = ({ setBackgroundSkybox }) => {
     };
     checkVR();
   }, []);
+
+  // Fetch student's classes to get class numbers for filtering
+  useEffect(() => {
+    if (!isStudent || !profile?.class_ids || profile.class_ids.length === 0 || !db) {
+      setStudentClasses([]);
+      return;
+    }
+
+    const fetchStudentClasses = async () => {
+      try {
+        const classesPromises = profile.class_ids.map(async (classId) => {
+          try {
+            const classDoc = await getDoc(doc(db, 'classes', classId));
+            if (classDoc.exists()) {
+              const classData = classDoc.data();
+              return {
+                id: classId,
+                ...classData,
+              };
+            }
+          } catch (err) {
+            console.warn(`Error fetching class ${classId}:`, err);
+          }
+          return null;
+        });
+
+        const classesData = (await Promise.all(classesPromises)).filter(Boolean);
+        setStudentClasses(classesData);
+
+        // Set default class filter if not already set
+        if (!selectedClass && classesData.length > 0) {
+          // Extract class number from class_name (e.g., "Class 5" -> 5)
+          const firstClass = classesData[0];
+          const classNumberMatch = firstClass.class_name?.match(/\d+/);
+          if (classNumberMatch) {
+            setSelectedClass(classNumberMatch[0]);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching student classes:', error);
+      }
+    };
+
+    fetchStudentClasses();
+  }, [isStudent, profile?.class_ids, db, selectedClass]);
 
   // Fetch chapters from Firestore (basic list - no heavy data fetching)
   useEffect(() => {
@@ -522,8 +548,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
-    // CRITICAL: Only show approved lessons on /lessons page
-    constraints.push(where('approved', '==', true));
+    // Note: We filter by topic-level approval in groupedTopicsByChapter
+    // Don't filter by chapter-level approval here to allow showing topics from any chapter
     
     const chaptersRef = collection(db, 'curriculum_chapters');
     const chaptersQuery = constraints.length > 0 
@@ -668,24 +694,181 @@ const Lessons = ({ setBackgroundSkybox }) => {
     return unique.sort();
   }, [chapters, selectedCurriculum, selectedClass]);
 
+  // Check if user can approve (admin or superadmin)
+  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  
+  // Group topics by chapter and create lesson items
+  // Each topic becomes a lesson, grouped by its parent chapter
+  const groupedTopicsByChapter = useMemo(() => {
+    // Extract all topics from chapters
+    const allTopics = [];
+    
+    // For students: get class numbers from their classes
+    const studentClassNumbers = isStudent && studentClasses.length > 0
+      ? studentClasses.map(c => {
+          const match = c.class_name?.match(/\d+/);
+          return match ? parseInt(match[0]) : null;
+        }).filter(Boolean)
+      : [];
+    
+    chapters.forEach(chapter => {
+      // For students: filter by their class numbers
+      if (isStudent && studentClassNumbers.length > 0) {
+        if (!studentClassNumbers.includes(chapter.class)) {
+          return; // Skip chapters not in student's classes
+        }
+      }
+      
+      if (chapter.topics && Array.isArray(chapter.topics)) {
+        chapter.topics.forEach(topic => {
+          // For /lessons page:
+          // - Admins/superadmins can see ALL topics (for approval management)
+          // - Students can ONLY see APPROVED topics (teacher approval required)
+          // - Other regular users only see APPROVED topics
+          const approval = topic.approval || {};
+          const isTopicApproved = approval.approved === true;
+          
+          // Include topic if:
+          // 1. User is admin/superadmin (can see all for approval)
+          // 2. For students: MUST be approved (strict requirement)
+          // 3. For other users: Topic is approved OR chapter is approved (backward compatibility)
+          const isChapterApproved = chapter.approved === true;
+          
+          if (canApprove) {
+            // Admins can see all
+            allTopics.push({
+              topic,
+              chapter,
+            });
+          } else if (isStudent) {
+            // Students can ONLY see approved topics
+            if (isTopicApproved) {
+              allTopics.push({
+                topic,
+                chapter,
+              });
+            }
+          } else if (isTopicApproved || (isChapterApproved && !topic.approval)) {
+            // Other users: approved topics or backward compatibility
+            allTopics.push({
+              topic,
+              chapter,
+            });
+          }
+        });
+      }
+    });
+    
+    console.log('📚 Grouped topics:', {
+      totalChapters: chapters.length,
+      totalTopics: allTopics.length,
+      canApprove,
+      sampleTopic: allTopics[0] ? {
+        topicId: allTopics[0].topic.topic_id,
+        topicName: allTopics[0].topic.topic_name,
+        approved: allTopics[0].topic.approval?.approved,
+      } : null,
+    });
+    
+    // Group topics by chapter key (curriculum/class/subject/chapter_number)
+    const groups = new Map();
+    
+    allTopics.forEach(({ topic, chapter }) => {
+      const groupKey = `${chapter.curriculum || ''}_${chapter.class || ''}_${chapter.subject || ''}_${chapter.chapter_number || ''}`;
+      
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          groupKey,
+          curriculum: chapter.curriculum || '',
+          class: chapter.class || 0,
+          subject: chapter.subject || '',
+          chapterNumber: chapter.chapter_number || 0,
+          chapterName: chapter.chapter_name || '',
+          chapterId: chapter.id,
+          chapterData: chapter,
+          topics: [],
+        });
+      }
+      
+      const group = groups.get(groupKey);
+      group.topics.push({
+        topic,
+        chapter,
+        topicPriority: topic.topic_priority || 999,
+      });
+    });
+    
+    // Sort groups by chapter sequence (curriculum, class, subject, chapter_number)
+    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+      if (a.curriculum !== b.curriculum) return a.curriculum.localeCompare(b.curriculum);
+      if (a.class !== b.class) return a.class - b.class;
+      if (a.subject !== b.subject) return a.subject.localeCompare(b.subject);
+      return a.chapterNumber - b.chapterNumber;
+    });
+    
+    // Sort topics within each group by priority
+    sortedGroups.forEach(group => {
+      group.topics.sort((a, b) => {
+        if (a.topicPriority !== b.topicPriority) {
+          return a.topicPriority - b.topicPriority;
+        }
+        return 0;
+      });
+    });
+    
+    return sortedGroups;
+  }, [chapters, canApprove, isStudent, studentClasses]);
+  
+  // Flatten grouped topics into lesson items for display
+  const lessonItems = useMemo(() => {
+    const items = [];
+    
+    groupedTopicsByChapter.forEach(group => {
+      group.topics.forEach(({ topic, chapter }) => {
+        items.push({
+          topic,
+          chapter,
+          groupKey: `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`,
+          chapterInfo: {
+            curriculum: group.curriculum,
+            class: group.class,
+            subject: group.subject,
+            chapterNumber: group.chapterNumber,
+            chapterName: group.chapterName,
+            chapterId: group.chapterId,
+          },
+        });
+      });
+    });
+    
+    console.log('📦 Lesson items created:', {
+      totalItems: items.length,
+      sampleItem: items[0] ? {
+        topicName: items[0].topic.topic_name,
+        chapterName: items[0].chapter.chapter_name,
+        groupKey: items[0].groupKey,
+      } : null,
+    });
+    
+    return items;
+  }, [groupedTopicsByChapter]);
+  
   // Search/filter - use language-specific names
-  const filteredChapters = useMemo(() => {
-    let result = chapters;
+  const filteredLessonItems = useMemo(() => {
+    let result = lessonItems;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(chapter => {
-        const chapterName = getChapterNameByLanguage(chapter._rawData || chapter, selectedLanguage) || chapter.chapter_name || '';
+      result = result.filter(item => {
+        const topicName = getTopicNameByLanguage(item.topic, selectedLanguage) || item.topic.topic_name || '';
+        const chapterName = getChapterNameByLanguage(item.chapter._rawData || item.chapter, selectedLanguage) || item.chapter.chapter_name || '';
+        const matchesTopicName = topicName.toLowerCase().includes(q);
         const matchesChapterName = chapterName.toLowerCase().includes(q);
-        const matchesSubject = chapter.subject?.toLowerCase().includes(q);
-        const matchesTopic = chapter.topics?.some(t => {
-          const topicName = getTopicNameByLanguage(t, selectedLanguage) || t.topic_name || '';
-          return topicName.toLowerCase().includes(q);
-        });
-        return matchesChapterName || matchesSubject || matchesTopic;
+        const matchesSubject = item.chapter.subject?.toLowerCase().includes(q);
+        return matchesTopicName || matchesChapterName || matchesSubject;
       });
     }
     return result;
-  }, [chapters, searchQuery, selectedLanguage]);
+  }, [lessonItems, searchQuery, selectedLanguage]);
 
   const toggleChapter = useCallback((chapterId) => {
     setExpandedChapters(prev => {
@@ -1734,18 +1917,27 @@ const Lessons = ({ setBackgroundSkybox }) => {
               {availableCurricula.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
 
-            <select
-              value={selectedClass}
-              onChange={(e) => {
-                setSelectedClass(e.target.value);
-                setSelectedSubject('');
-              }}
-              disabled={!selectedCurriculum}
-              className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer disabled:opacity-50"
-            >
-              <option value="">All Classes</option>
-              {availableClasses.map(c => <option key={c} value={c}>Class {c}</option>)}
-            </select>
+            {/* Hide class selector for students - they can only see their assigned class */}
+            {!isStudent && (
+              <select
+                value={selectedClass}
+                onChange={(e) => {
+                  setSelectedClass(e.target.value);
+                  setSelectedSubject('');
+                }}
+                disabled={!selectedCurriculum}
+                className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer disabled:opacity-50"
+              >
+                <option value="">All Classes</option>
+                {availableClasses.map(c => <option key={c} value={c}>Class {c}</option>)}
+              </select>
+            )}
+            {/* Show read-only class info for students */}
+            {isStudent && studentClasses.length > 0 && (
+              <div className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-400">
+                Class {selectedClass || studentClasses[0]?.class_name?.match(/\d+/)?.[0] || 'N/A'}
+              </div>
+            )}
 
             <select
               value={selectedSubject}
@@ -1783,7 +1975,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
             )}
 
             <div className="ml-auto px-3 py-1.5 bg-slate-800/30 rounded-lg">
-              <span className="text-sm font-medium text-cyan-400">{filteredChapters.length}</span>
+              <span className="text-sm font-medium text-cyan-400">{filteredLessonItems.length}</span>
               <span className="text-sm text-slate-500 ml-1">lessons</span>
             </div>
           </div>
@@ -1808,39 +2000,116 @@ const Lessons = ({ setBackgroundSkybox }) => {
             <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-4" />
             <p className="text-slate-400">Loading lessons...</p>
           </div>
-        ) : filteredChapters.length === 0 ? (
+        ) : filteredLessonItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <BookOpen className="w-16 h-16 text-slate-600 mb-4" />
             <h3 className="text-lg font-semibold text-white mb-2">No Lessons Found</h3>
             <p className="text-sm text-slate-400">Try adjusting your filters</p>
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredChapters.map(chapter => (
-              <ChapterCard 
-                key={chapter.id} 
-                chapter={chapter}
-                completedLessons={completedLessons}
-                onOpenModal={openLessonModal}
-                getThumbnail={getThumbnail}
-                selectedLanguage={selectedLanguage}
-              />
-            ))}
+          <div className="space-y-6">
+            {/* Group topics by chapter and display as stacked cards */}
+            {groupedTopicsByChapter.map((group) => {
+              const groupItems = filteredLessonItems.filter(item => 
+                item.groupKey === `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`
+              );
+              
+              if (groupItems.length === 0) return null;
+              
+              const chapterName = getChapterNameByLanguage(group.chapterData._rawData || group.chapterData, selectedLanguage) || group.chapterName;
+              
+              return (
+                <div key={group.groupKey || `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`} className="space-y-3">
+                  {/* Chapter Header */}
+                  <div className="px-4 py-3 bg-slate-800/40 rounded-xl border border-slate-700/50 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-cyan-400 uppercase">{group.curriculum}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-xs font-medium text-purple-400">Class {group.class}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-xs font-medium text-slate-400">{getSubjectNameByLanguage(group.subject || '', selectedLanguage)}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-sm font-semibold text-white">Chapter {group.chapterNumber}: {chapterName}</span>
+                      <span className="text-xs text-slate-500 ml-auto">({groupItems.length} topic{groupItems.length !== 1 ? 's' : ''})</span>
+                    </div>
+                  </div>
+                  
+                  {/* Stacked Topic Cards - Visual stacking effect */}
+                  <div className="relative pl-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {groupItems.map((lessonItem, index) => {
+                        // Calculate stacking offset for visual depth
+                        const stackOffset = Math.min(index * 6, 30); // Max 30px offset
+                        const zIndex = groupItems.length - index;
+                        
+                        return (
+                          <div
+                            key={`${lessonItem.chapter.id}_${lessonItem.topic.topic_id || index}`}
+                            className="relative transition-all duration-300 hover:z-50 hover:scale-[1.02] hover:shadow-2xl"
+                            style={{
+                              marginTop: `${stackOffset}px`,
+                              marginLeft: `${index * 3}px`,
+                              zIndex: zIndex,
+                            }}
+                          >
+                            <div className="absolute -inset-1 bg-gradient-to-br from-cyan-500/20 to-purple-500/20 rounded-2xl blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300" />
+                            <LessonCard 
+                              lessonItem={lessonItem}
+                              completedLessons={completedLessons}
+                              onOpenModal={openLessonModal}
+                              getThumbnail={getThumbnail}
+                              selectedLanguage={selectedLanguage}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredChapters.map(chapter => (
-              <ChapterListItem
-                selectedLanguage={selectedLanguage} 
-                key={chapter.id} 
-                chapter={chapter}
-                completedLessons={completedLessons}
-                expandedChapters={expandedChapters}
-                onOpenModal={openLessonModal}
-                onToggleChapter={toggleChapter}
-                onApprovalChange={handleApprovalChange}
-              />
-            ))}
+            {/* Group lessons by chapter for visual organization */}
+            {groupedTopicsByChapter.map((group) => {
+              const groupItems = filteredLessonItems.filter(item => 
+                item.groupKey === `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`
+              );
+              
+              if (groupItems.length === 0) return null;
+              
+              const chapterName = getChapterNameByLanguage(group.chapterData._rawData || group.chapterData, selectedLanguage) || group.chapterName;
+              
+              return (
+                <div key={group.groupKey || `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`} className="space-y-2">
+                  {/* Chapter Header */}
+                  <div className="px-4 py-2 bg-slate-800/30 rounded-lg border border-slate-700/30">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-cyan-400 uppercase">{group.curriculum}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-xs font-medium text-purple-400">Class {group.class}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-xs font-medium text-slate-400">{getSubjectNameByLanguage(group.subject || '', selectedLanguage)}</span>
+                      <span className="text-slate-600">•</span>
+                      <span className="text-sm font-semibold text-slate-300">Chapter {group.chapterNumber}: {chapterName}</span>
+                      <span className="text-xs text-slate-500 ml-auto">({groupItems.length} topic{groupItems.length !== 1 ? 's' : ''})</span>
+                    </div>
+                  </div>
+                  {/* Topic Items */}
+                  {groupItems.map((lessonItem, index) => (
+                    <LessonListItem
+                      key={`${lessonItem.chapter.id}_${lessonItem.topic.topic_id || index}`}
+                      lessonItem={lessonItem}
+                      completedLessons={completedLessons}
+                      onOpenModal={openLessonModal}
+                      selectedLanguage={selectedLanguage}
+                      onApprovalChange={handleApprovalChange}
+                    />
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

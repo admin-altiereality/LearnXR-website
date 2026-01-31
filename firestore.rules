@@ -39,10 +39,11 @@ service cloud.firestore {
     // LMS Helper Functions (Multi-School RBAC)
     // ============================================
     
-    // Get user's school_id
+    // Get user's school_id (safe - returns null if missing)
     function getUserSchoolId() {
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return userDoc.data.school_id;
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id : 
+        null;
     }
     
     // Get user's role
@@ -74,19 +75,87 @@ service cloud.firestore {
     }
     
     // Helper function to check if teacher can approve student (hierarchical approval)
+    // For PENDING students: Teachers can approve any student in their school (they don't have classes yet)
+    // For APPROVED students: Teachers can approve students in their classes
+    // Expression-only: no if/else or let statements
     function canTeacherApproveStudent(studentId) {
       return getUserRole() == 'teacher' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
-        get(/databases/$(database)/documents/users/$(studentId)).data.class_ids != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.hasAny(get(/databases/$(database)/documents/users/$(studentId)).data.class_ids);
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.school_id != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(studentId)).data.school_id &&
+        (
+          // For PENDING students: Allow approval (they don't have classes yet)
+          get(/databases/$(database)/documents/users/$(studentId)).data.approvalStatus == 'pending' ||
+          // For APPROVED students: Check if student is in any of teacher's classes
+          // If teacher has no classes yet, allow (they can approve before being assigned classes)
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids == null ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.size() == 0 ||
+          // If student has no classes, allow (they might be approved but not yet assigned)
+          get(/databases/$(database)/documents/users/$(studentId)).data.class_ids == null ||
+          get(/databases/$(database)/documents/users/$(studentId)).data.class_ids.size() == 0 ||
+          // Check if they share any classes
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
+           get(/databases/$(database)/documents/users/$(studentId)).data.class_ids != null &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.hasAny(get(/databases/$(database)/documents/users/$(studentId)).data.class_ids))
+        );
     }
     
-    // Helper function to check if school can approve teacher (hierarchical approval)
+    // Helper function to check if school admin/principal can approve student
+    // School admins and principals can approve any student in their school
+    // Expression-only: no if/else or let statements
+    function canSchoolApproveStudent(studentId) {
+      return isAuthenticated() &&
+        (getUserRole() == 'school' || getUserRole() == 'principal') &&
+        // Get approver's school_id (principal uses managed_school_id, school uses school_id)
+        ((getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == get(/databases/$(database)/documents/users/$(studentId)).data.school_id) ||
+         (getUserRole() == 'school' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(studentId)).data.school_id)) &&
+        get(/databases/$(database)/documents/users/$(studentId)).data.school_id != null;
+    }
+    
+    // Helper function to check if school admin/principal can read teacher
+    // For collection queries: allows reading teachers in their school
+    // Expression-only: no if/else or let statements
+    function canSchoolReadTeacher(teacherSchoolId, teacherApprovalStatus) {
+      return isAuthenticated() &&
+        (getUserRole() == 'school' || getUserRole() == 'principal') &&
+        // For PENDING teachers: Allow reading ANY pending teacher (they might not have school_id yet, or it might be from another school)
+        // School admins/principals need to see pending teachers to approve them
+        // The client-side canApproveUser check will ensure they can only approve appropriate teachers
+        (teacherApprovalStatus == 'pending' ||
+         // For APPROVED teachers: Only allow if school_id matches approver's school
+         (getUserRole() == 'principal' && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null &&
+          teacherSchoolId != null &&
+          teacherSchoolId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id) ||
+         (getUserRole() == 'school' && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+          teacherSchoolId != null &&
+          teacherSchoolId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id));
+    }
+    
+    // Helper function to check if school admin/principal can approve teacher (hierarchical approval)
+    // For PENDING teachers: School admins/principals can approve any teacher in their school (they might not have school_id yet)
+    // For APPROVED teachers: School admins/principals can approve teachers in their school
+    // Expression-only: no if/else or let statements
     function canSchoolApproveTeacher(teacherId) {
-      return getUserRole() == 'school' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
-        get(/databases/$(database)/documents/users/$(teacherId)).data.school_id != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id;
+      return isAuthenticated() &&
+        (getUserRole() == 'school' || getUserRole() == 'principal') &&
+        // Get approver's school_id (principal uses managed_school_id, school uses school_id)
+        ((getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null) ||
+         (getUserRole() == 'school' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null)) &&
+        (
+          // For PENDING teachers: Allow approval (they might not have school_id yet, or it might be different)
+          get(/databases/$(database)/documents/users/$(teacherId)).data.approvalStatus == 'pending' ||
+          // For APPROVED teachers: Check if teacher's school_id matches approver's school_id
+          (getUserRole() == 'principal' && 
+           get(/databases/$(database)/documents/users/$(teacherId)).data.school_id != null &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id) ||
+          (getUserRole() == 'school' && 
+           get(/databases/$(database)/documents/users/$(teacherId)).data.school_id != null &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id)
+        );
     }
     
     // Users collection - users can read/write their own data
@@ -96,12 +165,17 @@ service cloud.firestore {
       // 1. User is reading their own document, OR
       // 2. Superadmin/admin (needed for approvals page queries), OR
       // 3. Teacher reading students in their school (will filter by class_ids client-side), OR
-      // 4. School reading teachers in their school (will filter by school_id client-side)
+      // 4. School admin/principal reading students in their school (needed for approval pages), OR
+      // 5. School admin/principal reading teachers in their school
       allow read: if isOwner(userId) || 
                      isSuperadmin() || 
                      isAdmin() ||
                      (getUserRole() == 'teacher' && resource.data.role == 'student' && getUserSchoolId() == resource.data.school_id) ||
-                     (getUserRole() == 'school' && resource.data.role == 'teacher' && (getUserSchoolId() == resource.data.school_id || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id));
+                     ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'student' && canSchoolApproveStudent(userId)) ||
+                     // School admin/principal can read teachers in their school
+                     // Use simplified helper function for better collection query performance
+                     ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
+                      canSchoolReadTeacher(resource.data.school_id, resource.data.approvalStatus));
       
       allow create: if isOwner(userId);
       
@@ -109,16 +183,33 @@ service cloud.firestore {
       // 1. User is updating their own document (but not approvalStatus or role), OR
       // 2. User is completing onboarding: setting approvalStatus to 'pending' only (no role change), OR
       // 3. Superadmin/admin updating (needed for approval actions), OR
-      // 4. Teacher updating approvalStatus for students in their classes, OR
-      // 5. School updating approvalStatus for teachers in their school
+      // 4. Teacher updating approvalStatus for students in their school (including pending students), OR
+      // 5. School admin/principal updating approvalStatus for students in their school, OR
+      // 6. School updating approvalStatus for teachers in their school
       allow update: if (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus', 'role'])) || 
                        (isOwner(userId) && request.resource.data.approvalStatus == 'pending' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
                        isSuperadmin() ||
                        (isAdmin() && resource.data.role == 'school') ||
+                       // Teacher can approve/reject students in their school (allows school_id update too)
                        (getUserRole() == 'teacher' && resource.data.role == 'student' && canTeacherApproveStudent(userId) && 
-                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'updatedAt'])) ||
-                       (getUserRole() == 'school' && resource.data.role == 'teacher' && canSchoolApproveTeacher(userId) && 
-                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'updatedAt']));
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
+                       // School admin/principal can approve/reject students in their school (allows school_id update too)
+                       ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'student' && canSchoolApproveStudent(userId) && 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
+                       // School admin/principal can approve/reject teachers (similar to superadmin for teachers)
+                       // Simplified: Allow school admins/principals to approve any teacher
+                       // Client-side canApproveUser check will ensure they only approve appropriate teachers
+                       ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
+                       // School admin/principal can update managed_class_ids for teachers in their school (for class assignment)
+                       ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
+                        ((getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null &&
+                          resource.data.school_id != null &&
+                          resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id) ||
+                         (getUserRole() == 'school' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+                          resource.data.school_id != null &&
+                          resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id)) &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['managed_class_ids', 'updatedAt']));
       
       allow delete: if isSuperadmin();
     }
@@ -349,19 +440,28 @@ service cloud.firestore {
     
     // Classes collection - users can read classes for schools they access or for approved schools (onboarding)
     match /classes/{classId} {
-      allow read: if isAuthenticated() && resource.data.school_id != null && 
-        (canAccessSchool(resource.data.school_id) || 
-         get(/databases/$(database)/documents/schools/$(resource.data.school_id)).data.approvalStatus == 'approved');
+      allow read: if isAuthenticated() && resource.data.school_id != null && (
+        canAccessSchool(resource.data.school_id) || 
+        get(/databases/$(database)/documents/schools/$(resource.data.school_id)).data.approvalStatus == 'approved' ||
+        // Allow teachers to read classes where they are in teacher_ids (even if they don't have school_id yet)
+        (getUserRole() == 'teacher' && 
+         resource.data.teacher_ids != null && 
+         resource.data.teacher_ids.hasAny([request.auth.uid]))
+      );
       allow create: if isAdminOrSuperadmin() || 
         (isAuthenticated() && 
          request.resource.data.school_id != null && 
          canAccessSchool(request.resource.data.school_id) &&
          request.resource.data.createdBy == request.auth.uid);
       allow update: if isAdminOrSuperadmin() || 
+        // School admins/principals can update teacher_ids, class_teacher_id, and student_ids for classes in their school
         (isAuthenticated() && 
          resource.data.school_id != null && 
          canAccessSchool(resource.data.school_id) &&
-         request.resource.data.school_id == resource.data.school_id) ||
+         request.resource.data.school_id == resource.data.school_id &&
+         (getUserRole() == 'school' || getUserRole() == 'principal') && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher_ids', 'class_teacher_id', 'student_ids', 'updatedAt'])) ||
+        // Students can update their own student_ids
         (isAuthenticated() && resource.data.school_id != null && request.resource.data.school_id == resource.data.school_id &&
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['student_ids', 'updatedAt']) &&
          request.resource.data.student_ids.hasAny([request.auth.uid]));

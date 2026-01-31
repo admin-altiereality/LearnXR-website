@@ -140,10 +140,11 @@ export const StudentGuard = ({ children }: { children: React.ReactNode }) => (
 );
 
 /**
- * TeacherGuard - Only allows teachers, schools, and higher roles
+ * TeacherGuard - Only allows teachers and higher roles (excludes school administrators)
+ * School administrators should NOT have access to Create, Explore, History
  */
 export const TeacherGuard = ({ children }: { children: React.ReactNode }) => (
-  <RoleGuard allowedRoles={['teacher', 'school', 'admin', 'superadmin']}>
+  <RoleGuard allowedRoles={['teacher', 'admin', 'superadmin']}>
     {children}
   </RoleGuard>
 );

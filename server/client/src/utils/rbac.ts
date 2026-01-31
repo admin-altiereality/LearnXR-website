@@ -84,9 +84,9 @@ export const ROLE_HIERARCHY: Record<UserRole, number> = {
 export const APPROVAL_REQUIRED_ROLES: UserRole[] = ['student', 'teacher', 'school'];
 
 /**
- * Roles that can approve other users (hierarchical: teachers, schools, admins)
+ * Roles that can approve other users (hierarchical: teachers, principals, schools, admins)
  */
-export const CAN_APPROVE_ROLES: UserRole[] = ['teacher', 'school', 'admin', 'superadmin'];
+export const CAN_APPROVE_ROLES: UserRole[] = ['teacher', 'principal', 'school', 'admin', 'superadmin'];
 
 /**
  * Roles that can approve chapters/content (admin and superadmin)
@@ -106,10 +106,10 @@ export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
   public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
   auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
   lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
-  create: ['teacher', 'school', 'admin', 'superadmin'],
+  create: ['teacher', 'admin', 'superadmin'], // School administrators removed
   studio: ['admin', 'superadmin'],
   developer: ['admin', 'superadmin'],
-  class_management: ['school', 'principal', 'admin', 'superadmin'],
+  class_management: ['teacher', 'school', 'principal', 'admin', 'superadmin'],
   admin: ['admin', 'superadmin'],
   superadmin: ['superadmin'],
 };
@@ -163,6 +163,12 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   
   // Class management - school, principal, admin, superadmin
   '/admin/classes': 'class_management',
+  
+  // Student approvals - teacher and principal
+  '/teacher/approvals': 'auth',
+  
+  // School approvals - school administrators
+  '/school/approvals': 'auth',
   
   // Admin routes
   '/admin': 'admin',
@@ -220,19 +226,103 @@ export function canApproveUser(approver: UserProfile | null, targetUser: UserPro
   
   // Schools can approve teachers in their school
   if (approver.role === 'school' && targetUser.role === 'teacher') {
+    // For PENDING teachers: Allow approval (they might not have school_id yet)
+    if (targetUser.approvalStatus === 'pending') {
+      console.log('✅ canApproveUser: Allowing approval - pending teacher');
+      return true;
+    }
+    // For APPROVED teachers: Check if they're in the same school
     return approver.school_id === targetUser.school_id || 
            approver.managed_school_id === targetUser.school_id;
   }
   
-  // Teachers can approve students in their classes
+  // Principals can approve teachers in their school
+  if (approver.role === 'principal' && targetUser.role === 'teacher') {
+    // For PENDING teachers: Allow approval (they might not have school_id yet)
+    if (targetUser.approvalStatus === 'pending') {
+      console.log('✅ canApproveUser: Allowing approval - pending teacher (principal)');
+      return true;
+    }
+    // For APPROVED teachers: Check if teacher is in the principal's school
+    const principalSchoolId = approver.managed_school_id;
+    const teacherSchoolId = targetUser.school_id;
+    return principalSchoolId && teacherSchoolId && principalSchoolId === teacherSchoolId;
+  }
+  
+  // Teachers can approve students in their school
   if (approver.role === 'teacher' && targetUser.role === 'student') {
-    // Check if student is in any of teacher's classes
+    // First check if they're in the same school
+    const teacherSchoolId = approver.school_id;
+    const studentSchoolId = targetUser.school_id;
+    
+    console.log('🔍 canApproveUser: Teacher approving student', {
+      teacherSchoolId,
+      studentSchoolId,
+      schoolMatch: teacherSchoolId === studentSchoolId,
+      studentApprovalStatus: targetUser.approvalStatus,
+    });
+    
+    if (!teacherSchoolId || !studentSchoolId || teacherSchoolId !== studentSchoolId) {
+      console.warn('⚠️ canApproveUser: School ID mismatch', {
+        teacherSchoolId,
+        studentSchoolId,
+      });
+      return false;
+    }
+    
+    // For PENDING students: Teachers can approve any student in their school
+    // (Pending students don't have class_ids yet - they get assigned after approval)
+    if (targetUser.approvalStatus === 'pending') {
+      console.log('✅ canApproveUser: Allowing approval - pending student in same school');
+      return true; // Allow approval of pending students in same school
+    }
+    
+    // For APPROVED students: Check if student is in any of teacher's classes
+    // (This is for cases where we want to verify class assignment)
     const teacherClassIds = approver.managed_class_ids || [];
     const studentClassIds = targetUser.class_ids || [];
-    return teacherClassIds.some(classId => studentClassIds.includes(classId));
+    
+    // If teacher has classes and student has classes, check intersection
+    // If teacher has no classes yet, allow (they can approve students before being assigned classes)
+    if (teacherClassIds.length === 0) {
+      console.log('✅ canApproveUser: Allowing approval - teacher has no classes assigned yet');
+      return true; // Teacher can approve if they don't have classes assigned yet
+    }
+    
+    // If both have classes, check intersection
+    const hasCommonClass = studentClassIds.length > 0 && 
+           teacherClassIds.some(classId => studentClassIds.includes(classId));
+    
+    console.log('🔍 canApproveUser: Checking class intersection', {
+      teacherClassIds,
+      studentClassIds,
+      hasCommonClass,
+    });
+    
+    return hasCommonClass;
+  }
+  
+  // Principals can approve students in their school
+  if (approver.role === 'principal' && targetUser.role === 'student') {
+    // Check if student is in the principal's school
+    const principalSchoolId = approver.managed_school_id;
+    const studentSchoolId = targetUser.school_id;
+    return principalSchoolId && studentSchoolId && principalSchoolId === studentSchoolId;
   }
   
   return false;
+}
+
+/**
+ * Get school code from school_id (helper function)
+ * Note: This is a placeholder - actual implementation should fetch from Firestore
+ * For better performance, use the getSchoolById service function
+ */
+export async function getSchoolCodeFromId(schoolId: string | undefined): Promise<string | null> {
+  if (!schoolId) return null;
+  // This should be implemented using getSchoolById from schoolManagementService
+  // For now, return null - the component will handle fetching
+  return null;
 }
 
 /**
@@ -260,6 +350,8 @@ export function requiresStudentOnboarding(role: UserRole): boolean {
 
 /**
  * Check if a student has completed required onboarding fields
+ * Note: Students may not have a class assigned yet (assigned after approval),
+ * so we check onboardingCompleted flag first, then verify required fields exist.
  */
 export function hasCompletedStudentOnboarding(profile: UserProfile | null): boolean {
   if (!profile) return false;
@@ -269,15 +361,29 @@ export function hasCompletedStudentOnboarding(profile: UserProfile | null): bool
     return true;
   }
   
-  // Check required student fields
+  // If onboardingCompleted flag is set, student has completed onboarding
+  // (class may be assigned later by teacher/school admin)
+  if (profile.onboardingCompleted === true) {
+    // Verify essential fields are present (class is optional, assigned after approval)
+    const hasEssentialFields = !!(
+      profile.age &&
+      profile.curriculum &&
+      profile.school &&
+      profile.school_id // Must have school_id
+    );
+    return hasEssentialFields;
+  }
+  
+  // Legacy check: if onboardingCompleted is not set, check for required fields
+  // (for backward compatibility with older student records)
   const hasRequiredFields = !!(
     profile.age &&
-    profile.class &&
     profile.curriculum &&
-    profile.school
+    profile.school &&
+    profile.school_id
   );
   
-  return hasRequiredFields && profile.onboardingCompleted === true;
+  return hasRequiredFields;
 }
 
 /**
