@@ -145,16 +145,79 @@ export async function assignStudentToClass(
       return false;
     }
 
-    // Update class.student_ids
-    await updateDoc(doc(db, 'classes', classId), {
+    // Prepare class update data
+    const classUpdateData: Record<string, unknown> = {
       student_ids: arrayUnion(studentId),
       updatedAt: serverTimestamp(),
-    });
+    };
+
+    // If the teacher is assigning and the class doesn't have a class_teacher_id, set it
+    // This ensures that when a teacher approves and assigns students, they become the class teacher
+    if (profile.role === 'teacher' && !classData.class_teacher_id) {
+      // Check if this teacher is in teacher_ids (they should be if they're managing this class)
+      if (classData.teacher_ids?.includes(profile.uid)) {
+        classUpdateData.class_teacher_id = profile.uid;
+        console.log('🔧 assignStudentToClass: Setting class_teacher_id', {
+          classId,
+          teacherId: profile.uid,
+          className: classData.class_name,
+        });
+      } else {
+        // If teacher is not in teacher_ids but is assigning students, add them
+        // This handles edge cases where teacher_ids might not be set correctly
+        console.warn('⚠️ assignStudentToClass: Teacher not in teacher_ids, adding them', {
+          classId,
+          teacherId: profile.uid,
+        });
+        classUpdateData.teacher_ids = arrayUnion(profile.uid);
+        classUpdateData.class_teacher_id = profile.uid;
+      }
+    }
+
+    // Update class.student_ids (and class_teacher_id if needed)
+    await updateDoc(doc(db, 'classes', classId), classUpdateData);
 
     // Update user.class_ids
     await updateDoc(doc(db, 'users', studentId), {
       class_ids: arrayUnion(classId),
       updatedAt: serverTimestamp(),
+    });
+
+    // Always ensure teacher's managed_class_ids includes this class when they assign students
+    // This ensures the teacher's profile stays in sync with their classes
+    if (profile.role === 'teacher') {
+      try {
+        const teacherDoc = await getDoc(doc(db, 'users', profile.uid));
+        if (teacherDoc.exists()) {
+          const teacherData = teacherDoc.data();
+          // Update managed_class_ids if not already included
+          if (!teacherData.managed_class_ids || !teacherData.managed_class_ids.includes(classId)) {
+            await updateDoc(doc(db, 'users', profile.uid), {
+              managed_class_ids: arrayUnion(classId),
+              updatedAt: serverTimestamp(),
+            });
+            console.log('🔧 assignStudentToClass: Updated teacher managed_class_ids', {
+              teacherId: profile.uid,
+              classId,
+              wasInTeacherIds: classData.teacher_ids?.includes(profile.uid),
+              wasSetAsClassTeacher: classUpdateData.class_teacher_id === profile.uid,
+            });
+          }
+        }
+      } catch (error: any) {
+        // Don't fail the assignment if managed_class_ids update fails
+        console.warn('⚠️ assignStudentToClass: Failed to update teacher managed_class_ids', {
+          error,
+          teacherId: profile.uid,
+          classId,
+        });
+      }
+    }
+
+    console.log('✅ assignStudentToClass: Student assigned successfully', {
+      studentId,
+      classId,
+      classTeacherId: classUpdateData.class_teacher_id || classData.class_teacher_id,
     });
 
     toast.success('Student assigned to class successfully');

@@ -201,6 +201,52 @@
         }
       ],
       "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "student_scores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "school_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completed_at",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "lesson_launches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "class_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "school_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "launched_at",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []

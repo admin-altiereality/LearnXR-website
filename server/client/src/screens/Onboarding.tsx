@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc, collection, setDoc, serverTimestamp, query, where, getDocs, onSnapshot, arrayUnion } from 'firebase/firestore';
+import type { Class } from '../types/lms';
 import { 
   FaRocket, 
   FaArrowRight,
@@ -53,11 +54,6 @@ interface StudentOnboardingData {
   schoolId: string; // Selected school ID
   city: string;
   state: string;
-  parentEmail: string;
-  parentConsent: boolean;
-  gdprConsent: boolean;
-  dataProcessingConsent: boolean;
-  marketingConsent: boolean;
   learningPreferences: string[];
   languagePreference: string;
 }
@@ -219,11 +215,6 @@ const Onboarding = () => {
     schoolId: '', // Store selected school ID
     city: '',
     state: '',
-    parentEmail: '',
-    parentConsent: false,
-    gdprConsent: false,
-    dataProcessingConsent: false,
-    marketingConsent: false,
     learningPreferences: [],
     languagePreference: 'english',
   });
@@ -242,6 +233,9 @@ const Onboarding = () => {
   const [studentSchoolCodeInput, setStudentSchoolCodeInput] = useState('');
   const [studentSchoolCodeError, setStudentSchoolCodeError] = useState('');
   const [studentSchoolCodeVerifying, setStudentSchoolCodeVerifying] = useState(false);
+  // Student: available classes for selected school
+  const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
   
   // School form data
   const [schoolData, setSchoolData] = useState<SchoolOnboardingData>({
@@ -263,11 +257,8 @@ const Onboarding = () => {
   const isTeacherRole = profile?.role === 'teacher';
   const isSchoolRole = profile?.role === 'school';
   
-  // Total steps based on role - Students have 6 steps including GDPR consent
-  const totalSteps = isStudentRole ? 6 : isTeacherRole ? 4 : isSchoolRole ? 4 : 1;
-
-  // Check if user is a minor (under 16) for GDPR
-  const isMinor = studentData.age && parseInt(studentData.age) < 16;
+  // Total steps based on role - Students have 5 steps (removed GDPR consent)
+  const totalSteps = isStudentRole ? 5 : isTeacherRole ? 4 : isSchoolRole ? 4 : 1;
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
@@ -390,7 +381,7 @@ const Onboarding = () => {
     }
   };
 
-  // Verify student's school code (code only; no dropdown, no class selection)
+  // Verify student's school code and fetch available classes
   const handleVerifyStudentSchoolCode = async () => {
     const code = studentSchoolCodeInput.trim().toUpperCase().replace(/\s/g, '');
     if (!code) {
@@ -424,6 +415,9 @@ const Onboarding = () => {
       }));
       setStudentSchoolCodeError('');
       toast.success(`School: ${school.name || 'Verified'}`);
+      
+      // Fetch available classes for this school
+      await fetchSchoolClasses(school.id);
     } catch (err: unknown) {
       console.error('Error verifying school code:', err);
       setStudentSchoolCodeError('Could not verify school code. Please try again.');
@@ -432,22 +426,42 @@ const Onboarding = () => {
     }
   };
 
+  // Fetch classes for the selected school
+  const fetchSchoolClasses = async (schoolId: string) => {
+    if (!schoolId) return;
+    
+    setLoadingClasses(true);
+    try {
+      const classesRef = collection(db, 'classes');
+      const q = query(
+        classesRef,
+        where('school_id', '==', schoolId)
+      );
+      const snapshot = await getDocs(q);
+      const classes = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Class[];
+      
+      setAvailableClasses(classes);
+      console.log('✅ Fetched classes for school', { schoolId, classCount: classes.length });
+    } catch (err: unknown) {
+      console.error('Error fetching classes:', err);
+      toast.error('Could not load classes. Please try again.');
+      setAvailableClasses([]);
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
+
   const canProceed = () => {
     if (isStudentRole) {
       switch (step) {
         case 1: return studentData.age !== '';
         case 2: return studentData.curriculum !== '';
-        case 3: return studentData.schoolId !== '';
+        case 3: return studentData.schoolId !== '' && studentData.classId !== '';
         case 4: return studentData.learningPreferences.length > 0;
-        case 5: // GDPR consent step
-          if (isMinor) {
-            return studentData.parentEmail.trim() !== '' && 
-                   studentData.parentConsent && 
-                   studentData.gdprConsent && 
-                   studentData.dataProcessingConsent;
-          }
-          return studentData.gdprConsent && studentData.dataProcessingConsent;
-        case 6: return true; // Review step
+        case 5: return true; // Review step
         default: return false;
       }
     }
@@ -508,26 +522,18 @@ const Onboarding = () => {
         
         updateData = {
           ...updateData,
-          // Student onboarding data (school by code only; class assigned later by school/teacher)
+          // Student onboarding data (school by code; class selected during onboarding)
           age: parseInt(studentData.age) || null,
           dateOfBirth: studentData.dateOfBirth || null,
-          class: '',
+          class: studentData.class || '',
           curriculum: studentData.curriculum,
           school: studentData.schoolName.trim(),
           school_id: studentData.schoolId, // CRITICAL: Must be set
-          class_ids: [], // To be assigned by school/teacher on approval or in Class Management
+          class_ids: studentData.classId ? [studentData.classId] : [], // Set selected class during onboarding
           city: studentData.city || null,
           state: studentData.state || null,
           languagePreference: studentData.languagePreference,
           learningPreferences: studentData.learningPreferences,
-          // GDPR consent data
-          parentEmail: studentData.parentEmail || null,
-          parentConsent: studentData.parentConsent,
-          parentConsentAt: studentData.parentConsent ? now : null,
-          gdprConsent: studentData.gdprConsent,
-          gdprConsentAt: studentData.gdprConsent ? now : null,
-          dataProcessingConsent: studentData.dataProcessingConsent,
-          marketingConsent: studentData.marketingConsent,
           // Set approval status to pending for students (they need teacher approval)
           approvalStatus: 'pending',
         };
@@ -697,18 +703,6 @@ const Onboarding = () => {
                 className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-emerald-400/60" />
             </div>
 
-            {/* Age notice for minors */}
-            {studentData.age && parseInt(studentData.age) < 16 && (
-              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
-                <div className="flex items-start gap-3">
-                  <FaExclamationTriangle className="text-amber-400 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm">
-                    <p className="text-amber-300 font-medium">Parental Consent Required</p>
-                    <p className="text-amber-300/70 mt-1">As you're under 16, we'll need your parent or guardian's email and consent to comply with data protection regulations (GDPR/COPPA).</p>
-                  </div>
-                </div>
-              </div>
-            )}
           </motion.div>
         );
 
@@ -761,7 +755,7 @@ const Onboarding = () => {
                 <FaSchool className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">School Information</h2>
-              <p className="text-white/50 text-sm">Enter your school code to connect with your school. Your class will be assigned by your school.</p>
+              <p className="text-white/50 text-sm">Enter your school code to connect with your school and select your class.</p>
             </div>
             
             <div className="space-y-4">
@@ -798,6 +792,48 @@ const Onboarding = () => {
                   </p>
                 )}
               </div>
+
+              {/* Class Selection */}
+              {studentData.schoolId && (
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-2">Select Your Class *</label>
+                  {loadingClasses ? (
+                    <div className="flex items-center gap-2 text-white/50">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-400"></div>
+                      <span className="text-sm">Loading classes...</span>
+                    </div>
+                  ) : availableClasses.length === 0 ? (
+                    <p className="text-xs text-amber-400 mt-1">
+                      No classes available for this school. Please contact your school administrator.
+                    </p>
+                  ) : (
+                    <select
+                      value={studentData.classId}
+                      onChange={(e) => {
+                        const selectedClass = availableClasses.find(c => c.id === e.target.value);
+                        setStudentData(prev => ({
+                          ...prev,
+                          classId: e.target.value,
+                          class: selectedClass?.class_name || prev.class,
+                        }));
+                      }}
+                      className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-violet-400/60"
+                    >
+                      <option value="">Select a class</option>
+                      {availableClasses.map((cls) => (
+                        <option key={cls.id} value={cls.id}>
+                          {cls.class_name} {cls.subject ? `- ${cls.subject}` : ''} {cls.curriculum ? `(${cls.curriculum})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {studentData.classId && (
+                    <p className="text-xs text-white/50 mt-1">
+                      Selected: {availableClasses.find(c => c.id === studentData.classId)?.class_name || 'Class'}
+                    </p>
+                  )}
+                </div>
+              )}
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -872,131 +908,9 @@ const Onboarding = () => {
           </motion.div>
         );
 
-      case 5: // GDPR Consent
+      case 5: // Review & Confirm
         return (
           <motion.div key="s5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg">
-                <FaShieldAlt className="text-2xl text-white" />
-              </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Privacy & Data Protection</h2>
-              <p className="text-white/50 text-sm">We take your privacy seriously. Please review and consent below.</p>
-            </div>
-
-            {/* GDPR Badge */}
-            <div className="flex justify-center mb-6">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/30">
-                <FaLock className="text-emerald-400" />
-                <span className="text-emerald-300 text-sm font-medium">GDPR Compliant</span>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              {/* Parental Consent for Minors */}
-              {isMinor && (
-                <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30">
-                  <div className="flex items-start gap-3 mb-4">
-                    <FaUserShield className="text-amber-400 text-xl mt-0.5" />
-                    <div>
-                      <h3 className="text-amber-300 font-semibold">Parental/Guardian Consent Required</h3>
-                      <p className="text-amber-300/70 text-sm mt-1">
-                        As you're under 16, we require your parent or guardian's email and consent as per GDPR Article 8 and COPPA regulations.
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-amber-300/80 mb-2">Parent/Guardian Email *</label>
-                    <input type="email" value={studentData.parentEmail} 
-                      onChange={(e) => setStudentData(prev => ({ ...prev, parentEmail: e.target.value }))}
-                      placeholder="parent@email.com"
-                      className="w-full rounded-xl bg-amber-900/20 px-4 py-3 border border-amber-500/30 text-white placeholder:text-white/30 focus:outline-none focus:border-amber-400/60" />
-                    <p className="text-xs text-amber-400/60 mt-2">We'll send a verification email to confirm consent</p>
-                  </div>
-                  
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" checked={studentData.parentConsent}
-                      onChange={(e) => setStudentData(prev => ({ ...prev, parentConsent: e.target.checked }))}
-                      className="mt-1 w-5 h-5 rounded border-amber-500/50 bg-transparent text-amber-500 focus:ring-amber-500" />
-                    <span className="text-sm text-amber-300/80">
-                      I confirm that I have my parent/guardian's permission to use this platform and they have reviewed this privacy notice. *
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              {/* Data Processing Consent */}
-              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" checked={studentData.dataProcessingConsent}
-                    onChange={(e) => setStudentData(prev => ({ ...prev, dataProcessingConsent: e.target.checked }))}
-                    className="mt-1 w-5 h-5 rounded border-white/30 bg-transparent text-cyan-500 focus:ring-cyan-500" />
-                  <div>
-                    <span className="text-white font-medium block">Data Processing Consent *</span>
-                    <span className="text-sm text-white/50">
-                      I consent to LearnXR processing my personal data (name, email, age, educational information) to provide personalized learning experiences.
-                    </span>
-                  </div>
-                </label>
-              </div>
-
-              {/* GDPR Consent */}
-              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" checked={studentData.gdprConsent}
-                    onChange={(e) => setStudentData(prev => ({ ...prev, gdprConsent: e.target.checked }))}
-                    className="mt-1 w-5 h-5 rounded border-white/30 bg-transparent text-cyan-500 focus:ring-cyan-500" />
-                  <div>
-                    <span className="text-white font-medium block">Privacy Policy & Terms *</span>
-                    <span className="text-sm text-white/50">
-                      I have read and agree to the{' '}
-                      <a href="/privacy-policy" target="_blank" className="text-cyan-400 hover:underline">Privacy Policy</a>
-                      {' '}and{' '}
-                      <a href="/terms-conditions" target="_blank" className="text-cyan-400 hover:underline">Terms of Service</a>.
-                      I understand my rights under GDPR including the right to access, rectify, and delete my data.
-                    </span>
-                  </div>
-                </label>
-              </div>
-
-              {/* Marketing Consent (Optional) */}
-              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input type="checkbox" checked={studentData.marketingConsent}
-                    onChange={(e) => setStudentData(prev => ({ ...prev, marketingConsent: e.target.checked }))}
-                    className="mt-1 w-5 h-5 rounded border-white/30 bg-transparent text-cyan-500 focus:ring-cyan-500" />
-                  <div>
-                    <span className="text-white font-medium block">Educational Updates (Optional)</span>
-                    <span className="text-sm text-white/50">
-                      I'd like to receive educational tips, new lesson notifications, and platform updates via email. You can unsubscribe anytime.
-                    </span>
-                  </div>
-                </label>
-              </div>
-
-              {/* Data Protection Notice */}
-              <div className="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/30">
-                <div className="flex items-start gap-3">
-                  <FaLock className="text-cyan-400 mt-0.5" />
-                  <div className="text-sm text-cyan-300/80">
-                    <p className="font-medium mb-1">Your Data Rights</p>
-                    <ul className="space-y-1 text-cyan-300/60">
-                      <li>• Right to access your personal data</li>
-                      <li>• Right to correct inaccurate data</li>
-                      <li>• Right to delete your data ("right to be forgotten")</li>
-                      <li>• Right to data portability</li>
-                      <li>• Contact: <a href="mailto:admin@altiereality.com" className="text-cyan-400">admin@altiereality.com</a></li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        );
-
-      case 6: // Review & Confirm
-        return (
-          <motion.div key="s6" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
               <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
                 <FaCheckCircle className="text-2xl text-white" />
@@ -1045,33 +959,6 @@ const Onboarding = () => {
                       </span>
                     ) : null;
                   })}
-                </div>
-              </div>
-
-              {/* Consent Summary */}
-              <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
-                <h3 className="text-sm font-semibold text-emerald-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaShieldAlt /> Consent Summary
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <FaCheckCircle className={studentData.gdprConsent ? 'text-emerald-400' : 'text-white/30'} />
-                    <span className={studentData.gdprConsent ? 'text-emerald-300' : 'text-white/50'}>Privacy Policy & Terms Accepted</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <FaCheckCircle className={studentData.dataProcessingConsent ? 'text-emerald-400' : 'text-white/30'} />
-                    <span className={studentData.dataProcessingConsent ? 'text-emerald-300' : 'text-white/50'}>Data Processing Consent</span>
-                  </div>
-                  {isMinor && (
-                    <div className="flex items-center gap-2">
-                      <FaCheckCircle className={studentData.parentConsent ? 'text-emerald-400' : 'text-white/30'} />
-                      <span className={studentData.parentConsent ? 'text-emerald-300' : 'text-white/50'}>Parental Consent</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    {studentData.marketingConsent ? <FaCheckCircle className="text-emerald-400" /> : <div className="w-4 h-4 rounded-full border border-white/30" />}
-                    <span className={studentData.marketingConsent ? 'text-emerald-300' : 'text-white/50'}>Marketing Communications {!studentData.marketingConsent && '(opted out)'}</span>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1534,14 +1421,6 @@ const Onboarding = () => {
             </div>
           </motion.div>
 
-          {/* GDPR Badge Footer */}
-          <motion.div custom={3} variants={fadeUpVariants} initial="hidden" animate="visible" 
-            className="mt-6 text-center">
-            <div className="inline-flex items-center gap-2 text-sm text-white/40">
-              <FaShieldAlt className="text-emerald-400" />
-              <span>Your data is protected under GDPR regulations</span>
-            </div>
-          </motion.div>
         </div>
       </div>
     </FuturisticBackground>

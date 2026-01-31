@@ -128,6 +128,14 @@ const TeacherDashboard = () => {
         id: doc.id,
         ...doc.data(),
       })) as Class[];
+      
+      console.log('🔍 TeacherDashboard: Classes updated', {
+        total: classesData.length,
+        classIds: classesData.map(c => c.id),
+        classNames: classesData.map(c => c.class_name),
+        teacherId: user.uid,
+      });
+      
       setClasses(classesData);
 
       // Auto-assign school_id if teacher is missing it but has classes assigned
@@ -182,12 +190,36 @@ const TeacherDashboard = () => {
           where('class_ids', 'array-contains-any', classIds)
         );
 
-        const studentsSnapshot = await getDocs(studentsQuery);
-        const studentsData = studentsSnapshot.docs.map(doc => ({
-          uid: doc.id,
-          ...doc.data(),
-        }));
-        setStudents(studentsData);
+        // Use real-time listener for students so dashboard updates when students are assigned
+        const unsubscribeStudents = onSnapshot(studentsQuery, (studentsSnapshot) => {
+          const studentsData = studentsSnapshot.docs.map(doc => ({
+            uid: doc.id,
+            ...doc.data(),
+          }));
+          console.log('🔍 TeacherDashboard: Students updated', {
+            total: studentsData.length,
+            approved: studentsData.filter(s => s.approvalStatus === 'approved').length,
+            pending: studentsData.filter(s => s.approvalStatus === 'pending').length,
+            classIds,
+            schoolId: schoolIdForQuery,
+            studentDetails: studentsData.map(s => ({
+              uid: s.uid,
+              name: s.name || s.displayName,
+              approvalStatus: s.approvalStatus,
+              class_ids: s.class_ids,
+              school_id: s.school_id,
+            })),
+          });
+          setStudents(studentsData);
+        }, (error) => {
+          console.error('❌ TeacherDashboard: Error fetching students', {
+            error,
+            errorCode: error.code,
+            errorMessage: error.message,
+            classIds,
+            schoolId: schoolIdForQuery,
+          });
+        });
 
         // Get scores for these classes
         const scoresQuery = query(
@@ -223,6 +255,7 @@ const TeacherDashboard = () => {
         });
 
         return () => {
+          unsubscribeStudents();
           unsubscribeScores();
           unsubscribeLaunches();
         };

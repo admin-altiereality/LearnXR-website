@@ -164,25 +164,38 @@ const TeacherApprovals = () => {
         
         // For PENDING students: Don't filter by class_ids (they don't have classes yet)
         // Teachers can approve any pending student in their school
-        // For APPROVED students: Only show students where this teacher is the class teacher
+        // For APPROVED students: Show students where this teacher is in teacher_ids or class_teacher_id
+        // Also show students without classes yet (class assignment might be pending)
         if (!isPending) {
           const studentClassIds = student.class_ids || [];
+          
+          // If student has no classes, still show them (class assignment might be pending or failed)
           if (studentClassIds.length === 0) {
-            continue; // Skip students without classes
-          }
-          
-          // Check if teacher is the class_teacher_id for any of student's classes
-          let isClassTeacher = false;
-          for (const classId of studentClassIds) {
-            const classData = classesCache.get(classId);
-            if (classData && classData.class_teacher_id === profile.uid) {
-              isClassTeacher = true;
-              break;
+            // Allow showing students without classes - they might be newly approved
+            // The teacher can manually assign them to a class if needed
+          } else {
+            // Check if teacher is in teacher_ids or is the class_teacher_id for any of student's classes
+            let isTeacherForStudent = false;
+            for (const classId of studentClassIds) {
+              const classData = classesCache.get(classId);
+              if (classData) {
+                // Check if teacher is the class teacher
+                if (classData.class_teacher_id === profile.uid) {
+                  isTeacherForStudent = true;
+                  break;
+                }
+                // Also check if teacher is in teacher_ids (they might teach the class)
+                if (classData.teacher_ids && classData.teacher_ids.includes(profile.uid)) {
+                  isTeacherForStudent = true;
+                  break;
+                }
+              }
             }
-          }
-          
-          if (!isClassTeacher) {
-            continue; // Skip if teacher is not the class teacher for this student
+            
+            // If student has classes but teacher is not assigned to any of them, skip
+            if (!isTeacherForStudent) {
+              continue;
+            }
           }
         }
       }
@@ -570,23 +583,78 @@ const TeacherApprovals = () => {
       console.log('✅ TeacherApprovals: Student approved successfully', { studentId });
 
       // If approver is a teacher, assign student to teacher's class
-      if (profile.role === 'teacher' && profile.managed_class_ids && profile.managed_class_ids.length > 0) {
+      if (profile.role === 'teacher') {
         try {
-          // Find the class where this teacher is the class_teacher_id, or use the first class
           let targetClassId: string | null = null;
           
           // First, try to find a class where teacher is the class_teacher_id
-          for (const classId of profile.managed_class_ids) {
-            const classData = classesCache.get(classId);
-            if (classData && classData.class_teacher_id === profile.uid) {
-              targetClassId = classId;
-              break;
+          if (profile.managed_class_ids && profile.managed_class_ids.length > 0) {
+            for (const classId of profile.managed_class_ids) {
+              const classData = classesCache.get(classId);
+              if (classData && classData.class_teacher_id === profile.uid) {
+                targetClassId = classId;
+                break;
+              }
             }
-          }
-          
-          // If no class found where teacher is class_teacher_id, use the first class
-          if (!targetClassId) {
-            targetClassId = profile.managed_class_ids[0];
+            
+            // If no class found where teacher is class_teacher_id, use the first class
+            if (!targetClassId) {
+              targetClassId = profile.managed_class_ids[0];
+            }
+          } else {
+            // Teacher has no managed_class_ids - try to find classes where teacher is in teacher_ids
+            console.log('⚠️ TeacherApprovals: Teacher has no managed_class_ids, searching for classes', {
+              teacherId: profile.uid,
+              schoolId: profile.school_id,
+            });
+            
+            if (profile.school_id) {
+              // First, try to find classes where teacher is in teacher_ids
+              const classesQuery = query(
+                collection(db, 'classes'),
+                where('school_id', '==', profile.school_id),
+                where('teacher_ids', 'array-contains', profile.uid)
+              );
+              const classesSnapshot = await getDocs(classesQuery);
+              
+              if (!classesSnapshot.empty) {
+                const firstClass = classesSnapshot.docs[0];
+                targetClassId = firstClass.id;
+                // Update cache
+                const classData = { id: firstClass.id, ...firstClass.data() } as Class;
+                classesCache.set(targetClassId, classData);
+                console.log('🔧 TeacherApprovals: Found class for teacher', {
+                  classId: targetClassId,
+                  className: classData.class_name,
+                });
+              } else {
+                // If no classes found with teacher in teacher_ids, check if there are any classes in the school
+                // This handles the case where classes exist but teacher isn't assigned yet
+                const allClassesQuery = query(
+                  collection(db, 'classes'),
+                  where('school_id', '==', profile.school_id)
+                );
+                const allClassesSnapshot = await getDocs(allClassesQuery);
+                
+                if (!allClassesSnapshot.empty) {
+                  // Found classes in school but teacher isn't assigned - use the first one
+                  // The assignStudentToClass function will add the teacher to teacher_ids
+                  const firstClass = allClassesSnapshot.docs[0];
+                  targetClassId = firstClass.id;
+                  const classData = { id: firstClass.id, ...firstClass.data() } as Class;
+                  classesCache.set(targetClassId, classData);
+                  console.log('🔧 TeacherApprovals: Found class in school (teacher not assigned yet), will assign teacher', {
+                    classId: targetClassId,
+                    className: classData.class_name,
+                  });
+                } else {
+                  console.warn('⚠️ TeacherApprovals: No classes found in school', {
+                    schoolId: profile.school_id,
+                    teacherId: profile.uid,
+                  });
+                }
+              }
+            }
           }
           
           if (targetClassId) {
@@ -594,6 +662,7 @@ const TeacherApprovals = () => {
               studentId,
               classId: targetClassId,
               teacherUid: profile.uid,
+              teacherManagedClasses: profile.managed_class_ids,
             });
             
             // Assign student to class (this updates both class.student_ids and user.class_ids)
@@ -610,14 +679,20 @@ const TeacherApprovals = () => {
                 studentId,
                 classId: targetClassId,
               });
-              toast.success('Student approved successfully (class assignment may have failed)');
+              toast.warn('Student approved, but class assignment failed. Please assign manually.');
             }
           } else {
             console.warn('⚠️ TeacherApprovals: No class found to assign student', {
               studentId,
               teacherManagedClasses: profile.managed_class_ids,
+              teacherSchoolId: profile.school_id,
             });
-            toast.success('Student approved successfully');
+            toast.warn(
+              'Student approved, but no class found. ' +
+              'Please ask your school administrator to create a class and assign you as the class teacher, ' +
+              'or manually assign this student to a class from the Class Management page.',
+              { duration: 6000 }
+            );
           }
         } catch (classAssignError: any) {
           console.error('❌ TeacherApprovals: Error assigning student to class', {
@@ -625,9 +700,10 @@ const TeacherApprovals = () => {
             studentId,
             errorCode: classAssignError.code,
             errorMessage: classAssignError.message,
+            stack: classAssignError.stack,
           });
           // Don't fail the approval if class assignment fails - student is already approved
-          toast.success('Student approved successfully (class assignment failed)');
+          toast.warn('Student approved, but class assignment failed. Please assign manually.');
         }
       } else {
         // For principals or teachers without classes, just show success
