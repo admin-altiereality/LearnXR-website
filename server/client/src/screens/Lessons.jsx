@@ -537,6 +537,88 @@ const Lessons = ({ setBackgroundSkybox }) => {
     fetchStudentClasses();
   }, [isStudent, profile?.class_ids, db, selectedClass]);
 
+  // Fetch teacher's classes to get class numbers for filtering
+  useEffect(() => {
+    if (!isTeacher || !profile?.managed_class_ids || profile.managed_class_ids.length === 0 || !db) {
+      setTeacherClasses([]);
+      return;
+    }
+
+    const fetchTeacherClasses = async () => {
+      try {
+        console.log('📚 Lessons: Fetching teacher classes', {
+          teacherId: profile.uid,
+          managedClassIds: profile.managed_class_ids,
+        });
+
+        const classesPromises = profile.managed_class_ids.map(async (classId) => {
+          try {
+            const classDoc = await getDoc(doc(db, 'classes', classId));
+            if (classDoc.exists()) {
+              const classData = classDoc.data();
+              return {
+                id: classId,
+                ...classData,
+              };
+            }
+          } catch (err) {
+            console.warn(`Error fetching class ${classId}:`, err);
+          }
+          return null;
+        });
+
+        const classesData = (await Promise.all(classesPromises)).filter(Boolean);
+        console.log('📚 Lessons: Teacher classes fetched', {
+          count: classesData.length,
+          classes: classesData.map(c => ({
+            id: c.id,
+            class_name: c.class_name,
+            curriculum: c.curriculum,
+          })),
+        });
+        setTeacherClasses(classesData);
+
+        // Set default class and curriculum filter if not already set
+        if (classesData.length > 0) {
+          const firstClass = classesData[0];
+          
+          // Extract class number from class_name (e.g., "Class 5" -> 5)
+          setSelectedClass(prev => {
+            if (prev) return prev; // Don't override if already set
+            const classNumberMatch = firstClass.class_name?.match(/\d+/);
+            if (classNumberMatch) {
+              const extractedClass = classNumberMatch[0];
+              console.log('📚 Lessons: Setting teacher class filter', {
+                className: firstClass.class_name,
+                extractedClass,
+              });
+              return extractedClass;
+            }
+            return prev;
+          });
+          
+          // Set curriculum from class if not already set
+          setSelectedCurriculum(prev => {
+            if (prev) return prev; // Don't override if already set
+            if (firstClass.curriculum) {
+              const normalizedCurriculum = firstClass.curriculum.toUpperCase().trim();
+              console.log('📚 Lessons: Setting teacher curriculum filter', {
+                original: firstClass.curriculum,
+                normalized: normalizedCurriculum,
+              });
+              return normalizedCurriculum;
+            }
+            return prev;
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching teacher classes:', error);
+      }
+    };
+
+    fetchTeacherClasses();
+  }, [isTeacher, profile?.managed_class_ids, db]);
+
   // Fetch chapters from Firestore (basic list - no heavy data fetching)
   useEffect(() => {
     setLoading(true);
@@ -552,6 +634,16 @@ const Lessons = ({ setBackgroundSkybox }) => {
     let effectiveClass = selectedClass;
     
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
+    
+    // Wait for classes to load if user is student/teacher and classes are expected
+    if ((isStudent || isTeacher) && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
+      console.log('⏳ Lessons: Waiting for student classes to load', { role: 'student', profileClassIds: profile?.class_ids?.length });
+      return;
+    }
+    if ((isStudent || isTeacher) && profile?.managed_class_ids?.length > 0 && isTeacher && teacherClasses.length === 0) {
+      console.log('⏳ Lessons: Waiting for teacher classes to load', { role: 'teacher', profileClassIds: profile?.managed_class_ids?.length });
+      return;
+    }
     
     if ((isStudent || isTeacher) && userClasses.length > 0) {
       // Use the first class's curriculum and class number
@@ -658,7 +750,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, studentClasses, teacherClasses]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -864,6 +956,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     // Sort groups by chapter sequence (curriculum, class, subject, chapter_number)
+    // Apply the same sorting for students and teachers
     const sortedGroups = Array.from(groups.values()).sort((a, b) => {
       if (a.curriculum !== b.curriculum) return a.curriculum.localeCompare(b.curriculum);
       if (a.class !== b.class) return a.class - b.class;
@@ -872,6 +965,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     // Sort topics within each group by priority
+    // Apply the same sorting for students and teachers
     sortedGroups.forEach(group => {
       group.topics.sort((a, b) => {
         if (a.topicPriority !== b.topicPriority) {
@@ -1969,18 +2063,27 @@ const Lessons = ({ setBackgroundSkybox }) => {
               />
             </div>
             
-            <select
-              value={selectedCurriculum}
-              onChange={(e) => {
-                setSelectedCurriculum(e.target.value);
-                setSelectedClass('');
-                setSelectedSubject('');
-              }}
-              className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer"
-            >
-              <option value="">All Curricula</option>
-              {availableCurricula.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            {/* Hide curriculum selector for students and teachers - they can only see their assigned curriculum */}
+            {!isStudent && !isTeacher && (
+              <select
+                value={selectedCurriculum}
+                onChange={(e) => {
+                  setSelectedCurriculum(e.target.value);
+                  setSelectedClass('');
+                  setSelectedSubject('');
+                }}
+                className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer"
+              >
+                <option value="">All Curricula</option>
+                {availableCurricula.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            {/* Show read-only curriculum info for students and teachers */}
+            {(isStudent || isTeacher) && (isStudent ? studentClasses : teacherClasses).length > 0 && (
+              <div className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-400">
+                {selectedCurriculum || (isStudent ? studentClasses : teacherClasses)[0]?.curriculum || 'N/A'} (Locked)
+              </div>
+            )}
 
             {/* Hide class selector for students and teachers - they can only see their assigned class */}
             {!isStudent && !isTeacher && (

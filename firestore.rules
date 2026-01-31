@@ -471,7 +471,11 @@ service cloud.firestore {
         // Allow teachers to read classes where they are in teacher_ids (even if they don't have school_id yet)
         (getUserRole() == 'teacher' && 
          resource.data.teacher_ids != null && 
-         resource.data.teacher_ids.hasAny([request.auth.uid]))
+         resource.data.teacher_ids.hasAny([request.auth.uid])) ||
+        // Allow teachers to read classes shared with them
+        (getUserRole() == 'teacher' && 
+         resource.data.shared_with_teachers != null && 
+         resource.data.shared_with_teachers.hasAny([request.auth.uid]))
       );
       allow create: if isAdminOrSuperadmin() || 
         (isAuthenticated() && 
@@ -486,8 +490,8 @@ service cloud.firestore {
          request.resource.data.school_id == resource.data.school_id &&
          (getUserRole() == 'school' || getUserRole() == 'principal') && 
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher_ids', 'class_teacher_id', 'student_ids', 'updatedAt'])) ||
-        // Teachers in the same school can update student_ids, teacher_ids, and class_teacher_id
-        // This allows teachers to assign students to classes and become class teachers
+        // Teachers in the same school can update student_ids, teacher_ids, class_teacher_id, and shared_with_teachers
+        // This allows teachers to assign students to classes, become class teachers, and share classes with other teachers
         (isAuthenticated() && 
          resource.data.school_id != null && 
          getUserRole() == 'teacher' &&
@@ -495,7 +499,10 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
          request.resource.data.school_id == resource.data.school_id &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['student_ids', 'teacher_ids', 'class_teacher_id', 'updatedAt']) &&
+         // Teacher must be managing the class (in teacher_ids) to update it
+         resource.data.teacher_ids != null &&
+         resource.data.teacher_ids.hasAny([request.auth.uid]) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['student_ids', 'teacher_ids', 'class_teacher_id', 'shared_with_teachers', 'updatedAt']) &&
          // If updating class_teacher_id, must be setting it to themselves
          (request.resource.data.class_teacher_id == null || 
           request.resource.data.class_teacher_id == request.auth.uid ||
@@ -519,14 +526,21 @@ service cloud.firestore {
         resource.data.student_id == request.auth.uid ||
         isSuperadmin() ||
         isAdmin() ||
-        // Teachers can read launches for students in their school and classes
+        // Teachers can read launches for students in their school and classes (managed or shared)
         (getUserRole() == 'teacher' && 
          resource.data.school_id != null &&
          resource.data.class_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.hasAny([resource.data.class_id])) ||
+         exists(/databases/$(database)/documents/classes/$(resource.data.class_id)) &&
+         (
+           // Check if teacher manages the class
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.hasAny([resource.data.class_id])) ||
+           // OR check if class is shared with the teacher
+           (get(/databases/$(database)/documents/classes/$(resource.data.class_id)).data.shared_with_teachers != null &&
+            get(/databases/$(database)/documents/classes/$(resource.data.class_id)).data.shared_with_teachers.hasAny([request.auth.uid]))
+         )) ||
         // Principals can read launches for students in their school
         (getUserRole() == 'principal' && 
          resource.data.school_id != null &&
@@ -553,14 +567,21 @@ service cloud.firestore {
         resource.data.student_id == request.auth.uid ||
         isSuperadmin() ||
         isAdmin() ||
-        // Teachers can read scores for students in their school and classes
+        // Teachers can read scores for students in their school and classes (managed or shared)
         (getUserRole() == 'teacher' && 
          resource.data.school_id != null &&
          resource.data.class_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.hasAny([resource.data.class_id])) ||
+         exists(/databases/$(database)/documents/classes/$(resource.data.class_id)) &&
+         (
+           // Check if teacher manages the class
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids.hasAny([resource.data.class_id])) ||
+           // OR check if class is shared with the teacher
+           (get(/databases/$(database)/documents/classes/$(resource.data.class_id)).data.shared_with_teachers != null &&
+            get(/databases/$(database)/documents/classes/$(resource.data.class_id)).data.shared_with_teachers.hasAny([request.auth.uid]))
+         )) ||
         // Principals can read scores for students in their school
         (getUserRole() == 'principal' && 
          resource.data.school_id != null &&

@@ -44,6 +44,7 @@ export interface Class {
   subject?: string; // Optional: subject-specific class
   teacher_ids: string[]; // Array of teacher UIDs (all teachers in the class)
   class_teacher_id?: string; // Primary class teacher who can approve students (one per class)
+  shared_with_teachers?: string[]; // Array of teacher UIDs who have been granted access to view this class data
   student_ids: string[]; // Array of student UIDs
   academic_year?: string; // e.g., "2024-2025"
   createdAt: Timestamp | string;
