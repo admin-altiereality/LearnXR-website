@@ -14,7 +14,7 @@ import { toast } from 'react-toastify';
 
 /**
  * Create a new class
- * Access: Principal (their school), Admin/Superadmin (all)
+ * Access: Teacher (their school), School Administrator (their school), Principal (their school), Admin/Superadmin (all)
  */
 export async function createClass(
   profile: UserProfile | null,
@@ -24,6 +24,7 @@ export async function createClass(
     curriculum: string;
     subject?: string;
     academic_year?: string;
+    class_teacher_id?: string; // Primary class teacher who can approve students
   }
 ): Promise<string | null> {
   if (!profile) {
@@ -31,26 +32,43 @@ export async function createClass(
     return null;
   }
 
-  // Permission check - school/principal can only create for their school
-  const mySchoolId = profile.managed_school_id || profile.school_id;
-  if ((profile.role === 'school' || profile.role === 'principal') && mySchoolId !== classData.school_id) {
-    toast.error('You can only create classes for your own school');
+  // Allow teachers, school administrators, principals, and admins to create classes
+  if (profile.role !== 'school' && profile.role !== 'principal' && profile.role !== 'teacher' && profile.role !== 'admin' && profile.role !== 'superadmin') {
+    toast.error('Only teachers, school administrators, principals and admins can create classes');
     return null;
   }
 
-  if (profile.role !== 'school' && profile.role !== 'principal' && profile.role !== 'admin' && profile.role !== 'superadmin') {
-    toast.error('Only school administrators, principals and admins can create classes');
-    return null;
+  // Permission check - school/principal/teacher can only create for their school
+  // For principals, use managed_school_id; for others, use school_id
+  const mySchoolId = profile.role === 'principal' 
+    ? profile.managed_school_id 
+    : (profile.school_id || profile.managed_school_id);
+  
+  // For non-admin roles, verify they're creating for their own school
+  if (profile.role !== 'admin' && profile.role !== 'superadmin') {
+    if (!mySchoolId) {
+      toast.error('Unable to determine your school. Please contact support.');
+      return null;
+    }
+    if (mySchoolId !== classData.school_id) {
+      toast.error('You can only create classes for your own school');
+      return null;
+    }
   }
 
   try {
     const classRef = doc(collection(db, 'classes'));
+    
+    // If class_teacher_id is provided, add it to teacher_ids and set as class_teacher_id
+    const teacherIds = classData.class_teacher_id ? [classData.class_teacher_id] : [];
+    
     const newClass: Omit<Class, 'id'> = {
       school_id: classData.school_id,
       class_name: classData.class_name,
       curriculum: classData.curriculum,
       subject: classData.subject,
-      teacher_ids: [],
+      teacher_ids: teacherIds,
+      class_teacher_id: classData.class_teacher_id,
       student_ids: [],
       academic_year: classData.academic_year,
       createdAt: serverTimestamp() as any,
@@ -59,6 +77,15 @@ export async function createClass(
     };
 
     await setDoc(classRef, newClass);
+    
+    // If class_teacher_id is provided, also update the teacher's managed_class_ids
+    if (classData.class_teacher_id) {
+      await updateDoc(doc(db, 'users', classData.class_teacher_id), {
+        managed_class_ids: arrayUnion(classRef.id),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    
     toast.success(`Class "${classData.class_name}" created successfully`);
     return classRef.id;
   } catch (error: any) {
@@ -199,9 +226,9 @@ export async function assignTeacherToClass(
     return false;
   }
 
-  // Only principal/admin can assign teachers
-  if (profile.role !== 'principal' && profile.role !== 'admin' && profile.role !== 'superadmin') {
-    toast.error('Only principals and admins can assign teachers');
+  // Allow school administrators, principals, and admins to assign teachers
+  if (profile.role !== 'school' && profile.role !== 'principal' && profile.role !== 'admin' && profile.role !== 'superadmin') {
+    toast.error('Only school administrators, principals, and admins can assign teachers');
     return false;
   }
 
@@ -277,11 +304,26 @@ export async function removeTeacherFromClass(
   }
 
   try {
-    // Update class.teacher_ids
-    await updateDoc(doc(db, 'classes', classId), {
+    // Get class to check if this teacher is the class teacher
+    const classDoc = await getDoc(doc(db, 'classes', classId));
+    if (!classDoc.exists()) {
+      toast.error('Class not found');
+      return false;
+    }
+    
+    const classData = classDoc.data() as Class;
+    const updateData: any = {
       teacher_ids: arrayRemove(teacherId),
       updatedAt: serverTimestamp(),
-    });
+    };
+    
+    // If this teacher is the class teacher, clear class_teacher_id
+    if (classData.class_teacher_id === teacherId) {
+      updateData.class_teacher_id = null;
+    }
+    
+    // Update class.teacher_ids (and class_teacher_id if needed)
+    await updateDoc(doc(db, 'classes', classId), updateData);
 
     // Update user.managed_class_ids
     await updateDoc(doc(db, 'users', teacherId), {
@@ -294,6 +336,87 @@ export async function removeTeacherFromClass(
   } catch (error: any) {
     console.error('Error removing teacher from class:', error);
     toast.error(`Failed to remove teacher: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Set or change the class teacher (primary teacher who can approve students)
+ */
+export async function setClassTeacher(
+  profile: UserProfile | null,
+  classId: string,
+  teacherId: string | null
+): Promise<boolean> {
+  if (!profile) {
+    toast.error('Authentication required');
+    return false;
+  }
+
+  // Only principal/admin can set class teacher
+  if (profile.role !== 'principal' && profile.role !== 'admin' && profile.role !== 'superadmin' && profile.role !== 'school') {
+    toast.error('Only principals, school administrators, and admins can set class teacher');
+    return false;
+  }
+
+  try {
+    // Get class to verify school_id
+    const classDoc = await getDoc(doc(db, 'classes', classId));
+    if (!classDoc.exists()) {
+      toast.error('Class not found');
+      return false;
+    }
+
+    const classData = classDoc.data() as Class;
+    
+    // If setting a teacher, verify they're in the same school and in teacher_ids
+    if (teacherId) {
+      // Get teacher to verify school_id
+      const teacherDoc = await getDoc(doc(db, 'users', teacherId));
+      if (!teacherDoc.exists()) {
+        toast.error('Teacher not found');
+        return false;
+      }
+
+      const teacherData = teacherDoc.data();
+      
+      // Verify same school
+      if (classData.school_id !== teacherData.school_id) {
+        toast.error('Teacher and class must be in the same school');
+        return false;
+      }
+
+      // Verify teacher role
+      if (teacherData.role !== 'teacher') {
+        toast.error('User is not a teacher');
+        return false;
+      }
+      
+      // Ensure teacher is in teacher_ids
+      if (!classData.teacher_ids.includes(teacherId)) {
+        await updateDoc(doc(db, 'classes', classId), {
+          teacher_ids: arrayUnion(teacherId),
+          updatedAt: serverTimestamp(),
+        });
+        // Also update teacher's managed_class_ids
+        await updateDoc(doc(db, 'users', teacherId), {
+          managed_class_ids: arrayUnion(classId),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
+    // Update class_teacher_id
+    await updateDoc(doc(db, 'classes', classId), {
+      class_teacher_id: teacherId || null,
+      updatedAt: serverTimestamp(),
+    });
+
+    toast.success(teacherId ? 'Class teacher set successfully' : 'Class teacher removed successfully');
+    return true;
+  } catch (error: any) {
+    console.error('Error setting class teacher:', error);
+    toast.error(`Failed to set class teacher: ${error.message}`);
     return false;
   }
 }

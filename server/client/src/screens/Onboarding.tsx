@@ -499,6 +499,13 @@ const Onboarding = () => {
 
       // Add role-specific data to the SAME users collection
       if (isStudentRole) {
+        // Validate school_id is set
+        if (!studentData.schoolId) {
+          toast.error('Please verify your school code before submitting.');
+          setSubmitting(false);
+          return;
+        }
+        
         updateData = {
           ...updateData,
           // Student onboarding data (school by code only; class assigned later by school/teacher)
@@ -507,7 +514,7 @@ const Onboarding = () => {
           class: '',
           curriculum: studentData.curriculum,
           school: studentData.schoolName.trim(),
-          school_id: studentData.schoolId,
+          school_id: studentData.schoolId, // CRITICAL: Must be set
           class_ids: [], // To be assigned by school/teacher on approval or in Class Management
           city: studentData.city || null,
           state: studentData.state || null,
@@ -524,15 +531,25 @@ const Onboarding = () => {
           // Set approval status to pending for students (they need teacher approval)
           approvalStatus: 'pending',
         };
-        console.log('✅ Student onboarding data prepared');
+        console.log('✅ Student onboarding data prepared', {
+          schoolId: studentData.schoolId,
+          schoolName: studentData.schoolName,
+        });
       }
 
       if (isTeacherRole) {
+        // Validate school_id is set
+        if (!teacherData.schoolId) {
+          toast.error('Please verify your school code before submitting.');
+          setSubmitting(false);
+          return;
+        }
+        
         updateData = {
           ...updateData,
           // Teacher onboarding data
           schoolName: teacherData.schoolName,
-          school_id: teacherData.schoolId, // Store school_id
+          school_id: teacherData.schoolId, // CRITICAL: Must be set
           subjectsTaught: teacherData.subjectsTaught,
           experienceYears: teacherData.experienceYears,
           qualifications: teacherData.qualifications,
@@ -541,10 +558,14 @@ const Onboarding = () => {
           state: teacherData.state,
           boardAffiliation: teacherData.boardAffiliation,
           classesHandled: teacherData.classesHandled,
+          managed_class_ids: [], // To be assigned by school admin
           // Set approval status to pending for teachers (they need admin approval)
           approvalStatus: 'pending',
         };
-        console.log('✅ Teacher onboarding data prepared');
+        console.log('✅ Teacher onboarding data prepared', {
+          schoolId: teacherData.schoolId,
+          schoolName: teacherData.schoolName,
+        });
       }
       
       if (isSchoolRole) {
@@ -598,7 +619,10 @@ const Onboarding = () => {
 
       // Update users collection with ALL data
       await updateProfile(updateData);
-      console.log('✅ Updated users collection with all onboarding data');
+      console.log('✅ Updated users collection with all onboarding data', {
+        role: profile?.role,
+        schoolId: updateData.school_id,
+      });
 
       toast.success("Welcome aboard! Your profile has been updated.");
       

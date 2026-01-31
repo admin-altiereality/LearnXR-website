@@ -60,6 +60,7 @@ import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 import StudentDashboard from './screens/dashboard/StudentDashboard';
 import TeacherDashboard from './screens/dashboard/TeacherDashboard';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
+import SchoolDashboard from './screens/dashboard/SchoolDashboard';
 import ClassManagement from './screens/admin/ClassManagement';
 import SchoolManagement from './screens/admin/SchoolManagement';
 import ProductionLogs from './screens/admin/ProductionLogs';
@@ -950,11 +951,18 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/dashboard/school" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['school']}>
+                            <SchoolDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
-                      {/* Class Management - School Administrator, Principal, Admin */}
+                      {/* Class Management - Teachers, School Administrator, Principal, Admin */}
                       <Route path="/admin/classes" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['school', 'principal', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'school', 'principal', 'admin', 'superadmin']}>
                             <ClassManagement />
                           </RoleGuard>
                         </ProtectedRoute>
@@ -978,19 +986,19 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* Teacher Approvals - Teachers can approve students */}
+                      {/* Student Approvals - Teachers and Principals can approve students */}
                       <Route path="/teacher/approvals" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher']}>
+                          <RoleGuard allowedRoles={['teacher', 'principal']}>
                             <TeacherApprovals />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
-                      {/* School Approvals - Schools can approve teachers */}
+                      {/* School Approvals - Schools and Principals can approve teachers */}
                       <Route path="/school/approvals" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['school']}>
+                          <RoleGuard allowedRoles={['school', 'principal']}>
                             <SchoolApprovals />
                           </RoleGuard>
                         </ProtectedRoute>

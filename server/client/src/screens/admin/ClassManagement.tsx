@@ -1,18 +1,18 @@
 /**
  * Class Management Component
  * 
- * Allows school administrators, principals and admins to:
+ * Allows teachers, school administrators, principals and admins to:
  * - Create classes
  * - Assign students to classes
  * - Assign teachers to classes
  * - View and manage class rosters
  * 
- * Access: School Administrator (their school), Principal (their school), Admin/Superadmin (all)
+ * Access: Teacher (their school), School Administrator (their school), Principal (their school), Admin/Superadmin (all)
  */
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import {
   createClass,
@@ -21,6 +21,7 @@ import {
   assignTeacherToClass,
   removeTeacherFromClass,
   getSchoolClasses,
+  setClassTeacher,
 } from '../../services/classManagementService';
 import type { Class } from '../../types/lms';
 import { FaPlus, FaUsers, FaChalkboardTeacher, FaTrash, FaCheck } from 'react-icons/fa';
@@ -40,14 +41,37 @@ const ClassManagement = () => {
     curriculum: 'CBSE',
     subject: '',
     academic_year: new Date().getFullYear().toString(),
+    class_teacher_id: '', // Primary class teacher
   });
 
   useEffect(() => {
     if (!profile) return;
 
-    const schoolId = (profile.role === 'principal' ? profile.managed_school_id : profile.school_id) || profile.managed_school_id;
+    // Get school_id based on role
+    // Principals use managed_school_id, others use school_id
+    let schoolId = profile.role === 'principal' 
+      ? profile.managed_school_id 
+      : (profile.school_id || profile.managed_school_id);
+
+    // For school administrators: if they have managed_school_id but no school_id, auto-assign it
+    if (!schoolId && profile.role === 'school' && profile.managed_school_id && profile.uid) {
+      schoolId = profile.managed_school_id;
+      // Auto-assign school_id from managed_school_id for consistency
+      updateDoc(doc(db, 'users', profile.uid), {
+        school_id: profile.managed_school_id,
+        updatedAt: new Date().toISOString(),
+      }).catch((error) => {
+        console.warn('⚠️ ClassManagement: Could not auto-assign school_id', error);
+      });
+    }
 
     if (!schoolId) {
+      console.warn('⚠️ ClassManagement: Missing school_id', {
+        role: profile.role,
+        school_id: profile.school_id,
+        managed_school_id: profile.managed_school_id,
+        uid: profile.uid,
+      });
       setLoading(false);
       return;
     }
@@ -75,7 +99,10 @@ const ClassManagement = () => {
       setStudents(studentsData);
     });
 
-    // Load teachers in school
+    // Load teachers in school - query all teachers, we'll filter by approvalStatus in UI
+    // Note: We don't filter by approvalStatus in the query because:
+    // 1. Some teachers might not have approvalStatus set (backward compatibility)
+    // 2. We want to show all teachers but indicate their status
     const teachersQuery = query(
       collection(db, 'users'),
       where('role', '==', 'teacher'),
@@ -87,7 +114,47 @@ const ClassManagement = () => {
         uid: doc.id,
         ...doc.data(),
       }));
+      
+      // Log detailed information about loaded teachers
+      const approvedTeachers = teachersData.filter(t => t.approvalStatus === 'approved');
+      const pendingTeachers = teachersData.filter(t => t.approvalStatus === 'pending');
+      const noStatusTeachers = teachersData.filter(t => !t.approvalStatus);
+      
+      console.log('🔍 ClassManagement: Loaded teachers', {
+        total: teachersData.length,
+        schoolId,
+        approved: approvedTeachers.length,
+        pending: pendingTeachers.length,
+        noStatus: noStatusTeachers.length,
+        teachers: teachersData.map(t => ({
+          uid: t.uid,
+          name: t.name || t.displayName || t.email,
+          approvalStatus: t.approvalStatus || 'not set',
+          school_id: t.school_id,
+        })),
+      });
+      
+      // Show warning if no approved teachers found
+      if (teachersData.length > 0 && approvedTeachers.length === 0) {
+        console.warn('⚠️ ClassManagement: No approved teachers found', {
+          total: teachersData.length,
+          pending: pendingTeachers.length,
+          noStatus: noStatusTeachers.length,
+          schoolId,
+        });
+      }
+      
       setTeachers(teachersData);
+      setLoading(false);
+    }, (error) => {
+      console.error('❌ ClassManagement: Error loading teachers', {
+        error,
+        errorCode: error.code,
+        errorMessage: error.message,
+        schoolId,
+        role: profile.role,
+      });
+      toast.error(`Failed to load teachers: ${error.message || 'Unknown error'}`);
       setLoading(false);
     });
 
@@ -100,10 +167,25 @@ const ClassManagement = () => {
   const handleCreateClass = async () => {
     if (!profile) return;
 
-    const schoolId = (profile.role === 'principal' ? profile.managed_school_id : profile.school_id) || profile.managed_school_id;
+    // Get school_id based on role
+    // Principals use managed_school_id, others use school_id
+    const schoolId = profile.role === 'principal' 
+      ? profile.managed_school_id 
+      : (profile.school_id || profile.managed_school_id);
 
-    if (!schoolId || !newClassData.class_name.trim()) {
-      toast.error('Please fill in all required fields');
+    if (!schoolId) {
+      toast.error('Unable to determine your school. Please ensure you have a school assigned. Contact your administrator if this issue persists.');
+      console.warn('⚠️ ClassManagement: Missing school_id when creating class', {
+        role: profile.role,
+        school_id: profile.school_id,
+        managed_school_id: profile.managed_school_id,
+        uid: profile.uid,
+      });
+      return;
+    }
+    
+    if (!newClassData.class_name.trim()) {
+      toast.error('Please enter a class name.');
       return;
     }
 
@@ -113,6 +195,7 @@ const ClassManagement = () => {
       curriculum: newClassData.curriculum,
       subject: newClassData.subject || undefined,
       academic_year: newClassData.academic_year || undefined,
+      class_teacher_id: newClassData.class_teacher_id || undefined,
     });
 
     if (classId) {
@@ -122,6 +205,7 @@ const ClassManagement = () => {
         curriculum: 'CBSE',
         subject: '',
         academic_year: new Date().getFullYear().toString(),
+        class_teacher_id: '',
       });
     }
   };
@@ -135,6 +219,16 @@ const ClassManagement = () => {
     if (!profile) return;
     await assignTeacherToClass(profile, teacherId, classId);
   };
+
+  const handleSetClassTeacher = async (classId: string, teacherId: string | null) => {
+    if (!profile) return;
+    await setClassTeacher(profile, classId, teacherId);
+  };
+
+  // Get school_id for display/checking
+  const schoolId = profile?.role === 'principal' 
+    ? profile.managed_school_id 
+    : (profile?.school_id || profile?.managed_school_id);
 
   if (loading) {
     return (
@@ -228,11 +322,21 @@ const ClassManagement = () => {
                         {classTeachers.length === 0 ? (
                           <p className="text-white/30 text-sm">No teachers assigned</p>
                         ) : (
-                          classTeachers.map(teacher => (
-                            <div key={teacher.uid} className="text-white/50 text-sm">
-                              {teacher.name || teacher.displayName || teacher.email}
-                            </div>
-                          ))
+                          classTeachers.map(teacher => {
+                            const isClassTeacher = classItem.class_teacher_id === teacher.uid;
+                            return (
+                              <div key={teacher.uid} className="flex items-center gap-2">
+                                <span className={`text-sm ${isClassTeacher ? 'text-purple-400 font-medium' : 'text-white/50'}`}>
+                                  {teacher.name || teacher.displayName || teacher.email}
+                                </span>
+                                {isClassTeacher && (
+                                  <span className="px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                    Class Teacher
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>
@@ -316,6 +420,59 @@ const ClassManagement = () => {
                     className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
                   />
                 </div>
+
+                <div>
+                  <label className="text-white/70 text-sm mb-1 block">Class Teacher (Optional)</label>
+                  <p className="text-white/40 text-xs mb-2">The class teacher can approve students in this class</p>
+                  <select
+                    value={newClassData.class_teacher_id}
+                    onChange={(e) => setNewClassData({ ...newClassData, class_teacher_id: e.target.value })}
+                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-400/50"
+                  >
+                    <option value="">Select a teacher (optional)</option>
+                    {teachers.length === 0 ? (
+                      <option value="" disabled>No teachers available</option>
+                    ) : (
+                      (() => {
+                        // Show ALL teachers from the school - approved, pending, or no status
+                        // This ensures approved teachers are always visible
+                        const availableTeachers = teachers
+                          .filter(t => {
+                            // Include all teachers - we'll mark their status
+                            return true;
+                          })
+                          .sort((a, b) => {
+                            // Sort approved first, then by name
+                            if (a.approvalStatus === 'approved' && b.approvalStatus !== 'approved') return -1;
+                            if (a.approvalStatus !== 'approved' && b.approvalStatus === 'approved') return 1;
+                            const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
+                            const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
+                            return nameA.localeCompare(nameB);
+                          });
+                        
+                        return availableTeachers.map(teacher => (
+                          <option key={teacher.uid} value={teacher.uid}>
+                            {teacher.name || teacher.displayName || teacher.email}
+                            {teacher.approvalStatus === 'pending' && ' (Pending Approval)'}
+                            {teacher.approvalStatus === 'rejected' && ' (Rejected)'}
+                            {!teacher.approvalStatus && ' (No Status)'}
+                          </option>
+                        ));
+                      })()
+                    )}
+                  </select>
+                  {teachers.length > 0 && (
+                    <p className="text-white/40 text-xs mt-1">
+                      {teachers.length} teacher(s) in your school
+                      {teachers.filter(t => t.approvalStatus === 'approved').length > 0 && (
+                        <span className="text-emerald-400"> ({teachers.filter(t => t.approvalStatus === 'approved').length} approved)</span>
+                      )}
+                      {teachers.filter(t => t.approvalStatus === 'pending').length > 0 && (
+                        <span className="text-amber-400"> ({teachers.filter(t => t.approvalStatus === 'pending').length} pending)</span>
+                      )}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="flex gap-3 mt-6">
@@ -351,46 +508,106 @@ const ClassManagement = () => {
                     <FaChalkboardTeacher className="text-purple-400" />
                     Assign Teachers
                   </h3>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {teachers.map(teacher => {
-                      const isAssigned = teacher.managed_class_ids?.includes(selectedClass.id);
-                      return (
-                        <div
-                          key={teacher.uid}
-                          className="flex items-center justify-between p-2 rounded-lg bg-white/5"
-                        >
-                          <span className="text-white/70 text-sm">
+                  <div className="mb-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                    <p className="text-purple-300 text-xs mb-2">Class Teacher:</p>
+                    <select
+                      value={selectedClass.class_teacher_id || ''}
+                      onChange={(e) => handleSetClassTeacher(selectedClass.id, e.target.value || null)}
+                      className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-purple-400/50"
+                    >
+                      <option value="">No class teacher assigned</option>
+                      {(() => {
+                        // Show ALL teachers from the school - approved, pending, or no status
+                        const availableTeachers = teachers
+                          .filter(t => {
+                            // Include all teachers - we'll mark their status
+                            return true;
+                          })
+                          .sort((a, b) => {
+                            // Sort approved first, then by name
+                            if (a.approvalStatus === 'approved' && b.approvalStatus !== 'approved') return -1;
+                            if (a.approvalStatus !== 'approved' && b.approvalStatus === 'approved') return 1;
+                            const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
+                            const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
+                            return nameA.localeCompare(nameB);
+                          });
+                        
+                        return availableTeachers.map(teacher => (
+                          <option key={teacher.uid} value={teacher.uid}>
                             {teacher.name || teacher.displayName || teacher.email}
-                          </span>
-                          <button
-                            onClick={() => {
-                              if (isAssigned) {
-                                removeTeacherFromClass(profile, teacher.uid, selectedClass.id);
-                              } else {
-                                handleAssignTeacher(teacher.uid, selectedClass.id);
-                              }
-                            }}
-                            className={`px-3 py-1 rounded-lg text-sm transition-all ${
-                              isAssigned
-                                ? 'bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30'
-                                : 'bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30'
-                            }`}
-                          >
-                            {isAssigned ? (
-                              <>
-                                <FaTrash className="inline mr-1" />
-                                Remove
-                              </>
-                            ) : (
-                              <>
-                                <FaCheck className="inline mr-1" />
-                                Assign
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
+                            {teacher.approvalStatus === 'pending' && ' (Pending)'}
+                            {teacher.approvalStatus === 'rejected' && ' (Rejected)'}
+                            {!teacher.approvalStatus && ' (No Status)'}
+                            {teacher.managed_class_ids?.includes(selectedClass.id) && ' (Assigned)'}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                    <p className="text-white/40 text-xs mt-2">The class teacher can approve students in this class. Select any approved teacher from your school.</p>
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {teachers.length === 0 ? (
+                      <p className="text-white/50 text-sm p-2">No teachers available in your school</p>
+                    ) : (
+                      teachers
+                        .filter(t => {
+                          // Show all approved teachers from the school
+                          return t.approvalStatus === 'approved' || !t.approvalStatus;
+                        })
+                        .sort((a, b) => {
+                          // Sort by name for better UX
+                          const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
+                          const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
+                          return nameA.localeCompare(nameB);
+                        })
+                        .map(teacher => {
+                          const isAssigned = teacher.managed_class_ids?.includes(selectedClass.id);
+                          const isClassTeacher = selectedClass.class_teacher_id === teacher.uid;
+                          return (
+                            <div
+                              key={teacher.uid}
+                              className="flex items-center justify-between p-2 rounded-lg bg-white/5"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-white/70 text-sm">
+                                  {teacher.name || teacher.displayName || teacher.email}
+                                </span>
+                                {isClassTeacher && (
+                                  <span className="px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                    Class Teacher
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  if (isAssigned) {
+                                    removeTeacherFromClass(profile, teacher.uid, selectedClass.id);
+                                  } else {
+                                    handleAssignTeacher(teacher.uid, selectedClass.id);
+                                  }
+                                }}
+                                className={`px-3 py-1 rounded-lg text-sm transition-all ${
+                                  isAssigned
+                                    ? 'bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30'
+                                    : 'bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30'
+                                }`}
+                              >
+                                {isAssigned ? (
+                                  <>
+                                    <FaTrash className="inline mr-1" />
+                                    Remove
+                                  </>
+                                ) : (
+                                  <>
+                                    <FaCheck className="inline mr-1" />
+                                    Assign
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          );
+                        })
+                    )}
                   </div>
                 </div>
 

@@ -26,6 +26,7 @@ export interface School {
   schoolType?: string; // e.g., "public", "private", "international"
   principal_id?: string; // Principal UID assigned to this school
   approvalStatus?: 'pending' | 'approved' | 'rejected'; // School approval status
+  schoolCode?: string; // Unique 6-character school code for teacher/student onboarding
   createdAt: Timestamp | string;
   updatedAt: Timestamp | string;
   createdBy: string; // Principal/Admin UID who created the school
@@ -41,7 +42,8 @@ export interface Class {
   class_name: string; // e.g., "Class 8A", "Section B"
   curriculum: string; // e.g., "CBSE", "RBSE"
   subject?: string; // Optional: subject-specific class
-  teacher_ids: string[]; // Array of teacher UIDs
+  teacher_ids: string[]; // Array of teacher UIDs (all teachers in the class)
+  class_teacher_id?: string; // Primary class teacher who can approve students (one per class)
   student_ids: string[]; // Array of student UIDs
   academic_year?: string; // e.g., "2024-2025"
   createdAt: Timestamp | string;

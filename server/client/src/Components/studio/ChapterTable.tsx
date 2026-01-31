@@ -418,7 +418,11 @@ export const ChapterTable = ({
                 <div className="divide-y divide-slate-700/10 bg-slate-900/20">
                   {group.topics.map(({ chapter, topic, topicPriority }) => {
                     const contentStatus = getContentStatus(chapter);
-                    const topicName = topic?.topic_name || chapter.chapter_name || 'Untitled Topic';
+                    // Use topic_name if it exists and is not empty, otherwise use a generic topic name
+                    // Never fallback to chapter_name as that's confusing
+                    const topicName = (topic?.topic_name && topic.topic_name.trim()) 
+                      ? topic.topic_name 
+                      : `Topic ${topicPriority || '?'}`;
                     
                     return (
                       <div
@@ -462,9 +466,27 @@ export const ChapterTable = ({
                         <div className="flex flex-col items-start gap-1.5">
                           {(() => {
                             // Get topic approval status (prefer topic.approval over chapter.approved)
+                            // Handle both Firestore Timestamp and plain object formats
                             const approval = topic?.approval || {};
-                            const isApproved = approval.approved === true;
-                            const approvedAt = approval.approvedAt;
+                            let isApproved = approval?.approved === true || approval?.approved === 'true';
+                            
+                            // Fallback: if topic has no approval, check chapter-level approval (backward compatibility)
+                            if (!topic?.approval && (chapter as any).approved === true) {
+                              isApproved = true;
+                            }
+                            
+                            const approvedAt = approval?.approvedAt;
+                            
+                            // Debug logging for approval status
+                            if (topic && !topic.approval && !(chapter as any).approved) {
+                              console.log('⚠️ Topic missing approval field:', {
+                                topicId: topic.topic_id,
+                                topicName: topic.topic_name,
+                                hasApproval: !!topic.approval,
+                                approvalValue: topic.approval,
+                                chapterApproved: (chapter as any).approved,
+                              });
+                            }
                             
                             return (
                               <>

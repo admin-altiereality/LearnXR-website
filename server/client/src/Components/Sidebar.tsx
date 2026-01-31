@@ -127,7 +127,8 @@ const Sidebar = () => {
   const isSuperadmin = userRole === 'superadmin';
   const isTeacherOrSchool = isTeacher || isSchool;
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;
-  const canCreate = isTeacherOrSchool || isAdminOrSuperadmin;
+  // School administrators should NOT have access to Create, Explore, History
+  const canCreate = isTeacher || isAdminOrSuperadmin;
 
   // Build navigation items based on role according to the spec:
   // Student: Dashboard, Lessons, Profile
@@ -144,6 +145,8 @@ const Sidebar = () => {
       items.push({ path: '/dashboard/teacher', label: 'Dashboard', icon: FaTachometerAlt });
     } else if (isPrincipal) {
       items.push({ path: '/dashboard/principal', label: 'Dashboard', icon: FaTachometerAlt });
+    } else if (isSchool) {
+      items.push({ path: '/dashboard/school', label: 'Dashboard', icon: FaTachometerAlt });
     } else if (isAdminOrSuperadmin) {
       // Admin/Superadmin see content dashboard
       items.push({ path: '/studio/content', label: 'Dashboard', icon: FaTachometerAlt });
@@ -184,8 +187,10 @@ const Sidebar = () => {
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
     }
 
-    // Principal can also access class management
+    // Principal can also access class management, student approvals, and teacher approvals
     if (isPrincipal) {
+      items.push({ path: '/teacher/approvals', label: 'Student Approvals', icon: FaUserCheck });
+      items.push({ path: '/school/approvals', label: 'Teacher Approvals', icon: FaChalkboardTeacher });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
     }
 
@@ -193,6 +198,21 @@ const Sidebar = () => {
   };
 
   const navItems = getNavItems();
+
+  // Debug logging for student approvals visibility
+  useEffect(() => {
+    if (isTeacher || isPrincipal) {
+      console.log('🔍 Sidebar Debug - Student Approvals:', {
+        userRole,
+        isTeacher,
+        isPrincipal,
+        hasStudentApprovalsLink: navItems.some(item => item.path === '/teacher/approvals'),
+        allNavItems: navItems.map(item => item.path),
+        profileRole: profile?.role,
+        profileApprovalStatus: profile?.approvalStatus,
+      });
+    }
+  }, [userRole, isTeacher, isPrincipal, navItems, profile]);
 
   // Role icon mapping
   const getRoleIcon = () => {
