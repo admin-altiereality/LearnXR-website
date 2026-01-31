@@ -510,13 +510,21 @@ const Lessons = ({ setBackgroundSkybox }) => {
         const classesData = (await Promise.all(classesPromises)).filter(Boolean);
         setStudentClasses(classesData);
 
-        // Set default class filter if not already set
-        if (!selectedClass && classesData.length > 0) {
-          // Extract class number from class_name (e.g., "Class 5" -> 5)
+        // Set default class and curriculum filter if not already set
+        if (classesData.length > 0) {
           const firstClass = classesData[0];
-          const classNumberMatch = firstClass.class_name?.match(/\d+/);
-          if (classNumberMatch) {
-            setSelectedClass(classNumberMatch[0]);
+          
+          // Extract class number from class_name (e.g., "Class 5" -> 5)
+          if (!selectedClass) {
+            const classNumberMatch = firstClass.class_name?.match(/\d+/);
+            if (classNumberMatch) {
+              setSelectedClass(classNumberMatch[0]);
+            }
+          }
+          
+          // Set curriculum from class if not already set
+          if (!selectedCurriculum && firstClass.curriculum) {
+            setSelectedCurriculum(firstClass.curriculum);
           }
         }
       } catch (error) {
@@ -537,15 +545,47 @@ const Lessons = ({ setBackgroundSkybox }) => {
       return;
     }
     
-    const constraints = [];
-    if (selectedCurriculum) {
-      constraints.push(where('curriculum', '==', selectedCurriculum.toUpperCase()));
+    // For students: automatically filter by their class and curriculum
+    let effectiveCurriculum = selectedCurriculum;
+    let effectiveClass = selectedClass;
+    
+    if (isStudent && studentClasses.length > 0) {
+      // Use the first class's curriculum and class number
+      const firstClass = studentClasses[0];
+      if (!effectiveCurriculum && firstClass.curriculum) {
+        effectiveCurriculum = firstClass.curriculum;
+      }
+      if (!effectiveClass) {
+        const classNumberMatch = firstClass.class_name?.match(/\d+/);
+        if (classNumberMatch) {
+          effectiveClass = classNumberMatch[0];
+        }
+      }
     }
-    if (selectedClass) {
-      constraints.push(where('class', '==', parseInt(selectedClass)));
+    
+    const constraints = [];
+    if (effectiveCurriculum) {
+      constraints.push(where('curriculum', '==', effectiveCurriculum.toUpperCase()));
+    }
+    if (effectiveClass) {
+      constraints.push(where('class', '==', parseInt(effectiveClass)));
     }
     if (selectedSubject) {
       constraints.push(where('subject', '==', selectedSubject));
+    }
+    
+    // For students: require both curriculum and class to be set
+    if (isStudent && (!effectiveCurriculum || !effectiveClass)) {
+      console.log('⚠️ Student lessons: Missing curriculum or class filter', {
+        effectiveCurriculum,
+        effectiveClass,
+        studentClasses: studentClasses.length,
+        profileClassIds: profile?.class_ids?.length,
+      });
+      setChapters([]);
+      setLoading(false);
+      setError(null);
+      return;
     }
     
     // Note: We filter by topic-level approval in groupedTopicsByChapter
@@ -614,7 +654,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, studentClasses]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -703,7 +743,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Extract all topics from chapters
     const allTopics = [];
     
-    // For students: get class numbers from their classes
+    // For students: get class numbers and curriculum from their classes
     const studentClassNumbers = isStudent && studentClasses.length > 0
       ? studentClasses.map(c => {
           const match = c.class_name?.match(/\d+/);
@@ -711,11 +751,28 @@ const Lessons = ({ setBackgroundSkybox }) => {
         }).filter(Boolean)
       : [];
     
+    const studentCurricula = isStudent && studentClasses.length > 0
+      ? [...new Set(studentClasses.map(c => c.curriculum).filter(Boolean))]
+      : [];
+    
     chapters.forEach(chapter => {
-      // For students: filter by their class numbers
-      if (isStudent && studentClassNumbers.length > 0) {
-        if (!studentClassNumbers.includes(chapter.class)) {
-          return; // Skip chapters not in student's classes
+      // For students: filter by their class numbers AND curriculum
+      if (isStudent) {
+        // If student has classes, only show chapters matching their classes
+        if (studentClassNumbers.length > 0) {
+          if (!studentClassNumbers.includes(chapter.class)) {
+            return; // Skip chapters not in student's classes
+          }
+        } else {
+          // If student has no classes yet, don't show any lessons
+          return;
+        }
+        
+        // Also filter by curriculum if student's classes have curriculum
+        if (studentCurricula.length > 0) {
+          if (!studentCurricula.includes(chapter.curriculum)) {
+            return; // Skip chapters not matching student's curriculum
+          }
         }
       }
       

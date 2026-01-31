@@ -7,16 +7,18 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { collection, query, where, orderBy, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import type { LessonLaunch, StudentScore } from '../../types/lms';
-import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap } from 'react-icons/fa';
+import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
+import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
 
 const StudentDashboard = () => {
   const { user, profile } = useAuth();
   const [lessonLaunches, setLessonLaunches] = useState<LessonLaunch[]>([]);
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [loading, setLoading] = useState(true);
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [classTeachers, setClassTeachers] = useState<Map<string, UserProfile>>(new Map());
   const [stats, setStats] = useState({
     totalLessons: 0,
     completedLessons: 0,
@@ -74,6 +76,87 @@ const StudentDashboard = () => {
     };
   }, [user?.uid, profile]);
 
+  // Fetch student's classes and their teachers
+  useEffect(() => {
+    if (!profile?.uid || !profile?.class_ids || profile.class_ids.length === 0) {
+      setClasses([]);
+      setClassTeachers(new Map());
+      return;
+    }
+
+    console.log('🔍 StudentDashboard: Fetching classes and teachers', {
+      studentId: profile.uid,
+      classIds: profile.class_ids,
+    });
+
+    const unsubscribes: (() => void)[] = [];
+    const classesData: Class[] = [];
+    const teacherMap = new Map<string, UserProfile>();
+
+    // Set up real-time listeners for each class
+    for (const classId of profile.class_ids) {
+      try {
+        const classRef = doc(db, 'classes', classId);
+        const unsubscribe = onSnapshot(classRef, async (classDoc) => {
+          if (classDoc.exists()) {
+            const classData = { id: classDoc.id, ...classDoc.data() } as Class;
+            
+            // Update classes array
+            const existingIndex = classesData.findIndex(c => c.id === classId);
+            if (existingIndex >= 0) {
+              classesData[existingIndex] = classData;
+            } else {
+              classesData.push(classData);
+            }
+            setClasses([...classesData]);
+
+            // Fetch teacher if class_teacher_id is set
+            if (classData.class_teacher_id) {
+              try {
+                const teacherDoc = await getDoc(doc(db, 'users', classData.class_teacher_id));
+                if (teacherDoc.exists()) {
+                  const teacherData = { uid: teacherDoc.id, ...teacherDoc.data() } as UserProfile;
+                  teacherMap.set(classId, teacherData);
+                  setClassTeachers(new Map(teacherMap));
+                  console.log('✅ StudentDashboard: Teacher loaded', {
+                    classId,
+                    teacherId: classData.class_teacher_id,
+                    teacherName: teacherData.name || teacherData.displayName,
+                  });
+                }
+              } catch (err) {
+                console.warn(`Error fetching teacher ${classData.class_teacher_id} for class ${classId}:`, err);
+              }
+            } else {
+              // Remove teacher from map if class_teacher_id is cleared
+              teacherMap.delete(classId);
+              setClassTeachers(new Map(teacherMap));
+              console.log('⚠️ StudentDashboard: Class has no class_teacher_id', { classId });
+            }
+          } else {
+            // Class doesn't exist, remove it
+            const index = classesData.findIndex(c => c.id === classId);
+            if (index >= 0) {
+              classesData.splice(index, 1);
+              setClasses([...classesData]);
+            }
+            teacherMap.delete(classId);
+            setClassTeachers(new Map(teacherMap));
+          }
+        }, (error) => {
+          console.error(`Error listening to class ${classId}:`, error);
+        });
+        unsubscribes.push(unsubscribe);
+      } catch (err) {
+        console.warn(`Error setting up listener for class ${classId}:`, err);
+      }
+    }
+
+    return () => {
+      unsubscribes.forEach(unsub => unsub());
+    };
+  }, [profile?.uid, profile?.class_ids]);
+
   const updateStats = (launches: LessonLaunch[], scoresData: StudentScore[]) => {
     const totalLessons = launches.length;
     const completedLessons = launches.filter(l => l.completion_status === 'completed').length;
@@ -114,6 +197,55 @@ const StudentDashboard = () => {
           </h1>
           <p className="text-white/50">Track your learning progress and performance</p>
         </div>
+
+        {/* Class Teacher Information */}
+        {classes.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <FaChalkboardTeacher className="text-cyan-400" />
+              My Class Teachers
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {classes.map((cls) => {
+                const teacher = classTeachers.get(cls.id);
+                if (!teacher) return null;
+                
+                return (
+                  <div
+                    key={cls.id}
+                    className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 hover:bg-cyan-500/10 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                        <FaChalkboardTeacher className="text-cyan-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-white font-medium truncate">
+                          {teacher.name || teacher.displayName || 'Unknown Teacher'}
+                        </h3>
+                        <p className="text-cyan-400/70 text-sm mt-1 truncate">
+                          {cls.class_name}
+                        </p>
+                        {teacher.email && (
+                          <p className="text-white/50 text-xs mt-1 truncate">
+                            {teacher.email}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {classes.every(cls => !classTeachers.has(cls.id)) && (
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 text-center">
+                <FaChalkboardTeacher className="text-4xl text-white/30 mx-auto mb-3" />
+                <p className="text-white/50">No class teacher assigned yet</p>
+                <p className="text-white/30 text-sm mt-2">Your teacher will be assigned by your school administrator</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
