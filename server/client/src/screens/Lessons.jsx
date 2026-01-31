@@ -9,7 +9,7 @@
  * - Memoized components to prevent flickering
  */
 
-import { collection, getDocs, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import {
   AlertCircle,
   AlertTriangle,
@@ -464,7 +464,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
   
   // Student class data
   const [studentClasses, setStudentClasses] = useState([]);
+  const [teacherClasses, setTeacherClasses] = useState([]);
   const isStudent = profile?.role === 'student';
+  const isTeacher = profile?.role === 'teacher';
 
   // Check VR capabilities on mount
   useEffect(() => {
@@ -545,15 +547,17 @@ const Lessons = ({ setBackgroundSkybox }) => {
       return;
     }
     
-    // For students: automatically filter by their class and curriculum
+    // For students and teachers: automatically filter by their class and curriculum
     let effectiveCurriculum = selectedCurriculum;
     let effectiveClass = selectedClass;
     
-    if (isStudent && studentClasses.length > 0) {
+    const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
+    
+    if ((isStudent || isTeacher) && userClasses.length > 0) {
       // Use the first class's curriculum and class number
-      const firstClass = studentClasses[0];
+      const firstClass = userClasses[0];
       if (!effectiveCurriculum && firstClass.curriculum) {
-        effectiveCurriculum = firstClass.curriculum;
+        effectiveCurriculum = firstClass.curriculum.toUpperCase().trim();
       }
       if (!effectiveClass) {
         const classNumberMatch = firstClass.class_name?.match(/\d+/);
@@ -574,13 +578,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
-    // For students: require both curriculum and class to be set
-    if (isStudent && (!effectiveCurriculum || !effectiveClass)) {
-      console.log('⚠️ Student lessons: Missing curriculum or class filter', {
+    // For students and teachers: require both curriculum and class to be set
+    if ((isStudent || isTeacher) && (!effectiveCurriculum || !effectiveClass)) {
+      console.log(`⚠️ ${isStudent ? 'Student' : 'Teacher'} lessons: Missing curriculum or class filter`, {
         effectiveCurriculum,
         effectiveClass,
-        studentClasses: studentClasses.length,
-        profileClassIds: profile?.class_ids?.length,
+        userClasses: userClasses.length,
+        profileClassIds: isStudent ? profile?.class_ids?.length : profile?.managed_class_ids?.length,
       });
       setChapters([]);
       setLoading(false);
@@ -654,7 +658,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, studentClasses]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, studentClasses, teacherClasses]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -743,35 +747,37 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Extract all topics from chapters
     const allTopics = [];
     
-    // For students: get class numbers and curriculum from their classes
-    const studentClassNumbers = isStudent && studentClasses.length > 0
-      ? studentClasses.map(c => {
+    // For students and teachers: get class numbers and curriculum from their classes
+    const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
+    const userClassNumbers = (isStudent || isTeacher) && userClasses.length > 0
+      ? userClasses.map(c => {
           const match = c.class_name?.match(/\d+/);
           return match ? parseInt(match[0]) : null;
         }).filter(Boolean)
       : [];
     
-    const studentCurricula = isStudent && studentClasses.length > 0
-      ? [...new Set(studentClasses.map(c => c.curriculum).filter(Boolean))]
+    const userCurricula = (isStudent || isTeacher) && userClasses.length > 0
+      ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
       : [];
     
     chapters.forEach(chapter => {
-      // For students: filter by their class numbers AND curriculum
-      if (isStudent) {
-        // If student has classes, only show chapters matching their classes
-        if (studentClassNumbers.length > 0) {
-          if (!studentClassNumbers.includes(chapter.class)) {
-            return; // Skip chapters not in student's classes
+      // For students and teachers: filter by their class numbers AND curriculum
+      if (isStudent || isTeacher) {
+        // If user has classes, only show chapters matching their classes
+        if (userClassNumbers.length > 0) {
+          if (!userClassNumbers.includes(chapter.class)) {
+            return; // Skip chapters not in user's classes
           }
         } else {
-          // If student has no classes yet, don't show any lessons
+          // If user has no classes yet, don't show any lessons
           return;
         }
         
-        // Also filter by curriculum if student's classes have curriculum
-        if (studentCurricula.length > 0) {
-          if (!studentCurricula.includes(chapter.curriculum)) {
-            return; // Skip chapters not matching student's curriculum
+        // Also filter by curriculum if user's classes have curriculum (normalize for comparison)
+        if (userCurricula.length > 0) {
+          const chapterCurriculum = chapter.curriculum?.toUpperCase().trim();
+          if (!userCurricula.includes(chapterCurriculum)) {
+            return; // Skip chapters not matching user's curriculum
           }
         }
       }
@@ -783,29 +789,31 @@ const Lessons = ({ setBackgroundSkybox }) => {
           // - Students can ONLY see APPROVED topics (teacher approval required)
           // - Other regular users only see APPROVED topics
           const approval = topic.approval || {};
-          const isTopicApproved = approval.approved === true;
-          
-          // Include topic if:
-          // 1. User is admin/superadmin (can see all for approval)
-          // 2. For students: MUST be approved (strict requirement)
-          // 3. For other users: Topic is approved OR chapter is approved (backward compatibility)
+          // Handle both boolean true and string "true" for approval
+          const isTopicApproved = approval.approved === true || approval.approved === 'true';
           const isChapterApproved = chapter.approved === true;
           
+          // Check if topic has an approval field (not empty object)
+          const hasTopicApproval = topic.approval && typeof topic.approval === 'object' && Object.keys(topic.approval).length > 0;
+          
+          // For students and teachers: topic is approved OR (chapter is approved AND topic has no approval field - backward compatibility)
+          const shouldShowTopic = isTopicApproved || (isChapterApproved && !hasTopicApproval);
+          
           if (canApprove) {
-            // Admins can see all
+            // Admins/superadmins can see all topics
             allTopics.push({
               topic,
               chapter,
             });
-          } else if (isStudent) {
-            // Students can ONLY see approved topics
-            if (isTopicApproved) {
+          } else if (isStudent || isTeacher) {
+            // Students and teachers: show approved topics OR topics in approved chapters (if topic has no approval field)
+            if (shouldShowTopic) {
               allTopics.push({
                 topic,
                 chapter,
               });
             }
-          } else if (isTopicApproved || (isChapterApproved && !topic.approval)) {
+          } else if (shouldShowTopic) {
             // Other users: approved topics or backward compatibility
             allTopics.push({
               topic,
@@ -874,7 +882,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     return sortedGroups;
-  }, [chapters, canApprove, isStudent, studentClasses]);
+  }, [chapters, canApprove, isStudent, isTeacher, studentClasses, teacherClasses]);
   
   // Flatten grouped topics into lesson items for display
   const lessonItems = useMemo(() => {
@@ -1974,8 +1982,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
               {availableCurricula.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
 
-            {/* Hide class selector for students - they can only see their assigned class */}
-            {!isStudent && (
+            {/* Hide class selector for students and teachers - they can only see their assigned class */}
+            {!isStudent && !isTeacher && (
               <select
                 value={selectedClass}
                 onChange={(e) => {
@@ -1989,10 +1997,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 {availableClasses.map(c => <option key={c} value={c}>Class {c}</option>)}
               </select>
             )}
-            {/* Show read-only class info for students */}
-            {isStudent && studentClasses.length > 0 && (
+            {/* Show read-only class info for students and teachers */}
+            {(isStudent || isTeacher) && (isStudent ? studentClasses : teacherClasses).length > 0 && (
               <div className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-400">
-                Class {selectedClass || studentClasses[0]?.class_name?.match(/\d+/)?.[0] || 'N/A'}
+                Class {selectedClass || (isStudent ? studentClasses : teacherClasses)[0]?.class_name?.match(/\d+/)?.[0] || 'N/A'} (Locked)
               </div>
             )}
 

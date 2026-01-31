@@ -158,9 +158,14 @@ const SchoolDashboard = () => {
     }, (error) => {
       console.error('❌ SchoolDashboard: Error fetching pending students', {
         error,
+        errorObject: error,
         schoolId,
         errorCode: error.code,
         errorMessage: error.message,
+        errorStack: error.stack,
+        profileRole: profile.role,
+        profileSchoolId: profile.school_id,
+        profileManagedSchoolId: profile.managed_school_id,
       });
     });
 
@@ -242,7 +247,18 @@ const SchoolDashboard = () => {
         id: doc.id,
         ...doc.data(),
       }));
+      console.log('🔍 SchoolDashboard: Classes query result', {
+        total: classesData.length,
+        schoolId,
+      });
       setClasses(classesData);
+    }, (error) => {
+      console.error('❌ SchoolDashboard: Error fetching classes', {
+        error,
+        schoolId,
+        errorCode: error.code,
+        errorMessage: error.message,
+      });
     });
 
     // Get all teachers in school
@@ -292,7 +308,28 @@ const SchoolDashboard = () => {
         uid: doc.id,
         ...doc.data(),
       }));
+      console.log('🔍 SchoolDashboard: Students query result', {
+        total: studentsData.length,
+        schoolId,
+        students: studentsData.map(s => ({
+          uid: s.uid,
+          name: s.name || s.displayName,
+          school_id: s.school_id,
+          approvalStatus: s.approvalStatus,
+          class_ids: s.class_ids,
+        })),
+      });
       setStudents(studentsData);
+    }, (error) => {
+      console.error('❌ SchoolDashboard: Error fetching students', {
+        error,
+        schoolId,
+        errorCode: error.code,
+        errorMessage: error.message,
+        profileRole: profile.role,
+        profileSchoolId: profile.school_id,
+        profileManagedSchoolId: profile.managed_school_id,
+      });
     });
 
     // Get all scores in school
@@ -307,7 +344,18 @@ const SchoolDashboard = () => {
         id: doc.id,
         ...doc.data(),
       })) as StudentScore[];
+      console.log('🔍 SchoolDashboard: Scores query result', {
+        total: scoresData.length,
+        schoolId,
+      });
       setScores(scoresData);
+    }, (error) => {
+      console.error('❌ SchoolDashboard: Error fetching scores', {
+        error,
+        schoolId,
+        errorCode: error.code,
+        errorMessage: error.message,
+      });
     });
 
     // Get all lesson launches in school
@@ -322,7 +370,18 @@ const SchoolDashboard = () => {
         id: doc.id,
         ...doc.data(),
       })) as LessonLaunch[];
+      console.log('🔍 SchoolDashboard: Launches query result', {
+        total: launchesData.length,
+        schoolId,
+      });
       setLaunches(launchesData);
+    }, (error) => {
+      console.error('❌ SchoolDashboard: Error fetching launches', {
+        error,
+        schoolId,
+        errorCode: error.code,
+        errorMessage: error.message,
+      });
     });
 
     // Fetch all chapters for curriculum completion calculation

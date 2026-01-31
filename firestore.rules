@@ -175,11 +175,26 @@ service cloud.firestore {
                      (getUserRole() == 'teacher' && resource.data.role == 'student' && 
                       resource.data.school_id != null &&
                       canAccessSchool(resource.data.school_id)) ||
-                     ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'student' && canSchoolApproveStudent(userId)) ||
+                     // School admin/principal can read students in their school (simplified for collection queries)
+                     // For collection queries: Firestore can validate this at query time
+                     (resource.data.role == 'student' && 
+                      resource.data.school_id != null &&
+                      isAuthenticated() &&
+                      exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                      ((get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'principal' && 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
+                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'school' && 
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id))) ||
                      // School admin/principal can read teachers in their school
                      // Use simplified helper function for better collection query performance
                      ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
-                      canSchoolReadTeacher(resource.data.school_id, resource.data.approvalStatus));
+                      canSchoolReadTeacher(resource.data.school_id, resource.data.approvalStatus)) ||
+                     // Students can read teachers assigned to their classes
+                     (getUserRole() == 'student' && resource.data.role == 'teacher' &&
+                      resource.data.managed_class_ids != null &&
+                      exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids != null &&
+                      resource.data.managed_class_ids.hasAny(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids));
       
       allow create: if isOwner(userId);
       
