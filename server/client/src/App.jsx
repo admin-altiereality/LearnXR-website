@@ -25,6 +25,8 @@ import Explore from './screens/Explore';
 import History from './screens/History';
 import Lessons from './screens/Lessons';
 import Landing from './screens/Landing';
+import Individual from './screens/Individual';
+import School from './screens/School';
 import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
 import Careers from './screens/Careers';
@@ -433,6 +435,8 @@ function App() {
                       
                       {/* Landing page - redirects authenticated users to /lessons */}
                       <Route path="/" element={<SmartLanding />} />
+                      <Route path="/individual" element={<Individual />} />
+                      <Route path="/school" element={<School />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
                       {/* Pricing removed */}
@@ -772,6 +776,8 @@ function App() {
                       
                       {/* Landing page - redirects authenticated users to /lessons */}
                       <Route path="/" element={<SmartLanding />} />
+                      <Route path="/individual" element={<Individual />} />
+                      <Route path="/school" element={<School />} />
                       <Route path="/careers" element={<Careers />} />
                       <Route path="/blog" element={<Blog />} />
                       {/* Pricing removed */}

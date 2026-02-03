@@ -27,6 +27,7 @@ import {
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
+import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 
 interface NavItem {
   path: string;
@@ -309,9 +310,12 @@ const Sidebar = () => {
                   initial={{ opacity: 0, width: 0 }}
                   animate={{ opacity: 1, width: 'auto' }}
                   exit={{ opacity: 0, width: 0 }}
-                  className="text-base font-bold text-white whitespace-nowrap overflow-hidden"
+                  className="text-base font-bold whitespace-nowrap overflow-hidden"
+                  style={learnXRFontStyle}
                 >
-                  LearnXR
+                  <span className="text-white">Learn</span>
+                  <span className="text-purple-700">XR</span>
+                  <TrademarkSymbol className="ml-0.5" />
                 </motion.span>
               )}
             </AnimatePresence>

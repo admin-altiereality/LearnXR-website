@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { FaFileAlt, FaGavel, FaUserCheck, FaExclamationTriangle, FaHandshake, FaShieldAlt, FaBalanceScale } from 'react-icons/fa';
+import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
 
 const TermsConditions = () => {
   const lastUpdated = "January 15, 2025";
@@ -10,7 +11,7 @@ const TermsConditions = () => {
       title: "Acceptance of Terms",
       icon: FaUserCheck,
       content: [
-        "By accessing and using In3D.AI, you accept and agree to be bound by these Terms and Conditions.",
+        "By accessing and using LearnXR™, you accept and agree to be bound by these Terms and Conditions.",
         "If you do not agree to these terms, please do not use our services.",
         "We reserve the right to modify these terms at any time, with changes effective immediately upon posting.",
         "Your continued use of the service after changes constitutes acceptance of the new terms."
@@ -20,10 +21,10 @@ const TermsConditions = () => {
       title: "Service Description",
       icon: FaFileAlt,
       content: [
-        "In3D.AI provides AI-powered 3D asset generation services.",
-        "Users can create 3D models, characters, and environments from text prompts.",
-        "Services include generation, storage, and export of 3D assets in various formats.",
-        "We offer different subscription plans with varying generation limits and features."
+        "LearnXR™ by Altie Reality provides immersive VR/XR educational learning experiences and platforms.",
+        "Users can access educational content, interactive lessons, and virtual reality learning environments.",
+        "Services include lesson creation, student progress tracking, curriculum management, and VR/XR content delivery.",
+        "We offer different subscription plans and institutional licenses with varying features and access levels."
       ]
     },
     {
@@ -52,34 +53,38 @@ const TermsConditions = () => {
       title: "Intellectual Property Rights",
       icon: FaShieldAlt,
       content: [
-        "You retain ownership of the 3D assets you generate using our services.",
-        "We retain ownership of our platform, technology, and AI models.",
-        "You grant us a license to use your generated content for service improvement.",
-        "You may not claim ownership of our AI technology or underlying algorithms.",
-        "You are responsible for ensuring you have rights to any content you use as prompts."
+        "LearnXR™, including its name, logo, and brand identity, is a trademark of Altie Reality Private Limited.",
+        "You retain ownership of educational content, lesson plans, and materials you create using our platform.",
+        "We retain ownership of our platform, technology, VR/XR environments, software, and proprietary educational frameworks.",
+        "You grant us a limited, non-exclusive license to use your created content for service improvement and platform enhancement.",
+        "You may not claim ownership of our VR/XR technology, educational algorithms, or underlying platform infrastructure.",
+        "All educational content provided by LearnXR™ remains the property of Altie Reality Private Limited or its licensors.",
+        "You are responsible for ensuring you have rights to any content, images, or materials you upload or use in lessons."
       ]
     },
     {
       title: "Payment and Subscription",
       icon: FaHandshake,
       content: [
-        "Subscription fees are billed in advance on a recurring basis.",
-        "We offer a 30-day money-back guarantee for new subscriptions. See our Refund Policy for details.",
-        "All payments are non-refundable after the 30-day guarantee period except as required by law.",
-        "We may change our pricing with 30 days notice to existing subscribers.",
-        "You may cancel your subscription at any time through your account settings.",
-        "Unused generation credits do not carry over to the next billing period."
+        "Subscription fees and institutional licenses are billed in advance on a recurring basis as per your selected plan.",
+        "We offer a 30-day money-back guarantee for new individual subscriptions. See our Refund Policy for details.",
+        "Institutional licenses may have different refund terms as specified in your institutional agreement.",
+        "All payments are non-refundable after the applicable guarantee period except as required by law or as specified in your agreement.",
+        "We may change our pricing with 30 days written notice to existing subscribers.",
+        "You may cancel your subscription at any time through your account settings or by contacting support.",
+        "Upon cancellation, access to premium features and content will continue until the end of your current billing period."
       ]
     },
     {
       title: "Limitation of Liability",
       icon: FaExclamationTriangle,
       content: [
-        "Our services are provided 'as is' without warranties of any kind.",
-        "We are not liable for any indirect, incidental, or consequential damages.",
+        "Our services are provided 'as is' without warranties of any kind, express or implied.",
+        "We are not liable for any indirect, incidental, special, or consequential damages arising from your use of LearnXR™.",
         "Our total liability is limited to the amount you paid for our services in the past 12 months.",
-        "We are not responsible for any content generated by our AI systems.",
-        "You use our services at your own risk."
+        "We are not responsible for any technical issues, data loss, or interruptions in VR/XR experiences beyond our reasonable control.",
+        "We do not guarantee specific educational outcomes or learning results from using our platform.",
+        "You use our services at your own risk and are responsible for ensuring appropriate supervision for minors."
       ]
     },
     {
@@ -117,7 +122,7 @@ const TermsConditions = () => {
             
             <p className="text-xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
               Please read these terms carefully before using our services. 
-              These terms govern your use of In3D.AI and its features.
+              These terms govern your use of <span style={learnXRFontStyle} className="text-xl"><span className="text-white">Learn</span><span className="text-purple-700">XR</span><TrademarkSymbol /></span> by Altie Reality and its features.
             </p>
             
             <p className="text-sm text-gray-400">
@@ -172,13 +177,15 @@ const TermsConditions = () => {
               
               <h3 className="text-2xl font-bold text-white mb-4">Important Notice</h3>
               <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-                These terms constitute a legally binding agreement between you and Evoneural Artificial Intelligence OPC Private Limited. 
+                These terms constitute a legally binding agreement between you and Altie Reality Private Limited, the provider of <span style={learnXRFontStyle} className="text-lg"><span className="text-white">Learn</span><span className="text-purple-700">XR</span><TrademarkSymbol /></span>. 
                 By using our services, you acknowledge that you have read, understood, and agree to be bound by these terms.
               </p>
               
               <div className="text-gray-400 text-sm">
+                <p><strong className="text-white">Service Provider:</strong> Altie Reality Private Limited</p>
+                <p><strong className="text-white">Brand:</strong> <span style={learnXRFontStyle} className="text-sm"><span className="text-white">Learn</span><span className="text-purple-700">XR</span><TrademarkSymbol /></span> by Altie Reality</p>
                 <p><strong className="text-white">Governing Law:</strong> These terms are governed by the laws of India.</p>
-                <p><strong className="text-white">Dispute Resolution:</strong> Any disputes will be resolved through arbitration in Jaipur, India.</p>
+                <p><strong className="text-white">Dispute Resolution:</strong> Any disputes will be resolved through arbitration in Jaipur, Rajasthan, India.</p>
               </div>
             </div>
           </motion.div>
@@ -197,9 +204,10 @@ const TermsConditions = () => {
               </p>
               
               <div className="space-y-3 text-gray-400">
-                <p><strong className="text-white">Email:</strong> legal@in3d.ai</p>
+                <p><strong className="text-white">Email:</strong> legal@altiereality.com</p>
                 <p><strong className="text-white">WhatsApp:</strong> +91 7023310122</p>
-                <p><strong className="text-white">Address:</strong> Third Floor, Bhamashah Technohub, Sansthan Path, Malviya Nagar, Jaipur</p>
+                <p><strong className="text-white">Address:</strong> Third Floor, Bhamashah Technohub, Sansthan Path, Malviya Nagar, Jaipur, Rajasthan, India</p>
+                <p><strong className="text-white">Company:</strong> Altie Reality Private Limited</p>
               </div>
             </div>
           </motion.div>

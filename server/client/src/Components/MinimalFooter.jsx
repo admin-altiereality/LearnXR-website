@@ -5,6 +5,7 @@
 
 import React from "react";
 import { Link } from 'react-router-dom';
+import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 
 function MinimalFooter() {
   const currentYear = new Date().getFullYear();
@@ -14,9 +15,13 @@ function MinimalFooter() {
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
         {/* Company Info */}
         <div className="flex items-center gap-2 text-xs text-gray-500">
-          <span className="font-medium text-gray-400">In3D.AI</span>
+          <span className="font-medium" style={learnXRFontStyle}>
+            <span className="text-white">Learn</span>
+            <span className="text-purple-700">XR</span>
+            <TrademarkSymbol className="ml-0.5" />
+          </span>
           <span className="hidden sm:inline">•</span>
-          <span className="hidden sm:inline">© {currentYear} Evoneural AI</span>
+          <span className="hidden sm:inline text-gray-400">© {currentYear} Altie Reality Private Limited</span>
         </div>
 
         {/* Links */}
@@ -34,15 +39,6 @@ function MinimalFooter() {
           >
             Terms
           </Link>
-          <span className="text-gray-700">|</span>
-          <a 
-            href="https://www.evoneural.ai" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-gray-500 hover:text-cyan-400 transition-colors"
-          >
-            Evoneural.ai
-          </a>
         </div>
       </div>
     </footer>

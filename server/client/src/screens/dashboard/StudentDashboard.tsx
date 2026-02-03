@@ -11,6 +11,7 @@ import { collection, query, where, orderBy, getDocs, onSnapshot, doc, getDoc } f
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
 import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
+import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 
 const StudentDashboard = () => {
   const { user, profile } = useAuth();
@@ -188,14 +189,23 @@ const StudentDashboard = () => {
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-              <FaGraduationCap className="text-white" />
+        <div className="mb-8 pb-6 border-b border-white/10">
+          <div className="flex items-start justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <FaGraduationCap className="text-white text-xl" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
+                  <span className="text-white">Learn</span>
+                  <span className="text-purple-700">XR</span>
+                  <TrademarkSymbol />
+                </h1>
+                <h2 className="text-xl font-semibold text-white">My Dashboard</h2>
+                <p className="text-white/50 text-sm mt-0.5">Track your learning progress and performance</p>
+              </div>
             </div>
-            My Dashboard
-          </h1>
-          <p className="text-white/50">Track your learning progress and performance</p>
+          </div>
         </div>
 
         {/* Class Teacher Information */}

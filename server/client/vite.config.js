@@ -7,7 +7,17 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: 'glsl-loader',
+        transform(code, id) {
+          if (id.endsWith('.glsl')) {
+            return `export default ${JSON.stringify(code)}`;
+          }
+        },
+      },
+    ],
     
     // Base public path when served in production
     base: '/',
@@ -51,12 +61,12 @@ export default defineConfig(({ mode }) => {
       },
       // Optimize chunk size warnings
       chunkSizeWarningLimit: 1000,
-      // Enable minification but preserve console logs and readable names for debugging
+      // Enable minification - remove console and debugger in production
       minify: 'terser',
       terserOptions: {
         compress: {
-          drop_console: false,  // Keep console logs for debugging
-          drop_debugger: false,   // Keep debugger statements for debugging
+          drop_console: true,   // Remove console statements in production
+          drop_debugger: true,   // Remove debugger statements in production
           keep_classnames: true, // Preserve class names for better error messages
           keep_fnames: true,      // Preserve function names for better error messages
           passes: 1,              // Reduce passes to avoid aggressive optimization

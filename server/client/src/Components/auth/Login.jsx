@@ -23,6 +23,7 @@ import {
   hasCompletedOnboarding 
 } from '../../utils/rbac';
 import FuturisticBackground from '../FuturisticBackground';
+import { learnXRFontStyle, TrademarkSymbol } from '../LearnXRTypography';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
@@ -158,7 +159,12 @@ export const Login = () => {
             className="text-center mb-8"
           >
             <h1 className="text-3xl font-bold text-white mb-2">
-              Welcome to <span className="bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">LearnXR</span>
+              Welcome to{' '}
+              <span style={learnXRFontStyle} className="text-3xl tracking-[0.15rem]">
+                <span className="text-white">Learn</span>
+                <span className="text-purple-700">XR</span>
+                <TrademarkSymbol className="ml-1" />
+              </span>
             </h1>
             <p className="text-white/60">Immersive Education Platform</p>
           </motion.div>
