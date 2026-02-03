@@ -22,18 +22,13 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { MeshyTestPanel } from './MeshyTestPanel';
 import { MeshyDebugPanel } from './MeshyDebugPanel';
+import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 
 function Footer() {
   const currentYear = new Date().getFullYear();
   const navigate = useNavigate();
 
   const socialLinks = [
-    {
-      name: "Website",
-      url: "https://www.evoneural.ai",
-      icon: FaGlobe,
-      color: "hover:text-amber-400"
-    },
     {
       name: "Facebook",
       url: "https://www.facebook.com/profile.php?id=61565933257547",
@@ -102,12 +97,15 @@ function Footer() {
             className="space-y-4"
           >
             <div>
-              <h3 className="text-xl font-display font-bold text-white mb-2 tracking-tight">
-                In3D.<span className="text-cyan-400">AI</span>
+              <h3 className="text-xl mb-2 tracking-tight leading-none flex items-baseline" style={learnXRFontStyle}>
+                <span className="text-white">Learn</span>
+                <span className="text-purple-700">X</span>
+                <span className="text-purple-700">R</span>
+                <TrademarkSymbol />
               </h3>
               <p className="text-gray-400 text-xs leading-relaxed font-body">
-                Powered by Evoneural Artificial Intelligence OPC Private Limited. 
-                Transforming ideas into stunning 3D assets with AI-powered generation.
+                Powered by Altie Reality Private Limited. 
+                Transforming education with immersive VR/XR learning experiences.
               </p>
             </div>
             
@@ -317,7 +315,7 @@ function Footer() {
           <div className="flex flex-col md:flex-row items-center justify-between space-y-3 md:space-y-0">
             <div className="text-center md:text-left">
               <p className="text-gray-500 text-xs font-body">
-                © {currentYear} In3D.AI | Evoneural Artificial Intelligence OPC Private Limited. All rights reserved.
+                © {currentYear} LearnXR™ | Altie Reality Private Limited. All rights reserved.
               </p>
             </div>
             

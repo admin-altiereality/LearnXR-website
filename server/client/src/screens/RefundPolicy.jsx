@@ -148,13 +148,13 @@ const RefundPolicy = () => {
               
               <h3 className="text-2xl font-bold text-white mb-4">Important Notice</h3>
               <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-                This refund policy is provided by Evoneural Artificial Intelligence OPC Private Limited. 
+                This refund policy is provided by Altie Reality Private Limited. 
                 By purchasing a subscription, you acknowledge that you have read, understood, and agree to this refund policy.
               </p>
               
               <div className="text-gray-400 text-sm">
                 <p><strong className="text-white">Governing Law:</strong> This policy is governed by the laws of India.</p>
-                <p><strong className="text-white">Company:</strong> Evoneural Artificial Intelligence OPC Private Limited</p>
+                <p><strong className="text-white">Company:</strong> Altie Reality Private Limited</p>
               </div>
             </div>
           </motion.div>

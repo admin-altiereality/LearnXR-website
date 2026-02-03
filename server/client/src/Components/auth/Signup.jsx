@@ -24,6 +24,7 @@ import {
   ROLE_DESCRIPTIONS
 } from '../../utils/rbac';
 import FuturisticBackground from '../FuturisticBackground';
+import { learnXRFontStyle, TrademarkSymbol } from '../LearnXRTypography';
 
 export const Signup = () => {
   const [name, setName] = useState('');
@@ -200,7 +201,12 @@ export const Signup = () => {
             className="text-center mb-8"
           >
             <h1 className="text-3xl font-bold text-white mb-2">
-              Join <span className="bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">LearnXR</span>
+              Join{' '}
+              <span style={learnXRFontStyle} className="text-3xl tracking-[0.15rem]">
+                <span className="text-white">Learn</span>
+                <span className="text-purple-700">XR</span>
+                <TrademarkSymbol className="ml-1" />
+              </span>
             </h1>
             <p className="text-white/60">Start your immersive learning journey</p>
           </motion.div>

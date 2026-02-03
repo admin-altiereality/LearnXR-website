@@ -215,3 +215,190 @@ html {
   background: rgba(14, 165, 233, 0.3);
   color: white;
 }
+
+/* LearnXR Landing Page Styles */
+@font-face {
+  font-family: "Rejouice Headline";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/Rejouice-Headline.woff) format("woff");
+}
+
+/* Font-Background Harmony - Improved readability */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Improved contrast for white text on dark backgrounds */
+.text-white {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.02em;
+}
+
+/* Better line height for readability */
+p, .text-1xl, .text-xl, .text-2xl {
+  line-height: 1.7;
+}
+
+/* Improved font weight for better visibility */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+#canvasContainer {
+  z-index: -100;
+}
+
+/* Removed unused panel/container styles - Features section removed */
+
+.page3-slider-container {
+  height: 70vmin;
+  width: 100vw;
+  max-width: 1400px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  user-select: none;
+  position: relative;
+  margin-top: 2rem;
+}
+
+.left-arrow,
+.right-arrow {
+  height: 100%;
+  width: 10%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.page3-slider-content {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: row;
+  overflow: hidden;
+  position: relative;
+}
+
+.page3-slider-content .slide {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+  border-radius: 25px;
+  overflow: hidden;
+}
+
+.page3-slider-content .slide.active {
+  opacity: 1;
+  z-index: 5;
+}
+
+.media {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 25px;
+  overflow: hidden;
+}
+
+.media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-sections {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+  padding: 2rem;
+  z-index: 2;
+}
+
+.lower-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.card-caption {
+  color: white;
+  font-weight: bold;
+  margin-bottom: 1rem;
+}
+
+.card-button {
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  padding: 0.5rem 1.5rem;
+  border-radius: 20px;
+  display: inline-block;
+  margin-top: 1rem;
+  cursor: pointer;
+  border: 0.5px solid #fff;
+  width: fit-content;
+  text-align: center;
+}
+
+#main {
+  overflow-y: scroll;
+  scroll-behavior: smooth;
+}
+
+#vr-img2 {
+  animation: rotate 5s linear infinite;
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+#page5-left img {
+  animation: rotate2 5s linear infinite;
+}
+
+@keyframes rotate2 {
+  0% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: translateY(3vh);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@media (max-width: 600px) {
+  #page1-content h1 {
+    font-size: 4rem !important;
+  }
+  .page3-slider-content .slide {
+    width: 95%;
+  }
+}

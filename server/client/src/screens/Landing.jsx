@@ -1,77 +1,244 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import {
-  FaBrain,
-  FaCube,
-  FaPalette,
-  FaArrowRight,
-  FaStar,
-  FaUsers,
-  FaShieldAlt,
-  FaGlobe,
-  FaDownload,
-  FaBolt,
-  FaCode
-} from 'react-icons/fa';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-// Subscription removed
-import { HeroGeometric } from '@/components/ui/shape-landing-hero';
+import * as THREE from 'three';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { FaStar } from 'react-icons/fa';
+import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
 
-const features = [
-  {
-    icon: FaBrain,
-    title: "AI-Powered Generation",
-    description: "Transform text prompts into cinematic 3D assets with state-of-the-art neural networks",
-    gradient: "from-amber-500 to-orange-600"
-  },
-  {
-    icon: FaCube,
-    title: "Multiple Formats",
-    description: "Export to FBX, OBJ, GLTF and more for seamless workflow integration",
-    gradient: "from-emerald-500 to-teal-600"
-  },
-  {
-    icon: FaPalette,
-    title: "Style Variety",
-    description: "Choose from animation, gaming, comics, and VFX artistic styles",
-    gradient: "from-violet-500 to-purple-600"
-  },
-  {
-    icon: FaCode,
-    title: "Developer Ready",
-    description: "Perfect for game development, AR/VR, and immersive experiences",
-    gradient: "from-sky-500 to-blue-600"
-  }
-];
-
-const stats = [
-  { number: "10K+", label: "Assets Generated", icon: FaCube },
-  { number: "500+", label: "Happy Creators", icon: FaUsers },
-  { number: "50+", label: "Export Formats", icon: FaDownload },
-  { number: "24/7", label: "AI Processing", icon: FaBolt }
-];
+// Import shaders as raw strings
+import vertexShader from '../shaders/vertex.glsl?raw';
+import fragmentShader from '../shaders/fragment.glsl?raw';
+import atmosphereVertexShader from '../shaders/atmosphereVertex.glsl?raw';
+import atmosphereFragmentShader from '../shaders/atmosphereFragment.glsl?raw';
 
 const Landing = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  // Subscription removed
-  const [activeFeature, setActiveFeature] = useState(0);
+  const canvasRef = useRef(null);
+  const mainRef = useRef(null);
+  const cursorRef = useRef(null);
+  const sceneRef = useRef(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
+  const contentSlides = [
+    {
+      image: '/img/lxrn4.png',
+      title: 'STEM Lesson',
+      description: 'Virtual reality transforms STEM learning by providing interactive experiences that enhance understanding of complex concepts in science, technology, engineering, and mathematics.',
+    },
+    {
+      image: '/img/lxrn3.png',
+      title: 'Humanities',
+      description: 'VR revolutionizes humanities education with immersive, interactive experiences.',
+    },
+    {
+      image: '/img/lxrn2.png',
+      title: 'Immersive Learning',
+      description: 'VR enables immersive learning through interactive, virtual experiences.',
+    },
+    {
+      image: '/img/lxrn5.png',
+      title: 'Field Trip',
+      description: 'A virtual reality field trip offers immersive educational experiences, allowing students to explore diverse environments and historical sites without leaving the classroom.',
+    },
+  ];
+
+  const testimonials = [
+    {
+      name: 'PK Mathur',
+      role: 'Principal, SPSS nathadwara',
+      image: '/img/testimonials-3.jpg',
+      text: 'Kids loves the product and the lessons are engaging too. Looking to get a LearnXR Lab setup for my school',
+    },
+    {
+      name: 'Nishant Gupta',
+      role: 'Parent',
+      image: '/img/testimonials-2.jpg',
+      text: 'we needed a way through which our kid could get a clear understanding of Curosity Rover. LearnXR App\'s virtual tour made it all possible. Loved it.',
+    },
+    {
+      name: 'Jay Kahchara',
+      role: 'Class 6th, LBS Chittorgarh',
+      image: '/img/testimonials-1.jpg',
+      text: 'LearnXr App significantly improves information Retention. learning was never that much immersive before',
+    },
+    {
+      name: 'Deepak Dadhich',
+      role: 'Industry Expert',
+      image: '/img/testimonials-4.jpg',
+      text: 'AR/VR are the way forward for any learning solutionto make impact online. LearnXR is on the right track to achieve it.',
+    },
+    {
+      name: 'Jyotsana Tyagi',
+      role: 'Parent',
+      image: '/img/testimonials-5.jpg',
+      text: 'I love their educational app LearnXR that my kis uses for learning. Immersive by now technology is transforming the way of learning.',
+    },
+  ];
+
+  // Initialize Three.js Earth scene
   useEffect(() => {
-    setActiveFeature(0);
-    const interval = setInterval(() => {
-      setActiveFeature((prev) => (prev + 1) % features.length);
-    }, 4000);
+    if (!canvasRef.current) return;
 
-    return () => clearInterval(interval);
+    gsap.registerPlugin(ScrollTrigger);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvasRef.current,
+      antialias: true,
+    });
+
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Create Earth sphere with shaders
+    const sphereGeometry = new THREE.SphereGeometry(5, 50, 50);
+    const sphereMaterial = new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader,
+      uniforms: {
+        globeTexture: {
+          value: new THREE.TextureLoader().load('/img/earth.jpg'),
+        },
+      },
+    });
+    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+
+    // Create atmosphere
+    const atmosphereGeometry = new THREE.SphereGeometry(5, 50, 50);
+    const atmosphereMaterial = new THREE.ShaderMaterial({
+      vertexShader: atmosphereVertexShader,
+      fragmentShader: atmosphereFragmentShader,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+    });
+    const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+    atmosphere.scale.set(1.1, 1.1, 1.1);
+
+    scene.add(atmosphere);
+    const group = new THREE.Group();
+    group.add(sphere);
+    scene.add(group);
+
+    // Add stars
+    const starGeometry = new THREE.BufferGeometry();
+    const starMaterial = new THREE.PointsMaterial({ color: 0xffffff });
+    const starVertices = [];
+    for (let i = 0; i < 10000; i++) {
+      const x = (Math.random() - 0.5) * 1000;
+      const y = (Math.random() - 0.5) * 1000;
+      const z = -Math.random() * 10000;
+      starVertices.push(x, y, z);
+    }
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+    const stars = new THREE.Points(starGeometry, starMaterial);
+    scene.add(stars);
+
+    camera.position.z = 10;
+    sceneRef.current = { scene, camera, renderer, group, sphere };
+
+    const mouse = { x: 0, y: 0 };
+
+    const handleMouseMove = (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+
+    const animate = () => {
+      requestAnimationFrame(animate);
+      if (sphere) sphere.rotation.y += 0.001;
+      gsap.to(group.rotation, {
+        x: -mouse.y * 0.1,
+        y: mouse.x * 0.1,
+        duration: 3,
+      });
+      renderer.render(scene, camera);
+    };
+
+    animate();
+
+    const handleResize = () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('resize', handleResize);
+      renderer.dispose();
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+    };
+  }, []);
+
+  // Cursor effect
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (cursorRef.current) {
+        gsap.to(cursorRef.current, {
+          x: e.clientX - 40,
+          y: e.clientY - 40,
+          duration: 0.3,
+        });
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  // GSAP ScrollTrigger animations
+  useEffect(() => {
+    if (!mainRef.current) return;
+
+    gsap.registerPlugin(ScrollTrigger);
+
+    // Page 2 animations
+    gsap.from('#page2 h1', {
+      y: 150,
+      stagger: 0.1,
+      duration: 0.5,
+      scrollTrigger: {
+        trigger: '#page2',
+        scroller: mainRef.current,
+        start: '30% 80%',
+        end: '30% 65%',
+        scrub: 4,
+      },
+    });
+
+    gsap.from('#page2 h4', {
+      y: 150,
+      stagger: 0.1,
+      duration: 0.5,
+      scrollTrigger: {
+        trigger: '#page2',
+        scroller: mainRef.current,
+        start: '30% 80%',
+        end: '30% 65%',
+        scrub: 4,
+      },
+    });
+
+    return () => {
+      ScrollTrigger.getAll().forEach(trigger => trigger.kill());
+    };
   }, []);
 
   const handleGetStarted = () => {
-    if (authLoading) {
-      return;
-    }
-
+    if (authLoading) return;
     if (user) {
       navigate('/main');
     } else {
@@ -79,196 +246,316 @@ const Landing = () => {
     }
   };
 
+  const handleLogin = () => {
+    navigate('/login');
+  };
+
+  const nextSlide = () => {
+    setCurrentSlide((prev) => (prev + 1) % contentSlides.length);
+  };
+
+  const prevSlide = () => {
+    setCurrentSlide((prev) => (prev - 1 + contentSlides.length) % contentSlides.length);
+  };
+
   return (
-    <div className="min-h-screen bg-[#030303] text-white overflow-x-hidden font-body selection:bg-sky-500/30 selection:text-white pt-10">
-      <HeroGeometric
-        badge="Powered by Evoneural AI"
-        title1="In3D.ai crafts worlds"
-        title2="AI-powered 3D stories"
+    <div className="flex h-screen w-full relative" id="main2">
+      {/* 3D Earth Canvas Background */}
+      <div className="w-full fixed h-screen -z-10" id="canvasContainer">
+        <canvas ref={canvasRef}></canvas>
+      </div>
+
+      {/* Custom Cursor */}
+      <div
+        ref={cursorRef}
+        className="fixed z-[100] w-20 h-20 opacity-30 bg-purple-600 rounded-full flex items-center justify-center pointer-events-none"
+        id="cursur"
+        style={{ transform: 'translate(-50%, -50%)' }}
+      ></div>
+
+      {/* Main Content */}
+      <div
+        ref={mainRef}
+        id="main"
+        className="absolute h-screen w-full bg-transparent overflow-y-scroll"
+        style={{ scrollBehavior: 'smooth' }}
       >
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-20 flex justify-center items-center"
-        >
-          <motion.button
-            onClick={handleGetStarted}
-            className="group relative px-10 py-4 rounded-2xl font-semibold text-lg overflow-hidden"
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
+        {/* Page 1: Hero Section */}
+        <div id="page1" className="w-full h-screen relative">
+          <div
+            id="page1-content"
+            className="h-[100vmin] z-10 flex flex-col relative items-center justify-between"
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-sky-500 via-violet-500 to-fuchsia-500" />
-            <div className="absolute inset-0 bg-gradient-to-r from-sky-400 via-violet-400 to-fuchsia-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="absolute inset-0 rounded-2xl shadow-[0_0_45px_rgba(139,92,246,0.4)] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <span className="relative flex items-center gap-2 text-white">
-              Get Started Free
-              <FaArrowRight className="text-sm" />
-            </span>
-          </motion.button>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.15 }}
-          className="mt-8 flex flex-wrap justify-center items-center gap-6 text-xs text-white/60 tracking-[0.3em]"
-        >
-          <div className="flex items-center gap-2">
-            <FaShieldAlt className="text-emerald-400" />
-            <span>Secure by design</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <FaGlobe className="text-sky-400" />
-            <span>Global CDN</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <FaStar className="text-amber-400" />
-            <span>99.9% uptime</span>
-          </div>
-        </motion.div>
-      </HeroGeometric>
-
-      <section className="relative z-10 py-24 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <span className="inline-flex items-center justify-center px-4 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-300 text-sm font-medium mb-4">
-              Powering 3D narratives
-            </span>
-            <h2 className="text-4xl sm:text-5xl font-display font-bold mb-4 text-white">
-              Why developers trust In3D.ai
-            </h2>
-            <p className="text-lg text-white/60 max-w-3xl mx-auto">
-              Intelligent generation, expressive style control, and production-ready exports baked into one AI assistant.
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-            {features.map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                viewport={{ once: true }}
-                className="group relative rounded-3xl border bg-white/5 border-white/10 p-8 shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition-all duration-500"
-                onMouseEnter={() => setActiveFeature(index)}
+            <nav className="h-[100px] w-full flex items-center justify-between p-16 z-0">
+              <div className="h-15 w-20"></div>
+              <button
+                onClick={handleLogin}
+                className="px-6 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-lg"
               >
-                <div className={`absolute inset-0 rounded-3xl pointer-events-none transition-opacity duration-500 ${activeFeature === index ? 'opacity-100' : 'opacity-0'}`}>
-                  <div className="absolute inset-0 bg-gradient-to-br from-sky-500/20 to-fuchsia-500/20 blur-3xl" />
+                Login
+              </button>
+            </nav>
+
+            <div className="absolute overflow-hidden">
+              <motion.img
+                id="vr-img"
+                className="z-[9] h-[50vh] w-[40vw] translate-y-[0vh]"
+                src="/img/vr image.png"
+                alt="VR"
+                loading="lazy"
+                initial={{ y: 800 }}
+                animate={{ y: 0 }}
+                transition={{ duration: 2 }}
+              />
+            </div>
+            <div className="absolute overflow-hidden top-[60vh] right-10">
+              <motion.img
+                id="vr-img2"
+                className="w-[12vw] translate-y-[0vh]"
+                src="/img/astro.png"
+                alt="Astro"
+                loading="lazy"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 2 }}
+              />
+            </div>
+
+            <div
+              id="heading"
+              className="overflow-hidden flex flex-col items-center justify-center h-fit relative"
+            >
+              <h1 className="text-white text-[14rem] tracking-[0.9rem] inline-block overflow-hidden h-fit leading-none" style={learnXRFontStyle}>
+                <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0 }}>L</motion.span>
+                <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>e</motion.span>
+                <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>a</motion.span>
+                <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.3 }}>r</motion.span>
+                <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>n</motion.span>
+                <motion.span className="text-purple-700" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }}>X</motion.span>
+                <motion.span className="text-purple-700" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.6 }}>R</motion.span>
+                <span id="tr" className="float-end ml-1">
+                  <TrademarkSymbol className="text-white" />
+                </span>
+              </h1>
+              <div className="hover-cont flex gap-10 mt-8">
+                <div className="hover">
+                  <Link to="/individual" className="text-white text-xl hover:text-purple-400 transition-colors font-medium">
+                    LearnXR for Individuals
+                  </Link>
                 </div>
-                <div className="relative z-10 flex flex-col gap-4">
-                  <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${feature.gradient} flex items-center justify-center text-white shadow-lg`}>
-                    <feature.icon className="text-2xl" />
+                <div className="hover">
+                  <Link to="/school" className="text-white text-xl hover:text-purple-400 transition-colors font-medium">
+                    LearnXR Labs for Schools
+                  </Link>
+                </div>
+              </div>
+            </div>
+            <motion.p
+              className="text-white text-xl font-medium tracking-wide"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+            >
+              Redefining Learning with XR + AI.
+            </motion.p>
+          </div>
+        </div>
+
+        {/* Page 2: Who We Are */}
+        <div
+          id="page2"
+          className="w-full h-[90vmin] flex justify-center relative items-center flex-col"
+        >
+          <div className="absolute right-[1rem] bottom-0 w-[43vw]">
+            <img
+              id="vr-imgg3"
+              className="w-[100%]"
+              src="/img/vr image3.jpg"
+              alt="VR Experience"
+              loading="lazy"
+            />
+          </div>
+          <div id="heading" className="overflow-hidden h-fit mb-4">
+            <h1 className="text-[2rem] text-purple-700 z-10 font-semibold tracking-wide">WHO WE ARE</h1>
+          </div>
+          <div id="page2-para" className="">
+            <div id="elem" className="text-white text-[3rem] overflow-hidden font-medium leading-tight">
+              <h1>
+                <span style={learnXRFontStyle}>LearnXR</span> by Altie Reality is proudly funded by Meta Inc
+              </h1>
+            </div>
+            <div id="elem" className="text-white text-[3rem] overflow-hidden font-medium leading-tight">
+              <h1>through Meta XR Startup program</h1>
+            </div>
+          </div>
+          <div id="lower" className="overflow-hidden">
+            <h4 className="text-white text-2xl mt-4 font-medium">
+              In association with iStart & SPTBI
+            </h4>
+          </div>
+        </div>
+
+        {/* Page 3: Content Slider */}
+        <div
+          id="page3"
+          className="w-full h-screen flex flex-col justify-center items-center"
+        >
+          <p className="text-purple-700 text-[2rem] font-semibold tracking-wide">CONTENT</p>
+          <p className="text-white text-6xl pb-10 font-medium leading-tight">Content covered upto k-12</p>
+
+          <div className="page3-slider-container w-full h-[100vmin] relative">
+            <div className="left-arrow cursor-pointer" onClick={prevSlide}>
+              <i className="fa fa-angle-left text-white text-2xl"></i>
+            </div>
+            <div className="page3-slider-content" id="slider-content">
+              {contentSlides.map((slide, index) => (
+                <div
+                  key={index}
+                  className={`slide ${index === currentSlide ? 'active' : ''}`}
+                >
+                  <div className="media">
+                    <img
+                      className="bg-cover w-full h-full object-cover"
+                      src={slide.image}
+                      alt={slide.title}
+                      loading="lazy"
+                    />
                   </div>
-                  <h3 className="text-2xl font-semibold">{feature.title}</h3>
-                  <p className="text-white/70 leading-relaxed">{feature.description}</p>
-                  <div className="flex items-center gap-2 text-sky-400 text-sm font-semibold">
-                    <span>Learn more</span>
-                    <FaArrowRight className="text-[0.7rem]" />
+                  <div className="card-sections">
+                    <div className="lower-section">
+                      <div className="card-caption text-[5vmin] font-semibold">{slide.title}</div>
+                      <h4 className="text-[2.2vmin] font-normal leading-relaxed">{slide.description}</h4>
+                      <div className="card-button tracking-wide font-medium">learn more</div>
+                    </div>
                   </div>
                 </div>
-              </motion.div>
+              ))}
+            </div>
+            <div className="right-arrow cursor-pointer" onClick={nextSlide}>
+              <i className="fa fa-angle-right text-white text-2xl"></i>
+            </div>
+          </div>
+        </div>
+
+        {/* Page 4: Testimonials */}
+        <div
+          id="page4"
+          className="h-fit flex justify-between px-[5vw] relative pt-[5rem]"
+        >
+          <div id="page4-left" className="w-[45%] h-fit sticky top-[10vh] left-0">
+            <div className="overflow-hidden">
+              <h3 className="text-purple-700 pb-6 overflow-hidden text-[2.2rem] font-semibold">TESTIMONIALS</h3>
+            </div>
+            <div className="overflow-hidden">
+              <h1 className="text-white overflow-hidden text-6xl font-medium leading-tight">What they are saying about us</h1>
+            </div>
+            <img id="vr-img4" src="/img/vr-img3.png" alt="VR" loading="lazy" />
+          </div>
+
+          <div id="page4-right" className="flex flex-col">
+            {testimonials.map((testimonial, index) => (
+              <div key={index} className="p-[1rem]">
+                <div className="rounded-lg h-[37vh] w-[35vw] flex flex-col items-center justify-center p-4 bg-white/5 backdrop-blur-sm border border-white/10">
+                  <div className="">
+                    {[...Array(5)].map((_, i) => (
+                      <FaStar key={i} className="text-yellow-400 inline" />
+                    ))}
+                  </div>
+                  <p className="text-[2vmin] text-white text-center my-4 leading-relaxed">{testimonial.text}</p>
+                  <img
+                    src={testimonial.image}
+                    className="w-20 h-20 rounded-full object-cover"
+                    alt={testimonial.name}
+                    loading="lazy"
+                  />
+                  <p className="text-[2vmin] text-white mt-2 font-medium">{testimonial.name}</p>
+                  <p className="text-[1rem] font-thin text-white/70">{testimonial.role}</p>
+                </div>
+              </div>
             ))}
           </div>
         </div>
-      </section>
 
-      <section className="relative z-10 py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="rounded-[2.25rem] border border-white/10 bg-gradient-to-br from-white/5 via-white/0 to-white/5 backdrop-blur-3xl p-12 relative overflow-hidden shadow-[0_50px_120px_rgba(13,110,253,0.25)]"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.2),_transparent_55%)] pointer-events-none" />
-            <div className="relative grid grid-cols-2 lg:grid-cols-4 gap-8">
-              {stats.map((stat, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  whileInView={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.6, delay: index * 0.1 }}
-                  viewport={{ once: true }}
-                  className="text-center relative z-10"
-                >
-                  <div className="mx-auto w-12 h-12 rounded-2xl bg-white/5 border border-white/10 mb-3 flex items-center justify-center">
-                    <stat.icon className="text-sky-400" />
-                  </div>
-                  <div className="text-4xl font-display font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-sky-300 mb-2">
-                    {stat.number}
-                  </div>
-                  <div className="text-white/60 uppercase tracking-[0.3em] text-xs">
-                    {stat.label}
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      <section className="relative z-10 py-24 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="relative rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur-3xl p-12 text-center overflow-hidden shadow-[0_40px_80px_rgba(15,118,255,0.25)]"
-          >
-            <div className="absolute inset-0 bg-gradient-to-tr from-sky-500/20 via-transparent to-fuchsia-500/10 pointer-events-none" />
-            <h2 className="font-display text-4xl font-bold mb-6 text-white relative z-10">
-              Ready to create the worlds you imagine?
-            </h2>
-            <p className="relative z-10 text-white/70 mb-10">
-              Join thousands of creators debugging less and designing more with In3D.ai.
-            </p>
-            <div className="relative z-10 flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={handleGetStarted}
-                className="px-10 py-3 rounded-full bg-gradient-to-r from-sky-500 to-violet-500 font-semibold text-white shadow-[0_20px_60px_rgba(14,165,233,0.45)] transition-transform duration-300 hover:-translate-y-0.5"
-              >
-                Start creating now
-              </button>
-              <button
-                className="px-10 py-3 rounded-full border border-white/30 text-white/80 hover:text-white transition-colors"
-              >
-                Schedule a call
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      <footer className="relative z-10 py-12 px-4 sm:px-6 lg:px-8 border-t border-white/10">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-sky-500 to-fuchsia-500 flex items-center justify-center shadow-[0_0_20px_rgba(14,165,233,0.3)]">
-              <FaCube className="text-white text-xl" />
-            </div>
-            <div>
-              <p className="text-xl font-display font-semibold">In3D.ai</p>
-              <p className="text-sm text-white/60">Â© 2024 Evoneural AI. All rights reserved.</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-sm text-white/60">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>All systems go</span>
-            </div>
-            <span className="text-xs tracking-[0.3em] uppercase">Crafted for creators</span>
+        {/* Page 5: Partners */}
+        <div
+          id="page5"
+          className="w-full h-fit flex flex-col relative items-center pt-[7rem]"
+        >
+          <p className="text-white text-[3rem] mt-10 mb-10 font-semibold tracking-wide">IN ASSOCIATION WITH</p>
+          <div className="flex w-full justify-evenly pb-10">
+            <img className="w-[11%] h-[11%] object-contain" src="/img/client-1.png" alt="Partner" loading="lazy" />
+            <img className="w-[11%] h-[11%] object-contain" src="/img/client-2.png" alt="Partner" loading="lazy" />
+            <img className="w-[11%] h-[11%] object-contain" src="/img/client-3.png" alt="Partner" loading="lazy" />
+            <img className="w-[11%] h-[11%] object-contain" src="/img/client-4.png" alt="Partner" loading="lazy" />
+            <img className="w-[11%] h-[13%] object-contain" src="/img/sptbilogo.png" alt="SPTBI" loading="lazy" />
           </div>
         </div>
-      </footer>
+
+        {/* Footer */}
+        <div id="footer" className="w-full h-fit bg-black">
+          <div className="flex flex-row justify-between py-[2.5vw] px-[5.5vw] w-full h-fit">
+            <div id="footer1-left">
+              <div className="overflow-hidden">
+                <h1 className="text-purple-700 text-[2.5vw] font-semibold">Contact Us</h1>
+              </div>
+              <p className="text-white mt-4 text-[1.3rem] leading-relaxed">
+                +91 8619953434<br />
+                +91 9145822691
+              </p>
+            </div>
+            <div id="footer-right" className="flex w-[25%] justify-center">
+              <div className="flex flex-col justify-between gap-2">
+                <a href="https://www.youtube.com/channel/UCXhsQN9jsazg4FDoIuSseBg" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Youtube</a>
+                <a href="https://www.facebook.com/altiereality" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Facebook</a>
+                <a href="https://www.instagram.com/learn__xr/" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Instagram</a>
+                <a href="https://www.linkedin.com/company/altie-reality/mycompany/" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-row justify-between py-[2.5vw] px-[5.5vw]">
+            <div id="footer2-left">
+              <div className="overflow-hidden">
+                <h3 className="text-purple-700 text-[2.5vw] font-semibold">Address</h3>
+              </div>
+              <p className="text-white text-[1.3rem] leading-relaxed">
+                41,42 Bhamashah Technohub <br />
+                , Santhan Path, Malviya Nagar , Jaipur 302007
+              </p>
+            </div>
+            <div id="footer2-right">
+              <div className="overflow-hidden">
+                <h3 className="text-[2.5vw] text-purple-700 font-semibold">Email Us</h3>
+              </div>
+              <p className="text-white text-[1.3rem]">admin@altiereality.com</p>
+            </div>
+          </div>
+          
+          <p className="text-white flex items-center justify-center pb-4 text-2xl font-medium">Get it on</p>
+          <div className="flex w-full justify-center items-center gap-10 mb-[5rem]">
+            <a
+              href="https://play.google.com/store/apps/details?id=com.altiereality1.lexrn&hl=en&gl=US&pli=1"
+              className="text-white text-3xl hover:text-purple-400 transition-colors"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <i className="fa-brands fa-android"></i>
+            </a>
+            <a
+              href="https://sidequestvr.com/app/17713/lexrn-app-for-students"
+              className="text-white w-[3%] hover:opacity-80 transition-opacity"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img src="/img/sidequest.png" alt="SideQuest" loading="lazy" />
+            </a>
+            <a href="" className="text-white text-3xl hover:text-purple-400 transition-colors">
+              <i className="fa-brands fa-apple"></i>
+            </a>
+          </div>
+          <p className="flex items-center justify-center text-white text-lg">&copy; Altie Reality 2020-2025</p>
+        </div>
+      </div>
     </div>
   );
 };

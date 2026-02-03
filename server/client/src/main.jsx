@@ -4,6 +4,7 @@ import App from './App.jsx';
 import './index.css';
 import { productionLogger } from './services/productionLogger';
 import './utils/consoleLogger'; // Initialize enhanced console logging
+import LearnXRLoader from './Components/LearnXRLoader';
 
 // Global error handlers for production debugging
 // These will catch errors that occur outside React components
@@ -231,10 +232,22 @@ class ErrorBoundary extends React.Component {
 
 const root = createRoot(document.getElementById('root'));
 
+// Render loader first, then app
+const AppWithLoader = () => {
+  const [showLoader, setShowLoader] = React.useState(true);
+
+  return (
+    <>
+      {showLoader && <LearnXRLoader onComplete={() => setShowLoader(false)} />}
+      <App />
+    </>
+  );
+};
+
 root.render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <AppWithLoader />
     </ErrorBoundary>
   </StrictMode>
 );

@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { FaShieldAlt, FaUser, FaDatabase, FaLock, FaEye, FaTrash, FaEnvelope } from 'react-icons/fa';
+import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
 
 const PrivacyPolicy = () => {
   const lastUpdated = "January 15, 2025";
@@ -11,20 +12,20 @@ const PrivacyPolicy = () => {
       icon: FaDatabase,
       content: [
         "Personal Information: Name, email address, and profile information when you create an account.",
-        "Usage Data: Information about how you use our services, including generation history and preferences.",
+        "Usage Data: Information about how you use our services, including lesson history, progress, and preferences.",
         "Technical Data: IP address, browser type, device information, and usage analytics.",
-        "Generated Content: 3D assets and models you create using our AI services."
+        "Educational Content: Lessons, assignments, and educational materials you access or create using our platform."
       ]
     },
     {
       title: "How We Use Your Information",
       icon: FaUser,
       content: [
-        "To provide and maintain our 3D AI generation services.",
-        "To process payments and manage your subscription.",
-        "To improve our AI models and service quality.",
-        "To communicate with you about updates, support, and marketing (with your consent).",
-        "To ensure security and prevent fraud."
+        "To provide and maintain our immersive VR/XR educational services.",
+        "To personalize your learning experience and recommend relevant content.",
+        "To track your progress and provide educational insights.",
+        "To communicate with you about updates, support, and educational opportunities (with your consent).",
+        "To ensure security and prevent unauthorized access."
       ]
     },
     {
@@ -63,9 +64,9 @@ const PrivacyPolicy = () => {
       icon: FaTrash,
       content: [
         "We retain your personal data as long as your account is active.",
-        "Generated content is stored according to your subscription plan.",
-        "We may retain certain data for legal, security, or business purposes.",
-        "You can request data deletion by contacting our support team."
+        "Educational content and progress data are stored to maintain your learning history.",
+        "We may retain certain data for legal, security, or educational purposes.",
+        "You can request data deletion by contacting our support team at admin@altiereality.com."
       ]
     }
   ];
@@ -86,9 +87,16 @@ const PrivacyPolicy = () => {
               <span className="text-cyan-400 text-sm font-medium">Privacy & Security</span>
             </div>
             
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-white via-cyan-400 to-blue-400 bg-clip-text text-transparent">
-              Privacy Policy
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6">
+              <span className="text-white">Privacy Policy</span>
             </h1>
+            <div className="mb-4">
+              <span className="text-2xl sm:text-3xl" style={learnXRFontStyle}>
+                <span className="text-white">Learn</span>
+                <span className="text-purple-700">XR</span>
+                <TrademarkSymbol className="ml-1" />
+              </span>
+            </div>
             
             <p className="text-xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
               Your privacy is important to us. This policy explains how we collect, use, and protect your information.
@@ -151,10 +159,15 @@ const PrivacyPolicy = () => {
               </p>
               
               <div className="space-y-3 text-gray-400 mb-4">
-                <p><strong className="text-white">Company:</strong> Evoneural Artificial Intelligence OPC Private Limited</p>
-                <p><strong className="text-white">Email:</strong> privacy@in3d.ai</p>
-                <p><strong className="text-white">WhatsApp:</strong> +91 7023310122</p>
-                <p><strong className="text-white">Address:</strong> Third Floor, Bhamashah Technohub, Sansthan Path, Malviya Nagar, Jaipur</p>
+                <p><strong className="text-white">Company:</strong> Altie Reality</p>
+                <p><strong className="text-white">Product:</strong> <span style={learnXRFontStyle} className="text-lg">
+                  <span className="text-white">Learn</span>
+                  <span className="text-purple-700">XR</span>
+                  <TrademarkSymbol className="ml-1" />
+                </span></p>
+                <p><strong className="text-white">Email:</strong> admin@altiereality.com</p>
+                <p><strong className="text-white">Phone:</strong> +91 8619953434, +91 9145822691</p>
+                <p><strong className="text-white">Address:</strong> 41,42 Bhamashah Technohub, Santhan Path, Malviya Nagar, Jaipur 302007</p>
               </div>
             </div>
           </motion.div>
