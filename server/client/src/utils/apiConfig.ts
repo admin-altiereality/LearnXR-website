@@ -40,7 +40,7 @@ export const getApiBaseUrl = (): string => {
   
   // Use Firebase Functions in production/preview (default)
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
   console.log('🌐 Using production Firebase Functions:', productionUrl, {
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
@@ -56,7 +56,7 @@ export const getApiBaseUrl = (): string => {
  */
 export const getFirebaseProjectConfig = () => {
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'in3devoneuralai';
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   return {
     region,
     projectId,

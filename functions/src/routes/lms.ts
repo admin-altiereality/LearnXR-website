@@ -12,7 +12,6 @@ import express from 'express';
 import * as admin from 'firebase-admin';
 import { authenticateUser } from '../middleware/auth';
 import {
-  requireRole,
   requireSchoolAccess,
   requireStudentAccess,
 } from '../middleware/rbac';
@@ -154,7 +153,7 @@ router.get('/schools/:schoolId/analytics', requireSchoolAccess(), async (req, re
     const totalLessonLaunches = launches.length;
     const completedLessons = launches.filter((l: any) => l.completion_status === 'completed').length;
 
-    res.json({
+    return res.json({
       success: true,
       data: {
         schoolId,
@@ -172,7 +171,7 @@ router.get('/schools/:schoolId/analytics', requireSchoolAccess(), async (req, re
     });
   } catch (error: any) {
     console.error('Error fetching school analytics:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Failed to fetch school analytics',
       message: error.message,

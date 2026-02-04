@@ -30,7 +30,8 @@ const PUBLIC_PATHS = [
   '/assistant/message',  // Allow assistant messages without auth
   '/assistant/tts/generate',  // Allow TTS generation without auth
   '/assistant/lipsync/generate',  // Allow viseme generation without auth
-  '/assistant/list'  // Allow listing assistants without auth
+  '/assistant/list',  // Allow listing assistants without auth
+  '/linkedin/posts'  // Allow LinkedIn posts without auth (public company activity)
 ];
 
 const isPublicEndpoint = (req: Request): boolean => {
@@ -43,6 +44,24 @@ const isPublicEndpoint = (req: Request): boolean => {
   // Check raw URL string directly (most reliable) - FIRST CHECK
   const urlString = (rawUrl || '').toLowerCase();
   const pathString = (rawPath || '').toLowerCase();
+  
+  // CRITICAL: Check for LinkedIn endpoints (BEFORE any normalization)
+  // This catches /api/linkedin/posts, /linkedin/posts, etc.
+  if (req.method === 'GET' || req.method === 'OPTIONS') {
+    const hasLinkedIn = urlString.includes('linkedin') || pathString.includes('linkedin');
+    const hasPosts = urlString.includes('posts') || pathString.includes('posts');
+    
+    if (hasLinkedIn && hasPosts) {
+      console.log(`[${requestId}] [AUTH] ✅ ALLOWING LinkedIn endpoint (raw URL/path check):`, {
+        method: req.method,
+        rawUrl,
+        rawPath,
+        urlString,
+        pathString
+      });
+      return true; // EARLY RETURN - don't check anything else
+    }
+  }
   
   // CRITICAL: Check raw URL for subscription/create (BEFORE any normalization)
   // This catches /api/subscription/create, /subscription/create, etc.

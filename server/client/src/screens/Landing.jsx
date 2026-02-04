@@ -7,6 +7,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { FaStar } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
+import LinkedInActivity from '../Components/LinkedInActivity';
 
 // Import shaders as raw strings
 import vertexShader from '../shaders/vertex.glsl?raw';
@@ -437,42 +438,23 @@ const Landing = () => {
           </div>
         </div>
 
-        {/* Page 4: Testimonials */}
+        {/* Page 4: LinkedIn Activity */}
         <div
           id="page4"
           className="h-fit flex justify-between px-[5vw] relative pt-[5rem]"
         >
           <div id="page4-left" className="w-[45%] h-fit sticky top-[10vh] left-0">
             <div className="overflow-hidden">
-              <h3 className="text-purple-700 pb-6 overflow-hidden text-[2.2rem] font-semibold">TESTIMONIALS</h3>
+              <h3 className="text-purple-700 pb-6 overflow-hidden text-[2.2rem] font-semibold">COMPANY ACTIVITY</h3>
             </div>
             <div className="overflow-hidden">
-              <h1 className="text-white overflow-hidden text-6xl font-medium leading-tight">What they are saying about us</h1>
+              <h1 className="text-white overflow-hidden text-6xl font-medium leading-tight">Latest from Altie Reality</h1>
             </div>
             <img id="vr-img4" src="/img/vr-img3.png" alt="VR" loading="lazy" />
           </div>
 
           <div id="page4-right" className="flex flex-col">
-            {testimonials.map((testimonial, index) => (
-              <div key={index} className="p-[1rem]">
-                <div className="rounded-lg h-[37vh] w-[35vw] flex flex-col items-center justify-center p-4 bg-white/5 backdrop-blur-sm border border-white/10">
-                  <div className="">
-                    {[...Array(5)].map((_, i) => (
-                      <FaStar key={i} className="text-yellow-400 inline" />
-                    ))}
-                  </div>
-                  <p className="text-[2vmin] text-white text-center my-4 leading-relaxed">{testimonial.text}</p>
-                  <img
-                    src={testimonial.image}
-                    className="w-20 h-20 rounded-full object-cover"
-                    alt={testimonial.name}
-                    loading="lazy"
-                  />
-                  <p className="text-[2vmin] text-white mt-2 font-medium">{testimonial.name}</p>
-                  <p className="text-[1rem] font-thin text-white/70">{testimonial.role}</p>
-                </div>
-              </div>
-            ))}
+            <LinkedInActivity limit={6} autoRefresh={true} refreshInterval={5 * 60 * 1000} />
           </div>
         </div>
 

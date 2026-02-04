@@ -20,6 +20,8 @@ const meshyApiKey = defineSecret("MESHY_API_KEY");
 // Razorpay secrets removed - payment system not needed
 const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
+const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
+const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
 
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
@@ -76,10 +78,18 @@ const getApp = (): express.Application => {
     // Custom middleware
     app.use(pathNormalization);
     app.use(requestLogging);
-    app.use(authenticateUser);
     
     // Routes (loaded lazily to avoid deployment timeout)
     // Import routes only when app is created, not at module load time
+    const linkedinRoutes = require('./routes/linkedin').default;
+    
+    // Mount LinkedIn routes FIRST (before authentication - public endpoint)
+    app.use('/linkedin', linkedinRoutes);
+    
+    // Apply authentication middleware AFTER LinkedIn routes
+    app.use(authenticateUser);
+    
+    // Import and mount other routes AFTER authentication
     const healthRoutes = require('./routes/health').default;
     const skyboxRoutes = require('./routes/skybox').default;
     const meshyRoutes = require('./routes/meshy').default;
@@ -93,6 +103,7 @@ const getApp = (): express.Application => {
     const curriculumRoutes = require('./routes/curriculum').default;
     const lmsRoutes = require('./routes/lms').default;
     
+    // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
     app.use('/skybox', skyboxRoutes);
     app.use('/meshy', meshyRoutes);
@@ -133,7 +144,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey] // Required secrets (Razorpay removed - payment system not needed)
+    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN] // Required secrets (Razorpay removed - payment system not needed)
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -144,6 +155,8 @@ export const api = onRequest(
     // Razorpay removed - payment system not needed
     let openaiKey: string | undefined;
     let openaiAvatarKey: string | undefined;
+    let linkedinToken: string | undefined;
+    let linkedinURN: string | undefined;
     
     try {
       blockadeKey = blockadelabsApiKey.value();
@@ -181,6 +194,24 @@ export const api = onRequest(
       console.warn('⚠️ OPENAI_AVATAR_API_KEY not found, will fallback to OPENAI_API_KEY:', err?.message || err);
     }
     
+    try {
+      linkedinToken = linkedinAccessToken.value();
+      if (linkedinToken) {
+        linkedinToken = linkedinToken.trim();
+      }
+    } catch (err: any) {
+      console.warn('⚠️ LINKEDIN_ACCESS_TOKEN not found:', err?.message || err);
+    }
+    
+    try {
+      linkedinURN = linkedinCompanyURN.value();
+      if (linkedinURN) {
+        linkedinURN = linkedinURN.trim();
+      }
+    } catch (err: any) {
+      console.warn('⚠️ LINKEDIN_COMPANY_URN not found:', err?.message || err);
+    }
+    
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (meshyKey) {
@@ -199,6 +230,21 @@ export const api = onRequest(
       console.log('⚠️ OPENAI_AVATAR_API_KEY not set, will use OPENAI_API_KEY as fallback');
     }
     
+    // Set LinkedIn secrets
+    if (linkedinToken) {
+      process.env.LINKEDIN_ACCESS_TOKEN = linkedinToken;
+      console.log('🔑 LinkedIn Access Token set, length:', linkedinToken.length);
+    } else {
+      console.warn('⚠️ LINKEDIN_ACCESS_TOKEN not set - LinkedIn API will not work');
+    }
+    
+    if (linkedinURN) {
+      process.env.LINKEDIN_COMPANY_URN = linkedinURN;
+      console.log('🔑 LinkedIn Company URN set:', linkedinURN);
+    } else {
+      console.warn('⚠️ LINKEDIN_COMPANY_URN not set - LinkedIn API will not work');
+    }
+    
     console.log('Secrets loaded:', {
       hasBlockade: !!blockadeKey,
       blockadeLength: blockadeKey?.length || 0,
@@ -207,7 +253,10 @@ export const api = onRequest(
       hasOpenAI: !!openaiKey,
       openaiKeyLength: openaiKey?.length || 0,
       hasOpenAIAvatar: !!openaiAvatarKey,
-      openaiAvatarKeyLength: openaiAvatarKey?.length || 0
+      openaiAvatarKeyLength: openaiAvatarKey?.length || 0,
+      hasLinkedInToken: !!linkedinToken,
+      linkedinTokenLength: linkedinToken?.length || 0,
+      hasLinkedInURN: !!linkedinURN
     });
     
     // Initialize services with secrets directly
