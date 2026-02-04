@@ -175,7 +175,7 @@ export function requireRole(roles: UserRole[]) {
       }
 
       req.userProfile = profile;
-      next();
+      return next();
     } catch (error: any) {
       console.error('Role check error:', error);
       return res.status(500).json({
@@ -229,7 +229,7 @@ export function requireSchoolAccess() {
       }
 
       req.userProfile = profile;
-      next();
+      return next();
     } catch (error: any) {
       console.error('School access check error:', error);
       return res.status(500).json({
@@ -284,7 +284,7 @@ export function requireStudentAccess() {
       }
 
       req.userProfile = profile;
-      next();
+      return next();
     } catch (error: any) {
       console.error('Student access check error:', error);
       return res.status(500).json({

@@ -7,6 +7,9 @@
       "hosting": {
         "learnxr-evoneuralai": [
           "learnxr-evoneuralai"
+        ],
+        "altiereality": [
+          "altiereality"
         ]
       }
     }

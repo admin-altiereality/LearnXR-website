@@ -5,6 +5,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
+import * as admin from 'firebase-admin';
 import { validateApiKey } from '../services/apiKeyService';
 import { ValidatedApiKeyUser, ApiKeyScope } from '../types/apiKey';
 
@@ -13,11 +14,7 @@ declare global {
   namespace Express {
     interface Request {
       apiKeyUser?: ValidatedApiKeyUser;
-      user?: {
-        uid: string;
-        email?: string;
-        name?: string;
-      };
+      user?: admin.auth.DecodedIdToken;
     }
   }
 }
@@ -136,8 +133,18 @@ export function validateIn3dApiKey(options: ValidateApiKeyOptions = {}) {
       req.user = {
         uid: apiKeyUser.userId,
         email: undefined,
-        name: undefined
-      };
+        name: undefined,
+        aud: 'firebase-project',
+        auth_time: Date.now() / 1000,
+        exp: Date.now() / 1000 + (60 * 60),
+        firebase: {
+          sign_in_provider: 'api-key',
+          identities: {}
+        },
+        iat: Date.now() / 1000,
+        iss: 'https://securetoken.google.com/firebase-project',
+        sub: apiKeyUser.userId,
+      } as unknown as admin.auth.DecodedIdToken;
 
       console.log(`[${requestId}] ✅ API key validated: ${apiKeyUser.userId}, scope: ${apiKeyUser.scope}, credits: ${apiKeyUser.creditsRemaining}`);
 

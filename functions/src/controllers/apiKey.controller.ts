@@ -4,6 +4,7 @@
  */
 
 import { Request, Response } from 'express';
+import * as admin from 'firebase-admin';
 import {
   createApiKey,
   listApiKeys,
@@ -16,11 +17,7 @@ import { ApiKeyScope } from '../types/apiKey';
 declare global {
   namespace Express {
     interface Request {
-      user?: {
-        uid: string;
-        email?: string;
-        name?: string;
-      };
+      user?: admin.auth.DecodedIdToken;
     }
   }
 }
