@@ -2,7 +2,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import path from 'path';
-import { router as apiRouter } from './routes';
+import { router as apiRouter } from './routes/index';
 import paymentRoutes from './routes/payment';
 
 // Load environment variables
@@ -23,14 +23,21 @@ const app = express();
 const buildPath = path.resolve(process.cwd(), 'client/dist');
 const isDevelopment = process.env.NODE_ENV === 'development';
 
-// CORS configuration
+// CORS configuration (allow Firebase preview channels e.g. in3devoneuralai--manav-xxx.web.app)
 const corsOptions = {
-  origin: [
-    'https://in3d.evoneural.ai',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://localhost:5002'
-  ],
+  origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return cb(null, true);
+    const allowed = [
+      'https://in3d.evoneural.ai',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5002'
+    ];
+    if (allowed.includes(origin)) return cb(null, true);
+    if (/^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.web\.app$/.test(origin)) return cb(null, true);
+    if (origin.endsWith('.web.app') || origin.endsWith('.firebaseapp.com')) return cb(null, true);
+    cb(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']

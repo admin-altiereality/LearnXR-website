@@ -46,7 +46,7 @@ export async function verifyFirebaseToken(
     if (!adminApp) {
       res.status(503).json({
         error: 'Service Unavailable',
-        message: 'Authentication service not available',
+        message: 'Authentication service not available. Ensure Firebase Admin is configured (service account JSON or FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY in .env).',
         code: 503
       });
       return;

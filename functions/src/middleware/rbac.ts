@@ -47,9 +47,9 @@ export interface UserProfile {
 }
 
 /**
- * Fetch user profile from Firestore
+ * Fetch user profile from Firestore (exported for aiEducation and other routes)
  */
-async function getUserProfile(uid: string): Promise<UserProfile | null> {
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   try {
     const db = admin.firestore();
     const userDoc = await db.collection('users').doc(uid).get();
@@ -96,6 +96,23 @@ export function canAccessSchool(userProfile: UserProfile, schoolId: string): boo
     return true;
   }
   
+  return false;
+}
+
+/**
+ * Verify user can access class data (for assessments, curriculum, etc.)
+ */
+export function canAccessClass(
+  userProfile: UserProfile,
+  classId: string,
+  classSchoolId: string
+): boolean {
+  if (!userProfile || !classId || !classSchoolId) return false;
+  if (!canAccessSchool(userProfile, classSchoolId)) return false;
+  if (userProfile.role === 'superadmin' || userProfile.role === 'admin') return true;
+  if (userProfile.role === 'principal' && userProfile.managed_school_id === classSchoolId) return true;
+  if (userProfile.role === 'teacher' && userProfile.managed_class_ids?.includes(classId)) return true;
+  if (userProfile.role === 'student' && userProfile.class_ids?.includes(classId)) return true;
   return false;
 }
 

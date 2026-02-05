@@ -68,6 +68,18 @@ import SchoolManagement from './screens/admin/SchoolManagement';
 import ProductionLogs from './screens/admin/ProductionLogs';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
+import PersonalizedLearning from './screens/ai/PersonalizedLearning';
+import TeacherSupport from './screens/ai/TeacherSupport';
+import TeacherAssessments from './screens/assessments/TeacherAssessments';
+import StudentAssessments from './screens/assessments/StudentAssessments';
+import TakeAssessment from './screens/assessments/TakeAssessment';
+
+// Assessments: student sees list + take; teacher/principal/etc see create + list + attempts
+const AssessmentsPage = () => {
+  const { profile } = useAuth();
+  if (profile?.role === 'student') return <StudentAssessments />;
+  return <TeacherAssessments />;
+};
 
 // Conditional Footer - Shows minimal footer on all pages except VR player and studio
 const ConditionalFooter = () => {
@@ -961,6 +973,40 @@ function App() {
                         <ProtectedRoute>
                           <RoleGuard allowedRoles={['school']}>
                             <SchoolDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Personalized Learning (AI) - Students only */}
+                      <Route path="/personalized-learning" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student']}>
+                            <PersonalizedLearning />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* AI Teacher Support - Teachers and above */}
+                      <Route path="/teacher-support" element={
+                        <ProtectedRoute>
+                          <TeacherGuard>
+                            <TeacherSupport />
+                          </TeacherGuard>
+                        </ProtectedRoute>
+                      } />
+                      
+                      {/* Automated Assessments - Students (take/list) and teachers+ (create/list/grade) */}
+                      <Route path="/assessments" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student', 'teacher', 'school', 'principal', 'admin', 'superadmin']}>
+                            <AssessmentsPage />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/assessments/take/:id" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student', 'superadmin']}>
+                            <TakeAssessment />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />

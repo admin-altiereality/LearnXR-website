@@ -42,6 +42,9 @@ yarn-error.log*
 coverage/
 .nyc_output/
 
+# Firebase service account keys (do not commit)
+*-firebase-adminsdk-*.json
+
 # Misc
 *.pem
 .env.local

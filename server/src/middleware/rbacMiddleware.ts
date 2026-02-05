@@ -54,7 +54,7 @@ export interface UserProfile {
 /**
  * Fetch user profile from Firestore
  */
-async function getUserProfile(uid: string): Promise<UserProfile | null> {
+export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   try {
     const adminApp = getAdminApp();
     if (!adminApp) {

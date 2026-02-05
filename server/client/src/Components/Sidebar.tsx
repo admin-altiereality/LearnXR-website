@@ -23,7 +23,10 @@ import {
   FaTimes,
   FaServer,
   FaUsers,
-  FaFileAlt
+  FaFileAlt,
+  FaLightbulb,
+  FaRobot,
+  FaClipboardList
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
@@ -38,14 +41,14 @@ interface NavItem {
 // Normalize role to lowercase for consistent comparison
 const normalizeRole = (role: string | undefined): UserRole => {
   if (!role) return 'student';
-  const normalized = role.toLowerCase().trim() as UserRole;
-  // Handle common variations
-  if (['student', 'teacher', 'school', 'admin', 'superadmin'].includes(normalized)) {
-    return normalized;
-  }
+  const raw = role.toLowerCase().trim();
   // Handle case where someone might use "Super Admin" or "SuperAdmin"
-  if (normalized === 'super admin' || normalized === 'super_admin') {
+  if (raw === 'super admin' || raw === 'super_admin') {
     return 'superadmin';
+  }
+  // Handle common variations
+  if (['student', 'teacher', 'school', 'admin', 'superadmin', 'principal', 'associate'].includes(raw)) {
+    return raw as UserRole;
   }
   return 'student'; // Default fallback
 };
@@ -155,6 +158,21 @@ const Sidebar = () => {
 
     // Lessons - everyone can see
     items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+
+    // Personalized Learning (AI) - students only
+    if (isStudent) {
+      items.push({ path: '/personalized-learning', label: 'Personalized Learning', icon: FaLightbulb });
+    }
+
+    // AI Teacher Support - teachers and above (lesson plans, rubrics, content suggestions)
+    if (isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
+      items.push({ path: '/teacher-support', label: 'AI Teacher Support', icon: FaRobot });
+    }
+
+    // Automated Assessments - students (take/list) and teachers+ (create/list/grade)
+    if (isStudent || isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
+      items.push({ path: '/assessments', label: 'Assessments', icon: FaClipboardList });
+    }
 
     // Creator tools - teachers, schools, admin, superadmin (no Studio for teacher/principal/school)
     if (canCreate) {
