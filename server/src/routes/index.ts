@@ -9,6 +9,8 @@ import aiDetectionRoutes from './aiDetection';
 import assistantRoutes from './assistant';
 import apiKeyRoutes from './apiKey';
 import lmsRoutes from './lms';
+import aiEducationRoutes from './aiEducation';
+import assessmentRoutes from './assessment';
 
 const router = express.Router();
 
@@ -110,6 +112,16 @@ console.log('API key routes mounted at /dev/api-keys');
 console.log('Mounting LMS routes...');
 router.use('/lms', lmsRoutes);
 console.log('LMS routes mounted at /lms');
+
+// Mount AI Education routes (personalized learning, teacher support)
+console.log('Mounting AI Education routes...');
+router.use('/ai-education', aiEducationRoutes);
+console.log('AI Education routes mounted at /ai-education');
+
+// Mount Assessment routes (automated assessment & evaluation)
+console.log('Mounting Assessment routes...');
+router.use('/assessment', assessmentRoutes);
+console.log('Assessment routes mounted at /assessment');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

@@ -19,34 +19,65 @@ let adminApp: ReturnType<typeof initializeApp> | null = null;
 // Try to load service account from JSON file first, then fall back to environment variables
 function getServiceAccount(): ServiceAccount | null {
   const projectId = 'learnxr-evoneuralai';
-  
-  // First, try to find service account JSON file
-  const possibleJsonFiles = [
-    path.resolve(__dirname, `../../../${projectId}-firebase-adminsdk-*.json`),
-    path.resolve(__dirname, `../../${projectId}-firebase-adminsdk-*.json`),
-    path.resolve(process.cwd(), `${projectId}-firebase-adminsdk-*.json`)
-  ];
-  
-  // Try to find any JSON file matching the pattern
-  const rootDir = path.resolve(__dirname, '../../..');
-  const jsonFiles = fs.readdirSync(rootDir).filter(file => 
-    file.startsWith(`${projectId}-firebase-adminsdk-`) && file.endsWith('.json')
-  );
-  
-  if (jsonFiles.length > 0) {
-    const jsonPath = path.resolve(rootDir, jsonFiles[0]);
+  const explicitFileName = 'learnxr-evoneuralai-firebase-adminsdk-fbsvc-d7f3f53d8f.json';
+
+  const tryLoadJson = (jsonPath: string): ServiceAccount | null => {
     try {
-      console.log(`📄 Found service account file: ${jsonFiles[0]}`);
+      if (!fs.existsSync(jsonPath)) return null;
       const serviceAccountData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+      console.log(`📄 Using service account file: ${path.basename(jsonPath)}`);
       return {
         projectId: serviceAccountData.project_id,
         clientEmail: serviceAccountData.client_email,
         privateKey: serviceAccountData.private_key
       };
     } catch (error) {
-      console.warn(`⚠️  Failed to read service account file: ${error}`);
+      console.warn(`⚠️  Failed to read service account file: ${jsonPath}`, error);
+      return null;
     }
+  };
+
+  // 1. Explicit path from env (e.g. FIREBASE_SERVICE_ACCOUNT_PATH)
+  const envPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  if (envPath) {
+    const resolved = path.isAbsolute(envPath) ? envPath : path.resolve(process.cwd(), envPath);
+    const loaded = tryLoadJson(resolved);
+    if (loaded) return loaded;
   }
+
+  // 2. Project root: exact filename (learnxr-evoneuralai-firebase-adminsdk-fbsvc-d7f3f53d8f.json)
+  const rootDir = path.resolve(__dirname, '../../..');
+  const explicitPath = path.join(rootDir, explicitFileName);
+  const loadedExplicit = tryLoadJson(explicitPath);
+  if (loadedExplicit) return loadedExplicit;
+
+  // 3. Any matching file in project root
+  try {
+    const jsonFiles = fs.readdirSync(rootDir).filter(file =>
+      file.startsWith(`${projectId}-firebase-adminsdk-`) && file.endsWith('.json')
+    );
+    if (jsonFiles.length > 0) {
+      const loaded = tryLoadJson(path.resolve(rootDir, jsonFiles[0]));
+      if (loaded) return loaded;
+    }
+  } catch (_) {
+    // rootDir may not exist in some run contexts
+  }
+
+  // 4. Same in server/ directory (when running from server/)
+  const serverDir = path.resolve(__dirname, '../..');
+  const serverExplicit = path.join(serverDir, explicitFileName);
+  const loadedServer = tryLoadJson(serverExplicit);
+  if (loadedServer) return loadedServer;
+  try {
+    const serverJsonFiles = fs.readdirSync(serverDir).filter(file =>
+      file.startsWith(`${projectId}-firebase-adminsdk-`) && file.endsWith('.json')
+    );
+    if (serverJsonFiles.length > 0) {
+      const loaded = tryLoadJson(path.resolve(serverDir, serverJsonFiles[0]));
+      if (loaded) return loaded;
+    }
+  } catch (_) {}
   
   // Fall back to environment variables
   const envProjectId = process.env.FIREBASE_PROJECT_ID || projectId;

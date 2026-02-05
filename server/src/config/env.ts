@@ -14,6 +14,8 @@ export const env = envsafe({
   }),
   API_KEY: str({
     desc: "BlockadeLabs API KEY",
+    allowEmpty: true,
+    default: "",
   }),
   RAZORPAY_KEY_ID: str({
     desc: "Razorpay Key ID",

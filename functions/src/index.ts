@@ -15,6 +15,8 @@ import { authenticateUser } from './middleware/auth';
 
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set
+// OPENAI_API_KEY is read from Secret Manager (e.g. projects/427897409662/secrets/OPENAI_API_KEY)
+// Used by AI Teacher Support, Personalized Learning, and other AI features.
 const blockadelabsApiKey = defineSecret("BLOCKADE_API_KEY");
 const meshyApiKey = defineSecret("MESHY_API_KEY");
 // Razorpay secrets removed - payment system not needed
@@ -102,7 +104,9 @@ const getApp = (): express.Application => {
     const apiKeyRoutes = require('./routes/apiKey').default;
     const curriculumRoutes = require('./routes/curriculum').default;
     const lmsRoutes = require('./routes/lms').default;
-    
+    const aiEducationRoutes = require('./routes/aiEducation').default;
+    const assessmentRoutes = require('./routes/assessment').default;
+
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
     app.use('/skybox', skyboxRoutes);
@@ -116,7 +120,9 @@ const getApp = (): express.Application => {
     app.use('/dev/api-keys', apiKeyRoutes);
     app.use('/curriculum', curriculumRoutes);
     app.use('/lms', lmsRoutes);
-    
+    app.use('/ai-education', aiEducationRoutes);
+    app.use('/assessment', assessmentRoutes);
+
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
       const requestId = (req as any).requestId;
