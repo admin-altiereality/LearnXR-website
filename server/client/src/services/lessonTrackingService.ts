@@ -99,7 +99,8 @@ export async function saveQuizScore(
   answers: Record<string, number>,
   attemptNumber: number = 1,
   timeTakenSeconds?: number,
-  launchId?: string
+  launchId?: string,
+  topicObjective?: string
 ): Promise<string | null> {
   if (!profile || profile.role !== 'student' || !profile.school_id) {
     console.warn('Cannot save quiz score: invalid profile or missing school_id');
@@ -124,6 +125,7 @@ export async function saveQuizScore(
       answers,
       completed_at: serverTimestamp() as any,
       time_taken_seconds: timeTakenSeconds,
+      ...(topicObjective != null && topicObjective !== '' ? { topic_objective: topicObjective } : {}),
     };
 
     await setDoc(scoreRef, scoreData, { merge: true });

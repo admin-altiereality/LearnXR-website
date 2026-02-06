@@ -13,6 +13,7 @@ build/
 # Environment files
 .env
 .env.local
+.secret-temp
 .env.*.local
 # But allow template files
 !.env.template

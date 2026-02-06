@@ -5,14 +5,20 @@ import path from 'path';
 import { router as apiRouter } from './routes/index';
 import paymentRoutes from './routes/payment';
 
-// Load environment variables
+// Load environment variables (cwd .env first, then server/.env so key is found when run from repo root)
 dotenv.config();
+const serverEnvPath = path.resolve(process.cwd(), 'server', '.env');
+try {
+  const result = dotenv.config({ path: serverEnvPath });
+  if (result.parsed && !process.env.OPENAI_API_KEY && (result.parsed as Record<string, string>).OPENAI_API_KEY) {
+    process.env.OPENAI_API_KEY = (result.parsed as Record<string, string>).OPENAI_API_KEY;
+  }
+} catch (_) {}
 console.log('Starting app...');
 
 // Log environment variables (without sensitive data)
 console.log('Environment variables loaded:', {
   NODE_ENV: process.env.NODE_ENV,
-  // Razorpay removed
   OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Present' : 'Missing',
   OPENAI_AVATAR_API_KEY: process.env.OPENAI_AVATAR_API_KEY ? 'Present' : 'Missing (will fallback to OPENAI_API_KEY)'
 });

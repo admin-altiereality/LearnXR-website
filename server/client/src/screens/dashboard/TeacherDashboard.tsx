@@ -12,6 +12,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
 import { Link } from 'react-router-dom';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
@@ -81,6 +82,9 @@ const TeacherDashboard = () => {
     totalLessonLaunches: 0,
     completedLessons: 0,
   });
+  const [evaluationClassId, setEvaluationClassId] = useState<string | null>(null);
+  const [classEvaluation, setClassEvaluation] = useState<ClassEvaluation | null>(null);
+  const [classEvaluationLoading, setClassEvaluationLoading] = useState(false);
 
   // Get all classes (managed + shared)
   const allClasses = useMemo(() => {
@@ -372,6 +376,26 @@ const TeacherDashboard = () => {
     });
   }, [allClasses, students, scores, launches, sharedClasses, managedClasses]);
 
+  // Set default class for evaluation when classes load
+  useEffect(() => {
+    if (allClasses.length > 0 && !evaluationClassId) {
+      setEvaluationClassId(allClasses[0].id);
+    }
+  }, [allClasses, evaluationClassId]);
+
+  // Fetch class evaluation when selected class changes
+  useEffect(() => {
+    if (!evaluationClassId) {
+      setClassEvaluation(null);
+      return;
+    }
+    setClassEvaluationLoading(true);
+    getClassEvaluation(evaluationClassId)
+      .then(setClassEvaluation)
+      .catch(() => setClassEvaluation(null))
+      .finally(() => setClassEvaluationLoading(false));
+  }, [evaluationClassId]);
+
   // Update stats
   useEffect(() => {
     const totalClasses = allClasses.length;
@@ -554,6 +578,76 @@ const TeacherDashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Class evaluation (from evaluation API) */}
+        {allClasses.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <FaTrophy className="text-amber-400" />
+              Class Evaluation
+            </h2>
+            <div className="flex flex-wrap items-center gap-4 mb-4">
+              <label className="text-white/70 text-sm">Class</label>
+              <select
+                value={evaluationClassId ?? ''}
+                onChange={(e) => setEvaluationClassId(e.target.value || null)}
+                className="rounded-lg border border-white/20 bg-white/5 text-white px-4 py-2 focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50"
+              >
+                {allClasses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.class_name} {c.curriculum ? `(${c.curriculum})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {classEvaluationLoading ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500 mx-auto mb-2" />
+                <p className="text-white/50 text-sm">Loading evaluation...</p>
+              </div>
+            ) : classEvaluation ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                  <div>
+                    <p className="text-white/50 text-sm">Avg score</p>
+                    <p className="text-xl font-bold text-white">{classEvaluation.aggregate.averageScore}%</p>
+                  </div>
+                  <div>
+                    <p className="text-white/50 text-sm">Total attempts</p>
+                    <p className="text-xl font-bold text-white">{classEvaluation.aggregate.totalAttempts}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/50 text-sm">Lesson completion</p>
+                    <p className="text-xl font-bold text-white">{classEvaluation.aggregate.completionRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-white/50 text-sm">Students</p>
+                    <p className="text-xl font-bold text-white">{classEvaluation.studentSummaries.length}</p>
+                  </div>
+                </div>
+                {classEvaluation.bySubject && classEvaluation.bySubject.length > 0 && (
+                  <div>
+                    <p className="text-white/70 text-sm mb-2">By subject</p>
+                    <div className="flex flex-wrap gap-2">
+                      {classEvaluation.bySubject.map((s) => (
+                        <span
+                          key={s.subject}
+                          className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-sm"
+                        >
+                          {s.subject}: {s.averageScore}% ({s.attemptCount} attempts)
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 text-center">
+                <p className="text-white/50 text-sm">No evaluation data for this class yet.</p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Subject-wise Performance */}
         <div className="mb-8">

@@ -7,7 +7,9 @@ import express from 'express';
 import { verifyFirebaseToken } from '../middleware/authMiddleware';
 import { getUserProfile } from '../middleware/rbacMiddleware';
 import personalizedLearningService from '../services/personalizedLearningService';
+import type { StudentProgressSummary } from '../services/personalizedLearningService';
 import teacherSupportService from '../services/teacherSupportService';
+import * as mcqGenerationService from '../services/mcqGenerationService';
 import { db, isFirebaseInitialized } from '../config/firebase-admin';
 
 const router = express.Router();
@@ -52,6 +54,11 @@ router.get('/personalized-learning/recommendations', async (req, res) => {
       completedTopics: string[];
       totalAttempts: number;
       averageScore: number;
+      subjectsWithLowScores?: Array<{ subject: string; averageScore: number; attemptCount: number }>;
+      subjectsWithHighScores?: Array<{ subject: string; averageScore: number; attemptCount: number }>;
+      topicsWithLowScores?: Array<{ chapterId: string; topicId: string; subject?: string; averageScore: number; attemptCount: number }>;
+      topicsWithHighScores?: Array<{ chapterId: string; topicId: string; subject?: string; averageScore: number; attemptCount: number }>;
+      incompleteLessons?: Array<{ chapterId: string; topicId: string; subject?: string; curriculum?: string; className?: string; launchedAt?: string; status: string }>;
     };
 
     const emptySummary = (): typeof summary => ({
@@ -210,7 +217,7 @@ router.get('/personalized-learning/recommendations', async (req, res) => {
     let recommendations;
     let usedFallback = false;
     try {
-      recommendations = await personalizedLearningService.getRecommendations(summary);
+      recommendations = await personalizedLearningService.getRecommendations(summary as StudentProgressSummary);
     } catch (serviceError: any) {
       console.warn('Personalized learning service error, using fallback:', serviceError?.message ?? serviceError);
       usedFallback = true;
@@ -364,6 +371,85 @@ router.post('/teacher-support/rubric', async (req, res) => {
       success: false,
       error: 'Failed to generate rubric',
       message: error.message,
+    });
+  }
+});
+
+// --- MCQ Generation (teachers / curriculum editors) ---
+
+/**
+ * POST /ai-education/generate-mcq
+ * Generate MCQs from learning objective or script text. Returns MCQs in ChapterMCQ-like shape (caller saves to chapter_mcqs).
+ */
+router.post('/generate-mcq', async (req, res) => {
+  try {
+    const profile = req.userProfile;
+    if (!profile) {
+      return res.status(401).json({
+        success: false,
+        error: 'User profile not found.',
+      });
+    }
+    const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
+    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+      return res.status(403).json({ success: false, error: 'Only teachers and above can generate MCQs' });
+    }
+
+    const {
+      chapterId,
+      topicId,
+      subject,
+      classLevel,
+      curriculum,
+      learningObjective,
+      scriptText,
+      count,
+      language,
+    } = req.body;
+
+    if (!chapterId || !topicId) {
+      return res.status(400).json({
+        success: false,
+        error: 'chapterId and topicId are required',
+      });
+    }
+    const hasContent = [learningObjective, scriptText, subject].some(
+      (v) => typeof v === 'string' && v.trim().length > 0
+    );
+    if (!hasContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide at least one of: learningObjective, scriptText, or subject',
+      });
+    }
+
+    const mcqs = await mcqGenerationService.generateMcqs({
+      chapterId,
+      topicId,
+      subject,
+      classLevel,
+      curriculum,
+      learningObjective,
+      scriptText,
+      count,
+      language,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        chapterId,
+        topicId,
+        mcqs,
+      },
+    });
+  } catch (error: unknown) {
+    console.error('Generate MCQ error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      error: message,
+      message,
     });
   }
 });

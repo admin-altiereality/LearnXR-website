@@ -4,12 +4,16 @@ import { getStorage } from 'firebase-admin/storage';
 class TextToSpeechService {
   private openai: OpenAI;
 
-  constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not configured');
+  /**
+   * @param apiKey Optional. If not provided, uses process.env.OPENAI_API_KEY.
+   *               Pass process.env.OPENAI_AVATAR_API_KEY (or fallback) for avatar/TTS flows.
+   */
+  constructor(apiKey?: string) {
+    const key = (apiKey ?? process.env.OPENAI_API_KEY)?.trim();
+    if (!key) {
+      throw new Error('OpenAI API key is not configured (OPENAI_API_KEY or provided apiKey)');
     }
-    this.openai = new OpenAI({ apiKey });
+    this.openai = new OpenAI({ apiKey: key });
   }
 
   /**

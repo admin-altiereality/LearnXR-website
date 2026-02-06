@@ -7,6 +7,7 @@ import { McqTab } from './tabs/McqTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import { AssetsTab } from './tabs/AssetsTab';
 import { ImagesTab } from './tabs/ImagesTab';
+import { SourceTab } from './tabs/SourceTab';
 import {
   FileText,
   Image,
@@ -16,6 +17,7 @@ import {
   History,
   Loader2,
   Package,
+  BookOpen,
 } from 'lucide-react';
 
 interface ContentAvailability {
@@ -50,6 +52,11 @@ interface TopicEditorProps {
   contentAvailability?: ContentAvailability;
   language?: LanguageCode;
   bundle?: any; // Lesson bundle for passing to tabs
+  /** For MCQ tab: AI generation context */
+  learningObjective?: string;
+  subject?: string;
+  classLevel?: string;
+  curriculum?: string;
 }
 
 const tabs = [
@@ -60,6 +67,7 @@ const tabs = [
   { id: 'avatar', label: 'Avatar Scripts', icon: User },
   { id: 'mcqs', label: 'MCQs', icon: HelpCircle },
   { id: 'history', label: 'History', icon: History },
+  { id: 'source', label: 'Source', icon: BookOpen },
 ];
 
 export const TopicEditor = ({
@@ -84,6 +92,10 @@ export const TopicEditor = ({
   contentAvailability,
   language = 'en',
   bundle,
+  learningObjective,
+  subject,
+  classLevel,
+  curriculum,
 }: TopicEditorProps) => {
   if (loading) {
     return (
@@ -189,7 +201,15 @@ export const TopicEditor = ({
             chapterId={chapterId}
             topicId={topic.id}
             language={language}
+            learningObjective={learningObjective}
+            subject={subject}
+            classLevel={classLevel}
+            curriculum={curriculum}
           />
+        )}
+
+        {activeTab === 'source' && (
+          <SourceTab bundle={bundle} chapterId={chapterId} topicId={topic.id} />
         )}
         
         {activeTab === 'history' && (

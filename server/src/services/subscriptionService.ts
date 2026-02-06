@@ -1,4 +1,4 @@
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { 
   UserSubscription, 
   SubscriptionStatus, 
@@ -214,7 +214,7 @@ export const markEventProcessed = async (
     batch.update(subscriptionRef, {
       lastEventId: eventId,
       lastEventAt: new Date().toISOString(),
-      processedEventIds: getFirestore().FieldValue.arrayUnion(eventId)
+      processedEventIds: FieldValue.arrayUnion(eventId)
     });
     
     // Store event in dedicated collection for audit trail

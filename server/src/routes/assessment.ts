@@ -9,6 +9,7 @@ import {
   requireClassAccess,
   getUserProfile,
   canAccessClass,
+  type UserProfile,
 } from '../middleware/rbacMiddleware';
 import * as admin from 'firebase-admin';
 import * as assessmentService from '../services/assessmentService';
@@ -53,7 +54,7 @@ router.post('/', async (req, res) => {
     if (!classDoc.exists) return res.status(404).json({ success: false, error: 'Class not found' });
     const classSchoolId = classDoc.data()?.school_id;
     if (!classSchoolId) return res.status(400).json({ success: false, error: 'Class has no school_id' });
-    if (!canAccessClass(profile, classId, classSchoolId)) {
+    if (!canAccessClass(profile as UserProfile, classId, classSchoolId)) {
       return res.status(403).json({ success: false, error: 'Access denied to this class' });
     }
 

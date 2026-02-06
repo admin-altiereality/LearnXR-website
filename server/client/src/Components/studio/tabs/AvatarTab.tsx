@@ -24,7 +24,9 @@ import {
   Pause,
   ExternalLink,
   Mic,
+  RotateCw,
 } from 'lucide-react';
+import { getApiBaseUrl } from '../../../utils/apiConfig';
 
 interface AvatarTabProps {
   sceneFormState: Partial<Scene>;
@@ -56,6 +58,7 @@ export const AvatarTab = ({
     outro: string;
   } | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
+  const [regeneratingAudios, setRegeneratingAudios] = useState(false);
   
   // Sync with parent language prop and reload data when it changes
   useEffect(() => {
@@ -76,46 +79,36 @@ export const AvatarTab = ({
     // Scripts and TTS will reload automatically via useEffect dependencies
   };
   
-  // Load language-specific scripts using bundle for consistency
+  // Load language-specific scripts when chapter/topic/language change (do not depend on onSceneChange to avoid request loop)
   useEffect(() => {
+    let cancelled = false;
     const loadLanguageScripts = async () => {
       if (!chapterId || !topicId) return;
       
       try {
-        console.log(`[AvatarTab] Loading ${selectedLanguage} scripts for topic ${topicId}...`);
-        
-        // Use bundle to get scripts (consistent with other tabs)
         const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId,
           lang: selectedLanguage,
           topicId,
         });
+        if (cancelled) return;
         
         const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
         setLanguageScripts(scripts);
-        
-        console.log(`[AvatarTab] Loaded ${selectedLanguage} scripts:`, {
-          hasIntro: !!scripts.intro,
-          hasExplanation: !!scripts.explanation,
-          hasOutro: !!scripts.outro,
-        });
-        
-        // Update scene form state with language-specific scripts
         onSceneChange('avatar_intro', scripts.intro || '');
         onSceneChange('avatar_explanation', scripts.explanation || '');
         onSceneChange('avatar_outro', scripts.outro || '');
       } catch (error) {
+        if (cancelled) return;
         console.error(`[AvatarTab] Error loading ${selectedLanguage} scripts:`, error);
-        // Fallback to direct chapter fetch
         try {
           const chapterRef = doc(db, 'curriculum_chapters', chapterId);
           const chapterSnap = await getDoc(chapterRef);
-          
+          if (cancelled) return;
           if (chapterSnap.exists()) {
             const chapterData = chapterSnap.data() as CurriculumChapter;
             const topic = chapterData.topics?.find(t => t.topic_id === topicId);
-            
             if (topic) {
               const scripts = extractTopicScriptsForLanguage(topic, selectedLanguage);
               setLanguageScripts(scripts);
@@ -131,7 +124,10 @@ export const AvatarTab = ({
     };
     
     loadLanguageScripts();
-  }, [chapterId, topicId, selectedLanguage, onSceneChange]);
+    return () => { cancelled = true; };
+    // Intentionally omit onSceneChange to avoid re-running on every parent re-render (would cause constant bundle requests)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterId, topicId, selectedLanguage]);
   
   // Load TTS data from bundle (language-specific)
   useEffect(() => {
@@ -198,6 +194,56 @@ export const AvatarTab = ({
       }
     } finally {
       setLoadingTTS(false);
+    }
+  };
+
+  const handleRegenerateAudios = async () => {
+    if (!chapterId || !topicId) {
+      toast.error('Missing chapter or topic. Please select a topic from the list.');
+      return;
+    }
+    const scripts = languageScripts ?? {
+      intro: (sceneFormState.avatar_intro as string) ?? '',
+      explanation: (sceneFormState.avatar_explanation as string) ?? '',
+      outro: (sceneFormState.avatar_outro as string) ?? '',
+    };
+    const hasAny = [scripts.intro, scripts.explanation, scripts.outro].some((t) => typeof t === 'string' && t.trim().length > 0);
+    if (!hasAny) {
+      toast.error('Add at least one script (intro, explanation, or outro) before regenerating audios.');
+      return;
+    }
+
+    setRegeneratingAudios(true);
+    try {
+      const base = getApiBaseUrl().replace(/\/$/, '');
+      const url = `${base}/assistant/tts/regenerate-topic`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chapterId,
+          topicId,
+          language: selectedLanguage,
+          scripts: { intro: scripts.intro, explanation: scripts.explanation, outro: scripts.outro },
+        }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? await res.json().catch(() => ({})) : {};
+      if (!res.ok) {
+        const msg = data.message || data.error || (res.status === 503 ? 'Server or Firebase unavailable.' : res.status === 404 ? 'Chapter or topic not found.' : `Request failed (${res.status}).`);
+        toast.error(msg);
+        setRegeneratingAudios(false);
+        return;
+      }
+      toast.success(data.message ?? `${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audios regenerated`);
+      await handleRefreshTTS();
+    } catch (err) {
+      console.error('[AvatarTab] Regenerate audios error:', err);
+      const isNetwork = err instanceof TypeError && (err.message === 'Failed to fetch' || err.message.includes('NetworkError'));
+      toast.error(isNetwork ? 'Network error. Is the API server running (e.g. localhost:5002)?' : `Failed to regenerate ${selectedLanguage === 'en' ? 'English' : 'Hindi'} audios.`);
+    } finally {
+      setRegeneratingAudios(false);
     }
   };
   
@@ -311,16 +357,31 @@ export const AvatarTab = ({
               />
             </div>
             {chapterId && topicId && (
-              <button
-                onClick={handleRefreshTTS}
-                disabled={loadingTTS}
-                className="p-2 text-slate-400 hover:text-white
-                         bg-slate-800/50 hover:bg-slate-700/50
-                         rounded-lg border border-slate-600/50
-                         transition-all duration-200"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingTTS ? 'animate-spin' : ''}`} />
-              </button>
+              <>
+                <button
+                  onClick={handleRegenerateAudios}
+                  disabled={isReadOnly || loadingTTS || regeneratingAudios}
+                  title={`Regenerate ${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audios from current scripts`}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium
+                           text-cyan-400 hover:text-cyan-300 bg-slate-800/50 hover:bg-slate-700/50
+                           rounded-lg border border-cyan-500/30 hover:border-cyan-500/50
+                           transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RotateCw className={`w-4 h-4 ${regeneratingAudios ? 'animate-spin' : ''}`} />
+                  Regenerate Audios
+                </button>
+                <button
+                  onClick={handleRefreshTTS}
+                  disabled={loadingTTS}
+                  className="p-2 text-slate-400 hover:text-white
+                           bg-slate-800/50 hover:bg-slate-700/50
+                           rounded-lg border border-slate-600/50
+                           transition-all duration-200"
+                  title="Refresh TTS list"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingTTS ? 'animate-spin' : ''}`} />
+                </button>
+              </>
             )}
             <button
               disabled={isReadOnly}

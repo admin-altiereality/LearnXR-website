@@ -117,9 +117,10 @@ export const extractAssets = async (req: Request, res: Response) => {
   } catch (error) {
     console.error(`[${requestId}] Asset extraction error:`, error);
     
-    // Try fallback on error
+    // Try fallback on error (prompt may be out of scope or wrong type in catch)
+    const promptForFallback = typeof (req.body as DetectionRequest).prompt === 'string' ? (req.body as DetectionRequest).prompt : '';
     try {
-      const fallbackAssets = extractAssetsFallback(prompt.trim());
+      const fallbackAssets = extractAssetsFallback(promptForFallback.trim());
       return res.status(200).json({
         assets: fallbackAssets,
         success: true,
