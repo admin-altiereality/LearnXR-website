@@ -349,13 +349,14 @@ Student's question: ${message}`;
       console.log(`📚 Context: ${config.curriculum} - Class ${config.class} - ${config.subject}`);
     }
 
-    // Run the assistant
-    let run;
+    // Run the assistant (create returns Run when not streaming)
+    type RunResult = { id: string; status: string };
+    let run: RunResult;
     try {
       console.log(`🚀 Creating run for assistant ${assistantId} in thread ${threadId}`);
-      run = await this.openai.beta.threads.runs.create(threadId, {
+      run = (await this.openai.beta.threads.runs.create(threadId, {
         assistant_id: assistantId
-      });
+      })) as RunResult;
       console.log(`✅ Run created: ${run.id} with status: ${run.status}`);
     } catch (error: any) {
       console.error('❌ Failed to create run:', error);
@@ -372,9 +373,9 @@ Student's question: ${message}`;
         
         // Retry creating the run
         try {
-          run = await this.openai.beta.threads.runs.create(threadId, {
+          run = (await this.openai.beta.threads.runs.create(threadId, {
             assistant_id: assistantId
-          });
+          })) as RunResult;
           console.log(`✅ Run created after retry: ${run.id}`);
         } catch (retryError: any) {
           console.error('❌ Retry also failed:', retryError);

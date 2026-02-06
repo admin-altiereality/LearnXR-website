@@ -815,6 +815,10 @@ const ChapterEditor = () => {
               selectedLanguage={selectedLanguage}
               language={selectedLanguage}
               bundle={currentBundle}
+              learningObjective={sceneFormState?.learning_objective as string | undefined}
+              subject={navState?.subjectId ?? (chapter as any)?.subject_id}
+              classLevel={navState?.classId ?? (chapter as any)?.class_id}
+              curriculum={navState?.curriculumId ?? (chapter as any)?.curriculum_id}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full py-20">

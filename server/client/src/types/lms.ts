@@ -95,6 +95,8 @@ export interface StudentScore {
   answers: Record<string, number>;
   completed_at: Timestamp | string;
   time_taken_seconds?: number;
+  /** Learning objective text for this topic (optional, for evaluation) */
+  topic_objective?: string;
 }
 
 /**

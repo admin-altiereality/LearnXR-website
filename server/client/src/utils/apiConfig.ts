@@ -31,11 +31,11 @@ export const getApiBaseUrl = (): string => {
     return explicitUrl;
   }
   
-  // Only use local emulator if we're actually on localhost AND in dev mode
+  // Local dev: prefer Express server (5002) so /assistant/tts/regenerate-topic etc. work; fallback to Firebase emulator (5001)
   if (isLocalhost && import.meta.env.DEV) {
-    const localUrl = 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
-    console.log('🌐 Using local Firebase emulator:', localUrl);
-    return localUrl;
+    const expressUrl = 'http://localhost:5002/api';
+    console.log('🌐 Using local API (Express):', expressUrl);
+    return expressUrl;
   }
   
   // Use Firebase Functions in production/preview (default)

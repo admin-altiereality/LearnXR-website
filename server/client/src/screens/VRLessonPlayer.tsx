@@ -1937,7 +1937,8 @@ const VRLessonPlayerInner = () => {
         answers,
         attemptNumber,
         durationSeconds,
-        currentLaunchId || undefined
+        currentLaunchId || undefined,
+        activeLesson.topic?.learning_objective
       );
 
       if (scoreId) {

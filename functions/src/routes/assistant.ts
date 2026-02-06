@@ -2,12 +2,19 @@
 // Handles OpenAI Assistant API, TTS, and Lip Sync
 
 import { Router, Request, Response } from 'express';
+import * as admin from 'firebase-admin';
+import { getStorage } from 'firebase-admin/storage';
+import { FieldValue } from 'firebase-admin/firestore';
 import OpenAIAssistantService from '../services/openaiAssistantService';
 import TextToSpeechService from '../services/textToSpeechService';
 import LipSyncService from '../services/lipSyncService';
 import { validateReadAccess, validateFullAccess } from '../middleware/validateIn3dApiKey';
 
 const router = Router();
+const COLLECTION_CHAPTERS = 'curriculum_chapters';
+const COLLECTION_CHAPTER_TTS = 'chapter_tts';
+const TTS_STORAGE_PREFIX = 'chapter_tts';
+const VOICE_NAME = 'female_professional';
 // Services are created fresh on each request to ensure latest API keys from process.env
 let ttsService: TextToSpeechService | null = null;
 let lipSyncService: LipSyncService | null = null;
@@ -50,6 +57,8 @@ const getAssistantService = (useAvatarKey: boolean = false) => {
   }
 };
 
+let ttsServiceForAvatar: TextToSpeechService | null = null;
+
 const getTTSService = () => {
   if (!ttsService) {
     try {
@@ -60,6 +69,29 @@ const getTTSService = () => {
     }
   }
   return ttsService;
+};
+
+/**
+ * Which key is used for TTS (Regenerate Audios):
+ * - OPENAI_API_KEY is used first if set in Secret Manager.
+ * - If not set, OPENAI_AVATAR_API_KEY is used.
+ * Both are loaded from Firebase Secret Manager when the function starts.
+ */
+function getTTSKeySource(): 'OPENAI_API_KEY' | 'OPENAI_AVATAR_API_KEY' {
+  const hasMain = !!process.env.OPENAI_API_KEY?.trim();
+  return hasMain ? 'OPENAI_API_KEY' : 'OPENAI_AVATAR_API_KEY';
+}
+
+/** TTS for Avatar/Regenerate: prefer OPENAI_API_KEY, then OPENAI_AVATAR_API_KEY */
+const getTTSServiceForAvatar = () => {
+  if (!ttsServiceForAvatar) {
+    const key = (process.env.OPENAI_API_KEY || process.env.OPENAI_AVATAR_API_KEY)?.trim();
+    if (!key) {
+      throw new Error('OPENAI_API_KEY (or OPENAI_AVATAR_API_KEY) is not configured');
+    }
+    ttsServiceForAvatar = new TextToSpeechService(key);
+  }
+  return ttsServiceForAvatar;
 };
 
 const getLipSyncService = () => {
@@ -237,6 +269,172 @@ router.get('/tts/generate', (req: Request, res: Response): void => {
     method: req.method,
     allowedMethods: ['POST']
   });
+});
+
+/**
+ * Regenerate TTS audios for a topic in a given language.
+ * Replaces existing audio in place: same TTS document IDs and same storage paths.
+ * POST /assistant/tts/regenerate-topic
+ * Body: { chapterId, topicId, language: 'en'|'hi', scripts: { intro, explanation, outro } }
+ */
+router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promise<void> => {
+  const requestId = (req as any).requestId;
+  try {
+    const { chapterId, topicId, language, scripts } = req.body as {
+      chapterId?: string;
+      topicId?: string;
+      language?: 'en' | 'hi';
+      scripts?: { intro?: string; explanation?: string; outro?: string };
+    };
+
+    if (!chapterId || !topicId || !language || !scripts) {
+      res.status(400).json({
+        error: 'Missing required fields',
+        message: 'chapterId, topicId, language, and scripts (intro, explanation, outro) are required',
+      });
+      return;
+    }
+
+    const db = admin.firestore();
+    const bucket = getStorage().bucket();
+    const keySource = getTTSKeySource();
+    const hasMain = !!process.env.OPENAI_API_KEY?.trim();
+    const hasAvatar = !!process.env.OPENAI_AVATAR_API_KEY?.trim();
+    console.log(`[${requestId}] [tts/regenerate-topic] TTS key used: ${keySource} (OPENAI_API_KEY=${hasMain ? 'set' : 'missing'}, OPENAI_AVATAR_API_KEY=${hasAvatar ? 'set' : 'missing'})`);
+    const ttsServiceInstance = getTTSServiceForAvatar();
+    const scriptTypes = ['intro', 'explanation', 'outro'] as const;
+    const ttsIds: string[] = [];
+    const voice = language === 'hi' ? 'nova' : 'nova';
+
+    for (const scriptType of scriptTypes) {
+      const text = (scripts as Record<string, string>)[scriptType];
+      if (!text || typeof text !== 'string' || !text.trim()) continue;
+
+      const ttsId = `${topicId}_${scriptType}_${language}_${VOICE_NAME}`;
+      const storagePath = `${TTS_STORAGE_PREFIX}/${chapterId}/${topicId}/${topicId}_${scriptType}_${language}.mp3`;
+
+      const buffer = await ttsServiceInstance.textToSpeech(text.trim(), voice);
+      const file = bucket.file(storagePath);
+      await file.save(buffer, {
+        contentType: 'audio/mpeg',
+        metadata: { cacheControl: 'public, max-age=31536000' },
+      });
+      await file.makePublic();
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+
+      const ttsRef = db.collection(COLLECTION_CHAPTER_TTS).doc(ttsId);
+      await ttsRef.set(
+        {
+          chapter_id: chapterId,
+          topic_id: topicId,
+          script_type: scriptType,
+          audio_url: publicUrl,
+          language,
+          voice_name: VOICE_NAME,
+          status: 'complete',
+          updated_at: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      ttsIds.push(ttsId);
+    }
+
+    if (ttsIds.length === 0) {
+      res.status(400).json({
+        error: 'No script text',
+        message: 'At least one of intro, explanation, or outro must have non-empty text.',
+      });
+      return;
+    }
+
+    const chapterRef = db.collection(COLLECTION_CHAPTERS).doc(chapterId);
+    const chapterSnap = await chapterRef.get();
+    if (!chapterSnap.exists) {
+      console.warn(`[${requestId}] [tts/regenerate-topic] Chapter not found:`, { chapterId, topicId });
+      res.status(404).json({
+        error: 'Chapter not found',
+        message: 'Chapter not found. Ensure the API uses the same Firebase project as the app.',
+      });
+      return;
+    }
+
+    const chapterData = chapterSnap.data();
+    const topics = Array.isArray(chapterData?.topics) ? [...chapterData.topics] : [];
+    const topicIndex = topics.findIndex(
+      (t: { topic_id?: string; id?: string }) =>
+        (t.topic_id && t.topic_id === topicId) || (t.id && t.id === topicId)
+    );
+    if (topicIndex === -1) {
+      console.warn(`[${requestId}] [tts/regenerate-topic] Topic not found:`, {
+        chapterId,
+        topicId,
+        topicIds: topics.map((t: { topic_id?: string; id?: string }) => t.topic_id || t.id),
+      });
+      res.status(404).json({
+        error: 'Topic not found',
+        message: `Topic "${topicId}" not found in this chapter.`,
+      });
+      return;
+    }
+
+    const topic = topics[topicIndex];
+    const existingForLang = (topic.tts_ids_by_language || {})[language] || [];
+    const existingSet = new Set(existingForLang);
+    const needsChapterUpdate = ttsIds.some((id) => !existingSet.has(id)) || existingForLang.length !== ttsIds.length;
+
+    if (needsChapterUpdate) {
+      const existingTtsByLang = topic.tts_ids_by_language || {};
+      const otherLang = language === 'en' ? 'hi' : 'en';
+      const otherIds = existingTtsByLang[otherLang] || [];
+      const mergedLegacy = [...otherIds, ...ttsIds];
+
+      topics[topicIndex] = {
+        ...topic,
+        tts_ids_by_language: {
+          ...existingTtsByLang,
+          [language]: ttsIds,
+        },
+        tts_ids: mergedLegacy,
+      };
+
+      await chapterRef.update({
+        topics,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    res.json({
+      success: true,
+      ttsIds,
+      message: `${language === 'en' ? 'English' : 'Hindi'} TTS audios regenerated (${ttsIds.length})`,
+      keySource, // Which Secret Manager key was used: OPENAI_API_KEY or OPENAI_AVATAR_API_KEY
+    });
+  } catch (error: any) {
+    console.error(`[${requestId}] Error regenerating topic TTS:`, error?.message || error, error?.status);
+
+    if (error.status === 429 || error?.message?.includes('429') || error?.message?.includes('quota')) {
+      res.status(429).json({
+        error: 'OpenAI API quota exceeded',
+        message: 'You have exceeded your OpenAI API quota.',
+      });
+      return;
+    }
+    if (error.status === 401 || error?.message?.includes('401') || error?.message?.includes('invalid_api_key') || error?.message?.includes('authentication')) {
+      const keyUsed = getTTSKeySource();
+      console.error(`[${requestId}] [tts/regenerate-topic] OpenAI 401 using ${keyUsed}. Check Secret Manager: ${keyUsed} must have an enabled version with a valid key (starts with sk-). Redeploy after updating secrets.`);
+      res.status(401).json({
+        error: 'OpenAI API authentication failed',
+        message: `Invalid OpenAI API key (key used: ${keyUsed}). In Cloud Console → Secret Manager, add a new enabled version for ${keyUsed} with a valid key, then redeploy functions.`,
+        keySource: keyUsed,
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: error?.message || 'Failed to regenerate TTS',
+    });
+  }
 });
 
 // Generate visemes - POST only

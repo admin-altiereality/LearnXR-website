@@ -7,9 +7,10 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { collection, query, where, orderBy, getDocs, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
+import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
 import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 
@@ -26,6 +27,8 @@ const StudentDashboard = () => {
     averageScore: 0,
     totalAttempts: 0,
   });
+  const [evaluation, setEvaluation] = useState<StudentEvaluation | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
 
   useEffect(() => {
     if (!user?.uid || !profile) return;
@@ -174,6 +177,15 @@ const StudentDashboard = () => {
     });
   };
 
+  useEffect(() => {
+    if (!user?.uid || !profile) return;
+    setEvaluationLoading(true);
+    getStudentEvaluation(user.uid)
+      .then(setEvaluation)
+      .catch(() => setEvaluation(null))
+      .finally(() => setEvaluationLoading(false));
+  }, [user?.uid, profile]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
@@ -307,6 +319,89 @@ const StudentDashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Progress by subject (from evaluation API) */}
+        {(evaluation?.bySubject?.length > 0 || evaluationLoading) && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <FaChartLine className="text-cyan-400" />
+              Progress by Subject
+            </h2>
+            {evaluationLoading ? (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500 mx-auto mb-2" />
+                <p className="text-white/50 text-sm">Loading evaluation...</p>
+              </div>
+            ) : evaluation?.bySubject && evaluation.bySubject.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {evaluation.bySubject.map((s) => (
+                  <div
+                    key={s.subject}
+                    className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
+                  >
+                    <h3 className="text-white font-medium truncate">{s.subject}</h3>
+                    <p className="text-white/50 text-sm mt-1">{s.attemptCount} attempt{s.attemptCount !== 1 ? 's' : ''}</p>
+                    <p className={`text-lg font-bold mt-2 ${
+                      s.averageScore >= 70 ? 'text-emerald-400' : s.averageScore >= 50 ? 'text-amber-400' : 'text-red-400'
+                    }`}>
+                      {s.averageScore}% avg
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {/* Learning objectives (from evaluation API) */}
+        {(evaluation?.objectives?.length > 0 || evaluationLoading) && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+              <FaGraduationCap className="text-amber-400" />
+              Learning Objectives
+            </h2>
+            {!evaluationLoading && evaluation?.objectives && evaluation.objectives.length > 0 ? (
+              <div className="space-y-3">
+                {evaluation.objectives.map((obj, idx) => (
+                  <div
+                    key={`${obj.chapterId}-${obj.topicId}-${idx}`}
+                    className={`rounded-xl border p-4 transition-colors ${
+                      obj.met
+                        ? 'border-emerald-500/30 bg-emerald-500/5'
+                        : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white/70 text-sm">
+                          {obj.subject} • Ch.{obj.chapterId} • Topic {obj.topicId}
+                        </p>
+                        {obj.topicObjective && (
+                          <p className="text-white/90 text-sm mt-1 line-clamp-2">{obj.topicObjective}</p>
+                        )}
+                        <p className="text-white/50 text-xs mt-2">
+                          {obj.attemptCount} attempt{obj.attemptCount !== 1 ? 's' : ''} • Score: {obj.scoreUsed}%
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {obj.met ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-medium border border-emerald-500/30">
+                            <FaCheckCircle className="w-4 h-4" />
+                            Met
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 text-sm font-medium border border-amber-500/30">
+                            In progress
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Recent Lesson Launches */}
         <div className="mb-8">

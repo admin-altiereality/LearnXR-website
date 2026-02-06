@@ -9,10 +9,9 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { MCQ, MCQFormState, ChapterMCQ, LanguageCode } from '../../../types/curriculum';
-import { getChapterMCQs, getChapterMCQsByLanguage } from '../../../lib/firestore/queries';
-import { collection, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { getChapterMCQsByLanguage } from '../../../lib/firestore/queries';
 import { LanguageToggle } from '../../../Components/LanguageSelector';
+import { generateMcqs as generateMcqsApi } from '../../../services/mcqGenerationService';
 import {
   HelpCircle,
   Plus,
@@ -25,6 +24,7 @@ import {
   Wand2,
   Loader2,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 interface McqTabProps {
@@ -34,11 +34,15 @@ interface McqTabProps {
   isReadOnly: boolean;
   flattenedMcqInfo: { hasFlattened: boolean; count: number };
   onNormalizeMCQs: () => void;
-  // New props for direct fetching from chapter_mcqs collection
   chapterId?: string;
   topicId?: string;
   language?: LanguageCode;
   onLanguageChange?: (language: LanguageCode) => void;
+  /** For AI generation: learning objective or script text */
+  learningObjective?: string;
+  subject?: string;
+  classLevel?: string;
+  curriculum?: string;
 }
 
 const difficultyOptions = [
@@ -58,9 +62,14 @@ export const McqTab = ({
   topicId,
   language = 'en',
   onLanguageChange,
+  learningObjective,
+  subject,
+  classLevel,
+  curriculum,
 }: McqTabProps) => {
   const [expandedMcq, setExpandedMcq] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [localMcqs, setLocalMcqs] = useState<ChapterMCQ[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
   
@@ -126,6 +135,51 @@ export const McqTab = ({
       toast.error(`Failed to refresh ${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateWithAi = async () => {
+    if (!chapterId || !topicId || isReadOnly) return;
+    if (!learningObjective && !subject) {
+      toast.error('Add a learning objective in the Overview tab (or ensure subject is set) to generate MCQs with AI.');
+      return;
+    }
+    setGenerating(true);
+    try {
+      const { mcqs: generated } = await generateMcqsApi({
+        chapterId,
+        topicId,
+        subject,
+        classLevel,
+        curriculum,
+        learningObjective: learningObjective?.trim() || (subject ? `Assess key concepts in ${subject}` : undefined),
+        count: 5,
+        language: selectedLanguage,
+      });
+      const newFormState: MCQFormState[] = generated.map((m) => ({
+        question: m.question,
+        options: m.options?.length ? m.options : ['', '', '', ''],
+        correct_option_index: m.correct_option_index ?? 0,
+        explanation: m.explanation ?? '',
+        difficulty: m.difficulty ?? 'medium',
+        _isNew: true,
+      }));
+      onMcqsChange([...mcqFormState.filter((m) => !m._isDeleted), ...newFormState]);
+      toast.success(`Generated ${generated.length} MCQs. Review and save to add them to the lesson.`);
+      if (newFormState.length > 0) {
+        setExpandedMcq(`new-${mcqFormState.length}`);
+      }
+    } catch (err) {
+      console.error('Generate MCQs error:', err);
+      const msg =
+        err instanceof Error
+          ? err.message
+          : (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data?.error ??
+            (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+            'Failed to generate MCQs';
+      toast.error(msg);
+    } finally {
+      setGenerating(false);
     }
   };
   
@@ -238,8 +292,28 @@ export const McqTab = ({
                          bg-slate-800/50 hover:bg-slate-700/50
                          rounded-lg border border-slate-600/50
                          transition-all duration-200"
+                title="Refresh MCQs"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+            {chapterId && topicId && (learningObjective || subject) && (
+              <button
+                onClick={handleGenerateWithAi}
+                disabled={isReadOnly || generating}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium
+                         text-white bg-gradient-to-r from-violet-500 to-purple-600
+                         hover:from-violet-400 hover:to-purple-500
+                         rounded-lg shadow-lg shadow-violet-500/25
+                         transition-all duration-200 disabled:opacity-50"
+                title="Generate MCQs from learning objective (AI)"
+              >
+                {generating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                Generate with AI
               </button>
             )}
             <button
