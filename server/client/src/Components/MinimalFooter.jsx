@@ -16,8 +16,8 @@ function MinimalFooter() {
         {/* Company Info */}
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <span className="font-medium" style={learnXRFontStyle}>
-            <span className="text-white">Learn</span>
-            <span className="text-purple-700">XR</span>
+            <span className="text-foreground">Learn</span>
+            <span className="text-primary">XR</span>
             <TrademarkSymbol className="ml-0.5" />
           </span>
           <span className="hidden sm:inline">•</span>

@@ -12,7 +12,7 @@ interface LearnXRTypographyProps {
  * Ensures consistent trademark styling across the entire website
  * Font: Rejouice Headline
  * Tracking: 0.9rem (for hero), adjusted for other sizes
- * Colors: White for "Learn", Purple-700 for "XR"
+ * Colors: "Learn" = foreground, "XR" = primary (logo purple)
  */
 export const LearnXRTypography: React.FC<LearnXRTypographyProps> = ({
   children,
@@ -33,22 +33,22 @@ export const LearnXRTypography: React.FC<LearnXRTypographyProps> = ({
   };
 
   if (variant === 'full') {
-    // Split LearnXR into Learn (white) and XR (purple)
+    // Split LearnXR into Learn (foreground) and XR (primary = logo purple)
     const text = String(children);
     const learnPart = text.replace(/XR.*$/i, '');
     const xrPart = text.match(/XR.*$/i)?.[0] || '';
 
     return (
       <span className={`${sizeClasses[size]} ${className}`} style={baseStyle}>
-        <span className="text-white">{learnPart}</span>
-        {xrPart && <span className="text-purple-700">{xrPart}</span>}
+        <span className="text-foreground">{learnPart}</span>
+        {xrPart && <span className="text-primary">{xrPart}</span>}
       </span>
     );
   }
 
   if (variant === 'learn') {
     return (
-      <span className={`${sizeClasses[size]} text-white ${className}`} style={baseStyle}>
+      <span className={`${sizeClasses[size]} text-foreground ${className}`} style={baseStyle}>
         {children}
       </span>
     );
@@ -56,7 +56,7 @@ export const LearnXRTypography: React.FC<LearnXRTypographyProps> = ({
 
   if (variant === 'xr') {
     return (
-      <span className={`${sizeClasses[size]} text-purple-700 ${className}`} style={baseStyle}>
+      <span className={`${sizeClasses[size]} text-primary ${className}`} style={baseStyle}>
         {children}
       </span>
     );

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   getCurriculums,
@@ -11,7 +11,6 @@ import {
   GetChaptersResult,
 } from '../../lib/firestore/queries';
 import { ChapterTable } from '../../Components/studio/ChapterTable';
-import { LanguageSelector } from '../../Components/LanguageSelector';
 import {
   Chapter,
   Curriculum,
@@ -28,23 +27,28 @@ import {
   Search,
   Filter,
   BookOpen,
-  ChevronDown,
-  ChevronUp,
   Loader2,
   FolderOpen,
   RefreshCw,
-  Home,
   Menu,
   X,
 } from 'lucide-react';
+import { Button } from '../../Components/ui/button';
+import { PrismFluxLoader } from '../../Components/ui/prism-flux-loader';
+import { Input } from '../../Components/ui/input';
+import { Label } from '../../Components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../Components/ui/select';
+import { Card, CardContent } from '../../Components/ui/card';
 
 const ContentLibrary = () => {
   const navigate = useNavigate();
-  
-  // Header visibility
-  const [headerVisible, setHeaderVisible] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const lastScrollY = useRef(0);
   
   // Filter options
   const [curriculums, setCurriculums] = useState<Curriculum[]>([]);
@@ -67,26 +71,6 @@ const ContentLibrary = () => {
   const [hasMore, setHasMore] = useState(false);
   const [lastDoc, setLastDoc] = useState<unknown>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>('en');
-  
-  // Scroll-based header visibility
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      
-      // Show header when scrolling up or at top
-      if (currentScrollY < lastScrollY.current || currentScrollY < 50) {
-        setHeaderVisible(true);
-      } else if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
-        // Hide header when scrolling down past threshold
-        setHeaderVisible(false);
-      }
-      
-      lastScrollY.current = currentScrollY;
-    };
-    
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
   
   // Load curriculums on mount
   useEffect(() => {
@@ -263,306 +247,225 @@ const ContentLibrary = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a]">
-      {/* Floating Header - Auto-hide on scroll */}
-      <header 
-        className={`fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out
-                   ${headerVisible ? 'translate-y-0' : '-translate-y-full'}`}
-      >
-        <div className="bg-[#0d1424]/95 backdrop-blur-md border-b border-slate-700/50">
-          <div className="max-w-[1800px] mx-auto px-4 sm:px-6 py-3">
-            <div className="flex items-center justify-between">
-              {/* Left - Logo & Navigation */}
-              <div className="flex items-center gap-4">
-                <Link 
-                  to="/"
-                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/50 
-                           rounded-lg transition-colors"
-                >
-                  <Home className="w-5 h-5" />
-                </Link>
-                
-                <div className="hidden sm:flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30">
-                    <BookOpen className="w-5 h-5 text-cyan-400" />
-                  </div>
-                  <div>
-                    <h1 className="text-lg font-semibold text-white tracking-tight">
-                      Content Studio
-                    </h1>
-                    <p className="text-xs text-slate-400">
-                      Curriculum Editor
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Mobile Title */}
-                <div className="sm:hidden">
-                  <h1 className="text-lg font-semibold text-white">Studio</h1>
-                </div>
-              </div>
-              
-              {/* Right - Actions */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => loadChapters(true)}
-                  disabled={loading}
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-300 
-                           bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-slate-600/50
-                           transition-all duration-200 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-                  <span className="hidden sm:inline">Refresh</span>
-                </button>
-                
-                {/* Mobile menu toggle */}
-                <button
-                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                  className="sm:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800/50 
-                           rounded-lg transition-colors"
-                >
-                  {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Scroll indicator */}
-        {!headerVisible && (
-          <button
-            onClick={() => {
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-              setHeaderVisible(true);
-            }}
-            className="absolute top-full left-1/2 -translate-x-1/2 mt-2
-                     px-4 py-1.5 text-xs font-medium text-slate-400 
-                     bg-slate-800/90 backdrop-blur-sm rounded-full border border-slate-700/50
-                     hover:text-white hover:bg-slate-700/90 transition-all duration-200
-                     flex items-center gap-1.5"
-          >
-            <ChevronUp className="w-3 h-3" />
-            Show Header
-          </button>
-        )}
-      </header>
-      
-      {/* Spacer for fixed header */}
-      <div className="h-16" />
-      
+    <div className="min-h-screen bg-background">
       <div className="flex">
-        {/* Left Sidebar - Filters - Always visible on desktop */}
-        <aside className={`w-72 min-h-[calc(100vh-64px)] bg-[#0d1424] border-r border-slate-700/50 p-5
-                        fixed sm:sticky top-16 left-0 z-30 transition-transform duration-300 flex-shrink-0
-                        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
-               style={{ minWidth: '288px' }}>
+        {/* Filters sidebar - no overlay, homogeneous with app sidebar */}
+        <aside
+          className={`w-72 min-h-screen bg-card border-r border-border p-5
+            fixed sm:sticky top-0 left-0 z-30 transition-transform duration-300 flex-shrink-0
+            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
+          style={{ minWidth: '288px' }}
+        >
           <div className="space-y-5">
             <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2 text-slate-300">
-                <Filter className="w-4 h-4 text-cyan-400" />
-                <span className="font-semibold text-sm tracking-wide uppercase">Filters</span>
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-primary" />
+                <span className="font-semibold text-sm text-foreground uppercase tracking-wider">Filters</span>
               </div>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
+                className="sm:hidden h-8 w-8 text-muted-foreground"
                 onClick={() => setMobileMenuOpen(false)}
-                className="sm:hidden p-1 text-slate-400 hover:text-white"
+                aria-label="Close filters"
               >
                 <X className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
-            
-            {/* Loading skeleton for filters */}
+
             {loadingFilters && (
               <div className="space-y-4 animate-pulse">
                 <div className="space-y-2">
-                  <div className="h-3 w-20 bg-slate-700 rounded" />
-                  <div className="h-10 bg-slate-700 rounded-lg" />
+                  <div className="h-3 w-20 bg-muted rounded" />
+                  <div className="h-10 bg-muted rounded-md" />
                 </div>
                 <div className="space-y-2">
-                  <div className="h-3 w-16 bg-slate-700 rounded" />
-                  <div className="h-10 bg-slate-700 rounded-lg" />
+                  <div className="h-3 w-16 bg-muted rounded" />
+                  <div className="h-10 bg-muted rounded-md" />
                 </div>
                 <div className="space-y-2">
-                  <div className="h-3 w-20 bg-slate-700 rounded" />
-                  <div className="h-10 bg-slate-700 rounded-lg" />
+                  <div className="h-3 w-20 bg-muted rounded" />
+                  <div className="h-10 bg-muted rounded-md" />
                 </div>
               </div>
             )}
-            
+
             {!loadingFilters && (
               <>
-            
-            {/* Curriculum Dropdown */}
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Curriculum
-              </label>
-              <div className="relative">
-                <select
-                  value={filters.curriculum}
-                  onChange={(e) => setFilters((f) => ({ ...f, curriculum: e.target.value }))}
-                  disabled={loadingFilters}
-                  className="w-full appearance-none bg-slate-800/50 border border-slate-600/50 rounded-lg
-                           px-4 py-2.5 pr-10 text-sm text-white
-                           focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                           disabled:opacity-50 transition-all duration-200"
-                >
-                  <option value="">Select Curriculum</option>
-                  {curriculums.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-            
-            {/* Class Dropdown */}
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Class
-              </label>
-              <div className="relative">
-                <select
-                  value={filters.classId}
-                  onChange={(e) => setFilters((f) => ({ ...f, classId: e.target.value }))}
-                  disabled={!filters.curriculum || classes.length === 0}
-                  className="w-full appearance-none bg-slate-800/50 border border-slate-600/50 rounded-lg
-                           px-4 py-2.5 pr-10 text-sm text-white
-                           focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                           disabled:opacity-50 transition-all duration-200"
-                >
-                  <option value="">Select Class</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-            
-            {/* Subject Dropdown */}
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Subject
-              </label>
-              <div className="relative">
-                <select
-                  value={filters.subject}
-                  onChange={(e) => setFilters((f) => ({ ...f, subject: e.target.value }))}
-                  disabled={!filters.classId || subjects.length === 0}
-                  className="w-full appearance-none bg-slate-800/50 border border-slate-600/50 rounded-lg
-                           px-4 py-2.5 pr-10 text-sm text-white
-                           focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                           disabled:opacity-50 transition-all duration-200"
-                >
-                  <option value="">Select Subject</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-            </div>
-            
-            {/* Divider */}
-            <div className="border-t border-slate-700/50 my-6" />
-            
-            {/* Search */}
-            <div className="space-y-2">
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Search Chapters
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={filters.search}
-                  onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-                  placeholder="Search by name..."
-                  className="w-full bg-slate-800/50 border border-slate-600/50 rounded-lg
-                           pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-slate-500
-                           focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                           transition-all duration-200"
-                />
-              </div>
-            </div>
-            
-            {/* Stats */}
-            <div className="mt-8 p-4 bg-slate-800/30 rounded-xl border border-slate-700/30">
-              <div className="flex items-center gap-3 mb-3">
-                <FolderOpen className="w-4 h-4 text-cyan-400" />
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  Results
-                </span>
-              </div>
-              <p className="text-2xl font-semibold text-white">
-                {chapters.length}
-                <span className="text-sm font-normal text-slate-400 ml-2">
-                  chapters
-                </span>
-              </p>
-            </div>
-            </>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs uppercase tracking-wider">Curriculum</Label>
+                  <Select
+                    value={filters.curriculum}
+                    onValueChange={(v) => setFilters((f) => ({ ...f, curriculum: v }))}
+                    disabled={loadingFilters}
+                  >
+                    <SelectTrigger className="w-full h-10 border-input bg-background text-foreground">
+                      <SelectValue placeholder="Select curriculum" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {curriculums.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs uppercase tracking-wider">Class</Label>
+                  <Select
+                    value={filters.classId}
+                    onValueChange={(v) => setFilters((f) => ({ ...f, classId: v }))}
+                    disabled={!filters.curriculum || classes.length === 0}
+                  >
+                    <SelectTrigger className="w-full h-10 border-input bg-background text-foreground">
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classes.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs uppercase tracking-wider">Subject</Label>
+                  <Select
+                    value={filters.subject}
+                    onValueChange={(v) => setFilters((f) => ({ ...f, subject: v }))}
+                    disabled={!filters.classId || subjects.length === 0}
+                  >
+                    <SelectTrigger className="w-full h-10 border-input bg-background text-foreground">
+                      <SelectValue placeholder="Select subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {subjects.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="border-t border-border my-6" />
+
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground text-xs uppercase tracking-wider">Search chapters</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      type="text"
+                      value={filters.search}
+                      onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+                      placeholder="Search by name..."
+                      className="pl-10 border-input bg-background text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                </div>
+
+                <Card className="border border-border bg-muted/30">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-3 mb-2">
+                      <FolderOpen className="w-4 h-4 text-primary" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Results</span>
+                    </div>
+                    <p className="text-2xl font-semibold text-foreground">
+                      {chapters.length}
+                      <span className="text-sm font-normal text-muted-foreground ml-2">chapters</span>
+                    </p>
+                  </CardContent>
+                </Card>
+              </>
             )}
           </div>
         </aside>
-        
-        {/* Mobile overlay */}
+
         {mobileMenuOpen && (
-          <div 
-            className="fixed inset-0 bg-black/50 z-20 sm:hidden"
+          <div
+            className="fixed inset-0 bg-background/80 z-20 sm:hidden"
             onClick={() => setMobileMenuOpen(false)}
+            aria-hidden
           />
         )}
-        
-        {/* Main Content */}
-        <main className="flex-1 p-4 sm:p-6 sm:ml-0">
-          {/* Loading State */}
+
+        {/* Main content - in-flow title bar, no fixed header */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6">
+          {/* Page title and actions - in flow, does not overlay sidebar */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 pb-4 border-b border-border">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="shrink-0 p-2 rounded-lg bg-primary/10 border border-border">
+                <BookOpen className="w-5 h-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg font-semibold text-foreground tracking-tight">Content Studio</h1>
+                <p className="text-xs text-muted-foreground">Curriculum Editor</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="sm:hidden gap-2"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              >
+                <Filter className="w-4 h-4" />
+                Filters
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="gap-2"
+                onClick={() => loadChapters(true)}
+                disabled={loading}
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+
           {loading && chapters.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 text-cyan-400 animate-spin mb-4" />
-              <p className="text-slate-400">Loading chapters...</p>
-            </div>
+            <Card className="border border-border">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <PrismFluxLoader
+                  size={40}
+                  speed={5}
+                  textSize={12}
+                  statuses={['Fetching', 'Loading', 'Syncing', 'Processing', 'Updating', 'Placing']}
+                />
+              </CardContent>
+            </Card>
           )}
-          
-          {/* Empty State */}
+
           {!loading && chapters.length === 0 && filters.subject && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="p-4 rounded-2xl bg-slate-800/30 mb-4">
-                <FolderOpen className="w-12 h-12 text-slate-500" />
-              </div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                No chapters found
-              </h3>
-              <p className="text-slate-400 text-center max-w-md">
-                {filters.search
-                  ? `No chapters match "${filters.search}". Try a different search term.`
-                  : 'No chapters available for the selected curriculum, class, and subject.'}
-              </p>
-            </div>
+            <Card className="border border-border">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <div className="p-4 rounded-xl bg-muted/50 mb-4">
+                  <FolderOpen className="w-12 h-12 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium text-foreground mb-2">No chapters found</h3>
+                <p className="text-muted-foreground text-center max-w-md">
+                  {filters.search
+                    ? `No chapters match "${filters.search}". Try a different search term.`
+                    : 'No chapters available for the selected curriculum, class, and subject.'}
+                </p>
+              </CardContent>
+            </Card>
           )}
-          
-          {/* Select Filters State */}
-          {!filters.subject && (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="p-4 rounded-2xl bg-slate-800/30 mb-4">
-                <Filter className="w-12 h-12 text-slate-500" />
-              </div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Select Filters
-              </h3>
-              <p className="text-slate-400 text-center max-w-md">
-                Choose a curriculum, class, and subject from the sidebar to view chapters.
-              </p>
-            </div>
+
+          {!filters.subject && !loading && (
+            <Card className="border border-border">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <div className="p-4 rounded-xl bg-muted/50 mb-4">
+                  <Filter className="w-12 h-12 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium text-foreground mb-2">Select filters</h3>
+                <p className="text-muted-foreground text-center max-w-md">
+                  Choose a curriculum, class, and subject from the sidebar to view chapters.
+                </p>
+              </CardContent>
+            </Card>
           )}
-          
-          {/* Chapter Table */}
+
           {chapters.length > 0 && (
             <>
               <ChapterTable
@@ -571,23 +474,17 @@ const ContentLibrary = () => {
                 loading={loading}
                 onApprovalChange={() => loadChapters(true)}
               />
-              
-              {/* Load More */}
               {hasMore && (
                 <div className="flex justify-center mt-6">
-                  <button
+                  <Button
+                    variant="outline"
                     onClick={handleLoadMore}
                     disabled={loading}
-                    className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium
-                             text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20
-                             rounded-lg border border-cyan-500/30
-                             transition-all duration-200 disabled:opacity-50"
+                    className="gap-2"
                   >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : null}
-                    Load More
-                  </button>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Load more
+                  </Button>
                 </div>
               )}
             </>

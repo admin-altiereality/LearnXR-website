@@ -12,13 +12,24 @@ import { db } from '../../config/firebase';
 import type { StudentScore, LessonLaunch, Class } from '../../types/lms';
 import { Link } from 'react-router-dom';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
-import { 
-  FaSchool, 
-  FaUsers, 
-  FaChalkboardTeacher, 
-  FaChartLine, 
-  FaGraduationCap, 
-  FaArrowRight, 
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
+import { Button } from '../../Components/ui/button';
+import { Badge } from '../../Components/ui/badge';
+import { Progress } from '../../Components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../Components/ui/select';
+import {
+  FaSchool,
+  FaUsers,
+  FaChalkboardTeacher,
+  FaChartLine,
+  FaGraduationCap,
+  FaArrowRight,
   FaBook,
   FaTrophy,
   FaExclamationTriangle,
@@ -29,6 +40,7 @@ import {
   FaTimesCircle,
   FaBell
 } from 'react-icons/fa';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface CurriculumCompletion {
   curriculum: string;
@@ -625,305 +637,291 @@ const SchoolDashboard = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-          <p className="text-white/60">Loading school dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-primary/30 border-t-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading school dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8 pb-6 border-b border-white/10">
+        <div className="mb-8 pb-6 border-b border-border">
           <div className="flex items-start justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
-                <FaSchool className="text-white text-xl" />
+              <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
+                <FaSchool className="text-primary text-xl" />
               </div>
               <div>
                 <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
-                  <span className="text-white">Learn</span>
-                  <span className="text-purple-700">XR</span>
+                  <span className="text-foreground">Learn</span>
+                  <span className="text-primary">XR</span>
                   <TrademarkSymbol />
                 </h1>
-                <h2 className="text-xl font-semibold text-white">School Administrator Dashboard</h2>
-                <p className="text-white/50 text-sm mt-0.5">Monitor lesson launches, quiz scores, and curriculum completion</p>
+                <h2 className="text-xl font-semibold text-foreground">School Administrator Dashboard</h2>
+                <p className="text-muted-foreground text-sm mt-0.5">Monitor lesson launches, quiz scores, and curriculum completion</p>
               </div>
             </div>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="mb-6 flex gap-4 items-center">
+        <div className="mb-6 flex gap-4 items-center flex-wrap">
           <div className="flex items-center gap-2">
-            <FaFilter className="text-white/50" />
-            <span className="text-white/70 text-sm">Filters:</span>
+            <FaFilter className="text-muted-foreground" />
+            <span className="text-muted-foreground text-sm">Filters:</span>
           </div>
-          <select
-            value={selectedClassFilter}
-            onChange={(e) => setSelectedClassFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer"
-          >
-            <option value="all">All Classes</option>
-            {classes.map(c => (
-              <option key={c.id} value={c.id}>{c.class_name}</option>
-            ))}
-          </select>
-          <select
-            value={selectedCurriculumFilter}
-            onChange={(e) => setSelectedCurriculumFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer"
-          >
-            <option value="all">All Curricula</option>
-            {Array.from(new Set(chapters.map(c => c.curriculum))).map(cur => (
-              <option key={cur} value={cur}>{cur}</option>
-            ))}
-          </select>
+          <Select value={selectedClassFilter} onValueChange={setSelectedClassFilter}>
+            <SelectTrigger className="w-[200px] h-10 border border-input bg-background text-foreground">
+              <SelectValue placeholder="All Classes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Classes</SelectItem>
+              {classes.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.class_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedCurriculumFilter} onValueChange={setSelectedCurriculumFilter}>
+            <SelectTrigger className="w-[200px] h-10 border border-input bg-background text-foreground">
+              <SelectValue placeholder="All Curricula" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Curricula</SelectItem>
+              {Array.from(new Set(chapters.map(c => c.curriculum))).map(cur => (
+                <SelectItem key={cur} value={cur}>{cur}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
-          <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                <FaBook className="text-purple-400 text-xl" />
-              </div>
-              <div>
-                <p className="text-white/50 text-sm">Classes</p>
-                <p className="text-2xl font-bold text-white">{stats.totalClasses}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                <FaChalkboardTeacher className="text-blue-400 text-xl" />
-              </div>
-              <div>
-                <p className="text-white/50 text-sm">Teachers</p>
-                <p className="text-2xl font-bold text-white">{stats.totalTeachers}</p>
-                <div className="flex gap-2 mt-1">
-                  <span className="text-xs text-emerald-400">{stats.approvedTeachers} approved</span>
-                  {stats.pendingTeachersCount > 0 && (
-                    <span className="text-xs text-amber-400">{stats.pendingTeachersCount} pending</span>
-                  )}
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaBook className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Classes</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.totalClasses}</p>
                 </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center">
-                <FaUsers className="text-cyan-400 text-xl" />
-              </div>
-              <div>
-                <p className="text-white/50 text-sm">Students</p>
-                <p className="text-2xl font-bold text-white">{stats.totalStudents}</p>
-                <div className="flex gap-2 mt-1">
-                  <span className="text-xs text-emerald-400">{stats.approvedStudents} approved</span>
-                  {stats.pendingStudentsCount > 0 && (
-                    <span className="text-xs text-amber-400">{stats.pendingStudentsCount} pending</span>
-                  )}
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaChalkboardTeacher className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Teachers</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.totalTeachers}</p>
+                  <div className="flex gap-2 mt-1">
+                    <span className="text-xs text-primary">{stats.approvedTeachers} approved</span>
+                    {stats.pendingTeachersCount > 0 && (
+                      <span className="text-xs text-amber-500">{stats.pendingTeachersCount} pending</span>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                <FaChartLine className="text-emerald-400 text-xl" />
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaUsers className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Students</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.totalStudents}</p>
+                  <div className="flex gap-2 mt-1">
+                    <span className="text-xs text-primary">{stats.approvedStudents} approved</span>
+                    {stats.pendingStudentsCount > 0 && (
+                      <span className="text-xs text-amber-500">{stats.pendingStudentsCount} pending</span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div>
-                <p className="text-white/50 text-sm">Avg Score</p>
-                <p className="text-2xl font-bold text-white">{stats.averageSchoolScore}%</p>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                <FaGraduationCap className="text-amber-400 text-xl" />
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaChartLine className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Avg Score</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.averageSchoolScore}%</p>
+                </div>
               </div>
-              <div>
-                <p className="text-white/50 text-sm">Launches</p>
-                <p className="text-2xl font-bold text-white">{stats.totalLessonLaunches}</p>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
 
-          <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-violet-500/20 flex items-center justify-center">
-                <FaGraduationCap className="text-violet-400 text-xl" />
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaGraduationCap className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Launches</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.totalLessonLaunches}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-white/50 text-sm">Completed</p>
-                <p className="text-2xl font-bold text-white">{stats.completedLessons}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaGraduationCap className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Completed</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.completedLessons}</p>
+                </div>
               </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Time Tracking Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center">
-                <FaClock className="text-indigo-400 text-xl" />
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaClock className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Avg Time/Lesson</p>
+                  <p className="text-2xl font-bold text-foreground">{Math.round(stats.averageTimePerLesson / 60)} min</p>
+                </div>
               </div>
-              <div>
-                <p className="text-white/50 text-sm">Avg Time/Lesson</p>
-                <p className="text-2xl font-bold text-white">
-                  {Math.round(stats.averageTimePerLesson / 60)} min
-                </p>
+            </CardContent>
+          </Card>
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaClock className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Total Learning Time</p>
+                  <p className="text-2xl font-bold text-foreground">{Math.round(stats.totalLearningTime / 3600)} hrs</p>
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-pink-500/20 bg-pink-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-pink-500/20 flex items-center justify-center">
-                <FaClock className="text-pink-400 text-xl" />
-              </div>
-              <div>
-                <p className="text-white/50 text-sm">Total Learning Time</p>
-                <p className="text-2xl font-bold text-white">
-                  {Math.round(stats.totalLearningTime / 3600)} hrs
-                </p>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Quick Access Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          {/* Class Management */}
-          <div className="rounded-2xl border border-purple-500/30 bg-purple-500/10 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                  <FaBook className="text-purple-400 text-2xl" />
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                    <FaBook className="text-primary text-2xl" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold text-foreground">Class Management</h2>
+                    <p className="text-muted-foreground text-sm mt-1">Manage classes and assign teachers.</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-xl font-semibold text-white">Class Management</h2>
-                  <p className="text-white/60 text-sm mt-1">
-                    Manage classes and assign teachers.
-                  </p>
-                </div>
+                <Button asChild variant="secondary" className="gap-2 shrink-0">
+                  <Link to="/admin/classes">Open <FaArrowRight className="w-4 h-4" /></Link>
+                </Button>
               </div>
-              <Link
-                to="/admin/classes"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-medium transition-colors border border-purple-500/30"
-              >
-                Open
-                <FaArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
-
-          {/* Teacher Approvals Card */}
-          <div className={`rounded-2xl border p-6 ${
-            pendingTeachers.length > 0 
-              ? 'border-amber-500/50 bg-amber-500/10' 
-              : 'border-blue-500/30 bg-blue-500/10'
-          }`}>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 rounded-xl flex items-center justify-center relative ${
-                  pendingTeachers.length > 0 ? 'bg-amber-500/20' : 'bg-blue-500/20'
-                }`}>
-                  <FaChalkboardTeacher className={`text-2xl ${
-                    pendingTeachers.length > 0 ? 'text-amber-400' : 'text-blue-400'
-                  }`} />
-                  {pendingTeachers.length > 0 && (
-                    <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                      {pendingTeachers.length}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-semibold text-white">Teacher Approvals</h2>
+            </CardContent>
+          </Card>
+          <Card className={`border bg-card ${pendingTeachers.length > 0 ? 'border-amber-500/40' : 'border-border'}`}>
+            <CardContent className="p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-lg bg-primary/10 border border-border flex items-center justify-center relative">
+                    <FaChalkboardTeacher className="text-primary text-2xl" />
                     {pendingTeachers.length > 0 && (
-                      <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-xs font-medium rounded-full border border-amber-500/30 flex items-center gap-1">
-                        <FaBell className="text-xs" />
-                        {pendingTeachers.length} pending
-                      </span>
+                      <Badge className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0 flex items-center justify-center bg-destructive text-destructive-foreground">
+                        {pendingTeachers.length}
+                      </Badge>
                     )}
                   </div>
-                  <p className="text-white/60 text-sm mt-1">
-                    {pendingTeachers.length > 0 
-                      ? `${pendingTeachers.length} teacher(s) waiting.`
-                      : 'Approve teachers for your school.'}
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-semibold text-foreground">Teacher Approvals</h2>
+                      {pendingTeachers.length > 0 && (
+                        <Badge variant="secondary" className="gap-1">
+                          <FaBell className="text-xs" /> {pendingTeachers.length} pending
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground text-sm mt-1">
+                      {pendingTeachers.length > 0 ? `${pendingTeachers.length} teacher(s) waiting.` : 'Approve teachers for your school.'}
+                    </p>
+                  </div>
                 </div>
+                <Button asChild variant={pendingTeachers.length > 0 ? 'default' : 'secondary'} className="gap-2 shrink-0">
+                  <Link to="/school/approvals">
+                    {pendingTeachers.length > 0 ? 'Review' : 'Open'}
+                    <FaArrowRight className="w-4 h-4" />
+                  </Link>
+                </Button>
               </div>
-              <Link
-                to="/school/approvals"
-                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-colors border ${
-                  pendingTeachers.length > 0
-                    ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/30'
-                    : 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border-blue-500/30'
-                }`}
-              >
-                {pendingTeachers.length > 0 ? 'Review' : 'Open'}
-                <FaArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Curriculum Completion */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Curriculum Completion</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-4">Curriculum Completion</h2>
           {curriculumCompletion.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaGraduationCap className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No curriculum data available</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaGraduationCap className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No curriculum data available</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {curriculumCompletion.map((curriculum) => (
-                <div
-                  key={curriculum.curriculum}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-6 hover:bg-white/[0.05] transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-white font-semibold text-lg">{curriculum.curriculum}</h3>
-                    <span className={`text-2xl font-bold ${
-                      curriculum.completionPercentage >= 70 ? 'text-emerald-400' :
-                      curriculum.completionPercentage >= 50 ? 'text-amber-400' : 'text-red-400'
-                    }`}>
-                      {curriculum.completionPercentage}%
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-white/50">Completed Topics</span>
-                      <span className="text-white">{curriculum.completedTopics}</span>
+                <Card key={curriculum.curriculum} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-foreground font-semibold text-lg">{curriculum.curriculum}</h3>
+                      <span className={`text-2xl font-bold ${
+                        curriculum.completionPercentage >= 70 ? 'text-primary' :
+                        curriculum.completionPercentage >= 50 ? 'text-amber-500' : 'text-destructive'
+                      }`}>
+                        {curriculum.completionPercentage}%
+                      </span>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-white/50">Total Topics</span>
-                      <span className="text-white">{curriculum.totalTopics}</span>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Completed Topics</span>
+                        <span className="text-foreground">{curriculum.completedTopics}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Total Topics</span>
+                        <span className="text-foreground">{curriculum.totalTopics}</span>
+                      </div>
+                      <Progress value={curriculum.completionPercentage} className="h-2 mt-3" />
                     </div>
-                    <div className="w-full bg-white/10 rounded-full h-2 mt-3">
-                      <div
-                        className={`h-2 rounded-full transition-all ${
-                          curriculum.completionPercentage >= 70 ? 'bg-emerald-500' :
-                          curriculum.completionPercentage >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${curriculum.completionPercentage}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}

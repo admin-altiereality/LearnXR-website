@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { motion } from 'framer-motion';
-import { 
+import {
   User,
   Mail,
   Building2,
@@ -18,93 +17,73 @@ import {
   Shield,
   Star,
   Award,
-  TrendingUp,
   Clock,
   ChevronRight,
   School,
-  Users,
-  Settings,
   MapPin,
-  Globe
+  Globe,
+  Settings,
+  RefreshCw,
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '../Components/ui/button';
+import { Card, CardContent } from '../Components/ui/card';
+import { Input } from '../Components/ui/input';
+import { Label } from '../Components/ui/label';
+import { Badge } from '../Components/ui/badge';
+import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 
-// Role badge component
+const roleConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline'; icon: React.ElementType }> = {
+  student: { label: 'Student', variant: 'secondary', icon: GraduationCap },
+  teacher: { label: 'Teacher', variant: 'secondary', icon: BookOpen },
+  school: { label: 'School', variant: 'outline', icon: School },
+  admin: { label: 'Admin', variant: 'default', icon: Shield },
+  superadmin: { label: 'Superadmin', variant: 'destructive', icon: Star },
+};
+
 const RoleBadge = ({ role }: { role: string }) => {
-  const roleConfig: Record<string, { color: string; bg: string; border: string; icon: React.ReactNode }> = {
-    student: { 
-      color: 'text-cyan-300', 
-      bg: 'bg-cyan-500/10', 
-      border: 'border-cyan-500/30',
-      icon: <GraduationCap className="w-3.5 h-3.5" />
-    },
-    teacher: { 
-      color: 'text-purple-300', 
-      bg: 'bg-purple-500/10', 
-      border: 'border-purple-500/30',
-      icon: <BookOpen className="w-3.5 h-3.5" />
-    },
-    school: { 
-      color: 'text-amber-300', 
-      bg: 'bg-amber-500/10', 
-      border: 'border-amber-500/30',
-      icon: <School className="w-3.5 h-3.5" />
-    },
-    admin: { 
-      color: 'text-emerald-300', 
-      bg: 'bg-emerald-500/10', 
-      border: 'border-emerald-500/30',
-      icon: <Shield className="w-3.5 h-3.5" />
-    },
-    superadmin: { 
-      color: 'text-rose-300', 
-      bg: 'bg-rose-500/10', 
-      border: 'border-rose-500/30',
-      icon: <Star className="w-3.5 h-3.5" />
-    },
-  };
-
-  const config = roleConfig[role] || roleConfig.student;
-  
+  const config = roleConfig[role] ?? roleConfig.student;
+  const Icon = config.icon;
+  const displayLabel = config.label || (role.charAt(0).toUpperCase() + role.slice(1));
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-full ${config.bg} ${config.color} border ${config.border}`}>
-      {config.icon}
-      {role.charAt(0).toUpperCase() + role.slice(1)}
-    </span>
+    <Badge variant={config.variant} className="gap-1.5 font-semibold">
+      <Icon className="w-3.5 h-3.5" />
+      {displayLabel}
+    </Badge>
   );
 };
 
-// Stats card component
-const StatCard = ({ icon: Icon, label, value, color = 'cyan' }: { icon: any; label: string; value: string | number; color?: string }) => {
-  const colorClasses: Record<string, string> = {
-    cyan: 'from-cyan-500/20 to-blue-500/20 border-cyan-500/30 text-cyan-400',
-    purple: 'from-purple-500/20 to-pink-500/20 border-purple-500/30 text-purple-400',
-    emerald: 'from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400',
-    amber: 'from-amber-500/20 to-orange-500/20 border-amber-500/30 text-amber-400',
-  };
-
-  return (
-    <div className={`p-4 rounded-xl bg-gradient-to-br ${colorClasses[color]} border backdrop-blur-sm`}>
+const StatCard = ({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string | number;
+}) => (
+  <Card className="rounded-xl border-border bg-card">
+    <CardContent className="p-4">
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${colorClasses[color].replace('from-', 'from-').replace('/20', '/30')} flex items-center justify-center`}>
-          <Icon className="w-5 h-5" />
+        <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+          <Icon className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <p className="text-xs text-slate-400 font-medium">{label}</p>
-          <p className="text-lg font-bold text-white">{value}</p>
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="text-lg font-bold text-foreground">{value}</p>
         </div>
       </div>
-    </div>
-  );
-};
+    </CardContent>
+  </Card>
+);
 
 const Profile = () => {
   const { user, profile: authProfile } = useAuth();
   const navigate = useNavigate();
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -121,7 +100,7 @@ const Profile = () => {
     company: '',
     function: '',
     phoneNumber: '',
-    email: user?.email || '',
+    email: user?.email ?? '',
     bio: '',
     location: '',
     website: '',
@@ -130,43 +109,36 @@ const Profile = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       if (!user?.uid) return;
-      
       try {
         setLoading(true);
-        
         const profileRef = doc(db, 'users', user.uid);
         const profileSnap = await getDoc(profileRef);
-        
         if (profileSnap.exists()) {
           const profileData = profileSnap.data();
           setProfile(profileData);
           setFormData({
-            firstName: profileData.firstName || profileData.name?.split(' ')[0] || '',
-            lastName: profileData.lastName || profileData.name?.split(' ').slice(1).join(' ') || '',
-            company: profileData.company || profileData.schoolName || '',
-            function: profileData.function || profileData.designation || '',
-            phoneNumber: profileData.phoneNumber || profileData.phone || '',
-            email: profileData.email || user.email || '',
-            bio: profileData.bio || '',
-            location: profileData.location || profileData.city || '',
-            website: profileData.website || '',
+            firstName: (profileData.firstName as string) || (profileData.name as string)?.split(' ')[0] || '',
+            lastName: (profileData.lastName as string) || (profileData.name as string)?.split(' ').slice(1).join(' ') || '',
+            company: (profileData.company as string) || (profileData.schoolName as string) || '',
+            function: (profileData.function as string) || (profileData.designation as string) || '',
+            phoneNumber: (profileData.phoneNumber as string) || (profileData.phone as string) || '',
+            email: (profileData.email as string) || user.email || '',
+            bio: (profileData.bio as string) || '',
+            location: (profileData.location as string) || (profileData.city as string) || '',
+            website: (profileData.website as string) || '',
           });
         }
-
-        // Fetch user stats if student
         if (authProfile?.role === 'student' || !authProfile?.role) {
           try {
             const progressRef = collection(db, 'user_lesson_progress');
             const q = query(progressRef, where('userId', '==', user.uid));
             const progressSnap = await getDocs(q);
-            
             let completed = 0;
             let quizzes = 0;
             let totalScore = 0;
             let scoreCount = 0;
-            
-            progressSnap.forEach(doc => {
-              const data = doc.data();
+            progressSnap.forEach((d) => {
+              const data = d.data();
               if (data.completed) completed++;
               if (data.quizCompleted) {
                 quizzes++;
@@ -176,47 +148,37 @@ const Profile = () => {
                 }
               }
             });
-            
             setStats({
               lessonsCompleted: completed,
               quizzesCompleted: quizzes,
               averageScore: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 0,
-              totalTime: completed * 15, // Estimate 15 mins per lesson
+              totalTime: completed * 15,
             });
-          } catch (e) {
-            console.warn('Could not fetch stats:', e);
+          } catch {
+            // ignore
           }
         }
-
-        setLoading(false);
       } catch (err) {
-        console.error('Error fetching data:', err);
+        console.error('Error fetching profile:', err);
         setError('Failed to load profile data');
+      } finally {
         setLoading(false);
       }
     };
-
     fetchProfile();
-  }, [user, authProfile]);
+  }, [user, authProfile?.role]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.uid) return;
-    
     try {
       const profileRef = doc(db, 'users', user.uid);
       await updateDoc(profileRef, {
         ...formData,
         name: `${formData.firstName} ${formData.lastName}`.trim(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       });
-      
-      setProfile((prev: any) => ({
-        ...prev,
-        ...formData,
-        name: `${formData.firstName} ${formData.lastName}`.trim(),
-      }));
-      
+      setProfile((prev) => (prev ? { ...prev, ...formData, name: `${formData.firstName} ${formData.lastName}`.trim() } : prev));
       setIsEditing(false);
       toast.success('Profile updated successfully');
     } catch (err) {
@@ -226,102 +188,96 @@ const Profile = () => {
   };
 
   const getInitials = () => {
-    if (formData.firstName && formData.lastName) {
-      return `${formData.firstName[0]}${formData.lastName[0]}`.toUpperCase();
-    }
-    if (formData.firstName) {
-      return formData.firstName[0].toUpperCase();
-    }
-    return user?.email?.[0].toUpperCase() || 'U';
+    if (formData.firstName && formData.lastName) return `${formData.firstName[0]}${formData.lastName[0]}`.toUpperCase();
+    if (formData.firstName) return formData.firstName[0].toUpperCase();
+    return user?.email?.[0].toUpperCase() ?? 'U';
   };
 
   const getDisplayName = () => {
-    if (formData.firstName || formData.lastName) {
-      return `${formData.firstName} ${formData.lastName}`.trim();
-    }
-    return profile?.name || user?.email?.split('@')[0] || 'User';
+    if (formData.firstName || formData.lastName) return `${formData.firstName} ${formData.lastName}`.trim();
+    return (profile?.name as string) || user?.email?.split('@')[0] || 'User';
   };
 
-  const userRole = profile?.role || authProfile?.role || 'student';
-  const memberSince = profile?.createdAt ? new Date(profile.createdAt.seconds * 1000 || profile.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Recently joined';
+  const userRole = (profile?.role as string) || authProfile?.role || 'student';
+  const memberSince = profile?.createdAt
+    ? new Date((profile.createdAt as { seconds?: number }).seconds ? (profile.createdAt as { seconds: number }).seconds * 1000 : (profile.createdAt as number)).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : 'Recently joined';
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Loading profile...</p>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center px-4 py-24">
+        <Card className="rounded-xl border-border max-w-md w-full">
+          <CardContent className="py-16">
+            <PrismFluxLoader statuses={['Loading profile…', 'Fetching your data…']} />
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-4">
-        <div className="text-center max-w-md">
-          <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
-            <X className="w-8 h-8 text-red-400" />
-          </div>
-          <p className="text-red-400 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-6 py-2.5 bg-red-500/20 hover:bg-red-600/30 text-red-300 rounded-xl transition-all border border-red-500/30"
-          >
-            Retry
-          </button>
-        </div>
+      <div className="min-h-screen bg-background flex items-center justify-center px-4 py-24">
+        <Card className="rounded-xl border-border border-destructive/50 bg-destructive/5 max-w-md w-full">
+          <CardContent className="p-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
+              <X className="w-7 h-7 text-destructive" />
+            </div>
+            <p className="text-foreground font-medium mb-1">Error</p>
+            <p className="text-sm text-muted-foreground mb-6">{error}</p>
+            <Button variant="outline" className="border-border" onClick={() => window.location.reload()}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
+  const infoFields = [
+    { icon: User, label: 'First Name', value: formData.firstName || 'Not set' },
+    { icon: User, label: 'Last Name', value: formData.lastName || 'Not set' },
+    { icon: userRole === 'school' ? School : Building2, label: userRole === 'school' ? 'School Name' : userRole === 'student' ? 'School' : 'Company', value: formData.company || 'Not set' },
+    { icon: Briefcase, label: userRole === 'student' ? 'Class' : 'Designation', value: formData.function || 'Not set' },
+    { icon: Phone, label: 'Phone', value: formData.phoneNumber || 'Not set' },
+    { icon: Mail, label: 'Email', value: user?.email || 'Not set' },
+    { icon: MapPin, label: 'Location', value: formData.location || 'Not set' },
+    { icon: Globe, label: 'Website', value: formData.website || 'Not set' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 pt-24 pb-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background pt-24 pb-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-6">
         {/* Profile Header Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-2xl border border-slate-800/50 bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-xl shadow-2xl"
-        >
-          {/* Background Pattern */}
-          <div className="absolute inset-0 opacity-30">
-            <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-cyan-500/20 to-transparent rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-            <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-br from-purple-500/20 to-transparent rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
-          </div>
-          
-          <div className="relative p-6 sm:p-8">
+        <Card className="rounded-2xl border-border overflow-hidden">
+          <CardContent className="p-6 sm:p-8">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
               <div className="flex items-center gap-5">
-                {/* Avatar */}
                 <div className="relative">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl sm:text-3xl font-bold shadow-lg shadow-cyan-500/25 ring-4 ring-slate-900/50">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-primary/20 border border-border flex items-center justify-center text-foreground text-2xl sm:text-3xl font-bold">
                     {getInitials()}
                   </div>
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
-                    <Check className="w-3 h-3 text-white" />
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary border-2 border-card flex items-center justify-center">
+                    <Check className="w-3 h-3 text-primary-foreground" />
                   </div>
                 </div>
-                
-                {/* User Info */}
                 <div>
-                  <div className="flex items-center gap-3 mb-2">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">
-                      {getDisplayName()}
-                    </h1>
+                  <div className="flex items-center gap-3 mb-2 flex-wrap">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{getDisplayName()}</h1>
                     <RoleBadge role={userRole} />
                   </div>
-                  <p className="text-slate-400 flex items-center gap-2 mb-2">
+                  <p className="text-muted-foreground flex items-center gap-2 mb-2 text-sm">
                     <Mail className="w-4 h-4" />
                     {user?.email}
                   </p>
-                  <div className="flex items-center gap-4 text-sm text-slate-500">
-                    <span className="flex items-center gap-1">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5" />
                       {memberSince}
                     </span>
                     {formData.location && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1.5">
                         <MapPin className="w-3.5 h-3.5" />
                         {formData.location}
                       </span>
@@ -329,332 +285,237 @@ const Profile = () => {
                   </div>
                 </div>
               </div>
-
-              <button
+              <Button
+                variant="outline"
+                className="border-border text-foreground hover:bg-muted shrink-0"
                 onClick={() => setIsEditing(!isEditing)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
-                  isEditing 
-                    ? 'bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30'
-                    : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                }`}
               >
                 {isEditing ? (
                   <>
-                    <X className="w-4 h-4" />
+                    <X className="w-4 h-4 mr-2" />
                     Cancel
                   </>
                 ) : (
                   <>
-                    <Edit3 className="w-4 h-4" />
+                    <Edit3 className="w-4 h-4 mr-2" />
                     Edit Profile
                   </>
                 )}
-              </button>
+              </Button>
             </div>
-
-            {/* Bio */}
             {formData.bio && !isEditing && (
-              <p className="mt-4 text-slate-300 text-sm leading-relaxed max-w-2xl">
-                {formData.bio}
-              </p>
+              <p className="mt-4 text-muted-foreground text-sm leading-relaxed max-w-2xl">{formData.bio}</p>
             )}
-          </div>
-        </motion.div>
+          </CardContent>
+        </Card>
 
-        {/* Stats Section - For Students */}
+        {/* Stats - Students */}
         {(userRole === 'student' || !userRole) && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="grid grid-cols-2 lg:grid-cols-4 gap-4"
-          >
-            <StatCard 
-              icon={BookOpen} 
-              label="Lessons Completed" 
-              value={stats.lessonsCompleted} 
-              color="cyan" 
-            />
-            <StatCard 
-              icon={Trophy} 
-              label="Quizzes Passed" 
-              value={stats.quizzesCompleted} 
-              color="amber" 
-            />
-            <StatCard 
-              icon={Target} 
-              label="Average Score" 
-              value={`${stats.averageScore}%`} 
-              color="emerald" 
-            />
-            <StatCard 
-              icon={Clock} 
-              label="Learning Time" 
-              value={`${stats.totalTime}m`} 
-              color="purple" 
-            />
-          </motion.div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard icon={BookOpen} label="Lessons Completed" value={stats.lessonsCompleted} />
+            <StatCard icon={Trophy} label="Quizzes Passed" value={stats.quizzesCompleted} />
+            <StatCard icon={Target} label="Average Score" value={`${stats.averageScore}%`} />
+            <StatCard icon={Clock} label="Learning Time" value={`${stats.totalTime}m`} />
+          </div>
         )}
 
-        {/* Profile Details / Edit Form */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="rounded-2xl border border-slate-800/50 bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-xl overflow-hidden"
-        >
-          <div className="p-6 sm:p-8">
-            <h2 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
-              <User className="w-5 h-5 text-cyan-400" />
+        {/* Profile Information */}
+        <Card className="rounded-2xl border-border overflow-hidden">
+          <CardContent className="p-6 sm:p-8">
+            <h2 className="text-lg font-semibold text-foreground mb-6 flex items-center gap-2">
+              <User className="w-5 h-5 text-primary" />
               Profile Information
             </h2>
 
             {isEditing ? (
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* First Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      First Name
-                    </label>
-                    <input
-                      type="text"
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">First Name</Label>
+                    <Input
                       value={formData.firstName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, firstName: e.target.value }))}
                       placeholder="Enter first name"
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
-
-                  {/* Last Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Last Name</Label>
+                    <Input
                       value={formData.lastName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, lastName: e.target.value }))}
                       placeholder="Enter last name"
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
-
-                  {/* Company/School */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">
                       {userRole === 'school' ? 'School Name' : userRole === 'student' ? 'School/Institution' : 'Company'}
-                    </label>
-                    <input
-                      type="text"
+                    </Label>
+                    <Input
                       value={formData.company}
-                      onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, company: e.target.value }))}
                       placeholder={userRole === 'student' ? 'Enter school name' : 'Enter company name'}
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
-
-                  {/* Function/Role */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      {userRole === 'student' ? 'Class/Grade' : 'Designation'}
-                    </label>
-                    <input
-                      type="text"
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">{userRole === 'student' ? 'Class/Grade' : 'Designation'}</Label>
+                    <Input
                       value={formData.function}
-                      onChange={(e) => setFormData(prev => ({ ...prev, function: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, function: e.target.value }))}
                       placeholder={userRole === 'student' ? 'e.g., Class 10' : 'Enter designation'}
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
-
-                  {/* Phone */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Phone Number
-                    </label>
-                    <input
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Phone Number</Label>
+                    <Input
                       type="tel"
                       value={formData.phoneNumber}
-                      onChange={(e) => setFormData(prev => ({ ...prev, phoneNumber: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, phoneNumber: e.target.value }))}
                       placeholder="Enter phone number"
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
-
-                  {/* Location */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Location
-                    </label>
-                    <input
-                      type="text"
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Location</Label>
+                    <Input
                       value={formData.location}
-                      onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, location: e.target.value }))}
                       placeholder="City, Country"
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
-
-                  {/* Email (read-only) */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      disabled
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/30 border border-slate-700/30 text-slate-400 cursor-not-allowed"
-                    />
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Email</Label>
+                    <Input type="email" value={formData.email} disabled className="bg-muted border-border text-muted-foreground cursor-not-allowed" />
                   </div>
-
-                  {/* Website */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Website
-                    </label>
-                    <input
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Website</Label>
+                    <Input
                       type="url"
                       value={formData.website}
-                      onChange={(e) => setFormData(prev => ({ ...prev, website: e.target.value }))}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
+                      onChange={(e) => setFormData((prev) => ({ ...prev, website: e.target.value }))}
                       placeholder="https://..."
+                      className="bg-background border-border text-foreground"
                     />
                   </div>
                 </div>
-
-                {/* Bio */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Bio
-                  </label>
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground">Bio</Label>
                   <textarea
                     value={formData.bio}
-                    onChange={(e) => setFormData(prev => ({ ...prev, bio: e.target.value }))}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, bio: e.target.value }))}
                     rows={3}
-                    className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-slate-700/50 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all resize-none"
+                    className="w-full px-3 py-2 rounded-md bg-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none text-sm"
                     placeholder="Tell us about yourself..."
                   />
                 </div>
-
-                {/* Form Actions */}
                 <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(false)}
-                    className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-all border border-slate-700"
-                  >
+                  <Button type="button" variant="outline" className="border-border" onClick={() => setIsEditing(false)}>
                     Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white font-semibold transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2"
-                  >
-                    <Check className="w-4 h-4" />
+                  </Button>
+                  <Button type="submit">
+                    <Check className="w-4 h-4 mr-2" />
                     Save Changes
-                  </button>
+                  </Button>
                 </div>
               </form>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[
-                  { icon: User, label: 'First Name', value: formData.firstName || 'Not set' },
-                  { icon: User, label: 'Last Name', value: formData.lastName || 'Not set' },
-                  { icon: userRole === 'school' ? School : Building2, label: userRole === 'school' ? 'School Name' : userRole === 'student' ? 'School' : 'Company', value: formData.company || 'Not set' },
-                  { icon: Briefcase, label: userRole === 'student' ? 'Class' : 'Designation', value: formData.function || 'Not set' },
-                  { icon: Phone, label: 'Phone', value: formData.phoneNumber || 'Not set' },
-                  { icon: Mail, label: 'Email', value: user?.email || 'Not set' },
-                  { icon: MapPin, label: 'Location', value: formData.location || 'Not set' },
-                  { icon: Globe, label: 'Website', value: formData.website || 'Not set' },
-                ].map((field, index) => (
-                  <div
-                    key={index}
-                    className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/30 hover:border-slate-600/50 transition-all group"
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-9 h-9 rounded-lg bg-slate-700/50 flex items-center justify-center group-hover:bg-cyan-500/10 transition-colors">
-                        <field.icon className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 transition-colors" />
-                      </div>
-                      <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">{field.label}</span>
-                    </div>
-                    <p className="text-sm text-white font-medium truncate" title={field.value}>
-                      {field.value}
-                    </p>
-                  </div>
-                ))}
+                {infoFields.map((field, index) => {
+                  const Icon = field.icon;
+                  return (
+                    <Card key={index} className="rounded-xl border-border bg-card hover:border-primary/30 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="w-9 h-9 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                            <Icon className="w-4 h-4 text-primary" />
+                          </div>
+                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{field.label}</span>
+                        </div>
+                        <p className="text-sm font-medium text-foreground truncate" title={String(field.value)}>
+                          {field.value}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
-          </div>
-        </motion.div>
+          </CardContent>
+        </Card>
 
         {/* Quick Actions */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-        >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {userRole === 'student' && (
-            <button
+            <Card
+              className="rounded-2xl border-border bg-card hover:border-primary/40 transition-all cursor-pointer group"
               onClick={() => navigate('/lessons')}
-              className="p-5 rounded-2xl bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 hover:border-cyan-400/50 transition-all group text-left"
             >
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 rounded-xl bg-cyan-500/20 flex items-center justify-center">
-                  <BookOpen className="w-6 h-6 text-cyan-400" />
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 border border-border flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <BookOpen className="w-6 h-6 text-primary" />
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-cyan-400 transition-colors" />
-              </div>
-              <h3 className="text-white font-semibold mb-1">Continue Learning</h3>
-              <p className="text-sm text-slate-400">Pick up where you left off</p>
-            </button>
+                <h3 className="text-foreground font-semibold mb-1">Continue Learning</h3>
+                <p className="text-sm text-muted-foreground">Pick up where you left off</p>
+              </CardContent>
+            </Card>
           )}
-
           {(userRole === 'school' || userRole === 'admin' || userRole === 'superadmin') && (
-            <button
+            <Card
+              className="rounded-2xl border-border bg-card hover:border-primary/40 transition-all cursor-pointer group"
               onClick={() => navigate('/studio/content')}
-              className="p-5 rounded-2xl bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/30 hover:border-purple-400/50 transition-all group text-left"
             >
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                  <Settings className="w-6 h-6 text-purple-400" />
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 border border-border flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                    <Settings className="w-6 h-6 text-primary" />
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-purple-400 transition-colors" />
-              </div>
-              <h3 className="text-white font-semibold mb-1">Content Studio</h3>
-              <p className="text-sm text-slate-400">Manage your lessons</p>
-            </button>
+                <h3 className="text-foreground font-semibold mb-1">Content Studio</h3>
+                <p className="text-sm text-muted-foreground">Manage your lessons</p>
+              </CardContent>
+            </Card>
           )}
 
-          <button
+          <Card
+            className="rounded-2xl border-border bg-card hover:border-primary/40 transition-all cursor-pointer group"
             onClick={() => navigate('/lessons')}
-            className="p-5 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/30 hover:border-emerald-400/50 transition-all group text-left"
           >
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                <GraduationCap className="w-6 h-6 text-emerald-400" />
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 border border-border flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <GraduationCap className="w-6 h-6 text-primary" />
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-              <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition-colors" />
-            </div>
-            <h3 className="text-white font-semibold mb-1">Browse Lessons</h3>
-            <p className="text-sm text-slate-400">Explore available content</p>
-          </button>
+              <h3 className="text-foreground font-semibold mb-1">Browse Lessons</h3>
+              <p className="text-sm text-muted-foreground">Explore available content</p>
+            </CardContent>
+          </Card>
 
-          <button
+          <Card
+            className="rounded-2xl border-border bg-card hover:border-primary/40 transition-all cursor-pointer group"
             onClick={() => toast.info('Coming soon!')}
-            className="p-5 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 hover:border-amber-400/50 transition-all group text-left"
           >
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                <Award className="w-6 h-6 text-amber-400" />
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 border border-border flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                  <Award className="w-6 h-6 text-primary" />
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-              <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-amber-400 transition-colors" />
-            </div>
-            <h3 className="text-white font-semibold mb-1">Achievements</h3>
-            <p className="text-sm text-slate-400">View your badges</p>
-          </button>
-        </motion.div>
+              <h3 className="text-foreground font-semibold mb-1">Achievements</h3>
+              <p className="text-sm text-muted-foreground">View your badges</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

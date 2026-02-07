@@ -59,8 +59,8 @@ export const LearnXRLoader: React.FC<LearnXRLoaderProps> = ({ onComplete }) => {
             className="text-white text-[6rem] tracking-[0.4rem] leading-none"
             style={{ fontFamily: 'Rejouice Headline, sans-serif' }}
           >
-            <span className="text-white">Learn</span>
-            <span className="text-purple-700">XR</span>
+            <span className="text-foreground">Learn</span>
+            <span className="text-primary">XR</span>
             <TrademarkSymbol className="ml-2" />
           </h1>
         </motion.div>
@@ -72,9 +72,9 @@ export const LearnXRLoader: React.FC<LearnXRLoaderProps> = ({ onComplete }) => {
           transition={{ delay: 0.3, duration: 0.4 }}
           className="relative w-16 h-16"
         >
-          <div className="absolute inset-0 border-4 border-purple-700/30 rounded-full"></div>
+          <div className="absolute inset-0 border-4 border-primary/30 rounded-full"></div>
           <motion.div
-            className="absolute inset-0 border-4 border-transparent border-t-purple-700 rounded-full"
+            className="absolute inset-0 border-4 border-transparent border-t-primary rounded-full"
             animate={{ rotate: 360 }}
             transition={{
               duration: 1,
