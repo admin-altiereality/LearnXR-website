@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   FaBookOpen,
   FaFlask,
@@ -15,12 +14,10 @@ import {
   FaSchool,
   FaShieldAlt,
   FaCrown,
-  FaCode,
   FaTachometerAlt,
   FaUser,
   FaCog,
   FaBars,
-  FaTimes,
   FaServer,
   FaUsers,
   FaFileAlt,
@@ -31,6 +28,8 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
 import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
+import { Sheet, SheetContent } from './ui/sheet';
+import { Badge } from './ui/badge';
 
 interface NavItem {
   path: string;
@@ -58,34 +57,9 @@ const Sidebar = () => {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile, loading, profileLoading, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
 
-  // Get normalized role with debug logging
-  const userRole = useMemo(() => {
-    const rawRole = profile?.role;
-    const normalized = normalizeRole(rawRole);
-    
-    // Debug logging - check browser console
-    console.log('🔍 Sidebar Debug:', {
-      hasUser: !!user,
-      hasProfile: !!profile,
-      rawRole: rawRole,
-      normalizedRole: normalized,
-      loading,
-      profileLoading,
-      onboardingCompleted: profile?.onboardingCompleted,
-      approvalStatus: (profile as any)?.approvalStatus,
-      profileData: profile ? {
-        uid: profile.uid,
-        email: profile.email,
-        name: profile.name,
-        displayName: profile.displayName,
-        role: profile.role
-      } : null
-    });
-    
-    return normalized;
-  }, [user, profile, loading, profileLoading]);
+  const userRole = useMemo(() => normalizeRole(profile?.role), [profile?.role]);
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -129,7 +103,6 @@ const Sidebar = () => {
   const isSchool = userRole === 'school';
   const isAdmin = userRole === 'admin';
   const isSuperadmin = userRole === 'superadmin';
-  const isTeacherOrSchool = isTeacher || isSchool;
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;
   // School administrators should NOT have access to Create, Explore, History
   const canCreate = isTeacher || isAdminOrSuperadmin;
@@ -218,21 +191,6 @@ const Sidebar = () => {
 
   const navItems = getNavItems();
 
-  // Debug logging for student approvals visibility
-  useEffect(() => {
-    if (isTeacher || isPrincipal) {
-      console.log('🔍 Sidebar Debug - Student Approvals:', {
-        userRole,
-        isTeacher,
-        isPrincipal,
-        hasStudentApprovalsLink: navItems.some(item => item.path === '/teacher/approvals'),
-        allNavItems: navItems.map(item => item.path),
-        profileRole: profile?.role,
-        profileApprovalStatus: profile?.approvalStatus,
-      });
-    }
-  }, [userRole, isTeacher, isPrincipal, navItems, profile]);
-
   // Role icon mapping
   const getRoleIcon = () => {
     switch (userRole) {
@@ -252,7 +210,7 @@ const Sidebar = () => {
       case 'student': return 'text-emerald-400';
       case 'teacher': return 'text-blue-400';
       case 'principal': return 'text-indigo-400';
-      case 'school': return 'text-purple-400';
+      case 'school': return 'text-primary';
       case 'admin': return 'text-amber-400';
       case 'superadmin': return 'text-rose-400';
       default: return 'text-gray-400';
@@ -264,7 +222,7 @@ const Sidebar = () => {
       case 'student': return 'bg-emerald-500/20';
       case 'teacher': return 'bg-blue-500/20';
       case 'principal': return 'bg-indigo-500/20';
-      case 'school': return 'bg-purple-500/20';
+      case 'school': return 'bg-primary/20';
       case 'admin': return 'bg-amber-500/20';
       case 'superadmin': return 'bg-rose-500/20';
       default: return 'bg-gray-500/20';
@@ -275,287 +233,162 @@ const Sidebar = () => {
   const roleColor = getRoleColor();
   const roleBgColor = getRoleBgColor();
 
-  // Sidebar width based on collapsed state
-  const sidebarWidth = isCollapsed ? 64 : 220;
+  const sidebarWidth = isCollapsed ? 'var(--sidebar-width-icon)' : 'var(--sidebar-width)';
 
-  return (
-    <>
-      {/* Mobile Menu Button - Hamburger icon */}
-      <button
-        onClick={() => setIsMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-slate-900/95 backdrop-blur-xl border border-white/10 text-white/70 hover:text-white hover:bg-slate-800 transition-all shadow-lg"
-        aria-label="Open menu"
-      >
-        <FaBars className="w-5 h-5" />
-      </button>
+  const NavContent = ({ forceExpanded = false }: { forceExpanded?: boolean }) => {
+    const expanded = forceExpanded || !isCollapsed;
+    const navLinkClass = (active: boolean) =>
+      `flex items-center gap-2 px-2 py-2 rounded-md text-sm font-medium transition-colors group relative ${
+        active
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+      } ${!expanded ? 'justify-center px-0' : ''}`;
 
-      {/* Mobile Overlay */}
-      <AnimatePresence>
-        {isMobileOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setIsMobileOpen(false)}
-            className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-          />
+    const renderNavLink = (
+      to: string,
+      label: string,
+      Icon: React.ComponentType<{ className?: string }>,
+      active: boolean
+    ) => (
+      <Link to={to} className={navLinkClass(active)} title={!expanded ? label : undefined}>
+        <Icon className="h-4 w-4 shrink-0" />
+        {expanded && <span className="truncate">{label}</span>}
+        {!expanded && (
+          <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
+            {label}
+          </span>
         )}
-      </AnimatePresence>
+      </Link>
+    );
 
-      {/* Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ 
-          width: sidebarWidth,
-          x: isMobileOpen ? 0 : (typeof window !== 'undefined' && window.innerWidth < 1024 ? -sidebarWidth - 20 : 0)
-        }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="fixed left-0 top-0 h-full bg-slate-950/98 backdrop-blur-xl border-r border-white/5 z-50 flex flex-col shadow-xl"
-      >
-        {/* Logo Section */}
-        <div className="h-16 flex items-center justify-center border-b border-white/5 px-3">
-          <Link 
-            to={isAdminOrSuperadmin ? '/studio/content' : '/lessons'} 
-            className="flex items-center gap-2 group"
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-2">
+          <Link
+            to={isAdminOrSuperadmin ? '/studio/content' : '/lessons'}
+            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/25 group-hover:shadow-cyan-500/40 transition-shadow">
-              <FaGraduationCap className="text-white text-base" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+              <FaGraduationCap className="h-4 w-4" />
             </div>
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  className="text-base font-bold whitespace-nowrap overflow-hidden"
-                  style={learnXRFontStyle}
-                >
-                  <span className="text-white">Learn</span>
-                  <span className="text-purple-700">XR</span>
-                  <TrademarkSymbol className="ml-0.5" />
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {expanded && (
+              <span className="font-semibold leading-none" style={learnXRFontStyle}>
+                <span className="text-sidebar-foreground">Learn</span>
+                <span className="text-sidebar-primary">XR</span>
+                <TrademarkSymbol className="ml-0.5 inline" />
+              </span>
+            )}
           </Link>
         </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-4 px-2">
-          <ul className="space-y-1">
+        <nav className="flex-1 overflow-y-auto py-2 px-2">
+          <ul className="space-y-0.5">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || 
-                              (item.path !== '/lessons' && location.pathname.startsWith(item.path + '/'));
-              const Icon = item.icon;
-
+              const isActive =
+                location.pathname === item.path ||
+                (item.path !== '/lessons' && location.pathname.startsWith(item.path + '/'));
               return (
-                <li key={item.path}>
-                  <Link
-                    to={item.path}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
-                      isActive
-                        ? 'bg-cyan-500/15 text-cyan-400 shadow-inner'
-                        : 'text-white/50 hover:text-white hover:bg-white/5'
-                    } ${isCollapsed ? 'justify-center' : ''}`}
-                    title={isCollapsed ? item.label : undefined}
-                  >
-                    <Icon className={`w-5 h-5 flex-shrink-0 transition-colors ${
-                      isActive ? 'text-cyan-400' : 'text-white/50 group-hover:text-cyan-400'
-                    }`} />
-                    
-                    <AnimatePresence>
-                      {!isCollapsed && (
-                        <motion.span
-                          initial={{ opacity: 0, width: 0 }}
-                          animate={{ opacity: 1, width: 'auto' }}
-                          exit={{ opacity: 0, width: 0 }}
-                          className="text-sm font-medium whitespace-nowrap overflow-hidden"
-                        >
-                          {item.label}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                    
-                    {/* Tooltip for collapsed state */}
-                    {isCollapsed && (
-                      <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 rounded-lg text-sm text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-xl border border-white/10">
-                        {item.label}
-                      </div>
-                    )}
-                    
-                    {/* Active indicator */}
-                    {isActive && (
-                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-400 rounded-r-full" />
-                    )}
-                  </Link>
-                </li>
+                <li key={item.path}>{renderNavLink(item.path, item.label, item.icon, isActive)}</li>
               );
             })}
           </ul>
-
-          {/* Divider */}
-          <div className="my-4 h-px bg-white/5" />
-
-          {/* Quick Links - Profile & Settings */}
-          <ul className="space-y-1">
-            <li>
-              <Link
-                to="/profile"
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
-                  location.pathname === '/profile'
-                    ? 'bg-cyan-500/15 text-cyan-400'
-                    : 'text-white/50 hover:text-white hover:bg-white/5'
-                } ${isCollapsed ? 'justify-center' : ''}`}
-                title={isCollapsed ? 'Profile' : undefined}
-              >
-                <FaUser className={`w-5 h-5 flex-shrink-0 transition-colors ${
-                  location.pathname === '/profile' ? 'text-cyan-400' : 'text-white/50 group-hover:text-cyan-400'
-                }`} />
-                <AnimatePresence>
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      className="text-sm font-medium whitespace-nowrap overflow-hidden"
-                    >
-                      Profile
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-                {isCollapsed && (
-                  <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 rounded-lg text-sm text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-xl border border-white/10">
-                    Profile
-                  </div>
-                )}
-                {location.pathname === '/profile' && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-400 rounded-r-full" />
-                )}
-              </Link>
-            </li>
-            
-            {/* Settings (Developer / API Keys) - admin and superadmin only */}
+          <div className="my-2 h-px bg-sidebar-border" />
+          <ul className="space-y-0.5">
+            <li>{renderNavLink('/profile', 'Profile', FaUser, location.pathname === '/profile')}</li>
             {isAdminOrSuperadmin && (
               <li>
-                <Link
-                  to="/developer"
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative ${
-                    location.pathname === '/developer'
-                      ? 'bg-cyan-500/15 text-cyan-400'
-                      : 'text-white/50 hover:text-white hover:bg-white/5'
-                  } ${isCollapsed ? 'justify-center' : ''}`}
-                  title={isCollapsed ? 'Settings' : undefined}
-                >
-                  <FaCog className={`w-5 h-5 flex-shrink-0 transition-colors ${
-                    location.pathname === '/developer' ? 'text-cyan-400' : 'text-white/50 group-hover:text-cyan-400'
-                  }`} />
-                  <AnimatePresence>
-                    {!isCollapsed && (
-                      <motion.span
-                        initial={{ opacity: 0, width: 0 }}
-                        animate={{ opacity: 1, width: 'auto' }}
-                        exit={{ opacity: 0, width: 0 }}
-                        className="text-sm font-medium whitespace-nowrap overflow-hidden"
-                      >
-                        Settings
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                  {isCollapsed && (
-                    <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 rounded-lg text-sm text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-xl border border-white/10">
-                      Settings
-                    </div>
-                  )}
-                  {location.pathname === '/developer' && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan-400 rounded-r-full" />
-                  )}
-                </Link>
+                {renderNavLink('/developer', 'Settings', FaCog, location.pathname === '/developer')}
               </li>
             )}
           </ul>
         </nav>
-
-        {/* User Section at Bottom */}
-        <div className="p-2 border-t border-white/5">
-          {/* User Info Card */}
-          <div className={`p-2 rounded-xl ${roleBgColor} mb-2 ${isCollapsed ? 'flex justify-center' : ''}`}>
-            <div className={`flex items-center gap-2 ${isCollapsed ? 'justify-center' : ''}`}>
-              <div className={`w-8 h-8 rounded-lg bg-slate-900/50 flex items-center justify-center flex-shrink-0 ${roleColor}`}>
-                <RoleIcon className="text-sm" />
-              </div>
-              <AnimatePresence>
-                {!isCollapsed && (
-                  <motion.div
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    className="flex-1 min-w-0 overflow-hidden"
-                  >
-                    <p className="text-xs font-medium text-white truncate">
-                      {profile?.name || profile?.displayName || 'User'}
-                    </p>
-                    <p className={`text-[10px] ${roleColor} truncate`}>
-                      {ROLE_DISPLAY_NAMES[userRole] || userRole}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+        <div className="shrink-0 border-t border-sidebar-border p-2">
+          <div
+            className={`flex items-center gap-2 rounded-md px-2 py-2 ${roleBgColor} ${!expanded ? 'justify-center' : ''}`}
+          >
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${roleColor}`}>
+              <RoleIcon className="h-4 w-4" />
             </div>
+            {expanded && (
+              <div className="min-w-0 flex-1 truncate">
+                <p className="text-xs font-medium text-sidebar-foreground truncate">
+                  {profile?.name || profile?.displayName || 'User'}
+                </p>
+                <p className={`text-[10px] ${roleColor} truncate flex items-center gap-1.5 flex-wrap`}>
+                  {ROLE_DISPLAY_NAMES[userRole] || userRole}
+                  {profile?.isGuest && (
+                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
+                      Guest
+                    </Badge>
+                  )}
+                </p>
+              </div>
+            )}
           </div>
-
-          {/* Logout Button */}
           <button
             onClick={handleLogout}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-white/40 hover:text-red-400 hover:bg-red-500/10 transition-all group relative ${
-              isCollapsed ? 'justify-center' : ''
-            }`}
-            title={isCollapsed ? 'Logout' : undefined}
+            className={`mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${!expanded ? 'justify-center' : ''}`}
+            title={!expanded ? 'Logout' : undefined}
           >
-            <FaSignOutAlt className="w-4 h-4 group-hover:text-red-400 transition-colors" />
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  className="text-sm whitespace-nowrap overflow-hidden"
-                >
-                  Logout
-                </motion.span>
-              )}
-            </AnimatePresence>
-            {isCollapsed && (
-              <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 rounded-lg text-sm text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-xl border border-white/10">
+            <FaSignOutAlt className="h-4 w-4 shrink-0" />
+            {expanded && <span>Logout</span>}
+            {!expanded && (
+              <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
                 Logout
-              </div>
+              </span>
             )}
           </button>
         </div>
+      </div>
+    );
+  };
 
-        {/* Collapse Toggle Button - positioned on right edge */}
+  return (
+    <>
+      {/* Mobile: Sheet (left) */}
+      <Sheet open={isMobileOpen} onOpenChange={setIsMobileOpen}>
+        <button
+          onClick={() => setIsMobileOpen(true)}
+          className="lg:hidden fixed top-4 left-4 z-50 flex h-9 w-9 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground hover:bg-sidebar-accent"
+          aria-label="Open menu"
+        >
+          <FaBars className="h-4 w-4" />
+        </button>
+        <SheetContent side="left" className="w-sidebar border-sidebar-border bg-sidebar p-0">
+          <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+            <span className="font-semibold" style={learnXRFontStyle}>
+              <span className="text-sidebar-foreground">Learn</span>
+              <span className="text-sidebar-primary">XR</span>
+              <TrademarkSymbol className="ml-0.5 inline" />
+            </span>
+          </div>
+          <div className="flex flex-1 flex-col overflow-hidden py-2">
+            <NavContent forceExpanded />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Desktop: Icon sidebar */}
+      <aside
+        className="fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-linear lg:flex"
+        style={{ width: sidebarWidth }}
+      >
+        <NavContent />
+        {/* Rail: collapse toggle (shadcn-style) */}
         <button
           onClick={toggleCollapse}
-          className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-slate-800 border border-white/10 text-white/40 hover:text-white hover:bg-slate-700 transition-all items-center justify-center hidden lg:flex shadow-lg hover:scale-110"
+          className="absolute -right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-sidebar shadow-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {isCollapsed ? <FaChevronRight className="w-2.5 h-2.5" /> : <FaChevronLeft className="w-2.5 h-2.5" />}
+          {isCollapsed ? (
+            <FaChevronRight className="h-3 w-3" />
+          ) : (
+            <FaChevronLeft className="h-3 w-3" />
+          )}
         </button>
+      </aside>
 
-        {/* Mobile Close Button */}
-        <button
-          onClick={() => setIsMobileOpen(false)}
-          className="lg:hidden absolute top-4 right-4 p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-all"
-          aria-label="Close menu"
-        >
-          <FaTimes className="w-5 h-5" />
-        </button>
-      </motion.aside>
-
-      {/* Spacer div to push content - matches sidebar width */}
-      <div 
-        className={`hidden lg:block flex-shrink-0 transition-all duration-200`}
-        style={{ width: sidebarWidth }}
-      />
+      {/* Spacer */}
+      <div className="hidden lg:block shrink-0 transition-[width] duration-200" style={{ width: sidebarWidth }} />
     </>
   );
 };

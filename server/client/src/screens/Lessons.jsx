@@ -36,7 +36,7 @@ import {
   XCircle
 } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { LanguageToggle } from '../Components/LanguageSelector';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,35 +50,45 @@ import {
 import { updateTopicApproval } from '../lib/firestore/updateHelpers';
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
+import { Button } from '../Components/ui/button';
+import { Card, CardContent } from '../Components/ui/card';
+import { Input } from '../Components/ui/input';
+import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Components/ui/select';
+import { toast } from 'react-toastify';
 
-// Content indicators (simple badges) - Memoized
+// Guest student: fixed demo curriculum/class; only first lesson is unlocked
+const GUEST_DEMO_CURRICULUM = 'CBSE';
+const GUEST_DEMO_CLASS = 6;
+
+// Content indicators (simple badges) - Memoized; theme tokens
 const ContentBadges = memo(({ chapter }) => (
   <div className="flex items-center gap-1.5">
     {chapter.hasSkybox && (
-      <div className="w-6 h-6 rounded bg-purple-500/20 border border-purple-500/30 flex items-center justify-center" title="360° Skybox">
-        <Sparkles className="w-3 h-3 text-purple-400" />
+      <div className="w-6 h-6 rounded bg-card border border-border flex items-center justify-center" title="360° Skybox">
+        <Sparkles className="w-3 h-3 text-primary" />
       </div>
     )}
     {chapter.hasScript && (
-      <div className="w-6 h-6 rounded bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center" title="Voice Script">
-        <Volume2 className="w-3 h-3 text-emerald-400" />
+      <div className="w-6 h-6 rounded bg-card border border-border flex items-center justify-center" title="Voice Script">
+        <Volume2 className="w-3 h-3 text-primary" />
       </div>
     )}
     {chapter.hasAssets && (
-      <div className="w-6 h-6 rounded bg-blue-500/20 border border-blue-500/30 flex items-center justify-center" title="3D Assets">
-        <Box className="w-3 h-3 text-blue-400" />
+      <div className="w-6 h-6 rounded bg-card border border-border flex items-center justify-center" title="3D Assets">
+        <Box className="w-3 h-3 text-primary" />
       </div>
     )}
     {chapter.hasMcqs && (
-      <div className="w-6 h-6 rounded bg-amber-500/20 border border-amber-500/30 flex items-center justify-center" title="Quiz Questions">
-        <HelpCircle className="w-3 h-3 text-amber-400" />
+      <div className="w-6 h-6 rounded bg-card border border-border flex items-center justify-center" title="Quiz Questions">
+        <HelpCircle className="w-3 h-3 text-primary" />
       </div>
     )}
   </div>
 ));
 
 // GRID VIEW - Lesson Card (Topic-based) - Memoized to prevent flickering
-const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en' }) => {
+const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const thumbnail = topic.skybox_url || chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
   const isCompleted = completedLessons[chapter.id];
@@ -90,17 +100,31 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
 
   return (
     <div
-      className={`bg-gradient-to-br from-slate-900/90 to-slate-800/90 backdrop-blur-sm 
-                 rounded-2xl border overflow-hidden
-                 hover:shadow-lg transition-all duration-300 cursor-pointer group
-                 transform hover:-translate-y-1
-                 ${isCompleted 
-                   ? 'border-emerald-500/50 hover:border-emerald-400/60 hover:shadow-emerald-500/10' 
-                   : 'border-slate-700/50 hover:border-cyan-500/50 hover:shadow-cyan-500/10'}`}
-      onClick={() => onOpenModal(chapter, topic)}
+      className={`h-full flex flex-col bg-card rounded-2xl border overflow-hidden border-border relative
+                 transition-all duration-300 group
+                 ${isLockedForGuest ? 'cursor-default' : 'cursor-pointer hover:shadow-lg hover:border-primary/50 hover:shadow-primary/10'}`}
+      onClick={() => !isLockedForGuest && onOpenModal(chapter, topic)}
     >
-      {/* Thumbnail */}
-      <div className="relative aspect-video overflow-hidden bg-slate-800">
+      {isLockedForGuest && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-background/80 backdrop-blur-md p-4 pointer-events-auto text-center space-y-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+            <p className="text-sm font-medium text-foreground">Sign up to unlock this lesson</p>
+            <Button size="sm" className="shadow-lg" onClick={onGuestSignup}>
+              Create free account
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Already have an account?{' '}
+              <button type="button" onClick={onGuestLogin} className="text-primary underline hover:no-underline font-medium">
+                Log in
+              </button>
+            </p>
+        </div>
+      )}
+      <div className={isLockedForGuest ? 'pointer-events-none select-none blur-sm' : ''}>
+      {/* Thumbnail - fixed aspect so card height is consistent */}
+      <div className="relative aspect-video w-full flex-shrink-0 overflow-hidden bg-muted">
         {thumbnail ? (
           <img
             src={thumbnail}
@@ -109,71 +133,70 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
             onError={(e) => { e.target.style.display = 'none'; }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-            <BookOpen className="w-12 h-12 text-slate-600" />
+          <div className="w-full h-full flex items-center justify-center bg-muted">
+            <BookOpen className="w-12 h-12 text-muted-foreground" />
           </div>
         )}
         
-        {/* Completed Overlay */}
         {isCompleted && (
-          <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
+          <div className="absolute inset-0 bg-primary/10 pointer-events-none" />
         )}
         
-        {/* Badges */}
-        <div className="absolute top-3 left-3 flex flex-wrap gap-2">
-          <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 backdrop-blur-sm">
-            {chapterInfo.curriculum}
-          </span>
-          <span className="px-2 py-1 text-[10px] font-bold rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30 backdrop-blur-sm">
-            Class {chapterInfo.class}
-          </span>
-        </div>
-        
-        <div className="absolute top-3 right-3 flex items-center gap-2">
-          {isCompleted && (
-            <span className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-500/90 text-white backdrop-blur-sm">
-              <Trophy className="w-3 h-3" />
-              {quizScore ? `${quizScore.percentage}%` : 'Done'}
+        {/* Badges: solid white text on dark pill — curriculum, class, chapter */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-black/80 border border-white/20">
+              <span className="text-[10px] font-bold text-white antialiased">
+                {chapterInfo.curriculum || '—'}
+              </span>
             </span>
-          )}
-          <span className="px-2.5 py-1 text-xs font-bold rounded-lg bg-black/50 text-white border border-white/20 backdrop-blur-sm">
-            Ch {chapterInfo.chapterNumber}
-          </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-black/80 border border-white/20">
+              <span className="text-[10px] font-bold text-white antialiased">
+                Class {chapterInfo.class ?? '—'}
+              </span>
+            </span>
+          </div>
+          <div className="absolute top-2 right-2 flex items-center gap-1.5">
+            {isCompleted && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/80 border border-white/20">
+                <Trophy className="w-3 h-3 text-white antialiased" />
+                <span className="text-[10px] font-bold text-white antialiased">
+                  {quizScore?.percentage != null ? `${quizScore.percentage}%` : 'Done'}
+                </span>
+              </span>
+            )}
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-black/80 border border-white/20">
+              <span className="text-[10px] font-bold text-white antialiased">
+                Ch {chapterInfo.chapterNumber ?? '—'}
+              </span>
+            </span>
+          </div>
         </div>
         
-        {/* Play overlay */}
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-          <div className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg ${
-            isCompleted ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-cyan-500 shadow-cyan-500/50'
-          }`}>
-            <Play className="w-8 h-8 text-white ml-1" />
+        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none">
+          <div className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg bg-primary text-primary-foreground">
+            <Play className="w-7 h-7 ml-0.5" />
           </div>
         </div>
       </div>
       
-      {/* Content */}
-      <div className="p-4">
-        <div className="flex items-start gap-2">
-          <h3 className={`text-sm font-semibold mb-2 line-clamp-2 transition-colors flex-1 ${
-            isCompleted ? 'text-emerald-300 group-hover:text-emerald-200' : 'text-white group-hover:text-cyan-300'
-          }`}>
+      {/* Content - fixed min height so all cards align */}
+      <div className="flex flex-col flex-1 min-h-0 p-3">
+        <div className="flex items-start gap-2 min-h-0">
+          <h3 className="text-sm font-semibold line-clamp-2 transition-colors flex-1 text-foreground group-hover:text-primary">
             {topicName}
           </h3>
           {isCompleted && (
-            <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+            <CheckCircle className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
           )}
         </div>
-        
-        <p className="text-xs text-slate-400 mb-1">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</p>
-        <p className="text-[10px] text-slate-500 mb-3">{chapterName}</p>
-        
-        {/* Stats */}
-        <div className="flex items-center justify-between">
-          <div className="text-[10px] text-slate-500">
-            Topic {topic.topic_priority || '?'}
-          </div>
+        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</p>
+        <p className="text-[10px] text-muted-foreground mb-1 line-clamp-1">{chapterName}</p>
+        <div className="flex items-center justify-between mt-auto pt-1">
+          <span className="text-[10px] text-muted-foreground">Topic {topic.topic_priority ?? '?'}</span>
           <ContentBadges chapter={chapter} />
         </div>
+      </div>
       </div>
     </div>
   );
@@ -247,60 +270,57 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
 
   return (
     <div
-      className="flex items-center gap-4 px-4 py-3 ml-4 border-l-2 border-slate-700 
-                 hover:border-cyan-500 bg-slate-800/30 hover:bg-slate-800/50 
+      className="flex items-center gap-4 px-4 py-3 ml-4 border-l-2 border-border 
+                 hover:border-primary bg-card/50 hover:bg-card 
                  transition-all duration-200 cursor-pointer"
       onClick={() => onOpenModal(chapter, topic)}
     >
-      <div className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-xs font-mono text-slate-400">
+      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-xs font-mono text-muted-foreground">
         {topic.topic_priority || index + 1}
       </div>
       
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <h4 className="text-sm font-medium text-white truncate hover:text-cyan-300 transition-colors">
+          <h4 className="text-sm font-medium text-foreground truncate hover:text-primary transition-colors">
             {topicName}
           </h4>
           {/* Approval Status Badge */}
           {isApproved ? (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/20 text-primary border border-primary/30">
               <CheckCircle2 className="w-3 h-3" />
               Approved
             </span>
           ) : (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-muted text-muted-foreground border border-border">
               <XCircle className="w-3 h-3" />
               Not Approved
             </span>
           )}
         </div>
         {learningObjective && (
-          <p className="text-xs text-slate-500 truncate">{learningObjective}</p>
+          <p className="text-xs text-muted-foreground truncate">{learningObjective}</p>
         )}
         {isApproved && approvedAt && (
-          <p className="text-[10px] text-slate-500 mt-0.5">
+          <p className="text-[10px] text-muted-foreground mt-0.5">
             Approved {formatApprovedAt(approvedAt)}
           </p>
         )}
       </div>
       
       <div className="flex items-center gap-1.5">
-        {hasSkybox && <Sparkles className="w-3.5 h-3.5 text-purple-400" />}
-        {hasScript && <Volume2 className="w-3.5 h-3.5 text-emerald-400" />}
+        {hasSkybox && <Sparkles className="w-3.5 h-3.5 text-primary" />}
+        {hasScript && <Volume2 className="w-3.5 h-3.5 text-primary" />}
       </div>
       
       <div className="flex items-center gap-2">
         {/* Approval Controls (Admin/Superadmin only) */}
         {canApprove && (
-          <button
+          <Button
+            variant={isApproved ? 'destructive' : 'default'}
+            size="sm"
             onClick={handleApprovalToggle}
             disabled={updatingApproval}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                       transition-all disabled:opacity-50 disabled:cursor-not-allowed
-                       ${isApproved
-                         ? 'bg-red-500/20 border border-red-500/30 text-red-300 hover:bg-red-500/30 hover:border-red-400'
-                         : 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30 hover:border-emerald-400'
-                       }`}
+            className="h-8"
             title={isApproved ? 'Unapprove topic' : 'Approve topic'}
           >
             {updatingApproval ? (
@@ -316,13 +336,13 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
                 Approve
               </>
             )}
-          </button>
+          </Button>
         )}
         
-        <button 
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg 
-                   bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-xs font-medium
-                   hover:bg-cyan-500/30 hover:border-cyan-400 transition-all"
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-8 gap-1.5"
           onClick={(e) => {
             e.stopPropagation();
             onOpenModal(chapter, topic);
@@ -330,14 +350,14 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
         >
           <Play className="w-3 h-3" />
           View
-        </button>
+        </Button>
       </div>
     </div>
   );
 });
 
 // LIST VIEW - Lesson Item (Topic-based) - Memoized
-const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', onApprovalChange }) => {
+const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', onApprovalChange, isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
@@ -348,65 +368,67 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
   const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective;
 
   return (
-    <div
-      className={`bg-slate-900/50 backdrop-blur-sm rounded-xl border overflow-hidden ${
-        isCompleted ? 'border-emerald-500/40' : 'border-slate-800/50'
-      }`}
-    >
+    <Card className={`rounded-xl overflow-hidden border-border relative ${isCompleted ? 'border-primary/40' : ''} ${isLockedForGuest ? 'blur-sm' : ''}`}>
+      {isLockedForGuest && (
+        <div
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md p-4 pointer-events-auto text-center space-y-3 rounded-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="text-sm font-medium text-foreground">Sign up to unlock this lesson</p>
+          <Button size="sm" className="shadow-lg" onClick={onGuestSignup}>
+            Create free account
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Already have an account?{' '}
+            <button type="button" onClick={onGuestLogin} className="text-primary underline hover:no-underline font-medium">
+              Log in
+            </button>
+          </p>
+        </div>
+      )}
       <div 
-        className={`flex items-center gap-4 p-4 cursor-pointer transition-colors ${
-          isCompleted ? 'hover:bg-emerald-900/10' : 'hover:bg-slate-800/30'
-        }`}
-        onClick={() => onOpenModal(chapter, topic)}
+        className={`flex items-center gap-4 p-4 transition-colors ${isLockedForGuest ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
+        onClick={() => !isLockedForGuest && onOpenModal(chapter, topic)}
       >
-        <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-          isCompleted 
-            ? 'bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30' 
-            : 'bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/30'
-        }`}>
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-primary/10 border border-border">
           {isCompleted ? (
-            <Trophy className="w-5 h-5 text-emerald-400" />
+            <Trophy className="w-5 h-5 text-primary" />
           ) : (
-            <span className="text-lg font-bold text-cyan-300">{topic.topic_priority || '?'}</span>
+            <span className="text-lg font-bold text-primary">{topic.topic_priority || '?'}</span>
           )}
         </div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-[10px] font-semibold text-cyan-400 uppercase">{chapterInfo.curriculum}</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-[10px] font-medium text-purple-400">Class {chapterInfo.class}</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-[10px] font-medium text-slate-400">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-[10px] font-medium text-slate-500">Ch {chapterInfo.chapterNumber}</span>
+            <span className="text-[10px] text-white font-semibold text-primary uppercase">{chapterInfo.curriculum}</span>
+            <span className="text-muted-foreground">•</span>
+            <span className="text-[10px] text-white font-medium text-muted-foreground">Class {chapterInfo.class}</span>
+            <span className="text-muted-foreground">•</span>
+            <span className="text-[10px] text-white font-medium text-muted-foreground">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</span>
+            <span className="text-muted-foreground">•</span>
+            <span className="text-[10px] text-white font-medium text-muted-foreground">Ch {chapterInfo.chapterNumber}</span>
             {isCompleted && (
               <>
-                <span className="text-slate-600">•</span>
-                <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
+                <span className="text-muted-foreground">•</span>
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-primary">
                   <CheckCircle className="w-3 h-3" />
                   {quizScore ? `${quizScore.percentage}%` : 'Completed'}
                 </span>
               </>
             )}
           </div>
-          <h3 className={`text-base font-semibold truncate mb-1 ${
-            isCompleted ? 'text-emerald-300' : 'text-white'
-          }`}>{topicName}</h3>
-          <p className="text-xs text-slate-500 truncate mb-1">{chapterName}</p>
+          <h3 className="text-base font-semibold truncate mb-1 text-foreground">{topicName}</h3>
+          <p className="text-xs text-muted-foreground truncate mb-1">{chapterName}</p>
           {learningObjective && (
-            <p className="text-xs text-slate-600 truncate">{learningObjective}</p>
+            <p className="text-xs text-muted-foreground truncate">{learningObjective}</p>
           )}
         </div>
         
         <ContentBadges chapter={chapter} />
         
-        <button 
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-semibold shadow-lg ${
-            isCompleted 
-              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 shadow-emerald-500/20'
-              : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 shadow-cyan-500/20'
-          }`}
+        <Button
+          size="sm"
+          className="gap-2 shadow-lg"
           onClick={(e) => {
             e.stopPropagation();
             onOpenModal(chapter, topic);
@@ -414,9 +436,9 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
         >
           <Play className="w-4 h-4" />
           {isCompleted ? 'Replay' : 'View'}
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 });
 
@@ -460,13 +482,34 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const { startLesson: contextStartLesson } = useLesson();
   
   // Get current user for tracking completed lessons
-  const { user, profile } = useAuth();
+  const { user, profile, logout } = useAuth();
   
   // Student class data
   const [studentClasses, setStudentClasses] = useState([]);
   const [teacherClasses, setTeacherClasses] = useState([]);
   const isStudent = profile?.role === 'student';
   const isTeacher = profile?.role === 'teacher';
+  const isGuest = !!(profile?.isGuest === true && profile?.role === 'student');
+
+  // Guest: logout then navigate so user can sign up or log in with a full account
+  const handleGuestSignup = useCallback(async () => {
+    try {
+      await logout();
+      navigate('/signup');
+    } catch (e) {
+      console.warn('Logout before signup failed:', e);
+      navigate('/signup');
+    }
+  }, [logout, navigate]);
+  const handleGuestLogin = useCallback(async () => {
+    try {
+      await logout();
+      navigate('/login');
+    } catch (e) {
+      console.warn('Logout before login failed:', e);
+      navigate('/login');
+    }
+  }, [logout, navigate]);
 
   // Check VR capabilities on mount
   useEffect(() => {
@@ -635,8 +678,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
     
-    // Wait for classes to load if user is student/teacher and classes are expected
-    if ((isStudent || isTeacher) && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
+    // Guest: use fixed demo curriculum/class; skip waiting for classes
+    if (isGuest) {
+      effectiveCurriculum = GUEST_DEMO_CURRICULUM;
+      effectiveClass = String(GUEST_DEMO_CLASS);
+    }
+    
+    // Wait for classes to load if user is student/teacher (not guest) and classes are expected
+    if ((isStudent || isTeacher) && !isGuest && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
       console.log('⏳ Lessons: Waiting for student classes to load', { role: 'student', profileClassIds: profile?.class_ids?.length });
       return;
     }
@@ -645,7 +694,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       return;
     }
     
-    if ((isStudent || isTeacher) && userClasses.length > 0) {
+    if ((isStudent || isTeacher) && !isGuest && userClasses.length > 0) {
       // Use the first class's curriculum and class number
       const firstClass = userClasses[0];
       if (!effectiveCurriculum && firstClass.curriculum) {
@@ -670,8 +719,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
-    // For students and teachers: require both curriculum and class to be set
-    if ((isStudent || isTeacher) && (!effectiveCurriculum || !effectiveClass)) {
+    // For students and teachers (not guest): require both curriculum and class to be set
+    if ((isStudent || isTeacher) && !isGuest && (!effectiveCurriculum || !effectiveClass)) {
       console.log(`⚠️ ${isStudent ? 'Student' : 'Teacher'} lessons: Missing curriculum or class filter`, {
         effectiveCurriculum,
         effectiveClass,
@@ -750,7 +799,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isGuest, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -839,18 +888,22 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Extract all topics from chapters
     const allTopics = [];
     
-    // For students and teachers: get class numbers and curriculum from their classes
+    // For students and teachers: get class numbers and curriculum from their classes (guest uses demo values)
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
-    const userClassNumbers = (isStudent || isTeacher) && userClasses.length > 0
-      ? userClasses.map(c => {
-          const match = c.class_name?.match(/\d+/);
-          return match ? parseInt(match[0]) : null;
-        }).filter(Boolean)
-      : [];
+    const userClassNumbers = isGuest
+      ? [GUEST_DEMO_CLASS]
+      : (isStudent || isTeacher) && userClasses.length > 0
+        ? userClasses.map(c => {
+            const match = c.class_name?.match(/\d+/);
+            return match ? parseInt(match[0]) : null;
+          }).filter(Boolean)
+        : [];
     
-    const userCurricula = (isStudent || isTeacher) && userClasses.length > 0
-      ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
-      : [];
+    const userCurricula = isGuest
+      ? [GUEST_DEMO_CURRICULUM.toUpperCase()]
+      : (isStudent || isTeacher) && userClasses.length > 0
+        ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
+        : [];
     
     chapters.forEach(chapter => {
       // For students and teachers: filter by their class numbers AND curriculum
@@ -976,7 +1029,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     return sortedGroups;
-  }, [chapters, canApprove, isStudent, isTeacher, studentClasses, teacherClasses]);
+  }, [chapters, canApprove, isStudent, isTeacher, isGuest, studentClasses, teacherClasses]);
   
   // Flatten grouped topics into lesson items for display
   const lessonItems = useMemo(() => {
@@ -1028,6 +1081,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
     return result;
   }, [lessonItems, searchQuery, selectedLanguage]);
+
+  // Guest: only the first lesson is unlocked; key = chapterId_topicId
+  const guestUnlockedLessonKey = useMemo(() => {
+    if (!isGuest || lessonItems.length === 0) return null;
+    const first = lessonItems[0];
+    return `${first.chapter.id}_${first.topic.topic_id}`;
+  }, [isGuest, lessonItems]);
 
   const toggleChapter = useCallback((chapterId) => {
     setExpandedChapters(prev => {
@@ -1686,326 +1746,229 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-sm"
         onClick={closeLessonModal}
       >
         <div
-          className={`relative w-full max-w-2xl bg-gradient-to-br from-slate-900 to-slate-800 
-                     rounded-3xl border shadow-2xl overflow-hidden ${
-                       isCompleted ? 'border-emerald-500/40' : 'border-slate-700/50'
-                     }`}
+          className={`relative w-full max-w-2xl bg-card rounded-2xl border shadow-2xl overflow-hidden border-border ${isCompleted ? 'ring-2 ring-primary/30' : ''}`}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Close Button */}
-          <button
+          {/* Close */}
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={closeLessonModal}
-            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/50 text-white/70 
-                     hover:bg-black/70 hover:text-white transition-all"
+            className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-background/90 text-foreground hover:bg-muted shadow-sm"
           >
-            <X className="w-5 h-5" />
-          </button>
+            <X className="w-4 h-4" />
+          </Button>
 
-          {/* Header with Thumbnail */}
-          <div className="relative h-48 overflow-hidden">
+          {/* Hero */}
+          <div className="relative h-44 sm:h-52 overflow-hidden">
             {thumbnail ? (
               <img
                 src={thumbnail}
-                alt={chapter.chapter_name}
+                alt=""
                 className="w-full h-full object-cover"
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-cyan-900/50 to-purple-900/50 flex items-center justify-center">
-                <GraduationCap className="w-16 h-16 text-cyan-400/50" />
+              <div className="w-full h-full bg-muted flex items-center justify-center">
+                <GraduationCap className="w-14 h-14 text-muted-foreground" />
               </div>
             )}
-            
-            {/* Completed Overlay */}
-            {isCompleted && (
-              <div className="absolute inset-0 bg-emerald-500/5 pointer-events-none" />
-            )}
-            
-            {/* Gradient Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/50 to-transparent" />
-            
-            {/* Badges */}
-            <div className="absolute top-4 left-4 flex flex-wrap gap-2">
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+            {isCompleted && <div className="absolute inset-0 bg-primary/5 pointer-events-none" />}
+
+            <div className="absolute top-3 left-4 flex flex-wrap gap-2">
               {isCompleted && (
-                <span className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-full bg-emerald-500/90 text-white backdrop-blur-sm">
-                  <Trophy className="w-3.5 h-3.5" />
-                  {quizScore ? `${quizScore.percentage}% Score` : 'Completed'}
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-full bg-primary text-primary-foreground shadow-sm">
+                  <Trophy className="w-3 h-3" />
+                  {quizScore ? `${quizScore.percentage}%` : 'Done'}
                 </span>
               )}
-              <span className="px-3 py-1 text-xs font-bold rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 backdrop-blur-sm">
+              <span className="px-2.5 py-1 text-[11px] text-white font-semibold rounded-full bg-primary/25 border border-primary/40 backdrop-blur-sm">
                 {chapter.curriculum}
               </span>
-              <span className="px-3 py-1 text-xs font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 backdrop-blur-sm">
+              <span className="px-2.5 py-1 text-[11px] text-white font-semibold rounded-full bg-primary/25 border border-primary/40 backdrop-blur-sm">
                 Class {chapter.class}
               </span>
-              <span className="px-3 py-1 text-xs font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 backdrop-blur-sm">
-                Chapter {chapter.chapter_number}
+              <span className="px-2.5 py-1 text-[11px] text-white font-medium rounded-full bg-background/60 border border-white/20 backdrop-blur-sm">
+                Ch. {chapter.chapter_number}
               </span>
             </div>
 
-            {/* Title - Positioned at bottom */}
-            <div className="absolute bottom-4 left-6 right-6">
-              <p className={`text-sm font-medium mb-1 ${isCompleted ? 'text-emerald-400' : 'text-cyan-400'}`}>{getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}</p>
-              <h2 className="text-2xl font-bold text-white leading-tight">{topicName}</h2>
+            <div className="absolute bottom-4 left-4 right-4">
+              <p className="text-xs font-medium text-primary uppercase tracking-wider mb-1">
+                {getSubjectNameByLanguage(chapter.subject || '', selectedLanguage)}
+              </p>
+              <h2 className="text-xl sm:text-2xl font-bold text-foreground leading-tight drop-shadow-sm">
+                {topicName}
+              </h2>
             </div>
           </div>
 
           {/* Content */}
-          <div className="p-6">
-            {/* Learning Objective */}
+          <div className="px-5 sm:px-6 pt-5 pb-6 space-y-5">
             {learningObjective && (
-              <div className="mb-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                    <Target className="w-4 h-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Learning Objective</h3>
-                    <p className="text-sm text-slate-300 leading-relaxed">{learningObjective}</p>
-                  </div>
+              <div className="flex gap-3 p-4 rounded-xl bg-muted/40 border border-border">
+                <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center">
+                  <Target className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                    Learning objective
+                  </p>
+                  <p className="text-sm text-foreground leading-snug">{learningObjective}</p>
                 </div>
               </div>
             )}
 
-            {/* Content Indicators */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-              <div className={`p-3 rounded-xl border ${
-                lessonData?._meta?.hasSkybox || chapter.hasSkybox 
-                  ? 'bg-purple-500/10 border-purple-500/30' 
-                  : 'bg-slate-800/30 border-slate-700/30'
-              }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <Sparkles className={`w-4 h-4 ${
-                    lessonData?._meta?.hasSkybox || chapter.hasSkybox ? 'text-purple-400' : 'text-slate-500'
-                  }`} />
-                  <span className="text-xs font-medium text-slate-400">360° View</span>
-                </div>
-                <p className={`text-sm font-semibold ${
-                  lessonData?._meta?.hasSkybox || chapter.hasSkybox ? 'text-purple-300' : 'text-slate-500'
-                }`}>
-                  {lessonData?._meta?.hasSkybox || chapter.hasSkybox ? 'Available' : 'Not set'}
-                </p>
-              </div>
-
-              <div className={`p-3 rounded-xl border ${
-                lessonData?._meta?.hasScript || chapter.hasScript 
-                  ? 'bg-emerald-500/10 border-emerald-500/30' 
-                  : 'bg-slate-800/30 border-slate-700/30'
-              }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <Mic className={`w-4 h-4 ${
-                    lessonData?._meta?.hasScript || chapter.hasScript ? 'text-emerald-400' : 'text-slate-500'
-                  }`} />
-                  <span className="text-xs font-medium text-slate-400">Narration</span>
-                </div>
-                <p className={`text-sm font-semibold ${
-                  lessonData?._meta?.hasScript || chapter.hasScript ? 'text-emerald-300' : 'text-slate-500'
-                }`}>
-                  {lessonData?._meta?.scriptSections 
-                    ? `${lessonData._meta.scriptSections} sections`
-                    : chapter.hasScript ? 'Available' : 'Not set'}
-                </p>
-              </div>
-
-              <div className={`p-3 rounded-xl border ${
-                lessonData?._meta?.hasAssets || chapter.hasAssets 
-                  ? 'bg-blue-500/10 border-blue-500/30' 
-                  : 'bg-slate-800/30 border-slate-700/30'
-              }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <Box className={`w-4 h-4 ${
-                    lessonData?._meta?.hasAssets || chapter.hasAssets ? 'text-blue-400' : 'text-slate-500'
-                  }`} />
-                  <span className="text-xs font-medium text-slate-400">3D Assets</span>
-                </div>
-                <p className={`text-sm font-semibold ${
-                  lessonData?._meta?.hasAssets || chapter.hasAssets ? 'text-blue-300' : 'text-slate-500'
-                }`}>
-                  {lessonData?._meta?.hasAssets || chapter.hasAssets ? 'Available' : 'Not set'}
-                </p>
-              </div>
-
-              <div className={`p-3 rounded-xl border ${
-                lessonData?._meta?.hasMcqs || chapter.hasMcqs 
-                  ? 'bg-amber-500/10 border-amber-500/30' 
-                  : 'bg-slate-800/30 border-slate-700/30'
-              }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <HelpCircle className={`w-4 h-4 ${
-                    lessonData?._meta?.hasMcqs || chapter.hasMcqs ? 'text-amber-400' : 'text-slate-500'
-                  }`} />
-                  <span className="text-xs font-medium text-slate-400">Quiz</span>
-                </div>
-                <p className={`text-sm font-semibold ${
-                  lessonData?._meta?.hasMcqs || chapter.hasMcqs ? 'text-amber-300' : 'text-slate-500'
-                }`}>
-                  {lessonData?._meta?.hasMcqs || chapter.hasMcqs ? 'Available' : 'Not set'}
-                </p>
+            <div>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 px-0.5">
+                Content
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { key: 'skybox', has: lessonData?._meta?.hasSkybox || chapter.hasSkybox, Icon: Sparkles, label: '360° View' },
+                  { key: 'script', has: lessonData?._meta?.hasScript || chapter.hasScript, Icon: Mic, label: 'Narration', sub: lessonData?._meta?.scriptSections ? `${lessonData._meta.scriptSections} sections` : null },
+                  { key: 'assets', has: lessonData?._meta?.hasAssets || chapter.hasAssets, Icon: Box, label: '3D Assets' },
+                  { key: 'mcqs', has: lessonData?._meta?.hasMcqs || chapter.hasMcqs, Icon: HelpCircle, label: 'Quiz' },
+                ].map(({ key, has, Icon, label, sub }) => (
+                  <div
+                    key={key}
+                    className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${has ? 'bg-primary/5 border-primary/25 hover:bg-primary/10' : 'bg-muted/30 border-border'}`}
+                  >
+                    <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${has ? 'bg-primary/15' : 'bg-muted'}`}>
+                      <Icon className={`w-4 h-4 ${has ? 'text-primary' : 'text-muted-foreground'}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{label}</p>
+                      <p className={`text-[11px] font-semibold truncate ${has ? 'text-primary' : 'text-muted-foreground'}`}>
+                        {sub || (has ? 'Available' : '—')}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Status / Error */}
             {dataError && (
-              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-red-300 mb-1">Unable to load lesson</h3>
-                    <p className="text-xs text-red-300/70">{dataError}</p>
-                  </div>
+              <div className="flex gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/25">
+                <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Unable to load lesson</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{dataError}</p>
                 </div>
               </div>
             )}
 
-            {/* VR Status Section */}
-            <div className={`mb-4 p-4 rounded-xl border ${
-              isVRAvailable 
-                ? 'bg-purple-500/10 border-purple-500/30' 
-                : 'bg-amber-500/10 border-amber-500/30'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {isVRAvailable ? (
-                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                      <Glasses className="w-5 h-5 text-purple-400" />
-                    </div>
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                      <AlertTriangle className="w-5 h-5 text-amber-400" />
-                    </div>
-                  )}
-                  <div>
-                    <p className={`text-sm font-medium ${isVRAvailable ? 'text-purple-300' : 'text-amber-300'}`}>
-                      {isVRAvailable ? 'VR Device Detected' : 'No VR Detected'}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {isVRAvailable 
-                        ? `Ready for ${vrCapabilities.deviceType?.replace('-', ' ') || 'VR'}`
-                        : 'Connect a VR headset for immersive experience'}
-                    </p>
-                  </div>
+            <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border ${isVRAvailable ? 'bg-primary/5 border-primary/25' : 'bg-muted/30 border-border'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isVRAvailable ? 'bg-primary/15' : 'bg-muted'}`}>
+                  <Glasses className={`w-5 h-5 ${isVRAvailable ? 'text-primary' : 'text-muted-foreground'}`} />
                 </div>
-                
-                <button
+                <div>
+                  <p className={`text-sm font-semibold ${isVRAvailable ? 'text-primary' : 'text-foreground'}`}>
+                    {isVRAvailable ? 'VR ready' : 'No VR detected'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {isVRAvailable ? (vrCapabilities?.deviceType?.replace('-', ' ') || 'VR') : 'Connect a headset for immersive mode'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5 sm:items-end">
+                <Button
+                  size="sm"
+                  variant={isVRAvailable && canLaunchVRLesson ? 'default' : 'secondary'}
                   onClick={launchVRLesson}
                   disabled={!canLaunchVRLesson || !isVRAvailable}
                   title={vrValidationError || (!isVRAvailable ? 'VR headset not detected' : '')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    canLaunchVRLesson && isVRAvailable
-                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-lg'
-                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  }`}
+                  className="w-full sm:w-auto"
                 >
-                  <Glasses className="w-4 h-4" />
-                  {!isVRAvailable 
-                    ? 'No VR Detected'
-                    : vrValidationError
-                      ? 'No VR Assets'
-                      : countdown > 0 
-                        ? `Ready in ${countdown}s...`
-                        : 'Launch in VR'}
-                </button>
-                {/* Show error tooltip if VR assets missing */}
+                  <Glasses className="w-3.5 h-3.5" />
+                  {!isVRAvailable ? 'No VR' : vrValidationError ? 'No VR assets' : countdown > 0 ? `Ready in ${countdown}s` : 'Launch in VR'}
+                </Button>
                 {vrValidationError && isVRAvailable && countdown === 0 && (
-                  <p className="text-xs text-amber-400 mt-1">
-                    {vrValidationError}
-                  </p>
+                  <p className="text-[11px] text-destructive text-right">{vrValidationError}</p>
                 )}
-                
               </div>
             </div>
 
-            {/* Countdown Progress */}
             {countdown > 0 && (
-              <div className="mb-4 p-4 bg-slate-800/50 rounded-xl border border-cyan-500/30">
+              <div className="p-4 rounded-xl bg-primary/5 border border-primary/25">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-cyan-300">Preparing lesson data...</span>
-                  <span className="text-lg font-bold text-cyan-400">{countdown}s</span>
+                  <span className="text-sm font-medium text-primary">Preparing lesson</span>
+                  <span className="text-sm font-bold tabular-nums text-primary">{countdown}s</span>
                 </div>
-                <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-1000 ease-linear"
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-[width] duration-500 ease-out"
                     style={{ width: `${((10 - countdown) / 10) * 100}%` }}
                   />
                 </div>
-                <p className="text-xs text-slate-500 mt-2">Loading skybox, assets, and lesson content...</p>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Skybox, assets & content</p>
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-3">
-              <button
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+              <Button
+                variant="outline"
+                className="sm:flex-1 border-border h-11"
                 onClick={closeLessonModal}
-                className="flex-1 px-6 py-3 text-sm font-medium text-slate-300 
-                         bg-slate-800 hover:bg-slate-700 rounded-xl border border-slate-700
-                         transition-all"
               >
                 Cancel
-              </button>
-              
-              <button
+              </Button>
+              <Button
+                className="sm:flex-1 h-11 gap-2 font-semibold"
                 onClick={launchLesson}
                 disabled={!canLaunchLesson}
-                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 text-sm font-semibold
-                         rounded-xl shadow-lg transition-all ${
-                  canLaunchLesson
-                    ? isCompleted
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/25'
-                      : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-cyan-500/25'
-                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                }`}
               >
                 {countdown > 0 ? (
                   <>
                     <Clock className="w-4 h-4" />
-                    Ready in {countdown}s...
+                    Ready in {countdown}s…
                   </>
                 ) : dataLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Preparing Lesson...
+                    Preparing…
                   </>
                 ) : dataError ? (
                   <>
                     <AlertCircle className="w-4 h-4" />
-                    {dataError.length > 30 ? 'Not Available' : dataError}
+                    {dataError.length > 30 ? 'Unavailable' : dataError}
                   </>
                 ) : canLaunchLesson ? (
                   <>
                     <Play className="w-4 h-4" />
-                    {isCompleted ? 'Replay Lesson' : 'Launch Lesson'}
+                    {isCompleted ? 'Replay' : 'Launch lesson'}
                   </>
                 ) : dataReady && !canLaunchLesson ? (
                   <>
                     <AlertCircle className="w-4 h-4" />
-                    Incomplete Data
+                    Incomplete data
                   </>
                 ) : (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Finalizing...
+                    Finalizing…
                   </>
                 )}
-              </button>
+              </Button>
             </div>
 
-            {/* Loading Status */}
-            {dataLoading && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500">
-                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                Fetching lesson content...
-              </div>
+            {dataLoading && !countdown && (
+              <p className="text-center text-[11px] text-muted-foreground flex items-center justify-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                Fetching content…
+              </p>
             )}
-            
-            {dataReady && !dataError && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-emerald-400">
+            {dataReady && !dataError && !dataLoading && (
+              <p className="text-center text-xs text-primary font-medium flex items-center justify-center gap-2">
                 <CheckCircle className="w-3.5 h-3.5" />
                 Lesson ready to launch
-              </div>
+              </p>
             )}
           </div>
         </div>
@@ -2015,165 +1978,189 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
   // MAIN RENDER
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 pt-24 pb-8">
+    <div className="min-h-screen bg-background pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header - No animation to prevent flicker */}
-        <div className="mb-6">
+        {/* Header */}
+        <div className="mb-6 border-b border-border pb-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 
-                            border border-cyan-500/30 flex items-center justify-center">
-                <GraduationCap className="w-5 h-5 text-cyan-400" />
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
+                <GraduationCap className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-white">Available Lessons</h1>
-                <p className="text-xs text-slate-400">Click any lesson to start learning</p>
+                <h1 className="text-xl font-bold text-foreground">Available Lessons</h1>
+                <p className="text-xs text-muted-foreground">Click any lesson to start learning</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-2 p-1 bg-slate-800/50 rounded-lg border border-slate-700/50">
-              <button
+            <div className="flex items-center gap-1 p-1 bg-card rounded-lg border border-border">
+              <Button
+                variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-8 w-8"
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md transition-all ${viewMode === 'grid' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'}`}
               >
                 <Grid3X3 className="w-4 h-4" />
-              </button>
-              <button
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                size="icon"
+                className="h-8 w-8"
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-white'}`}
               >
                 <List className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
           </div>
         </div>
 
-        {/* Filters - No animation to prevent flicker */}
-        <div className="mb-6 p-3 bg-slate-900/50 backdrop-blur-sm rounded-xl border border-slate-800/50">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[180px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg
-                         text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
-              />
-            </div>
-            
-            {/* Hide curriculum selector for students and teachers - they can only see their assigned curriculum */}
-            {!isStudent && !isTeacher && (
-              <select
-                value={selectedCurriculum}
-                onChange={(e) => {
-                  setSelectedCurriculum(e.target.value);
-                  setSelectedClass('');
-                  setSelectedSubject('');
-                }}
-                className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer"
-              >
-                <option value="">All Curricula</option>
-                {availableCurricula.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            )}
-            {/* Show read-only curriculum info for students and teachers */}
-            {(isStudent || isTeacher) && (isStudent ? studentClasses : teacherClasses).length > 0 && (
-              <div className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-400">
-                {selectedCurriculum || (isStudent ? studentClasses : teacherClasses)[0]?.curriculum || 'N/A'} (Locked)
+        {/* Filters */}
+        <Card className="mb-6 rounded-xl border-border">
+          <CardContent className="p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search..."
+                  className="pl-9 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
               </div>
-            )}
+              
+              {!isStudent && !isTeacher && (
+                <Select
+                  value={selectedCurriculum || '__all__'}
+                  onValueChange={(v) => {
+                    setSelectedCurriculum(v === '__all__' ? '' : v);
+                    setSelectedClass('');
+                    setSelectedSubject('');
+                  }}
+                >
+                  <SelectTrigger className="w-[140px] bg-background border-border text-foreground">
+                    <SelectValue placeholder="All Curricula" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Curricula</SelectItem>
+                    {availableCurricula.map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {(isStudent || isTeacher) && (isStudent ? studentClasses : teacherClasses).length > 0 && (
+                <div className="px-3 py-2 bg-muted border border-border rounded-md text-sm text-muted-foreground min-w-[120px]">
+                  {selectedCurriculum || (isStudent ? studentClasses : teacherClasses)[0]?.curriculum || 'N/A'} (Locked)
+                </div>
+              )}
 
-            {/* Hide class selector for students and teachers - they can only see their assigned class */}
-            {!isStudent && !isTeacher && (
-              <select
-                value={selectedClass}
-                onChange={(e) => {
-                  setSelectedClass(e.target.value);
-                  setSelectedSubject('');
-                }}
-                disabled={!selectedCurriculum}
-                className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer disabled:opacity-50"
+              {!isStudent && !isTeacher && (
+                <Select
+                  value={selectedClass || '__all__'}
+                  onValueChange={(v) => {
+                    setSelectedClass(v === '__all__' ? '' : v);
+                    setSelectedSubject('');
+                  }}
+                  disabled={!selectedCurriculum}
+                >
+                  <SelectTrigger className="w-[120px] bg-background border-border text-foreground">
+                    <SelectValue placeholder="All Classes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Classes</SelectItem>
+                    {availableClasses.map(c => (
+                      <SelectItem key={c} value={String(c)}>Class {c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {(isStudent || isTeacher) && (isStudent ? studentClasses : teacherClasses).length > 0 && (
+                <div className="px-3 py-2 bg-muted border border-border rounded-md text-sm text-muted-foreground min-w-[100px]">
+                  Class {selectedClass || (isStudent ? studentClasses : teacherClasses)[0]?.class_name?.match(/\d+/)?.[0] || 'N/A'} (Locked)
+                </div>
+              )}
+
+              <Select
+                value={selectedSubject || '__all__'}
+                onValueChange={(v) => setSelectedSubject(v === '__all__' ? '' : v)}
+                disabled={!selectedClass}
               >
-                <option value="">All Classes</option>
-                {availableClasses.map(c => <option key={c} value={c}>Class {c}</option>)}
-              </select>
-            )}
-            {/* Show read-only class info for students and teachers */}
-            {(isStudent || isTeacher) && (isStudent ? studentClasses : teacherClasses).length > 0 && (
-              <div className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-400">
-                Class {selectedClass || (isStudent ? studentClasses : teacherClasses)[0]?.class_name?.match(/\d+/)?.[0] || 'N/A'} (Locked)
+                <SelectTrigger className="w-[140px] bg-background border-border text-foreground">
+                  <SelectValue placeholder="All Subjects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All Subjects</SelectItem>
+                  {availableSubjects.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <div className="flex items-center gap-2 px-3 py-2 bg-muted border border-border rounded-md">
+                <span className="text-xs text-muted-foreground">Language:</span>
+                <LanguageToggle
+                  value={selectedLanguage}
+                  onChange={setSelectedLanguage}
+                  size="sm"
+                  showFlags={true}
+                />
               </div>
-            )}
 
-            <select
-              value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
-              disabled={!selectedClass}
-              className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-white cursor-pointer disabled:opacity-50"
-            >
-              <option value="">All Subjects</option>
-              {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            
-            {/* Language Toggle */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg">
-              <span className="text-xs text-slate-400">Language:</span>
-              <LanguageToggle
-                value={selectedLanguage}
-                onChange={setSelectedLanguage}
-                size="sm"
-                showFlags={true}
-              />
+              {(selectedCurriculum || selectedClass || selectedSubject || searchQuery) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-border text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setSelectedCurriculum('');
+                    setSelectedClass('');
+                    setSelectedSubject('');
+                    setSearchQuery('');
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+
+              <div className="ml-auto px-3 py-1.5 bg-muted rounded-md border border-border">
+                <span className="text-sm font-medium text-primary">{filteredLessonItems.length}</span>
+                <span className="text-sm text-muted-foreground ml-1">lessons</span>
+              </div>
             </div>
+          </CardContent>
+        </Card>
 
-            {(selectedCurriculum || selectedClass || selectedSubject || searchQuery) && (
-              <button
-                onClick={() => {
-                  setSelectedCurriculum('');
-                  setSelectedClass('');
-                  setSelectedSubject('');
-                  setSearchQuery('');
-                }}
-                className="px-3 py-2 text-sm text-slate-400 hover:text-white bg-slate-800/30 rounded-lg border border-slate-700/50"
-              >
-                Clear
-              </button>
-            )}
-
-            <div className="ml-auto px-3 py-1.5 bg-slate-800/30 rounded-lg">
-              <span className="text-sm font-medium text-cyan-400">{filteredLessonItems.length}</span>
-              <span className="text-sm text-slate-500 ml-1">lessons</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Content - No layout animation */}
+        {/* Content */}
         {error ? (
-          <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-xl">
-            <div className="flex items-center gap-4">
-              <AlertCircle className="w-8 h-8 text-red-400" />
-              <div className="flex-1">
-                <h3 className="text-lg font-semibold text-red-300">Error</h3>
-                <p className="text-sm text-red-300/70">{error}</p>
+          <Card className="rounded-xl border-border border-destructive/50 bg-destructive/5">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <AlertCircle className="w-8 h-8 text-destructive" />
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-foreground">Error</h3>
+                  <p className="text-sm text-muted-foreground">{error}</p>
+                </div>
+                <Button variant="outline" size="icon" onClick={() => window.location.reload()} className="border-border">
+                  <RefreshCw className="w-4 h-4" />
+                </Button>
               </div>
-              <button onClick={() => window.location.reload()} className="p-2 bg-red-500/20 text-red-300 rounded-lg">
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         ) : loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mb-4" />
-            <p className="text-slate-400">Loading lessons...</p>
-          </div>
+          <Card className="rounded-xl border-border">
+            <CardContent className="py-20">
+              <PrismFluxLoader statuses={['Loading lessons…', 'Fetching curriculum…', 'Syncing topics…']} />
+            </CardContent>
+          </Card>
         ) : filteredLessonItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <BookOpen className="w-16 h-16 text-slate-600 mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">No Lessons Found</h3>
-            <p className="text-sm text-slate-400">Try adjusting your filters</p>
-          </div>
+          <Card className="rounded-xl border-border">
+            <CardContent className="flex flex-col items-center justify-center py-20">
+              <BookOpen className="w-16 h-16 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold text-foreground mb-2">No Lessons Found</h3>
+              <p className="text-sm text-muted-foreground">Try adjusting your filters</p>
+            </CardContent>
+          </Card>
         ) : viewMode === 'grid' ? (
           <div className="space-y-6">
             {/* Group topics by chapter and display as stacked cards */}
@@ -2189,49 +2176,42 @@ const Lessons = ({ setBackgroundSkybox }) => {
               return (
                 <div key={group.groupKey || `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`} className="space-y-3">
                   {/* Chapter Header */}
-                  <div className="px-4 py-3 bg-slate-800/40 rounded-xl border border-slate-700/50 backdrop-blur-sm">
+                  <div className="px-4 py-3 bg-card rounded-xl border border-border backdrop-blur-sm">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-semibold text-cyan-400 uppercase">{group.curriculum}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-xs font-medium text-purple-400">Class {group.class}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-xs font-medium text-slate-400">{getSubjectNameByLanguage(group.subject || '', selectedLanguage)}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-sm font-semibold text-white">Chapter {group.chapterNumber}: {chapterName}</span>
-                      <span className="text-xs text-slate-500 ml-auto">({groupItems.length} topic{groupItems.length !== 1 ? 's' : ''})</span>
+                      <span className="text-xs font-semibold text-primary uppercase">{group.curriculum}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-xs font-medium text-muted-foreground">Class {group.class}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-xs font-medium text-muted-foreground">{getSubjectNameByLanguage(group.subject || '', selectedLanguage)}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-sm font-semibold text-foreground">Chapter {group.chapterNumber}: {chapterName}</span>
+                      <span className="text-xs text-muted-foreground ml-auto">({groupItems.length} topic{groupItems.length !== 1 ? 's' : ''})</span>
                     </div>
                   </div>
                   
-                  {/* Stacked Topic Cards - Visual stacking effect */}
-                  <div className="relative pl-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                      {groupItems.map((lessonItem, index) => {
-                        // Calculate stacking offset for visual depth
-                        const stackOffset = Math.min(index * 6, 30); // Max 30px offset
-                        const zIndex = groupItems.length - index;
-                        
-                        return (
-                          <div
-                            key={`${lessonItem.chapter.id}_${lessonItem.topic.topic_id || index}`}
-                            className="relative transition-all duration-300 hover:z-50 hover:scale-[1.02] hover:shadow-2xl"
-                            style={{
-                              marginTop: `${stackOffset}px`,
-                              marginLeft: `${index * 3}px`,
-                              zIndex: zIndex,
-                            }}
-                          >
-                            <div className="absolute -inset-1 bg-gradient-to-br from-cyan-500/20 to-purple-500/20 rounded-2xl blur-sm opacity-0 hover:opacity-100 transition-opacity duration-300" />
-                            <LessonCard 
-                              lessonItem={lessonItem}
-                              completedLessons={completedLessons}
-                              onOpenModal={openLessonModal}
-                              getThumbnail={getThumbnail}
-                              selectedLanguage={selectedLanguage}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
+                  {/* Same-size cards: aspect ~10px shorter than 5/6 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {groupItems.map((lessonItem, index) => {
+                      const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
+                      const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                      return (
+                      <div
+                        key={`${itemKey}_${index}`}
+                        className="w-full min-w-0"
+                        style={{ aspectRatio: '25 / 27' }}
+                      >
+                        <LessonCard 
+                          lessonItem={lessonItem}
+                          completedLessons={completedLessons}
+                          onOpenModal={openLessonModal}
+                          getThumbnail={getThumbnail}
+                          selectedLanguage={selectedLanguage}
+                          isLockedForGuest={isLockedForGuest}
+                          onGuestSignup={handleGuestSignup}
+                          onGuestLogin={handleGuestLogin}
+                        />
+                      </div>
+                    );})}
                   </div>
                 </div>
               );
@@ -2252,29 +2232,35 @@ const Lessons = ({ setBackgroundSkybox }) => {
               return (
                 <div key={group.groupKey || `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`} className="space-y-2">
                   {/* Chapter Header */}
-                  <div className="px-4 py-2 bg-slate-800/30 rounded-lg border border-slate-700/30">
+                  <div className="px-4 py-2 bg-card/50 rounded-lg border border-border">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-cyan-400 uppercase">{group.curriculum}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-xs font-medium text-purple-400">Class {group.class}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-xs font-medium text-slate-400">{getSubjectNameByLanguage(group.subject || '', selectedLanguage)}</span>
-                      <span className="text-slate-600">•</span>
-                      <span className="text-sm font-semibold text-slate-300">Chapter {group.chapterNumber}: {chapterName}</span>
-                      <span className="text-xs text-slate-500 ml-auto">({groupItems.length} topic{groupItems.length !== 1 ? 's' : ''})</span>
+                      <span className="text-xs font-semibold text-primary uppercase">{group.curriculum}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-xs font-medium text-muted-foreground">Class {group.class}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-xs font-medium text-muted-foreground">{getSubjectNameByLanguage(group.subject || '', selectedLanguage)}</span>
+                      <span className="text-muted-foreground">•</span>
+                      <span className="text-sm font-semibold text-foreground">Chapter {group.chapterNumber}: {chapterName}</span>
+                      <span className="text-xs text-muted-foreground ml-auto">({groupItems.length} topic{groupItems.length !== 1 ? 's' : ''})</span>
                     </div>
                   </div>
                   {/* Topic Items */}
-                  {groupItems.map((lessonItem, index) => (
+                  {groupItems.map((lessonItem, index) => {
+                    const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
+                    const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                    return (
                     <LessonListItem
-                      key={`${lessonItem.chapter.id}_${lessonItem.topic.topic_id || index}`}
+                      key={`${itemKey}_${index}`}
                       lessonItem={lessonItem}
                       completedLessons={completedLessons}
                       onOpenModal={openLessonModal}
                       selectedLanguage={selectedLanguage}
                       onApprovalChange={handleApprovalChange}
+                      isLockedForGuest={isLockedForGuest}
+                      onGuestSignup={handleGuestSignup}
+                      onGuestLogin={handleGuestLogin}
                     />
-                  ))}
+                  );})}
                 </div>
               );
             })}

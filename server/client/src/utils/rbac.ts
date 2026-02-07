@@ -46,6 +46,9 @@ export interface UserProfile {
   teacher_id?: string; // For students: primary teacher UID
   managed_class_ids?: string[]; // For teachers: classes they teach
   managed_school_id?: string; // For principals: school they manage
+
+  // Guest student (exploratory) - no school code, no approval, one lesson only
+  isGuest?: boolean;
 }
 
 // Route categories for permission checking
@@ -326,8 +329,16 @@ export async function getSchoolCodeFromId(schoolId: string | undefined): Promise
 }
 
 /**
+ * Check if the user is a guest student (exploratory, no school/approval)
+ */
+export function isGuestUser(profile: UserProfile | null): boolean {
+  return !!(profile?.isGuest === true && profile?.role === 'student');
+}
+
+/**
  * Check if a user is approved (or doesn't need approval)
- * In hierarchical system, all roles except admin/superadmin need approval
+ * In hierarchical system, all roles except admin/superadmin need approval.
+ * Guest students bypass approval.
  */
 export function isApproved(profile: UserProfile | null): boolean {
   if (!profile) return false;
@@ -336,6 +347,9 @@ export function isApproved(profile: UserProfile | null): boolean {
   if (profile.role === 'admin' || profile.role === 'superadmin') {
     return true;
   }
+  
+  // Guest students don't need approval
+  if (profile.isGuest === true) return true;
   
   // All other roles need approval
   return profile.approvalStatus === 'approved';
@@ -360,6 +374,9 @@ export function hasCompletedStudentOnboarding(profile: UserProfile | null): bool
   if (!requiresStudentOnboarding(profile.role)) {
     return true;
   }
+  
+  // Guest students skip onboarding (exploratory flow)
+  if (profile.isGuest === true) return true;
   
   // If onboardingCompleted flag is set, student has completed onboarding
   // (class may be assigned later by teacher/school admin)
@@ -503,10 +520,10 @@ export function checkAccess(
   
   // Special case: approval-pending page - only for users who completed onboarding and are pending approval
   if (path === '/approval-pending') {
-    if (requiresApproval(role) && profile.approvalStatus === 'pending') {
+    if (requiresApproval(role) && !profile.isGuest && profile.approvalStatus === 'pending') {
       return { allowed: true };
     }
-    // If approved or not yet in queue, redirect away
+    // If approved, guest, or not yet in queue, redirect away
     return { 
       allowed: false, 
       redirectTo: '/lessons',
@@ -538,8 +555,8 @@ export function checkAccess(
   }
   
   // Check approval status for roles that require it (after onboarding is done)
-  // Only redirect to approval-pending when explicitly pending; null = not yet in queue
-  if (requiresApproval(role) && profile.approvalStatus === 'pending') {
+  // Guest students bypass approval; only redirect when explicitly pending
+  if (requiresApproval(role) && !profile.isGuest && profile.approvalStatus === 'pending') {
     return { 
       allowed: false, 
       redirectTo: '/approval-pending',
@@ -733,7 +750,7 @@ export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
 export const ROLE_COLORS: Record<UserRole, { bg: string; text: string; border: string }> = {
   student: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
   teacher: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
-  school: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/30' },
+  school: { bg: 'bg-primary/10', text: 'text-primary', border: 'border-primary/30' },
   principal: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/30' },
   associate: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30' },
   admin: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
