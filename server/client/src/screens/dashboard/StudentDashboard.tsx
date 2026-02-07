@@ -13,9 +13,17 @@ import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
 import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
+import { Badge } from '../../Components/ui/badge';
+import { Progress } from '../../Components/ui/progress';
+import { Avatar, AvatarFallback, AvatarImage } from '../../Components/ui/avatar';
+import { Link } from 'react-router-dom';
+
+const GUEST_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=LearnXRGuest';
 
 const StudentDashboard = () => {
   const { user, profile } = useAuth();
+  const isGuest = profile?.isGuest === true && profile?.role === 'student';
   const [lessonLaunches, setLessonLaunches] = useState<LessonLaunch[]>([]);
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,9 +88,9 @@ const StudentDashboard = () => {
     };
   }, [user?.uid, profile]);
 
-  // Fetch student's classes and their teachers
+  // Fetch student's classes and their teachers (skip for guest)
   useEffect(() => {
-    if (!profile?.uid || !profile?.class_ids || profile.class_ids.length === 0) {
+    if (!profile?.uid || profile?.isGuest || !profile?.class_ids || profile.class_ids.length === 0) {
       setClasses([]);
       setClassTeachers(new Map());
       return;
@@ -188,165 +196,218 @@ const StudentDashboard = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-          <p className="text-white/60">Loading your dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-primary/30 border-t-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8 pb-6 border-b border-white/10">
+        <div className="mb-8 pb-6 border-b border-border">
           <div className="flex items-start justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                <FaGraduationCap className="text-white text-xl" />
+              <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
+                <FaGraduationCap className="text-primary text-xl" />
               </div>
               <div>
                 <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
-                  <span className="text-white">Learn</span>
-                  <span className="text-purple-700">XR</span>
+                  <span className="text-foreground">Learn</span>
+                  <span className="text-primary">XR</span>
                   <TrademarkSymbol />
                 </h1>
-                <h2 className="text-xl font-semibold text-white">My Dashboard</h2>
-                <p className="text-white/50 text-sm mt-0.5">Track your learning progress and performance</p>
+                <h2 className="text-xl font-semibold text-foreground">My Dashboard</h2>
+                <p className="text-muted-foreground text-sm mt-0.5">
+                  {isGuest ? 'Exploring as guest — try one lesson, then sign up to unlock more' : 'Track your learning progress and performance'}
+                </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Class Teacher Information */}
-        {classes.length > 0 && (
+        {/* AI Personalized Avatar - prominent for guest */}
+        <Card className="mb-8 border border-border bg-card overflow-hidden">
+          <CardContent className="p-0">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 p-6">
+              <Avatar className="h-24 w-24 rounded-2xl border-2 border-primary/30 ring-2 ring-primary/10">
+                <AvatarImage src={isGuest ? GUEST_AVATAR_URL : undefined} alt="AI learning companion" />
+                <AvatarFallback className="rounded-2xl bg-primary/20 text-primary text-2xl">
+                  {isGuest ? '👋' : (profile?.name?.charAt(0) || profile?.displayName?.charAt(0) || '?')}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 text-center sm:text-left">
+                <h3 className="text-lg font-semibold text-foreground mb-1">
+                  {isGuest ? 'Your AI learning companion' : 'Your learning guide'}
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {isGuest
+                    ? 'Explore one free lesson, then sign up to get personalized recommendations and unlock all lessons.'
+                    : 'Get personalized recommendations and track your progress across subjects.'}
+                </p>
+                {isGuest ? (
+                  <Link to="/personalized-learning" className="text-primary font-medium text-sm hover:underline">
+                    See demo recommendations →
+                  </Link>
+                ) : (
+                  <Link to="/personalized-learning" className="text-primary font-medium text-sm hover:underline">
+                    View personalized learning →
+                  </Link>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Class Teacher Information - guest sees CTA to sign up */}
+        {isGuest && (
           <div className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-              <FaChalkboardTeacher className="text-cyan-400" />
+            <Card className="border border-dashed border-border bg-muted/30">
+              <CardContent className="p-6 text-center">
+                <FaChalkboardTeacher className="text-3xl text-muted-foreground mx-auto mb-2" />
+                <p className="text-foreground font-medium">Exploring as guest</p>
+                <p className="text-sm text-muted-foreground mt-1">Sign up and join a class to see your teachers and full curriculum.</p>
+                <Link to="/signup" className="inline-block mt-3 text-primary font-medium text-sm hover:underline">Create free account</Link>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+        {!isGuest && classes.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+              <FaChalkboardTeacher className="text-primary" />
               My Class Teachers
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {classes.map((cls) => {
                 const teacher = classTeachers.get(cls.id);
                 if (!teacher) return null;
-                
                 return (
-                  <div
-                    key={cls.id}
-                    className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-4 hover:bg-cyan-500/10 transition-colors"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                        <FaChalkboardTeacher className="text-cyan-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-white font-medium truncate">
-                          {teacher.name || teacher.displayName || 'Unknown Teacher'}
-                        </h3>
-                        <p className="text-cyan-400/70 text-sm mt-1 truncate">
-                          {cls.class_name}
-                        </p>
-                        {teacher.email && (
-                          <p className="text-white/50 text-xs mt-1 truncate">
-                            {teacher.email}
+                  <Card key={cls.id} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center flex-shrink-0">
+                          <FaChalkboardTeacher className="text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-foreground font-medium truncate">
+                            {teacher.name || teacher.displayName || 'Unknown Teacher'}
+                          </h3>
+                          <p className="text-muted-foreground text-sm mt-1 truncate">
+                            {cls.class_name}
                           </p>
-                        )}
+                          {teacher.email && (
+                            <p className="text-muted-foreground text-xs mt-1 truncate">
+                              {teacher.email}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
             {classes.every(cls => !classTeachers.has(cls.id)) && (
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6 text-center">
-                <FaChalkboardTeacher className="text-4xl text-white/30 mx-auto mb-3" />
-                <p className="text-white/50">No class teacher assigned yet</p>
-                <p className="text-white/30 text-sm mt-2">Your teacher will be assigned by your school administrator</p>
-              </div>
+              <Card className="border border-border bg-card">
+                <CardContent className="p-8 text-center">
+                  <FaChalkboardTeacher className="text-4xl text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">No class teacher assigned yet</p>
+                  <p className="text-muted-foreground text-sm mt-2">Your teacher will be assigned by your school administrator</p>
+                </CardContent>
+              </Card>
             )}
           </div>
         )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center">
-                <FaBook className="text-emerald-400 text-xl" />
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaBook className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Total Lessons</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.totalLessons}</p>
+                </div>
               </div>
-              <div>
-                <p className="text-white/50 text-sm">Total Lessons</p>
-                <p className="text-2xl font-bold text-white">{stats.totalLessons}</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaCheckCircle className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Completed</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.completedLessons}</p>
+                </div>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                <FaCheckCircle className="text-blue-400 text-xl" />
+            </CardContent>
+          </Card>
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaChartLine className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Average Score</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.averageScore}%</p>
+                </div>
               </div>
-              <div>
-                <p className="text-white/50 text-sm">Completed</p>
-                <p className="text-2xl font-bold text-white">{stats.completedLessons}</p>
+            </CardContent>
+          </Card>
+          <Card className="border border-border bg-card">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                  <FaClock className="text-primary text-xl" />
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm">Quiz Attempts</p>
+                  <p className="text-2xl font-bold text-foreground">{stats.totalAttempts}</p>
+                </div>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                <FaChartLine className="text-purple-400 text-xl" />
-              </div>
-              <div>
-                <p className="text-white/50 text-sm">Average Score</p>
-                <p className="text-2xl font-bold text-white">{stats.averageScore}%</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">
-                <FaClock className="text-amber-400 text-xl" />
-              </div>
-              <div>
-                <p className="text-white/50 text-sm">Quiz Attempts</p>
-                <p className="text-2xl font-bold text-white">{stats.totalAttempts}</p>
-              </div>
-            </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Progress by subject (from evaluation API) */}
         {(evaluation?.bySubject?.length > 0 || evaluationLoading) && (
           <div className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-              <FaChartLine className="text-cyan-400" />
+            <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+              <FaChartLine className="text-primary" />
               Progress by Subject
             </h2>
             {evaluationLoading ? (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500 mx-auto mb-2" />
-                <p className="text-white/50 text-sm">Loading evaluation...</p>
-              </div>
+              <Card className="border border-border bg-card">
+                <CardContent className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-border border-t-primary mx-auto mb-2" />
+                  <p className="text-muted-foreground text-sm">Loading evaluation...</p>
+                </CardContent>
+              </Card>
             ) : evaluation?.bySubject && evaluation.bySubject.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {evaluation.bySubject.map((s) => (
-                  <div
-                    key={s.subject}
-                    className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
-                  >
-                    <h3 className="text-white font-medium truncate">{s.subject}</h3>
-                    <p className="text-white/50 text-sm mt-1">{s.attemptCount} attempt{s.attemptCount !== 1 ? 's' : ''}</p>
-                    <p className={`text-lg font-bold mt-2 ${
-                      s.averageScore >= 70 ? 'text-emerald-400' : s.averageScore >= 50 ? 'text-amber-400' : 'text-red-400'
-                    }`}>
-                      {s.averageScore}% avg
-                    </p>
-                  </div>
+                  <Card key={s.subject} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                    <CardContent className="p-4">
+                      <h3 className="text-foreground font-medium truncate">{s.subject}</h3>
+                      <p className="text-muted-foreground text-sm mt-1">{s.attemptCount} attempt{s.attemptCount !== 1 ? 's' : ''}</p>
+                      <p className={`text-lg font-bold mt-2 ${
+                        s.averageScore >= 70 ? 'text-primary' : s.averageScore >= 50 ? 'text-amber-500' : 'text-destructive'
+                      }`}>
+                        {s.averageScore}% avg
+                      </p>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             ) : null}
@@ -356,47 +417,47 @@ const StudentDashboard = () => {
         {/* Learning objectives (from evaluation API) */}
         {(evaluation?.objectives?.length > 0 || evaluationLoading) && (
           <div className="mb-8">
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-              <FaGraduationCap className="text-amber-400" />
+            <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+              <FaGraduationCap className="text-primary" />
               Learning Objectives
             </h2>
             {!evaluationLoading && evaluation?.objectives && evaluation.objectives.length > 0 ? (
               <div className="space-y-3">
                 {evaluation.objectives.map((obj, idx) => (
-                  <div
+                  <Card
                     key={`${obj.chapterId}-${obj.topicId}-${idx}`}
-                    className={`rounded-xl border p-4 transition-colors ${
-                      obj.met
-                        ? 'border-emerald-500/30 bg-emerald-500/5'
-                        : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
+                    className={`border transition-colors ${
+                      obj.met ? 'border-primary/30 bg-primary/5' : 'border-border bg-card hover:bg-accent/30'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white/70 text-sm">
-                          {obj.subject} • Ch.{obj.chapterId} • Topic {obj.topicId}
-                        </p>
-                        {obj.topicObjective && (
-                          <p className="text-white/90 text-sm mt-1 line-clamp-2">{obj.topicObjective}</p>
-                        )}
-                        <p className="text-white/50 text-xs mt-2">
-                          {obj.attemptCount} attempt{obj.attemptCount !== 1 ? 's' : ''} • Score: {obj.scoreUsed}%
-                        </p>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-muted-foreground text-sm">
+                            {obj.subject} • Ch.{obj.chapterId} • Topic {obj.topicId}
+                          </p>
+                          {obj.topicObjective && (
+                            <p className="text-foreground text-sm mt-1 line-clamp-2">{obj.topicObjective}</p>
+                          )}
+                          <p className="text-muted-foreground text-xs mt-2">
+                            {obj.attemptCount} attempt{obj.attemptCount !== 1 ? 's' : ''} • Score: {obj.scoreUsed}%
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {obj.met ? (
+                            <Badge variant="default" className="gap-1.5">
+                              <FaCheckCircle className="w-4 h-4" />
+                              Met
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" className="gap-1.5">
+                              In progress
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex-shrink-0">
-                        {obj.met ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-medium border border-emerald-500/30">
-                            <FaCheckCircle className="w-4 h-4" />
-                            Met
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 text-sm font-medium border border-amber-500/30">
-                            In progress
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             ) : null}
@@ -405,49 +466,44 @@ const StudentDashboard = () => {
 
         {/* Recent Lesson Launches */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Recent Lessons</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-4">Recent Lessons</h2>
           {lessonLaunches.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaBook className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No lessons launched yet</p>
-              <p className="text-white/30 text-sm mt-2">Start learning by launching a lesson!</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaBook className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No lessons launched yet</p>
+                <p className="text-muted-foreground text-sm mt-2">Start learning by launching a lesson!</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-3">
               {lessonLaunches.slice(0, 10).map((launch) => (
-                <div
-                  key={launch.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-white font-medium">
-                        {launch.subject} - {launch.curriculum} Class {launch.class_name}
-                      </h3>
-                      <p className="text-white/50 text-sm mt-1">
-                        Chapter: {launch.chapter_id} • Topic: {launch.topic_id}
-                      </p>
-                      <p className="text-white/30 text-xs mt-1">
-                        Launched: {new Date(launch.launched_at as any).toLocaleDateString()}
-                      </p>
+                <Card key={launch.id} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-foreground font-medium">
+                          {launch.subject} - {launch.curriculum} Class {launch.class_name}
+                        </h3>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          Chapter: {launch.chapter_id} • Topic: {launch.topic_id}
+                        </p>
+                        <p className="text-muted-foreground text-xs mt-1">
+                          Launched: {new Date(launch.launched_at as any).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="ml-4 shrink-0">
+                        {launch.completion_status === 'completed' ? (
+                          <Badge variant="default">Completed</Badge>
+                        ) : launch.completion_status === 'in_progress' ? (
+                          <Badge variant="secondary">In Progress</Badge>
+                        ) : (
+                          <Badge variant="outline">Abandoned</Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="ml-4">
-                      {launch.completion_status === 'completed' ? (
-                        <span className="px-3 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-sm border border-emerald-500/20">
-                          Completed
-                        </span>
-                      ) : launch.completion_status === 'in_progress' ? (
-                        <span className="px-3 py-1 rounded-lg bg-blue-500/10 text-blue-400 text-sm border border-blue-500/20">
-                          In Progress
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-400 text-sm border border-amber-500/20">
-                          Abandoned
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}
@@ -455,45 +511,46 @@ const StudentDashboard = () => {
 
         {/* Recent Scores */}
         <div>
-          <h2 className="text-xl font-semibold text-white mb-4">Recent Quiz Scores</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-4">Recent Quiz Scores</h2>
           {scores.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaChartLine className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No quiz attempts yet</p>
-              <p className="text-white/30 text-sm mt-2">Complete lessons and take quizzes to see your scores!</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaChartLine className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No quiz attempts yet</p>
+                <p className="text-muted-foreground text-sm mt-2">Complete lessons and take quizzes to see your scores!</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-3">
               {scores.slice(0, 10).map((score) => (
-                <div
-                  key={score.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <h3 className="text-white font-medium">
-                        {score.subject} - {score.curriculum} Class {score.class_name}
-                      </h3>
-                      <p className="text-white/50 text-sm mt-1">
-                        Chapter: {score.chapter_id} • Topic: {score.topic_id} • Attempt #{score.attempt_number}
-                      </p>
-                      <p className="text-white/30 text-xs mt-1">
-                        Completed: {new Date(score.completed_at as any).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="ml-4 text-right">
-                      <div className={`text-2xl font-bold ${
-                        score.score.percentage >= 70 ? 'text-emerald-400' :
-                        score.score.percentage >= 50 ? 'text-amber-400' : 'text-red-400'
-                      }`}>
-                        {score.score.percentage}%
+                <Card key={score.id} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-foreground font-medium">
+                          {score.subject} - {score.curriculum} Class {score.class_name}
+                        </h3>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          Chapter: {score.chapter_id} • Topic: {score.topic_id} • Attempt #{score.attempt_number}
+                        </p>
+                        <p className="text-muted-foreground text-xs mt-1">
+                          Completed: {new Date(score.completed_at as any).toLocaleDateString()}
+                        </p>
                       </div>
-                      <p className="text-white/50 text-sm">
-                        {score.score.correct}/{score.score.total} correct
-                      </p>
+                      <div className="ml-4 text-right shrink-0">
+                        <div className={`text-2xl font-bold ${
+                          score.score.percentage >= 70 ? 'text-primary' :
+                          score.score.percentage >= 50 ? 'text-amber-500' : 'text-destructive'
+                        }`}>
+                          {score.score.percentage}%
+                        </div>
+                        <p className="text-muted-foreground text-sm">
+                          {score.score.correct}/{score.score.total} correct
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}
