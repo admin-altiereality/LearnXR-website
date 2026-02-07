@@ -435,9 +435,9 @@ function App() {
                 {/* Sidebar Navigation */}
                 <ConditionalSidebar />
 
-                {/* Main content area */}
-                <div className="flex-1 flex flex-col min-h-screen">
-                <main className="flex-1">
+                {/* Main content area – same background as sidebar for homogeneous look */}
+                <div className="flex-1 flex flex-col min-h-screen bg-background">
+                <main className="flex-1 bg-background">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}
@@ -776,9 +776,9 @@ function App() {
                 {/* Sidebar Navigation */}
                 <ConditionalSidebar />
 
-                {/* Main content area */}
-                <div className="flex-1 flex flex-col min-h-screen">
-                <main className="flex-1">
+                {/* Main content area – same background as sidebar for homogeneous look */}
+                <div className="flex-1 flex flex-col min-h-screen bg-background">
+                <main className="flex-1 bg-background">
                   <div className="">
                     <Routes>
                       {/* Public routes - accessible to all users */}

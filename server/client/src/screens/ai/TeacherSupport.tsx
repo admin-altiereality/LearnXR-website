@@ -123,7 +123,7 @@ const TeacherSupport = () => {
             <div>
               <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
                 <span className="text-white">Learn</span>
-                <span className="text-purple-700">XR</span>
+                <span className="text-primary">XR</span>
                 <TrademarkSymbol />
               </h1>
               <h2 className="text-xl font-semibold text-white">AI Teacher Support</h2>

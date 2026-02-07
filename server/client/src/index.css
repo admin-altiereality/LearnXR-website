@@ -2,9 +2,104 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global Smooth Scroll */
+/* LearnXR design system – shadcn-first, homogeneous with sidebar.
+   Page background, card, border, and text use the same palette as the sidebar for a unified look. */
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* Match sidebar palette so page and sidebar blend: same hue (240), same foreground/border. */
+    --background: hsl(240 5.9% 10%);
+    --foreground: hsl(240 4.8% 95.9%);
+    --card: hsl(240 5.9% 14%);
+    --card-foreground: hsl(240 4.8% 95.9%);
+    --popover: hsl(240 5.9% 14%);
+    --popover-foreground: hsl(240 4.8% 95.9%);
+    /* primary = logo XR purple (unchanged) */
+    --primary: oklch(0.55 0.22 285);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: hsl(240 3.7% 15.9%);
+    --secondary-foreground: hsl(240 4.8% 95.9%);
+    --muted: hsl(240 3.7% 15.9%);
+    --muted-foreground: hsl(240 4.8% 65%);
+    --accent: hsl(240 3.7% 15.9%);
+    --accent-foreground: hsl(240 4.8% 95.9%);
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0);
+    --border: hsl(240 3.7% 15.9%);
+    --input: hsl(240 3.7% 18%);
+    --ring: oklch(0.55 0.22 285);
+    --radius: 0.625rem;
+    --chart-1: oklch(0.55 0.22 285);
+    --chart-2: oklch(0.696 0.171 62.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --sidebar: hsl(240 5.9% 10%);
+    /* Sidebar (dark) – same as --background for homogeneity */
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 263 70% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 263 70% 50%;
+    --sidebar-width: 16rem;
+    --sidebar-width-icon: 3rem;
+  }
+  .light {
+    color-scheme: light;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.129 0.042 264.695);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.129 0.042 264.695);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.129 0.042 264.695);
+    /* primary = logo XR purple */
+    --primary: oklch(0.45 0.22 285);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.968 0.007 247.896);
+    --secondary-foreground: oklch(0.208 0.042 265.755);
+    --muted: oklch(0.968 0.007 247.896);
+    --muted-foreground: oklch(0.554 0.046 257.417);
+    --accent: oklch(0.968 0.007 247.896);
+    --accent-foreground: oklch(0.208 0.042 265.755);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0);
+    --border: oklch(0.929 0.013 255.508);
+    --input: oklch(0.929 0.013 255.508);
+    --ring: oklch(0.45 0.22 285);
+    --sidebar: oklch(0.984 0.003 247.858);
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 263 70% 40%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 263 70% 50%;
+    --sidebar-width: 16rem;
+    --sidebar-width-icon: 3rem;
+  }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Global Smooth Scroll and homogeneous base */
 html {
   scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 /* Custom scrollbar styling */
@@ -179,7 +274,7 @@ html {
   }
 
   .font-display {
-    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 
   .font-body {
@@ -230,6 +325,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
 }
 
 /* Improved contrast for white text on dark backgrounds */
@@ -400,5 +498,16 @@ h1, h2, h3, h4, h5, h6 {
   }
   .page3-slider-content .slide {
     width: 95%;
+  }
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }

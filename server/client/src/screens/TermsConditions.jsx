@@ -122,7 +122,7 @@ const TermsConditions = () => {
             
             <p className="text-xl text-gray-300 mb-4 max-w-3xl mx-auto leading-relaxed">
               Please read these terms carefully before using our services. 
-              These terms govern your use of <span style={learnXRFontStyle} className="text-xl"><span className="text-white">Learn</span><span className="text-purple-700">XR</span><TrademarkSymbol /></span> by Altie Reality and its features.
+              These terms govern your use of <span style={learnXRFontStyle} className="text-xl"><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span> by Altie Reality and its features.
             </p>
             
             <p className="text-sm text-gray-400">
@@ -177,13 +177,13 @@ const TermsConditions = () => {
               
               <h3 className="text-2xl font-bold text-white mb-4">Important Notice</h3>
               <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-                These terms constitute a legally binding agreement between you and Altie Reality Private Limited, the provider of <span style={learnXRFontStyle} className="text-lg"><span className="text-white">Learn</span><span className="text-purple-700">XR</span><TrademarkSymbol /></span>. 
+                These terms constitute a legally binding agreement between you and Altie Reality Private Limited, the provider of <span style={learnXRFontStyle} className="text-lg"><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span>. 
                 By using our services, you acknowledge that you have read, understood, and agree to be bound by these terms.
               </p>
               
               <div className="text-gray-400 text-sm">
                 <p><strong className="text-white">Service Provider:</strong> Altie Reality Private Limited</p>
-                <p><strong className="text-white">Brand:</strong> <span style={learnXRFontStyle} className="text-sm"><span className="text-white">Learn</span><span className="text-purple-700">XR</span><TrademarkSymbol /></span> by Altie Reality</p>
+                <p><strong className="text-white">Brand:</strong> <span style={learnXRFontStyle} className="text-sm"><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span> by Altie Reality</p>
                 <p><strong className="text-white">Governing Law:</strong> These terms are governed by the laws of India.</p>
                 <p><strong className="text-white">Dispute Resolution:</strong> Any disputes will be resolved through arbitration in Jaipur, Rajasthan, India.</p>
               </div>

@@ -93,7 +93,7 @@ const PrivacyPolicy = () => {
             <div className="mb-4">
               <span className="text-2xl sm:text-3xl" style={learnXRFontStyle}>
                 <span className="text-white">Learn</span>
-                <span className="text-purple-700">XR</span>
+                <span className="text-primary">XR</span>
                 <TrademarkSymbol className="ml-1" />
               </span>
             </div>
@@ -162,7 +162,7 @@ const PrivacyPolicy = () => {
                 <p><strong className="text-white">Company:</strong> Altie Reality</p>
                 <p><strong className="text-white">Product:</strong> <span style={learnXRFontStyle} className="text-lg">
                   <span className="text-white">Learn</span>
-                  <span className="text-purple-700">XR</span>
+                  <span className="text-primary">XR</span>
                   <TrademarkSymbol className="ml-1" />
                 </span></p>
                 <p><strong className="text-white">Email:</strong> admin@altiereality.com</p>

@@ -36,12 +36,23 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../config/firebase';
 import { toast } from 'react-toastify';
-import { 
-  requiresStudentOnboarding, 
+import {
   requiresApproval,
   getDefaultPage
 } from '../utils/rbac';
-import FuturisticBackground from '../Components/FuturisticBackground';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../Components/ui/card';
+import { Button } from '../Components/ui/button';
+import { Input } from '../Components/ui/input';
+import { Label } from '../Components/ui/label';
+import { Progress } from '../Components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../Components/ui/select';
+import FlowFieldBackground from '../Components/ui/flow-field-background';
 
 // Student onboarding data
 interface StudentOnboardingData {
@@ -660,14 +671,15 @@ const Onboarding = () => {
 
   if (loading) {
     return (
-      <FuturisticBackground>
-        <div className="min-h-screen flex items-center justify-center">
+      <div className="relative min-h-screen w-full overflow-x-hidden">
+        <FlowFieldBackground className="absolute inset-0 min-h-screen" particleCount={300} trailOpacity={0.12} speed={0.7} />
+        <div className="relative z-10 flex min-h-screen items-center justify-center">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-            <p className="text-white/60">Loading...</p>
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-border border-t-primary mx-auto mb-4" />
+            <p className="text-sm text-muted-foreground">Loading...</p>
           </div>
         </div>
-      </FuturisticBackground>
+      </div>
     );
   }
 
@@ -678,31 +690,41 @@ const Onboarding = () => {
         return (
           <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
-                <FaChild className="text-2xl text-white" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <FaChild className="text-xl text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">How old are you?</h2>
-              <p className="text-white/50 text-sm">We need this to personalize your experience and ensure age-appropriate content</p>
+              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">How old are you?</h2>
+              <p className="text-muted-foreground text-sm">We use this to personalize your experience</p>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
               {ageOptions.map((age) => (
-                <motion.button key={age.id} onClick={() => setStudentData(prev => ({ ...prev, age: age.id }))}
-                  className={`relative p-4 rounded-xl border-2 transition-all ${studentData.age === age.id ? 'border-emerald-500/70 bg-emerald-500/10' : 'border-white/10 bg-white/[0.03] hover:border-white/20'}`}
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  {studentData.age === age.id && <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><FaCheck className="text-white text-[8px]" /></div>}
-                  <span className="text-white font-medium">{age.label}</span>
-                </motion.button>
+                <Button
+                  key={age.id}
+                  type="button"
+                  variant={studentData.age === age.id ? 'default' : 'outline'}
+                  size="sm"
+                  className="relative h-auto py-3"
+                  onClick={() => setStudentData(prev => ({ ...prev, age: age.id }))}
+                >
+                  {studentData.age === age.id && <FaCheck className="absolute top-1 right-1 h-3 w-3" />}
+                  {age.label}
+                </Button>
               ))}
             </div>
-            
-            {/* Date of Birth (optional) */}
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-white/70 mb-2">Date of Birth (Optional)</label>
-              <input type="date" value={studentData.dateOfBirth} 
-                onChange={(e) => setStudentData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
-                className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-emerald-400/60" />
+            <div className="space-y-2">
+              <Label htmlFor="onboarding-dob" className="text-sm text-foreground">Date of Birth (Optional)</Label>
+              <div className="relative">
+                <FaCalendarAlt className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden />
+                <Input
+                  id="onboarding-dob"
+                  type="date"
+                  value={studentData.dateOfBirth}
+                  onChange={(e) => setStudentData(prev => ({ ...prev, dateOfBirth: e.target.value }))}
+                  className="pl-10 border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/20 w-full"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Format: mm/dd/yyyy</p>
             </div>
-
           </motion.div>
         );
 
@@ -710,36 +732,44 @@ const Onboarding = () => {
         return (
           <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                <FaGraduationCap className="text-2xl text-white" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <FaGraduationCap className="text-xl text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Education Details</h2>
-              <p className="text-white/50 text-sm">Tell us about your current academic level</p>
+              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">Education Details</h2>
+              <p className="text-muted-foreground text-sm">Your current academic level</p>
             </div>
-            
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-3">Which class level are you in? (For reference)</label>
+                <Label className="text-foreground mb-2 block">Which class level are you in? (For reference)</Label>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                   {classOptions.map((cls) => (
-                    <button key={cls.id} type="button" onClick={() => setStudentData(prev => ({ ...prev, class: cls.id }))}
-                      className={`px-3 py-2.5 rounded-lg text-sm transition-all ${studentData.class === cls.id ? 'bg-blue-500/20 border-blue-500/50 text-blue-300 border' : 'bg-white/[0.03] border-white/10 text-white/70 border hover:bg-white/[0.05]'}`}>
+                    <Button
+                      key={cls.id}
+                      type="button"
+                      variant={studentData.class === cls.id ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setStudentData(prev => ({ ...prev, class: cls.id }))}
+                    >
                       {cls.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
-                <p className="text-xs text-white/40 mt-1">You'll select your actual class in the next step</p>
+                <p className="text-xs text-muted-foreground mt-1">You'll select your actual class in the next step</p>
               </div>
-              
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-3">Which curriculum do you follow? *</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Label className="text-foreground mb-2 block">Which curriculum do you follow? *</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {curriculumOptions.map((c) => (
-                    <button key={c.id} type="button" onClick={() => setStudentData(prev => ({ ...prev, curriculum: c.id }))}
-                      className={`p-3 rounded-xl text-left transition-all ${studentData.curriculum === c.id ? 'bg-indigo-500/20 border-indigo-500/50 border' : 'bg-white/[0.03] border-white/10 border hover:bg-white/[0.05]'}`}>
-                      <span className={`font-medium block ${studentData.curriculum === c.id ? 'text-indigo-300' : 'text-white/80'}`}>{c.label}</span>
-                      <span className="text-xs text-white/40">{c.description}</span>
-                    </button>
+                    <Button
+                      key={c.id}
+                      type="button"
+                      variant={studentData.curriculum === c.id ? 'default' : 'outline'}
+                      className="min-h-[5rem] min-w-0 h-auto py-3 px-3 text-left justify-start flex flex-col items-start w-full"
+                      onClick={() => setStudentData(prev => ({ ...prev, curriculum: c.id }))}
+                    >
+                      <span className="font-medium shrink-0">{c.label}</span>
+                      <span className="text-xs text-muted-foreground font-normal break-words whitespace-normal text-left w-full">{c.description}</span>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -751,19 +781,18 @@ const Onboarding = () => {
         return (
           <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
-                <FaSchool className="text-2xl text-white" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <FaSchool className="text-xl text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">School Information</h2>
-              <p className="text-white/50 text-sm">Enter your school code to connect with your school and select your class.</p>
+              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">School Information</h2>
+              <p className="text-muted-foreground text-sm">Enter your school code, then choose your class and location.</p>
             </div>
-            
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">School code *</label>
-                <p className="text-xs text-white/50 mb-2">Get the code from your school to join</p>
-                <div className="flex gap-2">
-                  <input
+              <div className="space-y-2">
+                <Label className="text-foreground">School code *</Label>
+                <p className="text-xs text-muted-foreground">Get the code from your school to join</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
                     type="text"
                     value={studentSchoolCodeInput}
                     onChange={(e) => {
@@ -771,23 +800,24 @@ const Onboarding = () => {
                       setStudentSchoolCodeError('');
                     }}
                     placeholder="e.g. ABC123"
-                    className="flex-1 rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-violet-400/60 uppercase"
+                    className="flex-1 uppercase border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/20 max-w-full"
                     maxLength={10}
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={handleVerifyStudentSchoolCode}
                     disabled={studentSchoolCodeVerifying || !studentSchoolCodeInput.trim()}
-                    className="px-4 py-3 rounded-xl bg-violet-500/20 border border-violet-400/50 text-violet-300 font-medium hover:bg-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="shrink-0"
                   >
                     {studentSchoolCodeVerifying ? 'Verifying...' : 'Verify'}
-                  </button>
+                  </Button>
                 </div>
                 {studentSchoolCodeError && (
-                  <p className="text-xs text-red-400 mt-1">{studentSchoolCodeError}</p>
+                  <p className="text-xs text-destructive mt-1">{studentSchoolCodeError}</p>
                 )}
                 {studentData.schoolId && (
-                  <p className="text-xs text-white/50 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Selected: {studentData.schoolName}
                   </p>
                 )}
@@ -795,70 +825,85 @@ const Onboarding = () => {
 
               {/* Class Selection */}
               {studentData.schoolId && (
-                <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">Select Your Class *</label>
+                <div className="space-y-2">
+                  <Label className="text-foreground">Select Your Class *</Label>
                   {loadingClasses ? (
-                    <div className="flex items-center gap-2 text-white/50">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-violet-400"></div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-border border-t-primary" />
                       <span className="text-sm">Loading classes...</span>
                     </div>
                   ) : availableClasses.length === 0 ? (
-                    <p className="text-xs text-amber-400 mt-1">
+                    <p className="text-xs text-destructive mt-1">
                       No classes available for this school. Please contact your school administrator.
                     </p>
                   ) : (
-                    <select
+                    <Select
                       value={studentData.classId}
-                      onChange={(e) => {
-                        const selectedClass = availableClasses.find(c => c.id === e.target.value);
+                      onValueChange={(value) => {
+                        const selectedClass = availableClasses.find(c => c.id === value);
                         setStudentData(prev => ({
                           ...prev,
-                          classId: e.target.value,
+                          classId: value,
                           class: selectedClass?.class_name || prev.class,
                         }));
                       }}
-                      className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-violet-400/60"
                     >
-                      <option value="">Select a class</option>
-                      {availableClasses.map((cls) => (
-                        <option key={cls.id} value={cls.id}>
-                          {cls.class_name} {cls.subject ? `- ${cls.subject}` : ''} {cls.curriculum ? `(${cls.curriculum})` : ''}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="w-full h-10 border-input bg-background text-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                        <SelectValue placeholder="Select a class" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[16rem]">
+                        {availableClasses.map((cls) => (
+                          <SelectItem key={cls.id} value={cls.id}>{cls.class_name} {cls.subject ? `- ${cls.subject}` : ''} {cls.curriculum ? `(${cls.curriculum})` : ''}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
                   {studentData.classId && (
-                    <p className="text-xs text-white/50 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Selected: {availableClasses.find(c => c.id === studentData.classId)?.class_name || 'Class'}
                     </p>
                   )}
                 </div>
               )}
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">City</label>
-                  <input type="text" value={studentData.city} 
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-foreground">City</Label>
+                  <Input
+                    type="text"
+                    value={studentData.city}
                     onChange={(e) => setStudentData(prev => ({ ...prev, city: e.target.value }))}
                     placeholder="Your city"
-                    className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-violet-400/60" />
+                    className="border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/20"
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">State</label>
-                  <select value={studentData.state} onChange={(e) => setStudentData(prev => ({ ...prev, state: e.target.value }))}
-                    className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-violet-400/60">
-                    <option value="">Select State</option>
-                    {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                <div className="space-y-2">
+                  <Label className="text-foreground">State</Label>
+                  <Select value={studentData.state} onValueChange={(value) => setStudentData(prev => ({ ...prev, state: value }))}>
+                    <SelectTrigger className="w-full h-10 border-input bg-background text-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                      <SelectValue placeholder="Select State" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[16rem]">
+                      {stateOptions.map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">Preferred Language</label>
-                <select value={studentData.languagePreference} onChange={(e) => setStudentData(prev => ({ ...prev, languagePreference: e.target.value }))}
-                  className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-violet-400/60">
-                  {languageOptions.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
-                </select>
+              <div className="space-y-2">
+                <Label className="text-foreground">Preferred Language</Label>
+                <Select value={studentData.languagePreference} onValueChange={(value) => setStudentData(prev => ({ ...prev, languagePreference: value }))}>
+                  <SelectTrigger className="w-full h-10 border-input bg-background text-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[16rem]">
+                    {languageOptions.map(l => (
+                      <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </motion.div>
@@ -868,41 +913,38 @@ const Onboarding = () => {
         return (
           <motion.div key="s4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-lg">
-                <FaHeart className="text-2xl text-white" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center">
+                <FaHeart className="text-xl text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">How Do You Learn Best?</h2>
-              <p className="text-white/50 text-sm">Select all that apply - this helps us personalize your lessons</p>
+              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">How Do You Learn Best?</h2>
+              <p className="text-muted-foreground text-sm">Select all that apply to personalize your lessons</p>
             </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {learningPreferenceOptions.map((pref) => (
-                <motion.button key={pref.id} type="button"
+                <Button
+                  key={pref.id}
+                  type="button"
+                  variant={studentData.learningPreferences.includes(pref.id) ? 'default' : 'outline'}
+                  className={`h-auto p-4 sm:p-5 rounded-xl text-left justify-start border-2 transition-colors ${
+                    studentData.learningPreferences.includes(pref.id) ? 'border-primary' : 'border-border'
+                  }`}
                   onClick={() => setStudentData(prev => ({
                     ...prev,
                     learningPreferences: prev.learningPreferences.includes(pref.id)
                       ? prev.learningPreferences.filter(p => p !== pref.id)
                       : [...prev.learningPreferences, pref.id]
                   }))}
-                  className={`p-5 rounded-2xl text-left transition-all border-2 ${
-                    studentData.learningPreferences.includes(pref.id) 
-                      ? 'bg-pink-500/15 border-pink-500/50' 
-                      : 'bg-white/[0.03] border-white/10 hover:bg-white/[0.05]'
-                  }`}
-                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                  <div className="flex items-start gap-4">
-                    <span className="text-3xl">{pref.icon}</span>
-                    <div className="flex-1">
-                      <span className={`font-semibold block ${studentData.learningPreferences.includes(pref.id) ? 'text-pink-300' : 'text-white'}`}>
-                        {pref.label}
-                      </span>
-                      <span className="text-sm text-white/50">{pref.description}</span>
-                    </div>
-                    {studentData.learningPreferences.includes(pref.id) && (
-                      <FaCheckCircle className="text-pink-400 text-lg" />
-                    )}
+                >
+                  <span className="text-lg mr-3">{pref.icon}</span>
+                  <div className="flex-1 min-w-0 text-left">
+                    <span className="font-semibold block text-foreground">{pref.label}</span>
+                    <span className="text-xs sm:text-sm text-muted-foreground">{pref.description}</span>
                   </div>
-                </motion.button>
+                  {studentData.learningPreferences.includes(pref.id) && (
+                    <FaCheckCircle className="text-primary text-lg shrink-0 ml-2" />
+                  )}
+                </Button>
               ))}
             </div>
           </motion.div>
@@ -912,49 +954,46 @@ const Onboarding = () => {
         return (
           <motion.div key="s5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
-                <FaCheckCircle className="text-2xl text-white" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center">
+                <FaCheckCircle className="text-xl text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Review Your Profile</h2>
-              <p className="text-white/50 text-sm">Make sure everything looks correct before we continue</p>
+              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">Review Your Profile</h2>
+              <p className="text-muted-foreground text-sm">Confirm your details before we continue</p>
             </div>
-            
+
             <div className="space-y-4">
-              {/* Personal Info */}
-              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <h3 className="text-sm font-semibold text-cyan-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaUserGraduate /> Personal Information
+              <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
+                <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <FaUserGraduate className="h-4 w-4" /> Personal Information
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="text-white/50">Age</div><div className="text-white">{studentData.age} years</div>
-                  <div className="text-white/50">Class</div><div className="text-white">To be assigned by school</div>
-                  <div className="text-white/50">Curriculum</div><div className="text-white uppercase">{studentData.curriculum || 'Not selected'}</div>
-                  <div className="text-white/50">School</div><div className="text-white">{studentData.schoolName || 'Not selected'}</div>
+                <div className="grid grid-cols-2 gap-2 sm:gap-3 text-sm">
+                  <div className="text-muted-foreground">Age</div><div className="text-foreground truncate">{studentData.age} years</div>
+                  <div className="text-muted-foreground">Class</div><div className="text-foreground">From school</div>
+                  <div className="text-muted-foreground">Curriculum</div><div className="text-foreground uppercase truncate">{studentData.curriculum || '—'}</div>
+                  <div className="text-muted-foreground">School</div><div className="text-foreground truncate">{studentData.schoolName || '—'}</div>
                 </div>
               </div>
 
-              {/* School Info */}
-              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <h3 className="text-sm font-semibold text-violet-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaSchool /> School Information
+              <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
+                <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <FaSchool className="h-4 w-4" /> School Information
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="text-white/50">School</div><div className="text-white truncate">{studentData.schoolName || 'Not provided'}</div>
-                  <div className="text-white/50">Location</div><div className="text-white">{[studentData.city, studentData.state].filter(Boolean).join(', ') || 'Not provided'}</div>
-                  <div className="text-white/50">Language</div><div className="text-white capitalize">{studentData.languagePreference}</div>
+                <div className="grid grid-cols-2 gap-2 sm:gap-3 text-sm">
+                  <div className="text-muted-foreground">School</div><div className="text-foreground truncate">{studentData.schoolName || '—'}</div>
+                  <div className="text-muted-foreground">Location</div><div className="text-foreground truncate">{[studentData.city, studentData.state].filter(Boolean).join(', ') || '—'}</div>
+                  <div className="text-muted-foreground">Language</div><div className="text-foreground capitalize">{studentData.languagePreference}</div>
                 </div>
               </div>
 
-              {/* Learning Preferences */}
-              <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10">
-                <h3 className="text-sm font-semibold text-pink-400 uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaHeart /> Learning Style
+              <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
+                <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <FaHeart className="h-4 w-4" /> Learning Style
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {studentData.learningPreferences.map(pref => {
                     const option = learningPreferenceOptions.find(o => o.id === pref);
                     return option ? (
-                      <span key={pref} className="px-3 py-1.5 rounded-lg bg-pink-500/20 text-pink-300 text-sm">
+                      <span key={pref} className="px-3 py-1.5 rounded-lg bg-primary/20 text-primary text-sm">
                         {option.icon} {option.label}
                       </span>
                     ) : null;
@@ -976,18 +1015,18 @@ const Onboarding = () => {
         return (
           <motion.div key="t1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-                <FaBuilding className="text-2xl text-white" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center">
+                <FaBuilding className="text-xl text-primary" />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">School Information</h2>
-              <p className="text-white/50 text-sm">Tell us about your school</p>
+              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">School Information</h2>
+              <p className="text-muted-foreground text-sm">Associate with your school using the code provided</p>
             </div>
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">School unique code *</label>
-                <p className="text-xs text-white/50 mb-2">Enter the unique code provided by your school to get associated</p>
-                <div className="flex gap-2">
-                  <input
+              <div className="space-y-2">
+                <Label className="text-foreground">School code *</Label>
+                <p className="text-xs text-muted-foreground">Enter the code from your school admin</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
                     type="text"
                     value={schoolCodeInput}
                     onChange={(e) => {
@@ -995,49 +1034,61 @@ const Onboarding = () => {
                       setSchoolCodeError('');
                     }}
                     placeholder="e.g. ABC123"
-                    className="flex-1 rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-blue-400/60 uppercase"
+                    className="flex-1 uppercase border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/20 max-w-full"
                     maxLength={10}
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="secondary"
                     onClick={handleVerifySchoolCode}
                     disabled={schoolCodeVerifying || !schoolCodeInput.trim()}
-                    className="px-4 py-3 rounded-xl bg-blue-500/20 border border-blue-400/50 text-blue-300 font-medium hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="shrink-0"
                   >
                     {schoolCodeVerifying ? 'Verifying...' : 'Verify'}
-                  </button>
+                  </Button>
                 </div>
-                {schoolCodeError && (
-                  <p className="text-xs text-red-400 mt-1">{schoolCodeError}</p>
-                )}
+                {schoolCodeError && <p className="text-xs text-destructive mt-1">{schoolCodeError}</p>}
                 {teacherData.schoolId && (
-                  <p className="text-xs text-white/50 mt-1">
-                    Selected: {teacherData.schoolName}
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Selected: {teacherData.schoolName}</p>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">City *</label>
-                  <input type="text" value={teacherData.city} onChange={(e) => setTeacherData(prev => ({ ...prev, city: e.target.value }))}
-                    placeholder="Your city" className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-blue-400/60" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-foreground">City *</Label>
+                  <Input
+                    type="text"
+                    value={teacherData.city}
+                    onChange={(e) => setTeacherData(prev => ({ ...prev, city: e.target.value }))}
+                    placeholder="Your city"
+                    className="border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/20"
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-white/70 mb-2">State</label>
-                  <select value={teacherData.state} onChange={(e) => setTeacherData(prev => ({ ...prev, state: e.target.value }))}
-                    className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-blue-400/60">
-                    <option value="">Select State</option>
-                    {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                <div className="space-y-2">
+                  <Label className="text-foreground">State</Label>
+                  <Select value={teacherData.state} onValueChange={(value) => setTeacherData(prev => ({ ...prev, state: value }))}>
+                    <SelectTrigger className="w-full h-10 border-input bg-background text-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                      <SelectValue placeholder="Select State" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[16rem]">
+                      {stateOptions.map(s => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-white/70 mb-2">Board/Affiliation</label>
-                <select value={teacherData.boardAffiliation} onChange={(e) => setTeacherData(prev => ({ ...prev, boardAffiliation: e.target.value }))}
-                  className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-blue-400/60">
-                  <option value="">Select Board</option>
-                  {curriculumOptions.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-                </select>
+              <div className="space-y-2">
+                <Label className="text-foreground">Board / Affiliation</Label>
+                <Select value={teacherData.boardAffiliation} onValueChange={(value) => setTeacherData(prev => ({ ...prev, boardAffiliation: value }))}>
+                  <SelectTrigger className="w-full h-10 border-input bg-background text-foreground focus:ring-2 focus:ring-ring focus:ring-offset-2">
+                    <SelectValue placeholder="Select Board" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[16rem]">
+                    {curriculumOptions.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </motion.div>
@@ -1114,11 +1165,16 @@ const Onboarding = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Highest Qualification *</label>
-                <select value={teacherData.qualifications} onChange={(e) => setTeacherData(prev => ({ ...prev, qualifications: e.target.value }))}
-                  className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-violet-400/60">
-                  <option value="">Select Qualification</option>
-                  {qualificationOptions.map(q => <option key={q} value={q}>{q}</option>)}
-                </select>
+                <Select value={teacherData.qualifications} onValueChange={(value) => setTeacherData(prev => ({ ...prev, qualifications: value }))}>
+                  <SelectTrigger className="w-full rounded-xl bg-white/[0.03] px-4 py-3 h-auto min-h-[2.75rem] border border-white/10 text-white focus:ring-primary/50 focus:border-primary/50">
+                    <SelectValue placeholder="Select Qualification" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[16rem]">
+                    {qualificationOptions.map(q => (
+                      <SelectItem key={q} value={q} className="text-foreground focus:bg-primary/20">{q}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </motion.div>
@@ -1234,11 +1290,16 @@ const Onboarding = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">State *</label>
-                <select value={schoolData.state} onChange={(e) => setSchoolData(prev => ({ ...prev, state: e.target.value }))}
-                  className="w-full rounded-xl bg-white/[0.03] px-4 py-3 border border-white/10 text-white focus:outline-none focus:border-blue-400/60">
-                  <option value="">Select State</option>
-                  {stateOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <Select value={schoolData.state} onValueChange={(value) => setSchoolData(prev => ({ ...prev, state: value }))}>
+                  <SelectTrigger className="w-full rounded-xl bg-white/[0.03] px-4 py-3 h-auto min-h-[2.75rem] border border-white/10 text-white focus:ring-primary/50 focus:border-primary/50">
+                    <SelectValue placeholder="Select State" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[16rem]">
+                    {stateOptions.map(s => (
+                      <SelectItem key={s} value={s} className="text-foreground focus:bg-primary/20">{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </motion.div>
@@ -1334,96 +1395,80 @@ const Onboarding = () => {
   const RoleIcon = getRoleIcon();
 
   return (
-    <FuturisticBackground>
-      <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-2xl mx-auto">
-          {/* Header */}
-          <motion.div custom={0} variants={fadeUpVariants} initial="hidden" animate="visible" className="text-center mb-8">
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg">
-                <RoleIcon className="text-white text-xl" />
+    <div className="relative min-h-screen w-full overflow-x-hidden">
+      <FlowFieldBackground
+        className="absolute inset-0 min-h-screen"
+        color="#8b5cf6"
+        trailOpacity={0.1}
+        particleCount={400}
+        speed={0.8}
+      />
+      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
+        <div className="w-full max-w-2xl mx-auto space-y-5 sm:space-y-6">
+          {/* Header - glass pill */}
+          <div className="text-center">
+            <div className="flex items-center justify-center gap-3 mb-3 sm:mb-4">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <RoleIcon className="text-primary h-5 w-5" />
               </div>
-              <span className="text-2xl font-bold text-white capitalize">{profile?.role} Onboarding</span>
+              <span className="text-lg sm:text-xl font-semibold tracking-tight capitalize text-foreground">{profile?.role} Onboarding</span>
             </div>
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.08]">
-              <FaRocket className="text-cyan-400 mr-2" />
-              <span className="text-white/60 text-sm">Welcome, {profile?.name || user?.email?.split('@')[0]}!</span>
+            <div className="inline-flex items-center px-3 py-1.5 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-sm text-muted-foreground">
+              <FaRocket className="text-primary mr-2 h-3.5 w-3.5 shrink-0" />
+              <span className="truncate max-w-[200px] sm:max-w-none">Welcome, {profile?.name || user?.email?.split('@')[0]}</span>
             </div>
-          </motion.div>
+          </div>
 
-          {/* Progress Bar */}
-          <motion.div custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" className="mb-8">
+          {/* Progress - glass bar container */}
+          <div className="w-full min-w-0 rounded-xl bg-card/50 backdrop-blur-md border border-white/10 p-3 sm:p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-white/50">Step {step} of {totalSteps}</span>
-              <span className="text-sm text-white/40">{step === totalSteps ? 'Almost done!' : 'Keep going!'}</span>
+              <span className="text-sm text-muted-foreground">Step {step} of {totalSteps}</span>
             </div>
-            <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-              <motion.div className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500"
-                initial={{ width: 0 }} animate={{ width: `${(step / totalSteps) * 100}%` }} transition={{ duration: 0.3 }} />
+            <Progress value={(step / totalSteps) * 100} className="h-2" />
+          </div>
+
+          {/* Form Card - glass panel */}
+          <Card className="w-full bg-card/70 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/20">
+          <CardContent className="pt-6 pb-6 px-4 sm:px-6">
+            <AnimatePresence mode="wait">{renderStepContent()}</AnimatePresence>
+
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-6 sm:mt-8 pt-6 border-t border-white/10">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleBack}
+                disabled={step === 1}
+                className={step === 1 ? 'invisible' : ''}
+              >
+                <FaArrowLeft className="mr-2 h-4 w-4" /> Back
+              </Button>
+
+              {step < totalSteps ? (
+                <Button onClick={handleNext} disabled={!canProceed()}>
+                  Continue <FaArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              ) : (
+                <Button onClick={handleSubmit} disabled={submitting || !canProceed()}>
+                  {submitting ? (
+                    <>Saving...</>
+                  ) : (
+                    <>
+                      {isSchoolRole ? "Let's Onboard" : isTeacherRole ? "Complete Onboarding" : "Start Learning"}
+                      {isSchoolRole || isTeacherRole ? (
+                        <FaCheckCircle className="ml-2 h-4 w-4" />
+                      ) : (
+                        <FaRocket className="ml-2 h-4 w-4" />
+                      )}
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
-          </motion.div>
-
-          {/* Form Card */}
-          <motion.div custom={2} variants={fadeUpVariants} initial="hidden" animate="visible"
-            className="relative rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-[0_20px_60px_-15px_rgba(139,92,246,0.3)] p-8 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 via-transparent to-violet-500/5 pointer-events-none" />
-            
-            <div className="relative z-10">
-              <AnimatePresence mode="wait">{renderStepContent()}</AnimatePresence>
-
-              {/* Navigation Buttons */}
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}
-                className="flex items-center justify-between mt-10 pt-6 border-t border-white/10">
-                <button onClick={handleBack} disabled={step === 1}
-                  className={`flex items-center gap-2 px-6 py-3 rounded-xl transition-all duration-300 ${step === 1 ? 'opacity-0 pointer-events-none' : 'bg-white/[0.03] hover:bg-white/[0.08] text-white/70 border border-white/10'}`}>
-                  <FaArrowLeft /> Back
-                </button>
-
-                {step < totalSteps ? (
-                  <motion.button onClick={handleNext} disabled={!canProceed()}
-                    className={`group relative flex items-center gap-2 px-8 py-3 rounded-xl font-semibold transition-all duration-300 overflow-hidden ${canProceed() ? 'text-white' : 'bg-white/10 text-white/30 cursor-not-allowed'}`}
-                    whileHover={canProceed() ? { scale: 1.02 } : {}} whileTap={canProceed() ? { scale: 0.98 } : {}}>
-                    {canProceed() && (
-                      <>
-                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500" />
-                        <div className="absolute inset-0 bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                      </>
-                    )}
-                    <span className="relative">Continue</span>
-                    <FaArrowRight className="relative group-hover:translate-x-1 transition-transform" />
-                  </motion.button>
-                ) : (
-                  <motion.button onClick={handleSubmit} disabled={submitting || !canProceed()}
-                    className="group relative flex items-center gap-2 px-8 py-3 rounded-xl font-semibold text-white overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed"
-                    whileHover={!submitting ? { scale: 1.02 } : {}} whileTap={!submitting ? { scale: 0.98 } : {}}>
-                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-500 to-teal-500" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-emerald-400 to-teal-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    {submitting ? (
-                      <>
-                        <div className="relative animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        <span className="relative">Saving...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="relative">
-                          {isSchoolRole ? "Let's Onboard" : isTeacherRole ? "Complete Onboarding" : "Start Learning"}
-                        </span>
-                        {isSchoolRole || isTeacherRole ? (
-                          <FaCheckCircle className="relative" />
-                        ) : (
-                          <FaRocket className="relative" />
-                        )}
-                      </>
-                    )}
-                  </motion.button>
-                )}
-              </motion.div>
-            </div>
-          </motion.div>
-
+          </CardContent>
+        </Card>
         </div>
       </div>
-    </FuturisticBackground>
+    </div>
   );
 };
 
