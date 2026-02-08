@@ -1,58 +1,53 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { doc, updateDoc, collection, setDoc, serverTimestamp, query, where, getDocs, onSnapshot, arrayUnion } from 'firebase/firestore';
-import type { Class } from '../types/lms';
-import { 
-  FaRocket, 
-  FaArrowRight,
-  FaArrowLeft,
-  FaCheck,
-  FaUserGraduate,
-  FaBook,
-  FaSchool,
-  FaCalendarAlt,
-  FaGraduationCap,
-  FaChalkboardTeacher,
-  FaBuilding,
-  FaPhone,
-  FaMapMarkerAlt,
-  FaGlobe,
-  FaUsers,
-  FaBriefcase,
-  FaCertificate,
-  FaEnvelope,
-  FaCity,
-  FaClipboardList,
-  FaShieldAlt,
-  FaLock,
-  FaUserShield,
-  FaCheckCircle,
-  FaExclamationTriangle,
-  FaChild,
-  FaHeart,
-  FaLanguage
-} from 'react-icons/fa';
-import { useAuth } from '../contexts/AuthContext';
-import { db } from '../config/firebase';
-import { toast } from 'react-toastify';
+import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import {
-  requiresApproval,
-  getDefaultPage
-} from '../utils/rbac';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../Components/ui/card';
+    FaArrowLeft,
+    FaArrowRight,
+    FaBook,
+    FaBriefcase,
+    FaBuilding,
+    FaCalendarAlt,
+    FaChalkboardTeacher,
+    FaCheck,
+    FaCheckCircle,
+    FaChild,
+    FaClipboardList,
+    FaGraduationCap,
+    FaHeart,
+    FaMapMarkerAlt,
+    FaMoon,
+    FaPhone,
+    FaRocket,
+    FaSchool,
+    FaSun,
+    FaUserGraduate,
+    FaUsers
+} from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import { Button } from '../Components/ui/button';
+import { Card, CardContent } from '../Components/ui/card';
+import FuturisticBackground from '../Components/FuturisticBackground';
 import { Input } from '../Components/ui/input';
 import { Label } from '../Components/ui/label';
 import { Progress } from '../Components/ui/progress';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from '../Components/ui/select';
-import FlowFieldBackground from '../Components/ui/flow-field-background';
+import { db } from '../config/firebase';
+import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../contexts/AuthContext';
+import type { Class } from '../types/lms';
+import {
+    getDefaultPage,
+    requiresApproval,
+    isGuestUser
+} from '../utils/rbac';
 
 // Student onboarding data
 interface StudentOnboardingData {
@@ -268,25 +263,30 @@ const Onboarding = () => {
   const isTeacherRole = profile?.role === 'teacher';
   const isSchoolRole = profile?.role === 'school';
   
-  // Total steps based on role - Students have 5 steps (removed GDPR consent)
-  const totalSteps = isStudentRole ? 5 : isTeacherRole ? 4 : isSchoolRole ? 4 : 1;
+  // Total steps based on role - Students have 5 steps; guest students have 4 (no school step)
+  const totalSteps = isStudentRole ? (isGuestUser(profile) ? 4 : 5) : isTeacherRole ? 4 : isSchoolRole ? 4 : 1;
+
+  // Theme and body overflow - must run before any conditional return (Rules of Hooks)
+  const { theme, setTheme } = useTheme();
+  useEffect(() => {
+    document.body.classList.add('overflow-hidden');
+    return () => document.body.classList.remove('overflow-hidden');
+  }, []);
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
+      // Wait for user and profile (critical for guest: profile loads after anonymous auth)
       if (!user?.uid || !profile) {
-        setLoading(false);
-        return;
+        return; // Keep loading true until we have both
       }
 
       try {
         // Check if onboarding is already completed (using general check that works for all roles)
         if (profile.onboardingCompleted === true) {
           // If onboarding is complete, check where to redirect
-          if (requiresApproval(profile.role) && profile.approvalStatus !== 'approved') {
-            // Teacher/School completed onboarding but waiting for approval
+          if (!isGuestUser(profile) && requiresApproval(profile.role) && profile.approvalStatus !== 'approved') {
             navigate('/approval-pending');
           } else {
-            // Approved or doesn't need approval - go to main content
             navigate(getDefaultPage(profile.role));
           }
           return;
@@ -467,10 +467,19 @@ const Onboarding = () => {
 
   const canProceed = () => {
     if (isStudentRole) {
+      if (isGuestUser(profile)) {
+        switch (step) {
+          case 1: return studentData.age !== '';
+          case 2: return studentData.curriculum !== '';
+          case 3: return studentData.learningPreferences.length > 0;
+          case 4: return true; // Review step
+          default: return false;
+        }
+      }
       switch (step) {
         case 1: return studentData.age !== '';
         case 2: return studentData.curriculum !== '';
-        case 3: return studentData.schoolId !== '' && studentData.classId !== '';
+        case 3: return studentData.schoolId !== '' && (studentData.classId !== '' || availableClasses.length === 0);
         case 4: return studentData.learningPreferences.length > 0;
         case 5: return true; // Review step
         default: return false;
@@ -524,33 +533,32 @@ const Onboarding = () => {
 
       // Add role-specific data to the SAME users collection
       if (isStudentRole) {
-        // Validate school_id is set
-        if (!studentData.schoolId) {
+        const isGuestStudent = isGuestUser(profile);
+        if (!isGuestStudent && !studentData.schoolId) {
           toast.error('Please verify your school code before submitting.');
           setSubmitting(false);
           return;
         }
-        
         updateData = {
           ...updateData,
-          // Student onboarding data (school by code; class selected during onboarding)
+          // Student onboarding data (school by code; class selected during onboarding; guest has no school)
           age: parseInt(studentData.age) || null,
           dateOfBirth: studentData.dateOfBirth || null,
           class: studentData.class || '',
           curriculum: studentData.curriculum,
-          school: studentData.schoolName.trim(),
-          school_id: studentData.schoolId, // CRITICAL: Must be set
-          class_ids: studentData.classId ? [studentData.classId] : [], // Set selected class during onboarding
+          school: isGuestStudent ? '' : studentData.schoolName.trim(),
+          school_id: isGuestStudent ? null : studentData.schoolId,
+          class_ids: isGuestStudent ? [] : (studentData.classId ? [studentData.classId] : []),
           city: studentData.city || null,
           state: studentData.state || null,
           languagePreference: studentData.languagePreference,
           learningPreferences: studentData.learningPreferences,
-          // Set approval status to pending for students (they need teacher approval)
-          approvalStatus: 'pending',
+          approvalStatus: isGuestStudent ? 'approved' : 'pending',
+          ...(isGuestStudent ? { isGuest: true } : {}),
         };
         console.log('✅ Student onboarding data prepared', {
-          schoolId: studentData.schoolId,
-          schoolName: studentData.schoolName,
+          schoolId: isGuestStudent ? null : studentData.schoolId,
+          schoolName: isGuestStudent ? '(guest)' : studentData.schoolName,
         });
       }
 
@@ -643,15 +651,13 @@ const Onboarding = () => {
 
       toast.success("Welcome aboard! Your profile has been updated.");
       
-      // All roles (student, teacher, school) need approval in hierarchical system
-      // Redirect to approval pending screen
+      // Guest students skip approval; other roles (student, teacher, school) go to approval-pending
       const userRole = profile?.role || 'student';
-      if (requiresApproval(userRole)) {
-        // All roles need approval: students (teacher), teachers (school), schools (admin)
-        navigate('/approval-pending');
-      } else {
-        // Only admin/superadmin don't need approval
+      const isGuestStudent = isGuestUser(profile);
+      if (isGuestStudent || !requiresApproval(userRole)) {
         navigate(getDefaultPage(userRole));
+      } else {
+        navigate('/approval-pending');
       }
     } catch (error) {
       console.error('Error saving onboarding data:', error);
@@ -671,21 +677,21 @@ const Onboarding = () => {
 
   if (loading) {
     return (
-      <div className="relative min-h-screen w-full overflow-x-hidden">
-        <FlowFieldBackground className="absolute inset-0 min-h-screen" particleCount={300} trailOpacity={0.12} speed={0.7} />
-        <div className="relative z-10 flex min-h-screen items-center justify-center">
+      <FuturisticBackground className="h-screen w-full">
+        <div className="relative z-10 flex h-full items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-border border-t-primary mx-auto mb-4" />
             <p className="text-sm text-muted-foreground">Loading...</p>
           </div>
         </div>
-      </div>
+      </FuturisticBackground>
     );
   }
 
-  // Student onboarding steps
+  // Student onboarding steps (guest: 4 steps with step 3 = learning prefs, step 4 = review; no school step)
   const renderStudentSteps = () => {
-    switch (step) {
+    const effectiveStep = isGuestUser(profile) ? (step === 3 ? 4 : step === 4 ? 5 : step) : step;
+    switch (effectiveStep) {
       case 1: // Age & Basic Info
         return (
           <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
@@ -968,12 +974,18 @@ const Onboarding = () => {
                 </h3>
                 <div className="grid grid-cols-2 gap-2 sm:gap-3 text-sm">
                   <div className="text-muted-foreground">Age</div><div className="text-foreground truncate">{studentData.age} years</div>
-                  <div className="text-muted-foreground">Class</div><div className="text-foreground">From school</div>
+                  <div className="text-muted-foreground">Class</div><div className="text-foreground">{isGuestUser(profile) ? '—' : 'From school'}</div>
                   <div className="text-muted-foreground">Curriculum</div><div className="text-foreground uppercase truncate">{studentData.curriculum || '—'}</div>
-                  <div className="text-muted-foreground">School</div><div className="text-foreground truncate">{studentData.schoolName || '—'}</div>
+                  <div className="text-muted-foreground">School</div><div className="text-foreground truncate">{isGuestUser(profile) ? 'Exploring as guest — no school linked' : (studentData.schoolName || '—')}</div>
+                  {isGuestUser(profile) && (
+                    <>
+                      <div className="text-muted-foreground">Language</div><div className="text-foreground capitalize">{studentData.languagePreference}</div>
+                    </>
+                  )}
                 </div>
               </div>
 
+              {!isGuestUser(profile) && (
               <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
                 <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
                   <FaSchool className="h-4 w-4" /> School Information
@@ -984,6 +996,7 @@ const Onboarding = () => {
                   <div className="text-muted-foreground">Language</div><div className="text-foreground capitalize">{studentData.languagePreference}</div>
                 </div>
               </div>
+              )}
 
               <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
                 <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
@@ -1395,50 +1408,54 @@ const Onboarding = () => {
   const RoleIcon = getRoleIcon();
 
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden">
-      <FlowFieldBackground
-        className="absolute inset-0 min-h-screen"
-        color="#8b5cf6"
-        trailOpacity={0.1}
-        particleCount={400}
-        speed={0.8}
-      />
-      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12">
-        <div className="w-full max-w-2xl mx-auto space-y-5 sm:space-y-6">
+    <FuturisticBackground className="h-screen w-full flex flex-col">
+      <button
+        type="button"
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="fixed top-4 right-4 z-[100] flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+      >
+        {theme === 'dark' ? <FaSun className="h-5 w-5" /> : <FaMoon className="h-5 w-5" />}
+      </button>
+      <div className="relative z-10 flex flex-1 min-h-0 flex-col items-center px-4 py-4 sm:px-6 sm:py-5 overflow-hidden">
+        <div className="w-full max-w-2xl mx-auto h-full flex flex-col space-y-3 sm:space-y-4 min-h-0">
           {/* Header - glass pill */}
-          <div className="text-center">
-            <div className="flex items-center justify-center gap-3 mb-3 sm:mb-4">
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <RoleIcon className="text-primary h-5 w-5" />
+          <div className="text-center shrink-0">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <RoleIcon className="text-primary h-4 w-4" />
               </div>
-              <span className="text-lg sm:text-xl font-semibold tracking-tight capitalize text-foreground">{profile?.role} Onboarding</span>
+              <span className="text-base sm:text-lg font-semibold tracking-tight capitalize text-foreground">{profile?.role} Onboarding</span>
             </div>
-            <div className="inline-flex items-center px-3 py-1.5 rounded-full bg-white/5 backdrop-blur-md border border-white/10 text-sm text-muted-foreground">
-              <FaRocket className="text-primary mr-2 h-3.5 w-3.5 shrink-0" />
-              <span className="truncate max-w-[200px] sm:max-w-none">Welcome, {profile?.name || user?.email?.split('@')[0]}</span>
+            <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-card/80 backdrop-blur-md border border-border text-xs text-muted-foreground">
+              <FaRocket className="text-primary mr-1.5 h-3 w-3 shrink-0" />
+              <span className="truncate max-w-[180px] sm:max-w-none">Welcome, {profile?.name || user?.email?.split('@')[0]}</span>
             </div>
           </div>
 
           {/* Progress - glass bar container */}
-          <div className="w-full min-w-0 rounded-xl bg-card/50 backdrop-blur-md border border-white/10 p-3 sm:p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Step {step} of {totalSteps}</span>
+          <div className="w-full min-w-0 rounded-xl bg-card/80 backdrop-blur-xl border border-border p-2 sm:p-3 shrink-0">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs sm:text-sm text-muted-foreground">Step {step} of {totalSteps}</span>
             </div>
-            <Progress value={(step / totalSteps) * 100} className="h-2" />
+            <Progress value={(step / totalSteps) * 100} className="h-1.5" />
           </div>
 
           {/* Form Card - glass panel */}
-          <Card className="w-full bg-card/70 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/20">
-          <CardContent className="pt-6 pb-6 px-4 sm:px-6">
-            <AnimatePresence mode="wait">{renderStepContent()}</AnimatePresence>
+          <Card className="w-full flex-1 min-h-0 flex flex-col bg-card/80 backdrop-blur-2xl border border-border shadow-xl rounded-3xl overflow-hidden">
+          <CardContent className="pt-4 pb-4 px-4 sm:px-5 flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <AnimatePresence mode="wait">{renderStepContent()}</AnimatePresence>
+            </div>
 
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-6 sm:mt-8 pt-6 border-t border-white/10">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-4 pt-4 border-t border-border shrink-0">
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleBack}
                 disabled={step === 1}
-                className={step === 1 ? 'invisible' : ''}
+                className={`bg-card/50 border-border hover:bg-accent/50 hover:border-primary/40 ${step === 1 ? 'invisible' : ''}`}
               >
                 <FaArrowLeft className="mr-2 h-4 w-4" /> Back
               </Button>
@@ -1468,7 +1485,7 @@ const Onboarding = () => {
         </Card>
         </div>
       </div>
-    </div>
+    </FuturisticBackground>
   );
 };
 

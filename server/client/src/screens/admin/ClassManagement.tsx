@@ -232,7 +232,7 @@ const ClassManagement = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
           <p className="text-white/60">Loading class management...</p>
@@ -242,7 +242,7 @@ const ClassManagement = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-background pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
@@ -371,7 +371,7 @@ const ClassManagement = () => {
         {/* Create Class Modal */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 rounded-2xl border border-white/10 p-6 max-w-md w-full">
+            <div className="bg-card rounded-2xl border border-border p-6 max-w-md w-full">
               <h2 className="text-xl font-semibold text-white mb-4">Create New Class</h2>
               
               <div className="space-y-4">
@@ -496,7 +496,7 @@ const ClassManagement = () => {
         {/* Assign Students/Teachers Modal */}
         {showAssignModal && selectedClass && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 rounded-2xl border border-white/10 p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="bg-card rounded-2xl border border-border p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
               <h2 className="text-xl font-semibold text-white mb-4">
                 Manage: {selectedClass.class_name}
               </h2>

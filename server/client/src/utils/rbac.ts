@@ -329,10 +329,18 @@ export async function getSchoolCodeFromId(schoolId: string | undefined): Promise
 }
 
 /**
- * Check if the user is a guest student (exploratory, no school/approval)
+ * Check if the user is a guest student (exploratory, no school code, no teacher approval)
  */
 export function isGuestUser(profile: UserProfile | null): boolean {
   return !!(profile?.isGuest === true && profile?.role === 'student');
+}
+
+/**
+ * Guest users are read-only: no write, delete, or destructive changes to Firebase.
+ * Use this to guard any Firestore write/update/delete from guest.
+ */
+export function canGuestWrite(profile: UserProfile | null): boolean {
+  return !isGuestUser(profile);
 }
 
 /**
@@ -366,6 +374,8 @@ export function requiresStudentOnboarding(role: UserRole): boolean {
  * Check if a student has completed required onboarding fields
  * Note: Students may not have a class assigned yet (assigned after approval),
  * so we check onboardingCompleted flag first, then verify required fields exist.
+ * Guest students complete a reduced onboarding (no school code, no approval) and
+ * are considered complete when onboardingCompleted is true.
  */
 export function hasCompletedStudentOnboarding(profile: UserProfile | null): boolean {
   if (!profile) return false;
@@ -375,8 +385,10 @@ export function hasCompletedStudentOnboarding(profile: UserProfile | null): bool
     return true;
   }
   
-  // Guest students skip onboarding (exploratory flow)
-  if (profile.isGuest === true) return true;
+  // Guest students: no school code required; complete when onboarding is done
+  if (profile.isGuest === true) {
+    return profile.onboardingCompleted === true;
+  }
   
   // If onboardingCompleted flag is set, student has completed onboarding
   // (class may be assigned later by teacher/school admin)

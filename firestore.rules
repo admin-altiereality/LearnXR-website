@@ -201,12 +201,14 @@ service cloud.firestore {
       // Allow update if:
       // 1. User is updating their own document (but not approvalStatus or role), OR
       // 2. User is completing onboarding: setting approvalStatus to 'pending' only (no role change), OR
-      // 3. Superadmin/admin updating (needed for approval actions), OR
-      // 4. Teacher updating approvalStatus for students in their school (including pending students), OR
-      // 5. School admin/principal updating approvalStatus for students in their school, OR
-      // 6. School updating approvalStatus for teachers in their school
+      // 3. Guest completing onboarding: owner sets isGuest and approvalStatus to 'approved' (no role change), OR
+      // 4. Superadmin/admin updating (needed for approval actions), OR
+      // 5. Teacher updating approvalStatus for students in their school (including pending students), OR
+      // 6. School admin/principal updating approvalStatus for students in their school, OR
+      // 7. School updating approvalStatus for teachers in their school
       allow update: if (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus', 'role'])) || 
                        (isOwner(userId) && request.resource.data.approvalStatus == 'pending' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
+                       (isOwner(userId) && request.resource.data.isGuest == true && request.resource.data.approvalStatus == 'approved' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
                        isSuperadmin() ||
                        (isAdmin() && resource.data.role == 'school') ||
                        // Teacher can approve/reject students in their school (allows school_id update too)

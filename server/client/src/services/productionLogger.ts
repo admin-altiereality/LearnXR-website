@@ -120,6 +120,25 @@ class ProductionLogger {
     return entry;
   }
 
+  /** Recursively remove undefined values; Firestore does not accept undefined at any level. */
+  private stripUndefined(value: unknown): unknown {
+    if (value === undefined) return undefined;
+    if (value === null || typeof value !== 'object') return value;
+    if (value instanceof Date) return value;
+    // Firestore sentinels (e.g. serverTimestamp()) are object-like; do not recurse
+    if (Object.getPrototypeOf(value) !== Object.prototype && !Array.isArray(value)) return value;
+    if (Array.isArray(value)) {
+      return value.map((item) => this.stripUndefined(item)).filter((item) => item !== undefined);
+    }
+    const obj = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const cleaned = this.stripUndefined(v);
+      if (cleaned !== undefined) out[k] = cleaned;
+    }
+    return out;
+  }
+
   private async saveLogToFirestore(entry: LogEntry): Promise<void> {
     try {
       // Only save to Firestore in production or if explicitly enabled
@@ -129,10 +148,10 @@ class ProductionLogger {
         return;
       }
 
-      await addDoc(collection(db, 'production_logs'), {
-        ...entry,
-        timestamp: serverTimestamp(),
-      });
+      const raw = { ...entry, timestamp: serverTimestamp() };
+      const payload = this.stripUndefined(raw) as Record<string, unknown>;
+      if (Object.keys(payload).length === 0) return;
+      await addDoc(collection(db, 'production_logs'), payload);
     } catch (error) {
       // Fallback to console if Firestore fails
       console.error('Failed to save log to Firestore:', error);

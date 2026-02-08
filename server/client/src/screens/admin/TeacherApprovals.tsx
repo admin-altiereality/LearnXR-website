@@ -790,7 +790,7 @@ const TeacherApprovals = () => {
 
   if (profile?.role !== 'teacher' && profile?.role !== 'principal') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
+      <div className="min-h-screen flex items-center justify-center bg-background pt-24">
         <div className="text-center">
           <p className="text-white text-lg mb-2">Access Denied</p>
           <p className="text-slate-400">Only teachers and principals can access this page.</p>
@@ -801,7 +801,7 @@ const TeacherApprovals = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] p-6">
+    <div className="min-h-screen bg-background pt-24 pb-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">

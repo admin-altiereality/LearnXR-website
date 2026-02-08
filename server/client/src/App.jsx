@@ -383,6 +383,29 @@ function checkRequiredEnvVars() {
 }
 
 function App() {
+  // Hooks must be called unconditionally at the top (Rules of Hooks)
+  const [backgroundSkybox, setBackgroundSkybox] = useState("");
+  const [key, setKey] = useState(0);
+  const [threeJsError, setThreeJsError] = useState(false);
+
+  // Load background from sessionStorage on mount (for persistence across navigation)
+  useEffect(() => {
+    const savedBackground = sessionStorage.getItem('appliedBackgroundSkybox');
+    if (savedBackground) {
+      try {
+        const parsedBackground = JSON.parse(savedBackground);
+        setBackgroundSkybox(parsedBackground);
+      } catch (error) {
+        console.error('Error parsing saved background:', error);
+        sessionStorage.removeItem('appliedBackgroundSkybox');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    setKey(prev => prev + 1);
+  }, [backgroundSkybox]);
+
   try {
     const missingEnv = checkRequiredEnvVars();
     if (missingEnv.length > 0) {
@@ -397,27 +420,6 @@ function App() {
         </div>
       );
     }
-    const [backgroundSkybox, setBackgroundSkybox] = useState("");
-    const [key, setKey] = useState(0);
-    const [threeJsError, setThreeJsError] = useState(false);
-
-    // Load background from sessionStorage on mount (for persistence across navigation)
-    useEffect(() => {
-      const savedBackground = sessionStorage.getItem('appliedBackgroundSkybox');
-      if (savedBackground) {
-        try {
-          const parsedBackground = JSON.parse(savedBackground);
-          setBackgroundSkybox(parsedBackground);
-        } catch (error) {
-          console.error('Error parsing saved background:', error);
-          sessionStorage.removeItem('appliedBackgroundSkybox');
-        }
-      }
-    }, []);
-
-    useEffect(() => {
-      setKey(prev => prev + 1);
-    }, [backgroundSkybox]);
 
     // Fallback background if Three.js fails
     if (threeJsError) {

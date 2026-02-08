@@ -1,32 +1,30 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { doc, updateDoc } from 'firebase/firestore';
-import { 
-  FaClock, 
-  FaEnvelope, 
-  FaSignOutAlt, 
-  FaCheck,
-  FaChalkboardTeacher,
-  FaSchool,
-  FaUser,
-  FaCalendarAlt,
-  FaExclamationTriangle,
-  FaUserGraduate,
-  FaExchangeAlt
+import { useEffect, useState } from 'react';
+import {
+    FaCalendarAlt,
+    FaChalkboardTeacher,
+    FaCheck,
+    FaClock,
+    FaEnvelope,
+    FaExchangeAlt,
+    FaExclamationTriangle,
+    FaSchool,
+    FaSignOutAlt,
+    FaUserGraduate
 } from 'react-icons/fa';
-import { useAuth } from '../contexts/AuthContext';
-import { db } from '../config/firebase';
-import { 
-  requiresApproval, 
-  getDefaultPage,
-  ROLE_DISPLAY_NAMES,
-  ROLE_COLORS,
-  APPROVAL_STATUS_DISPLAY
-} from '../utils/rbac';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../Components/ui/card';
-import { Button } from '../Components/ui/button';
 import { Badge } from '../Components/ui/badge';
+import { Button } from '../Components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../Components/ui/card';
+import { db } from '../config/firebase';
+import { useAuth } from '../contexts/AuthContext';
+import {
+    getDefaultPage,
+    requiresApproval,
+    ROLE_COLORS,
+    ROLE_DISPLAY_NAMES
+} from '../utils/rbac';
 
 const ApprovalPending = () => {
   const navigate = useNavigate();
@@ -94,9 +92,14 @@ const ApprovalPending = () => {
   const RoleIcon = profile?.role === 'teacher' ? FaChalkboardTeacher : FaSchool;
   const roleColors = profile?.role ? ROLE_COLORS[profile.role] : ROLE_COLORS.teacher;
 
+  useEffect(() => {
+    document.body.classList.add('overflow-hidden');
+    return () => document.body.classList.remove('overflow-hidden');
+  }, []);
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-lg space-y-8">
+    <div className="h-screen bg-background flex items-center justify-center px-4 py-6 overflow-y-auto overflow-x-hidden">
+      <div className="w-full max-w-lg space-y-5 max-h-full overflow-y-auto">
         {/* Header */}
         <div className="text-center">
           <div className="flex justify-center mb-6">

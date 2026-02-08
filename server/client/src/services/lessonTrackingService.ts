@@ -8,11 +8,13 @@
 import { collection, doc, setDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { UserProfile } from '../utils/rbac';
+import { canGuestWrite } from '../utils/rbac';
 import type { LessonLaunch, StudentScore } from '../types/lms';
 
 /**
  * Track lesson launch
- * Creates a lesson_launch record when student starts a lesson
+ * Creates a lesson_launch record when student starts a lesson.
+ * Guest users are read-only: no write to Firebase.
  */
 export async function trackLessonLaunch(
   profile: UserProfile | null,
@@ -25,6 +27,9 @@ export async function trackLessonLaunch(
   if (!profile || profile.role !== 'student' || !profile.school_id) {
     console.warn('Cannot track lesson launch: invalid profile or missing school_id');
     return null;
+  }
+  if (!canGuestWrite(profile)) {
+    return null; // Guest: read-only, do not create launch record
   }
 
   try {
@@ -105,6 +110,9 @@ export async function saveQuizScore(
   if (!profile || profile.role !== 'student' || !profile.school_id) {
     console.warn('Cannot save quiz score: invalid profile or missing school_id');
     return null;
+  }
+  if (!canGuestWrite(profile)) {
+    return null; // Guest: read-only
   }
 
   try {

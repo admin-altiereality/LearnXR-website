@@ -80,9 +80,9 @@ function Footer() {
   ];
 
   return (
-    <footer className="relative bg-[#141414]/90 backdrop-blur-xl border-t border-[#262626] overflow-hidden">
+    <footer className="relative bg-background/95 backdrop-blur-xl border-t border-border overflow-hidden">
       {/* Subtle background gradient */}
-      <div className="absolute inset-0 bg-gradient-to-t from-cyan-500/[0.02] via-transparent to-transparent pointer-events-none"></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-primary/[0.02] via-transparent to-transparent pointer-events-none"></div>
       
       <div className="relative container mx-auto px-4 py-6 lg:py-8">
         {/* Main Footer Content */}
@@ -98,12 +98,12 @@ function Footer() {
           >
             <div>
               <h3 className="text-xl mb-2 tracking-tight leading-none flex items-baseline" style={learnXRFontStyle}>
-                <span className="text-white">Learn</span>
+                <span className="text-foreground">Learn</span>
                 <span className="text-purple-700">X</span>
                 <span className="text-purple-700">R</span>
                 <TrademarkSymbol />
               </h3>
-              <p className="text-gray-400 text-xs leading-relaxed font-body">
+              <p className="text-muted-foreground text-xs leading-relaxed font-body">
                 Powered by Altie Reality Private Limited. 
                 Transforming education with immersive VR/XR learning experiences.
               </p>
@@ -116,12 +116,12 @@ function Footer() {
                   <FaMapMarkerAlt className="w-3 h-3 text-cyan-400" />
                 </div>
                 <div>
-                  <p className="text-white text-xs font-display font-semibold mb-0.5">Company Address</p>
+                  <p className="text-foreground text-xs font-display font-semibold mb-0.5">Company Address</p>
                   <a 
                     href="https://maps.app.goo.gl/bwU2obL3gJEnGruo9" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-gray-400 text-xs hover:text-cyan-400 transition-colors font-body leading-relaxed"
+                    className="text-muted-foreground text-xs hover:text-primary transition-colors font-body leading-relaxed"
                   >
                     Third Floor, Bhamashah Technohub<br />
                     Sansthan Path, Malviya Nagar<br />
@@ -135,12 +135,12 @@ function Footer() {
                   <FaWhatsapp className="w-3 h-3 text-cyan-400" />
                 </div>
                 <div>
-                  <p className="text-white text-xs font-display font-semibold mb-0.5">WhatsApp</p>
+                  <p className="text-foreground text-xs font-display font-semibold mb-0.5">WhatsApp</p>
                   <a 
                     href="https://wa.me/917023310122" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-gray-400 text-xs hover:text-cyan-400 transition-colors font-body"
+                    className="text-muted-foreground text-xs hover:text-primary transition-colors font-body"
                   >
                     +91 7023310122
                   </a>
@@ -157,7 +157,7 @@ function Footer() {
             transition={{ duration: 0.6, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
-            <h3 className="text-base font-display font-semibold text-white mb-3 tracking-tight">
+            <h3 className="text-base font-display font-semibold text-foreground mb-3 tracking-tight">
               Quick <span className="text-cyan-400">Links</span>
             </h3>
             <div className="space-y-2">
@@ -165,7 +165,7 @@ function Footer() {
                 <Link
                   key={link.name}
                   to={link.url}
-                  className="flex items-center space-x-2 text-gray-400 hover:text-white transition-all duration-300 group p-1.5 -ml-1.5 rounded-lg hover:bg-white/[0.05]"
+                  className="flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-all duration-300 group p-1.5 -ml-1.5 rounded-lg hover:bg-muted"
                 >
                   <div className="w-5 h-5 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center group-hover:border-cyan-500/40 transition-colors">
                     <link.icon className="w-2.5 h-2.5 text-cyan-400" />
@@ -184,13 +184,13 @@ function Footer() {
             transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
-            <h3 className="text-base font-display font-semibold text-white mb-3 tracking-tight">
+            <h3 className="text-base font-display font-semibold text-foreground mb-3 tracking-tight">
               <span className="text-cyan-400">Services</span>
             </h3>
             <div className="space-y-2">
-              <div className="p-3 rounded-lg bg-[#0a0a0a]/30 border border-[#262626]">
-                <p className="font-display font-semibold text-white mb-2 text-xs">AI-Powered 3D Generation</p>
-                <ul className="space-y-1.5 text-xs font-body text-gray-400">
+              <div className="p-3 rounded-lg bg-card/50 border border-border">
+                <p className="font-display font-semibold text-foreground mb-2 text-xs">AI-Powered 3D Generation</p>
+                <ul className="space-y-1.5 text-xs font-body text-muted-foreground">
                   <li className="flex items-center">
                     <span className="text-cyan-400 mr-1.5 font-mono text-[10px]">→</span>
                     3D Model Creation
@@ -220,7 +220,7 @@ function Footer() {
             transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
-            <h3 className="text-base font-display font-semibold text-white mb-3 tracking-tight">
+            <h3 className="text-base font-display font-semibold text-foreground mb-3 tracking-tight">
               Connect <span className="text-cyan-400">With Us</span>
             </h3>
             <div className="grid grid-cols-3 gap-2">
@@ -233,7 +233,7 @@ function Footer() {
                     viewport={{ once: true }}
                     transition={{ duration: 0.4, delay: 0.3 + index * 0.05 }}
                     onClick={() => navigate('/blog')}
-                    className={`flex flex-col items-center p-2 rounded-lg bg-[#0a0a0a]/30 border border-[#262626] text-gray-400 transition-all duration-300 hover:border-cyan-500/40 hover:bg-[#0a0a0a]/50 hover:text-cyan-400 ${social.color} group`}
+                    className={`flex flex-col items-center p-2 rounded-lg bg-card/50 border border-border text-muted-foreground transition-all duration-300 hover:border-cyan-500/40 hover:bg-card/70 hover:text-primary ${social.color} group`}
                     title={social.name}
                     type="button"
                   >
@@ -250,7 +250,7 @@ function Footer() {
                     href={social.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`flex flex-col items-center p-2 rounded-lg bg-[#0a0a0a]/30 border border-[#262626] text-gray-400 transition-all duration-300 hover:border-cyan-500/40 hover:bg-[#0a0a0a]/50 hover:text-cyan-400 ${social.color} group`}
+                    className={`flex flex-col items-center p-2 rounded-lg bg-card/50 border border-border text-muted-foreground transition-all duration-300 hover:border-cyan-500/40 hover:bg-card/70 hover:text-primary ${social.color} group`}
                     title={social.name}
                   >
                     <social.icon className="w-4 h-4 mb-1 group-hover:scale-110 transition-transform" />
@@ -269,13 +269,13 @@ function Footer() {
             transition={{ duration: 0.6, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
             className="space-y-3"
           >
-            <h3 className="text-base font-display font-semibold text-white mb-3 tracking-tight">
+            <h3 className="text-base font-display font-semibold text-foreground mb-3 tracking-tight">
               Service <span className="text-cyan-400">Status</span>
             </h3>
             <div className="space-y-1.5">
               <button
                 onClick={() => navigate('/system-status?tab=system-status')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-all duration-300 group w-full p-1.5 rounded-lg hover:bg-white/[0.05] -ml-1.5"
+                className="flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-all duration-300 group w-full p-1.5 rounded-lg hover:bg-muted -ml-1.5"
               >
                 <div className="w-5 h-5 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center group-hover:border-cyan-500/40 transition-colors">
                   <FaServer className="w-2.5 h-2.5 text-cyan-400" />
@@ -284,7 +284,7 @@ function Footer() {
               </button>
               <button
                 onClick={() => navigate('/system-status?tab=test-panel')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-all duration-300 group w-full p-1.5 rounded-lg hover:bg-white/[0.05] -ml-1.5"
+                className="flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-all duration-300 group w-full p-1.5 rounded-lg hover:bg-muted -ml-1.5"
               >
                 <div className="w-5 h-5 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center group-hover:border-cyan-500/40 transition-colors">
                   <FaWifi className="w-2.5 h-2.5 text-cyan-400" />
@@ -293,7 +293,7 @@ function Footer() {
               </button>
               <button
                 onClick={() => navigate('/system-status?tab=debug-panel')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-all duration-300 group w-full p-1.5 rounded-lg hover:bg-white/[0.05] -ml-1.5"
+                className="flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-all duration-300 group w-full p-1.5 rounded-lg hover:bg-muted -ml-1.5"
               >
                 <div className="w-5 h-5 rounded-md bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center group-hover:border-cyan-500/40 transition-colors">
                   <FaCog className="w-2.5 h-2.5 text-cyan-400" />
@@ -310,11 +310,11 @@ function Footer() {
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6, delay: 0.5 }}
-          className="border-t border-[#262626] pt-4"
+          className="border-t border-border pt-4"
         >
           <div className="flex flex-col md:flex-row items-center justify-between space-y-3 md:space-y-0">
             <div className="text-center md:text-left">
-              <p className="text-gray-500 text-xs font-body">
+              <p className="text-muted-foreground text-xs font-body">
                 © {currentYear} LearnXR™ | Altie Reality Private Limited. All rights reserved.
               </p>
             </div>
@@ -322,19 +322,19 @@ function Footer() {
             <div className="flex flex-wrap items-center justify-center gap-3 md:gap-4">
               <Link 
                 to="/privacy-policy" 
-                className="text-gray-400 hover:text-cyan-400 text-xs transition-colors font-body"
+                className="text-muted-foreground hover:text-primary text-xs transition-colors font-body"
               >
                 Privacy Policy
               </Link>
               <Link 
                 to="/terms-conditions" 
-                className="text-gray-400 hover:text-cyan-400 text-xs transition-colors font-body"
+                className="text-muted-foreground hover:text-primary text-xs transition-colors font-body"
               >
                 Terms & Conditions
               </Link>
               <Link 
                 to="/refund-policy" 
-                className="text-gray-400 hover:text-cyan-400 text-xs transition-colors font-body"
+                className="text-muted-foreground hover:text-primary text-xs transition-colors font-body"
               >
                 Refund Policy
               </Link>

@@ -24,6 +24,7 @@ import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
+import { isGuestUser } from '../utils/rbac';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
@@ -56,6 +57,7 @@ import {
   RefreshCcw,
   SkipForward,
 } from 'lucide-react';
+import { Progress } from '../Components/ui/progress';
 
 // ============================================================================
 // Error Boundary Component
@@ -86,17 +88,17 @@ class VRPlayerErrorBoundary extends Component<{ children: ReactNode; onReset?: (
   render() {
     if (this.state.hasError) {
       return (
-        <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-slate-900 rounded-2xl border border-red-500/30 p-6 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+        <div className="fixed inset-0 bg-background flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-card rounded-2xl border border-destructive/30 p-6 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-destructive/20 flex items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-red-400" />
             </div>
-            <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+            <h2 className="text-xl font-bold text-foreground mb-2">Something went wrong</h2>
             <p className="text-slate-400 text-sm mb-4">
               The VR Lesson Player encountered an error.
             </p>
             
-            <div className="mb-4 p-3 bg-slate-800/50 rounded-lg text-left overflow-auto max-h-40">
+            <div className="mb-4 p-3 bg-muted/50 rounded-lg text-left overflow-auto max-h-40 text-foreground">
               <p className="text-xs text-red-400 font-mono break-all">
                 {this.state.error?.message || 'Unknown error'}
               </p>
@@ -109,7 +111,7 @@ class VRPlayerErrorBoundary extends Component<{ children: ReactNode; onReset?: (
                   this.props.onReset?.();
                 }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium
-                         text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700"
+                         text-foreground bg-muted hover:bg-muted/80 rounded-lg border border-border"
               >
                 <RefreshCcw className="w-4 h-4" />
                 Try Again
@@ -117,7 +119,7 @@ class VRPlayerErrorBoundary extends Component<{ children: ReactNode; onReset?: (
               <button
                 onClick={() => window.location.href = '/studio/content'}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium
-                         text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg"
+                         text-primary-foreground bg-primary hover:bg-primary/90 rounded-lg"
               >
                 <Home className="w-4 h-4" />
                 Go Back
@@ -1702,7 +1704,8 @@ const VRLessonPlayerInner = () => {
   // IMPORTANT: This must be defined BEFORE handleContinue which uses it
   const saveLessonCompletionToFirestore = useCallback(async () => {
     if (!user || !activeLesson || !profile) return;
-    
+    if (isGuestUser(profile)) return; // Guest: read-only, no Firebase writes
+
     const chapterId = activeLesson.chapter?.chapter_id;
     const topicId = activeLesson.topic?.topic_id;
     
@@ -1945,46 +1948,45 @@ const VRLessonPlayerInner = () => {
         log('✅', 'Quiz score saved to student_scores:', scoreId);
       }
 
-      // 2. Also save to legacy user_quiz_results for backward compatibility
-      const resultsRef = doc(db, 'user_quiz_results', `${user.uid}_${lessonId}`);
-      await setDoc(resultsRef, {
-        userId: user.uid,
-        lessonId,
-        chapterId,
-        topicId,
-        curriculum: activeLesson.chapter?.curriculum,
-        className: activeLesson.chapter?.class_name,
-        subject: activeLesson.chapter?.subject,
-        topicName: activeLesson.topic?.topic_name,
-        score,
-        answers,
-        attempt_number: attemptNumber,
-        completedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      
-      log('✅', 'Quiz results saved to user_quiz_results (legacy)');
-      
-      // 3. Save/Update lesson progress in user_lesson_progress collection (legacy)
-      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
-      await setDoc(progressRef, {
-        userId: user.uid,
-        chapterId,
-        topicId,
-        curriculum: activeLesson.chapter?.curriculum,
-        className: activeLesson.chapter?.class_name,
-        subject: activeLesson.chapter?.subject,
-        chapterName: activeLesson.chapter?.chapter_name,
-        chapterNumber: activeLesson.chapter?.chapter_number,
-        topicName: activeLesson.topic?.topic_name,
-        completed: true,
-        quizCompleted: total > 0,
-        quizScore: total > 0 ? score : null,
-        completedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }, { merge: true });
-      
-      log('✅', 'Lesson progress saved to user_lesson_progress (legacy)');
+      // 2 & 3. Legacy writes: skip for guest (read-only)
+      if (!isGuestUser(profile)) {
+        const resultsRef = doc(db, 'user_quiz_results', `${user.uid}_${lessonId}`);
+        await setDoc(resultsRef, {
+          userId: user.uid,
+          lessonId,
+          chapterId,
+          topicId,
+          curriculum: activeLesson.chapter?.curriculum,
+          className: activeLesson.chapter?.class_name,
+          subject: activeLesson.chapter?.subject,
+          topicName: activeLesson.topic?.topic_name,
+          score,
+          answers,
+          attempt_number: attemptNumber,
+          completedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        log('✅', 'Quiz results saved to user_quiz_results (legacy)');
+
+        const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
+        await setDoc(progressRef, {
+          userId: user.uid,
+          chapterId,
+          topicId,
+          curriculum: activeLesson.chapter?.curriculum,
+          className: activeLesson.chapter?.class_name,
+          subject: activeLesson.chapter?.subject,
+          chapterName: activeLesson.chapter?.chapter_name,
+          chapterNumber: activeLesson.chapter?.chapter_number,
+          topicName: activeLesson.topic?.topic_name,
+          completed: true,
+          quizCompleted: total > 0,
+          quizScore: total > 0 ? score : null,
+          completedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        log('✅', 'Lesson progress saved to user_lesson_progress (legacy)');
+      }
       
     } catch (error) {
       console.error('Failed to save quiz results/progress to Firestore:', error);
@@ -2050,14 +2052,14 @@ const VRLessonPlayerInner = () => {
   // Show loading while data initializes
   if (!dataInitialized) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 flex items-center justify-center">
-            <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+            <Loader2 className="w-10 h-10 text-primary animate-spin" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-3">Loading Lesson...</h1>
-          <p className="text-slate-400 mb-2">Please wait while we prepare your lesson.</p>
-          <p className="text-xs text-slate-500 font-mono">
+          <h1 className="text-2xl font-bold text-foreground mb-3">Loading Lesson...</h1>
+          <p className="text-muted-foreground mb-2">Please wait while we prepare your lesson.</p>
+          <p className="text-xs text-muted-foreground font-mono">
             {initPhase === 'starting' && 'Initializing...'}
             {initPhase === 'loading-storage' && 'Loading saved data...'}
             {initPhase === 'validating' && 'Validating content...'}
@@ -2070,22 +2072,22 @@ const VRLessonPlayerInner = () => {
   // Show error if initialization failed
   if (initError) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-red-500/20 to-orange-600/20 border border-red-500/30 flex items-center justify-center">
-            <AlertTriangle className="w-10 h-10 text-red-400" />
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-destructive/20 border border-destructive/30 flex items-center justify-center">
+            <AlertTriangle className="w-10 h-10 text-destructive" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-3">Failed to Load Lesson</h1>
-          <p className="text-slate-400 mb-4">{initError}</p>
-          <p className="text-xs text-slate-500 mb-6 font-mono">Phase: {initPhase}</p>
+          <h1 className="text-2xl font-bold text-foreground mb-3">Failed to Load Lesson</h1>
+          <p className="text-muted-foreground mb-4">{initError}</p>
+          <p className="text-xs text-muted-foreground mb-6 font-mono">Phase: {initPhase}</p>
           <div className="flex flex-col gap-3">
             <button
               onClick={() => {
                 console.log('🔄 Retrying lesson load...');
                 window.location.reload();
               }}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-slate-700 
-                       text-white font-semibold rounded-xl"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-muted 
+                       text-foreground font-semibold rounded-xl"
             >
               Retry
             </button>
@@ -2095,8 +2097,8 @@ const VRLessonPlayerInner = () => {
                 sessionStorage.removeItem('activeLesson');
                 navigate('/lessons');
               }}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 
-                       text-white font-semibold rounded-xl shadow-lg"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary 
+                       text-primary-foreground font-semibold rounded-xl shadow-lg"
             >
               <BookOpen className="w-5 h-5" />
               Back to Lessons
@@ -2110,19 +2112,19 @@ const VRLessonPlayerInner = () => {
   // Show no lesson state if data is invalid
   if (!isLessonDataValid || !effectiveLesson) {
     return (
-      <div className="fixed inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border border-cyan-500/30 flex items-center justify-center">
-            <BookOpen className="w-10 h-10 text-cyan-400" />
+          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+            <BookOpen className="w-10 h-10 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-3">No Lesson Selected</h1>
-          <p className="text-slate-400 mb-4">
+          <h1 className="text-2xl font-bold text-foreground mb-3">No Lesson Selected</h1>
+          <p className="text-muted-foreground mb-4">
             Please select a lesson from the library to start learning.
           </p>
           <button
             onClick={() => navigate('/lessons')}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 
-                     text-white font-semibold rounded-xl shadow-lg"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary 
+                     text-primary-foreground font-semibold rounded-xl shadow-lg"
           >
             <BookOpen className="w-5 h-5" />
             Browse Lessons
@@ -2224,7 +2226,7 @@ const VRLessonPlayerInner = () => {
             exit={{ opacity: 0, y: 20 }}
             className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-none"
           >
-            <div className="flex items-center gap-2 px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full text-white/80 text-sm">
+            <div className="flex items-center gap-2 px-4 py-2 bg-card/90 backdrop-blur-sm rounded-full text-foreground/90 text-sm border border-border">
               <Move className="w-4 h-4" />
               Drag to look around
             </div>
@@ -2236,8 +2238,8 @@ const VRLessonPlayerInner = () => {
       <button
         onClick={handleExit}
         className="absolute top-4 left-4 z-40 flex items-center gap-2 px-4 py-2.5 
-                 bg-black/60 hover:bg-red-600/80 backdrop-blur-sm 
-                 text-white rounded-xl border border-white/10 transition-all"
+                 bg-card/90 hover:bg-destructive/80 backdrop-blur-sm 
+                 text-foreground rounded-xl border border-border transition-all"
       >
         <LogOut className="w-5 h-5" />
         <span className="font-medium">Exit</span>
@@ -2245,25 +2247,22 @@ const VRLessonPlayerInner = () => {
 
       {/* Top Bar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-        <div className="flex items-center gap-4 px-6 py-3 bg-black/60 backdrop-blur-xl rounded-2xl border border-white/10">
+        <div className="flex items-center gap-4 px-6 py-3 bg-card/90 backdrop-blur-xl rounded-2xl border border-border">
           <div className="flex items-center gap-3">
-            <GraduationCap className="w-5 h-5 text-cyan-400" />
+            <GraduationCap className="w-5 h-5 text-primary" />
             <div>
-              <h1 className="text-sm font-semibold text-white truncate max-w-[200px]">
+              <h1 className="text-sm font-semibold text-foreground truncate max-w-[200px]">
                 {activeLesson.topic?.topic_name || 'Unknown Topic'}
               </h1>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">{activeLesson.chapter?.subject || 'Unknown'}</span>
-                <span className="text-xs text-cyan-400">• {getPhaseLabel()}</span>
+                <span className="text-xs text-muted-foreground">{activeLesson.chapter?.subject || 'Unknown'}</span>
+                <span className="text-xs text-primary">• {getPhaseLabel()}</span>
               </div>
             </div>
           </div>
           
-          <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-500"
-              style={{ width: `${getPhaseProgress()}%` }}
-            />
+          <div className="w-24">
+            <Progress value={getPhaseProgress()} className="h-1.5" />
           </div>
         </div>
       </div>
@@ -2286,8 +2285,8 @@ const VRLessonPlayerInner = () => {
         <button
           onClick={() => setIsMuted(!isMuted)}
           className={`p-2.5 rounded-xl transition-colors ${
-            isMuted ? 'bg-red-500/20 text-red-400' : 'bg-black/60 text-white hover:bg-black/80'
-          } border border-white/10`}
+            isMuted ? 'bg-red-500/20 text-red-400' : 'bg-card/90 text-foreground hover:bg-card'
+          } border border-border`}
           title={isMuted ? 'Unmute' : 'Mute'}
         >
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
@@ -2296,8 +2295,8 @@ const VRLessonPlayerInner = () => {
         <button
           onClick={() => setShowChat(!showChat)}
           className={`p-2.5 rounded-xl transition-colors ${
-            showChat ? 'bg-cyan-500/20 text-cyan-400' : 'bg-black/60 text-white hover:bg-black/80'
-          } border border-white/10`}
+            showChat ? 'bg-primary/20 text-primary' : 'bg-card/90 text-foreground hover:bg-card'
+          } border border-border`}
           title="Ask questions"
         >
           <MessageSquare className="w-5 h-5" />

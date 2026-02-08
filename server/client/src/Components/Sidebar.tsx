@@ -23,13 +23,22 @@ import {
   FaFileAlt,
   FaLightbulb,
   FaRobot,
-  FaClipboardList
+  FaClipboardList,
+  FaSun,
+  FaMoon
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../hooks/useTheme';
 import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
 import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 import { Sheet, SheetContent } from './ui/sheet';
 import { Badge } from './ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 
 interface NavItem {
   path: string;
@@ -58,6 +67,7 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
 
   const userRole = useMemo(() => normalizeRole(profile?.role), [profile?.role]);
 
@@ -293,7 +303,6 @@ const Sidebar = () => {
           </ul>
           <div className="my-2 h-px bg-sidebar-border" />
           <ul className="space-y-0.5">
-            <li>{renderNavLink('/profile', 'Profile', FaUser, location.pathname === '/profile')}</li>
             {isAdminOrSuperadmin && (
               <li>
                 {renderNavLink('/developer', 'Settings', FaCog, location.pathname === '/developer')}
@@ -302,41 +311,60 @@ const Sidebar = () => {
           </ul>
         </nav>
         <div className="shrink-0 border-t border-sidebar-border p-2">
-          <div
-            className={`flex items-center gap-2 rounded-md px-2 py-2 ${roleBgColor} ${!expanded ? 'justify-center' : ''}`}
-          >
-            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${roleColor}`}>
-              <RoleIcon className="h-4 w-4" />
-            </div>
-            {expanded && (
-              <div className="min-w-0 flex-1 truncate">
-                <p className="text-xs font-medium text-sidebar-foreground truncate">
-                  {profile?.name || profile?.displayName || 'User'}
-                </p>
-                <p className={`text-[10px] ${roleColor} truncate flex items-center gap-1.5 flex-wrap`}>
-                  {ROLE_DISPLAY_NAMES[userRole] || userRole}
-                  {profile?.isGuest && (
-                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal">
-                      Guest
-                    </Badge>
-                  )}
-                </p>
-              </div>
-            )}
-          </div>
           <button
-            onClick={handleLogout}
-            className={`mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${!expanded ? 'justify-center' : ''}`}
-            title={!expanded ? 'Logout' : undefined}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            className={`group mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${!expanded ? 'justify-center' : ''}`}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            <FaSignOutAlt className="h-4 w-4 shrink-0" />
-            {expanded && <span>Logout</span>}
+            {theme === 'dark' ? <FaSun className="h-4 w-4 shrink-0" /> : <FaMoon className="h-4 w-4 shrink-0" />}
+            {expanded && <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
             {!expanded && (
               <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
-                Logout
+                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
               </span>
             )}
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={`group flex w-full items-center gap-2 rounded-md px-2 py-2 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${!expanded ? 'justify-center' : ''}`}
+                title="Account"
+                aria-label="Account menu"
+              >
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${roleColor} ${roleBgColor}`}>
+                  <RoleIcon className="h-4 w-4" />
+                </div>
+                {expanded && (
+                  <div className="min-w-0 flex-1 truncate text-left">
+                    <p className="text-xs font-medium truncate">
+                      {ROLE_DISPLAY_NAMES[userRole] || userRole}
+                      {profile?.isGuest && (
+                        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal ml-1">
+                          Guest
+                        </Badge>
+                      )}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {profile?.name || profile?.displayName || 'User'}
+                    </p>
+                  </div>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={expanded ? 'start' : 'center'} side="right" className="w-56">
+              <DropdownMenuItem asChild>
+                <Link to="/profile" className="flex items-center gap-2 cursor-pointer">
+                  <FaUser className="h-4 w-4" />
+                  Profile
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleLogout} className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive">
+                <FaSignOutAlt className="h-4 w-4" />
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     );

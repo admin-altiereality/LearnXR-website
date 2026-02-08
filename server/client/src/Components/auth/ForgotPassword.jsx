@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FaArrowLeft, FaEnvelope } from 'react-icons/fa';
+import { FaArrowLeft, FaEnvelope, FaMoon, FaSun } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../hooks/useTheme';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Card } from '../ui/card';
-import FlowFieldBackground from '../ui/flow-field-background';
+import FuturisticBackground from '../FuturisticBackground';
 
 export const ForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -15,6 +16,7 @@ export const ForgotPassword = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { resetPassword } = useAuth();
+  const { theme, setTheme } = useTheme();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -41,18 +43,20 @@ export const ForgotPassword = () => {
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden">
-      <FlowFieldBackground
-        className="absolute inset-0 min-h-screen"
-        color="#8b5cf6"
-        trailOpacity={0.1}
-        particleCount={400}
-        speed={0.8}
-      />
+    <FuturisticBackground className="min-h-screen w-full">
+      <button
+        type="button"
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="fixed top-4 right-4 z-[100] flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+      >
+        {theme === 'dark' ? <FaSun className="h-5 w-5" /> : <FaMoon className="h-5 w-5" />}
+      </button>
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-md">
           <motion.div custom={1} variants={fadeUpVariants} initial="hidden" animate="visible">
-            <Card className="w-full max-w-sm mx-auto bg-card/70 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/20 rounded-[calc(var(--radius)+0.125rem)] overflow-hidden">
+            <Card className="w-full max-w-sm mx-auto bg-card/80 backdrop-blur-xl border border-border shadow-xl rounded-[calc(var(--radius)+0.125rem)] overflow-hidden">
               <div className="p-6 pb-5 sm:p-8 sm:pb-6">
                 <div className="text-center">
                   <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
@@ -95,7 +99,7 @@ export const ForgotPassword = () => {
                 </form>
               </div>
 
-              <div className="bg-muted/50 border-t border-white/10 rounded-b-[calc(var(--radius)+0.125rem)] p-3">
+              <div className="bg-muted/30 border-t border-border rounded-b-[calc(var(--radius)+0.125rem)] p-3">
                 <p className="text-muted-foreground text-center text-sm">
                   Remember your password?{' '}
                   <Button variant="link" className="px-1 h-auto text-primary font-medium" asChild>
@@ -107,7 +111,7 @@ export const ForgotPassword = () => {
           </motion.div>
         </div>
       </div>
-    </div>
+    </FuturisticBackground>
   );
 };
 

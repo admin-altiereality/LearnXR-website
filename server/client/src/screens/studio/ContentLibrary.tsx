@@ -247,7 +247,7 @@ const ContentLibrary = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="flex">
         {/* Filters sidebar - no overlay, homogeneous with app sidebar */}
         <aside
@@ -387,8 +387,8 @@ const ContentLibrary = () => {
           />
         )}
 
-        {/* Main content - in-flow title bar, no fixed header */}
-        <main className="flex-1 min-w-0 p-4 sm:p-6">
+        {/* Main content - in-flow title bar, no fixed header (theme-aware for dark mode) */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6 bg-background text-foreground">
           {/* Page title and actions - in flow, does not overlay sidebar */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 pb-4 border-b border-border">
             <div className="flex items-center gap-3 min-w-0">

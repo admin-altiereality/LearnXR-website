@@ -120,10 +120,10 @@ class XRPlayerErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-slate-900 rounded-lg border border-red-500/50 p-6 text-center">
-            <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-            <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+        <div className="min-h-screen bg-background flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-card rounded-lg border border-destructive/50 p-6 text-center">
+            <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-foreground mb-2">Something went wrong</h2>
             <p className="text-slate-400 mb-4">
               {this.state.error?.message || 'An unexpected error occurred'}
             </p>
@@ -132,7 +132,7 @@ class XRPlayerErrorBoundary extends React.Component<
                 this.setState({ hasError: false, error: null });
                 window.location.reload();
               }}
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg"
+              className="px-4 py-2 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg"
             >
               Reload Page
             </button>
@@ -4568,17 +4568,17 @@ const XRLessonPlayerV3: React.FC = () => {
   // Error state
   if (loadingState === 'error') {
     return (
-      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-slate-900 rounded-2xl border border-red-500/30 p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
-            <AlertTriangle className="w-8 h-8 text-red-400" />
+      <div className="fixed inset-0 bg-background flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-card rounded-2xl border border-destructive/30 p-6 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-destructive/20 flex items-center justify-center">
+            <AlertTriangle className="w-8 h-8 text-destructive" />
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">Unable to Load VR Lesson</h2>
+          <h2 className="text-xl font-bold text-foreground mb-2">Unable to Load VR Lesson</h2>
           <p className="text-slate-400 text-sm mb-4">{errorMessage}</p>
           <button
             onClick={() => navigate('/lessons')}
             className="flex items-center justify-center gap-2 px-6 py-3 mx-auto
-                     text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium"
+                     text-primary-foreground bg-primary hover:bg-primary/90 rounded-lg font-medium"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Lessons
@@ -4591,12 +4591,12 @@ const XRLessonPlayerV3: React.FC = () => {
   // No VR support
   if (isVRSupported === false) {
     return (
-      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-slate-900 rounded-2xl border border-purple-500/30 p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-purple-500/20 flex items-center justify-center">
-            <Glasses className="w-8 h-8 text-purple-400" />
+      <div className="fixed inset-0 bg-background flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-card rounded-2xl border border-border p-6 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
+            <Glasses className="w-8 h-8 text-primary" />
           </div>
-          <h2 className="text-xl font-bold text-white mb-2">VR Device Required</h2>
+          <h2 className="text-xl font-bold text-foreground mb-2">VR Device Required</h2>
           <p className="text-slate-400 text-sm mb-2">
             This immersive lesson requires a VR headset.
           </p>
@@ -4606,7 +4606,7 @@ const XRLessonPlayerV3: React.FC = () => {
           <button
             onClick={() => navigate('/lessons')}
             className="flex items-center justify-center gap-2 px-6 py-3 mx-auto
-                     text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg font-medium"
+                     text-primary-foreground bg-primary hover:bg-primary/90 rounded-lg font-medium"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to Lessons
@@ -4623,10 +4623,10 @@ const XRLessonPlayerV3: React.FC = () => {
       
       {/* Loading Overlay */}
       {loadingState === 'loading' && (
-        <div className="absolute inset-0 bg-slate-950/90 flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-background/90 flex items-center justify-center z-50">
           <div className="text-center">
-            <Loader2 className="w-12 h-12 text-cyan-400 animate-spin mx-auto mb-4" />
-            <p className="text-white font-medium">{loadingMessage}</p>
+            <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+            <p className="text-foreground font-medium">{loadingMessage}</p>
             {lessonData && (
               <p className="text-slate-400 text-sm mt-2">
                 {lessonData.topic.topic_name}
@@ -4641,8 +4641,8 @@ const XRLessonPlayerV3: React.FC = () => {
         <div className="absolute top-4 left-4 z-40">
           <button
             onClick={() => navigate('/lessons')}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800/80 hover:bg-slate-700/80 
-                     text-white rounded-lg backdrop-blur-sm border border-slate-700/50"
+            className="flex items-center gap-2 px-4 py-2 bg-card/80 hover:bg-card 
+                     text-foreground rounded-lg backdrop-blur-sm border border-border"
           >
             <ArrowLeft className="w-4 h-4" />
             Exit
@@ -4652,10 +4652,10 @@ const XRLessonPlayerV3: React.FC = () => {
       
       {/* In VR Indicator (shown on 2D screen while in VR) */}
       {loadingState === 'in-vr' && (
-        <div className="absolute inset-0 bg-slate-950 flex items-center justify-center z-50">
+        <div className="absolute inset-0 bg-background flex items-center justify-center z-50">
           <div className="text-center">
-            <Glasses className="w-16 h-16 text-purple-400 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-2">In VR Mode</h2>
+            <Glasses className="w-16 h-16 text-primary mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-foreground mb-2">In VR Mode</h2>
             <p className="text-slate-400">
               Look around in your headset to explore the lesson
             </p>
@@ -4666,8 +4666,8 @@ const XRLessonPlayerV3: React.FC = () => {
       {/* Lesson Info (top right) */}
       {loadingState === 'ready' && lessonData && (
         <div className="absolute top-4 right-4 z-40 max-w-xs">
-          <div className="bg-slate-800/80 backdrop-blur-sm rounded-lg p-4 border border-slate-700/50">
-            <p className="text-cyan-400 text-xs font-medium mb-1">
+          <div className="bg-card/80 backdrop-blur-sm rounded-lg p-4 border border-border">
+            <p className="text-primary text-xs font-medium mb-1">
               {lessonData.chapter.curriculum} • Class {lessonData.chapter.class_name}
             </p>
             <h3 className="text-white font-semibold text-sm">
@@ -4680,7 +4680,7 @@ const XRLessonPlayerV3: React.FC = () => {
       {/* Instructions */}
       {loadingState === 'ready' && (
         <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-40">
-          <div className="bg-slate-800/80 backdrop-blur-sm rounded-lg px-6 py-3 border border-cyan-500/30">
+          <div className="bg-card/80 backdrop-blur-sm rounded-lg px-6 py-3 border border-primary/30">
             <p className="text-cyan-300 text-sm text-center">
               Click "Enter VR" below to start the immersive experience
             </p>
@@ -4696,8 +4696,8 @@ const XRLessonPlayerV3: React.FC = () => {
         <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50">
           <div className="bg-cyan-600/90 backdrop-blur-sm rounded-lg px-6 py-3 border border-cyan-400/50 shadow-lg">
             <div className="flex items-center gap-3">
-              <Play className="w-5 h-5 text-white animate-pulse" />
-              <p className="text-white font-medium">
+              <Play className="w-5 h-5 text-foreground animate-pulse" />
+              <p className="text-foreground font-medium">
                 Point at the START button in VR to begin
               </p>
             </div>
@@ -4712,7 +4712,7 @@ const XRLessonPlayerV3: React.FC = () => {
           <button
             onClick={skipToQuiz}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 
-                     hover:from-amber-500 hover:to-orange-500 text-white rounded-lg font-medium 
+                     hover:from-amber-500 hover:to-orange-500 text-primary-foreground rounded-lg font-medium 
                      shadow-lg shadow-amber-500/20 border border-amber-500/50 transition-all"
           >
             <SkipForward className="w-4 h-4" />
@@ -4723,8 +4723,8 @@ const XRLessonPlayerV3: React.FC = () => {
       
       {/* Lesson Completion Screen */}
       {lessonPhase === 'complete' && (
-        <div className="absolute inset-0 bg-slate-950/95 flex items-center justify-center z-50 backdrop-blur-sm">
-          <div className="max-w-md w-full mx-4 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl 
+        <div className="absolute inset-0 bg-background/95 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="max-w-md w-full mx-4 bg-card rounded-2xl 
                         border border-emerald-500/30 p-8 text-center shadow-2xl">
             <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-emerald-500/20 to-teal-500/20 
                           flex items-center justify-center border border-emerald-500/30">
@@ -4737,7 +4737,7 @@ const XRLessonPlayerV3: React.FC = () => {
             
             {/* Quiz Score Display */}
             {mcqData.length > 0 && (
-              <div className="mb-6 p-4 bg-slate-800/50 rounded-xl inline-block">
+              <div className="mb-6 p-4 bg-card/50 rounded-xl inline-block">
                 <p className="text-xs text-slate-400 mb-1">Quiz Score</p>
                 <p className="text-4xl font-bold text-emerald-400">
                   {mcqScore}/{mcqData.length}
@@ -4751,7 +4751,7 @@ const XRLessonPlayerV3: React.FC = () => {
             <button
               onClick={() => navigate('/lessons')}
               className="flex items-center justify-center gap-2 px-6 py-3 mx-auto
-                       text-white bg-gradient-to-r from-cyan-600 to-blue-600 
+                       text-primary-foreground bg-primary 
                        hover:from-cyan-500 hover:to-blue-500 rounded-lg font-medium 
                        shadow-lg transition-all"
             >
@@ -4768,12 +4768,12 @@ const XRLessonPlayerV3: React.FC = () => {
       {/* Model Control Buttons (3D Asset) */}
       {primaryAssetRef.current && (loadingState === 'ready' || loadingState === 'in-vr') && (
         <div className="absolute bottom-4 right-4 z-40">
-          <div className="bg-slate-800/90 backdrop-blur-sm rounded-lg p-3 border border-slate-700/50">
+          <div className="bg-card/90 backdrop-blur-sm rounded-lg p-3 border border-border">
             <p className="text-slate-400 text-xs mb-2 font-medium">3D Model:</p>
             <div className="flex gap-2">
               <button
                 onClick={resetModel}
-                className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded transition-colors"
+                className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground text-xs rounded transition-colors"
                 title="Reset model to original position"
               >
                 Reset

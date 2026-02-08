@@ -27,10 +27,14 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: true,
       cors: true,
+      clearScreen: false, // Keep previous output so errors are visible
       hmr: {
-        overlay: true,
+        overlay: true, // Show error overlay in browser
       },
     },
+
+    // Make Vite's own logs visible (errors, warnings)
+    logLevel: 'info',
 
     // Build configuration
     build: {
@@ -61,20 +65,21 @@ export default defineConfig(({ mode }) => {
       },
       // Optimize chunk size warnings
       chunkSizeWarningLimit: 1000,
-      // Enable minification - remove console and debugger in production
+      // Enable minification - keep console.error/console.warn for debugging
       minify: 'terser',
       terserOptions: {
         compress: {
-          drop_console: true,   // Remove console statements in production
-          drop_debugger: true,   // Remove debugger statements in production
-          keep_classnames: true, // Preserve class names for better error messages
-          keep_fnames: true,      // Preserve function names for better error messages
-          passes: 1,              // Reduce passes to avoid aggressive optimization
+          // Keep console.error and console.warn so errors are visible in production
+          pure_funcs: ['console.log', 'console.info', 'console.debug'],
+          drop_debugger: true,
+          keep_classnames: true,
+          keep_fnames: true,
+          passes: 1,
         },
-        mangle: false,            // DISABLE variable name mangling completely for debugging
+        mangle: false,
         format: {
-          comments: false,        // Remove comments but keep structure
-          beautify: false,        // Don't beautify (keep minified structure)
+          comments: false,
+          beautify: false,
         },
       },
     },

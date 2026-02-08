@@ -576,18 +576,18 @@ const Approvals = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
-        <div className="text-center">
+      <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
+        <div className="text-center text-foreground">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-          <p className="text-white/60">Loading pending approvals...</p>
+          <p className="text-muted-foreground">Loading pending approvals...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-background pt-24 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <motion.div
           custom={0}
@@ -598,7 +598,7 @@ const Approvals = () => {
         >
           <button
             onClick={() => navigate('/lessons')}
-            className="flex items-center gap-2 text-white/50 hover:text-white/80 transition-colors mb-4"
+            className="flex items-center gap-2 text-muted-foreground hover:text-white/80 transition-colors mb-4"
           >
             <FaArrowLeft className="text-sm" />
             <span className="text-sm">Back to Dashboard</span>
@@ -612,7 +612,7 @@ const Approvals = () => {
                 </div>
                 User Management
               </h1>
-              <p className="text-white/50 mt-1">
+              <p className="text-muted-foreground mt-1">
                 Review approvals and manage user roles
               </p>
             </div>
@@ -644,7 +644,7 @@ const Approvals = () => {
             className={`px-6 py-3 text-sm font-medium transition-all border-b-2 ${
               activeTab === 'pending'
                 ? 'text-cyan-400 border-cyan-400'
-                : 'text-white/50 border-transparent hover:text-white/80'
+                : 'text-muted-foreground border-transparent hover:text-white/80'
             }`}
           >
             Pending Approvals ({stats.pending})
@@ -654,7 +654,7 @@ const Approvals = () => {
             className={`px-6 py-3 text-sm font-medium transition-all border-b-2 ${
               activeTab === 'approved'
                 ? 'text-cyan-400 border-cyan-400'
-                : 'text-white/50 border-transparent hover:text-white/80'
+                : 'text-muted-foreground border-transparent hover:text-white/80'
             }`}
           >
             Approved Users ({stats.approved})
@@ -677,7 +677,7 @@ const Approvals = () => {
               placeholder="Search by name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-xl bg-white/[0.03] border border-white/10 
+              className="w-full pl-11 pr-4 py-3 rounded-xl bg-card/50 border border-border 
                        text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
             />
           </div>
@@ -692,7 +692,7 @@ const Approvals = () => {
                     className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                       filterRole === role
                         ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
-                        : 'bg-white/[0.03] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+                        : 'bg-card/50 border border-border text-muted-foreground hover:text-white hover:bg-card/50'
                     }`}
                   >
                     {role === 'all' ? 'All Roles' : role.charAt(0).toUpperCase() + role.slice(1) + 's'}
@@ -705,7 +705,7 @@ const Approvals = () => {
                     className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                       filterRole === role
                         ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
-                        : 'bg-white/[0.03] border border-white/10 text-white/60 hover:text-white hover:bg-white/[0.05]'
+                        : 'bg-card/50 border border-border text-muted-foreground hover:text-white hover:bg-card/50'
                     }`}
                   >
                     {role === 'all' ? 'All Roles' : ROLE_DISPLAY_NAMES[role as UserRole] || role}
@@ -741,7 +741,7 @@ const Approvals = () => {
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <h3 className="text-white font-medium mb-1">{school.name}</h3>
-                      <div className="flex flex-wrap gap-3 text-sm text-white/60">
+                      <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                         {school.city && <span>{school.city}, {school.state}</span>}
                         {school.contactPhone && <span>{school.contactPhone}</span>}
                         {school.boardAffiliation && <span>{school.boardAffiliation}</span>}
@@ -803,7 +803,7 @@ const Approvals = () => {
                 >
                   <div className="flex-1 min-w-0">
                     <h3 className="text-white font-medium">{school.name}</h3>
-                    <div className="flex flex-wrap gap-3 text-sm text-white/60 mt-1">
+                    <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mt-1">
                       {school.city && <span>{school.city}, {school.state}</span>}
                       {school.schoolCode ? (
                         <span className="text-cyan-400 font-mono font-medium">Code: {school.schoolCode}</span>
@@ -839,19 +839,19 @@ const Approvals = () => {
           animate="visible"
         >
           {(activeTab === 'pending' && loading) || (activeTab === 'approved' && loadingApproved) ? (
-            <div className="text-center py-16 rounded-2xl border border-white/10 bg-white/[0.02]">
+            <div className="text-center py-16 rounded-2xl border border-border bg-card/30">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-              <p className="text-white/60">Loading {activeTab === 'pending' ? 'pending' : 'approved'} users...</p>
+              <p className="text-muted-foreground">Loading {activeTab === 'pending' ? 'pending' : 'approved'} users...</p>
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-16 rounded-2xl border border-white/10 bg-white/[0.02]">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-white/[0.05] flex items-center justify-center">
+            <div className="text-center py-16 rounded-2xl border border-border bg-card/30">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-card/50 flex items-center justify-center">
                 <FaUsers className="text-2xl text-white/30" />
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">
                 {activeTab === 'pending' ? 'No Pending Approvals' : 'No Approved Users'}
               </h3>
-              <p className="text-white/50">
+              <p className="text-muted-foreground">
                 {searchQuery || filterRole !== 'all' 
                   ? 'No users match your search criteria'
                   : activeTab === 'pending' 
@@ -880,7 +880,7 @@ const Approvals = () => {
                       animate="visible"
                       exit={{ opacity: 0, x: -50, transition: { duration: 0.2 } }}
                       layout
-                      className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden"
+                      className="rounded-2xl border border-border bg-card/30 overflow-hidden"
                     >
                       {/* Main Content */}
                       <div className="p-6">
@@ -906,7 +906,7 @@ const Approvals = () => {
                                 )}
                               </div>
                               
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/50">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                                 <span className="flex items-center gap-1.5">
                                   <FaEnvelope className="text-xs" />
                                   {user.email}
@@ -953,7 +953,7 @@ const Approvals = () => {
                             <motion.button
                               onClick={() => toggleExpandUser(user.id)}
                               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 
-                                       text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                                       text-muted-foreground hover:text-white hover:bg-white/10 transition-all"
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.98 }}
                             >
@@ -1044,16 +1044,16 @@ const Approvals = () => {
                               {user.role === 'teacher' ? (
                                 /* Teacher Details - data directly from user object */
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaBuilding />
                                       School/Institution
                                     </div>
                                     <p className="text-white font-medium">{user.schoolName || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaMapMarkerAlt />
                                       Location
                                     </div>
@@ -1062,40 +1062,40 @@ const Approvals = () => {
                                     </p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaPhone />
                                       Phone Number
                                     </div>
                                     <p className="text-white font-medium">{user.phoneNumber || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaBriefcase />
                                       Experience
                                     </div>
                                     <p className="text-white font-medium">{user.experienceYears || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaGraduationCap />
                                       Qualifications
                                     </div>
                                     <p className="text-white font-medium">{user.qualifications || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaBook />
                                       Board Affiliation
                                     </div>
                                     <p className="text-white font-medium uppercase">{user.boardAffiliation || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 md:col-span-2 lg:col-span-3">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-2">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border md:col-span-2 lg:col-span-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
                                       <FaBook />
                                       Subjects Taught
                                     </div>
@@ -1107,13 +1107,13 @@ const Approvals = () => {
                                           </span>
                                         ))
                                       ) : (
-                                        <span className="text-white/50">Not provided</span>
+                                        <span className="text-muted-foreground">Not provided</span>
                                       )}
                                     </div>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 md:col-span-2 lg:col-span-3">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-2">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border md:col-span-2 lg:col-span-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-2">
                                       <FaUsers />
                                       Classes Handled
                                     </div>
@@ -1125,7 +1125,7 @@ const Approvals = () => {
                                           </span>
                                         ))
                                       ) : (
-                                        <span className="text-white/50">Not provided</span>
+                                        <span className="text-muted-foreground">Not provided</span>
                                       )}
                                     </div>
                                   </div>
@@ -1140,7 +1140,7 @@ const Approvals = () => {
                                         </span>
                                       </div>
                                       {user.onboardingCompletedAt && (
-                                        <span className="text-white/50 text-sm">
+                                        <span className="text-muted-foreground text-sm">
                                           Completed on {new Date(user.onboardingCompletedAt).toLocaleDateString('en-US', {
                                             month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
                                           })}
@@ -1152,32 +1152,32 @@ const Approvals = () => {
                               ) : user.role === 'school' ? (
                                 /* School Details - data directly from user object */
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaSchool />
                                       School Name
                                     </div>
                                     <p className="text-white font-medium">{user.schoolName || user.name || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaBuilding />
                                       School Type
                                     </div>
                                     <p className="text-white font-medium capitalize">{user.schoolType || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaCalendarAlt />
                                       Established Year
                                     </div>
                                     <p className="text-white font-medium">{user.establishedYear || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 md:col-span-2 lg:col-span-3">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border md:col-span-2 lg:col-span-3">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaMapMarkerAlt />
                                       Full Address
                                     </div>
@@ -1189,24 +1189,24 @@ const Approvals = () => {
                                     </p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaUserCheck />
                                       Contact Person
                                     </div>
                                     <p className="text-white font-medium">{user.contactPerson || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaPhone />
                                       Contact Phone
                                     </div>
                                     <p className="text-white font-medium">{user.contactPhone || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaGlobe />
                                       Website
                                     </div>
@@ -1216,20 +1216,20 @@ const Approvals = () => {
                                         {user.website}
                                       </a>
                                     ) : (
-                                      <p className="text-white/50">Not provided</p>
+                                      <p className="text-muted-foreground">Not provided</p>
                                     )}
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaBook />
                                       Board Affiliation
                                     </div>
                                     <p className="text-white font-medium uppercase">{user.boardAffiliation || 'Not provided'}</p>
                                   </div>
                                   
-                                  <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
-                                    <div className="flex items-center gap-2 text-white/50 text-xs mb-1">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
                                       <FaUsers />
                                       Student Count
                                     </div>
@@ -1246,7 +1246,7 @@ const Approvals = () => {
                                         </span>
                                       </div>
                                       {user.onboardingCompletedAt && (
-                                        <span className="text-white/50 text-sm">
+                                        <span className="text-muted-foreground text-sm">
                                           Completed on {new Date(user.onboardingCompletedAt).toLocaleDateString('en-US', {
                                             month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
                                           })}
@@ -1261,7 +1261,7 @@ const Approvals = () => {
                                     <FaExclamationCircle className="text-2xl text-amber-400" />
                                   </div>
                                   <h3 className="text-lg font-semibold text-white mb-2">Onboarding Not Completed</h3>
-                                  <p className="text-white/50 mb-4">This user has not completed their onboarding yet.</p>
+                                  <p className="text-muted-foreground mb-4">This user has not completed their onboarding yet.</p>
                                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30">
                                     <FaClock className="text-amber-400" />
                                     <span className="text-amber-300 text-sm">Waiting for user to complete profile setup</span>
@@ -1297,7 +1297,7 @@ const Approvals = () => {
                 <FaChalkboardTeacher className="text-blue-400 text-xl" />
               </div>
               <div>
-                <p className="text-white/50 text-sm">Total Teachers</p>
+                <p className="text-muted-foreground text-sm">Total Teachers</p>
                 <p className="text-2xl font-bold text-white">{stats.teachers}</p>
               </div>
             </div>
@@ -1309,7 +1309,7 @@ const Approvals = () => {
                 <FaSchool className="text-purple-400 text-xl" />
               </div>
               <div>
-                <p className="text-white/50 text-sm">Total Schools</p>
+                <p className="text-muted-foreground text-sm">Total Schools</p>
                 <p className="text-2xl font-bold text-white">{stats.schools}</p>
               </div>
             </div>

@@ -3,6 +3,14 @@ import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
 import { productionLogger } from './services/productionLogger';
+
+// Apply theme before first paint to avoid flash
+(function applyInitialTheme() {
+  if (typeof document === 'undefined') return;
+  const stored = localStorage.getItem('theme');
+  const next = stored === 'light' || stored === 'dark' ? stored : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.classList.toggle('light', next === 'light');
+})();
 import './utils/consoleLogger'; // Initialize enhanced console logging
 import LearnXRLoader from './Components/LearnXRLoader';
 
