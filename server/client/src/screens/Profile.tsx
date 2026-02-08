@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { isGuestUser } from '../utils/rbac';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../Components/ui/button';
@@ -171,6 +172,10 @@ const Profile = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.uid) return;
+    if (isGuestUser(authProfile ?? null)) {
+      toast.error('Guest users cannot update profile. You are in read-only mode.');
+      return;
+    }
     try {
       const profileRef = doc(db, 'users', user.uid);
       await updateDoc(profileRef, {
@@ -285,23 +290,28 @@ const Profile = () => {
                   </div>
                 </div>
               </div>
-              <Button
-                variant="outline"
-                className="border-border text-foreground hover:bg-muted shrink-0"
-                onClick={() => setIsEditing(!isEditing)}
-              >
-                {isEditing ? (
-                  <>
-                    <X className="w-4 h-4 mr-2" />
-                    Cancel
-                  </>
-                ) : (
-                  <>
-                    <Edit3 className="w-4 h-4 mr-2" />
-                    Edit Profile
-                  </>
-                )}
-              </Button>
+              {!isGuestUser(authProfile ?? null) && (
+                <Button
+                  variant="outline"
+                  className="border-border text-foreground hover:bg-muted shrink-0"
+                  onClick={() => setIsEditing(!isEditing)}
+                >
+                  {isEditing ? (
+                    <>
+                      <X className="w-4 h-4 mr-2" />
+                      Cancel
+                    </>
+                  ) : (
+                    <>
+                      <Edit3 className="w-4 h-4 mr-2" />
+                      Edit Profile
+                    </>
+                  )}
+                </Button>
+              )}
+              {isGuestUser(authProfile ?? null) && (
+                <Badge variant="secondary" className="shrink-0">Read-only (Guest)</Badge>
+              )}
             </div>
             {formData.bio && !isEditing && (
               <p className="mt-4 text-muted-foreground text-sm leading-relaxed max-w-2xl">{formData.bio}</p>

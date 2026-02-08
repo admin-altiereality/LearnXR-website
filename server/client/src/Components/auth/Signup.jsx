@@ -1,34 +1,36 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  FaArrowRight,
-  FaArrowLeft,
-  FaUserGraduate,
-  FaChalkboardTeacher,
-  FaSchool,
-  FaGoogle,
-  FaEnvelope,
-  FaLock,
-  FaUser,
-  FaEye,
-  FaEyeSlash,
-  FaCheck,
-  FaExclamationCircle
+    FaArrowLeft,
+    FaArrowRight,
+    FaChalkboardTeacher,
+    FaCheck,
+    FaEnvelope,
+    FaExclamationCircle,
+    FaEye,
+    FaEyeSlash,
+    FaGoogle,
+    FaLock,
+    FaMoon,
+    FaSchool,
+    FaSun,
+    FaUser,
+    FaUserGraduate
 } from 'react-icons/fa';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../hooks/useTheme';
 import {
-  requiresApproval,
-  hasCompletedOnboarding
+    hasCompletedOnboarding,
+    requiresApproval
 } from '../../utils/rbac';
 import { learnXRFontStyle, TrademarkSymbol } from '../LearnXRTypography';
+import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '../ui/card';
+import FuturisticBackground from '../FuturisticBackground';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { Separator } from '../ui/separator';
-import FlowFieldBackground from '../ui/flow-field-background';
 
 export const Signup = () => {
   const [name, setName] = useState('');
@@ -42,6 +44,7 @@ export const Signup = () => {
   const [step, setStep] = useState('role-select');
   const { signup, loginWithGoogle, user, profile, selectedRole, setSelectedRole } = useAuth();
   const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
 
   const roleOptions = [
     {
@@ -51,6 +54,7 @@ export const Signup = () => {
       description: 'Access lessons and complete interactive quizzes',
       features: ['Access all lessons', 'Interactive quizzes', 'Track your progress', 'Certificate on completion'],
       requiresApproval: false,
+      gradient: 'from-emerald-500 to-teal-600',
     },
     {
       id: 'teacher',
@@ -59,6 +63,7 @@ export const Signup = () => {
       description: 'Create and manage educational content',
       features: ['Create lessons & courses', 'Manage student progress', 'Analytics dashboard', 'Content studio access'],
       requiresApproval: true,
+      gradient: 'from-blue-500 to-indigo-600',
     },
   ];
 
@@ -69,6 +74,7 @@ export const Signup = () => {
     description: 'Manage school-wide content and teachers',
     features: ['Multi-teacher management', 'School-wide analytics', 'Custom branding', 'API access'],
     requiresApproval: true,
+    gradient: 'from-purple-500 to-violet-600',
   };
 
   useEffect(() => {
@@ -160,104 +166,118 @@ export const Signup = () => {
 
   const roleInfo = getRoleInfo();
 
+  useEffect(() => {
+    document.body.classList.add('overflow-hidden');
+    return () => document.body.classList.remove('overflow-hidden');
+  }, []);
+
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden">
-      <FlowFieldBackground
-        className="absolute inset-0 min-h-screen"
-        color="#8b5cf6"
-        trailOpacity={0.1}
-        particleCount={400}
-        speed={0.8}
-      />
-      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:px-6 sm:py-12 md:py-16">
-      <div className="w-full max-w-lg flex flex-col gap-6 sm:gap-8">
+    <FuturisticBackground className="h-screen w-full flex flex-col">
+      <button
+        type="button"
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="fixed top-4 right-4 z-[100] flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+      >
+        {theme === 'dark' ? <FaSun className="h-5 w-5" /> : <FaMoon className="h-5 w-5" />}
+      </button>
+      <div className="relative z-10 flex flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="flex flex-col items-center justify-center min-h-full w-full px-4 py-5 sm:px-6 sm:py-6">
+      <div className="w-full max-w-lg flex flex-col gap-4 sm:gap-5 shrink-0">
         <motion.div
             custom={0}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="text-center shrink-0"
+            className="text-center shrink-0 mb-0.5"
           >
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2 font-display">
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1 font-display">
               Join{' '}
-              <span style={learnXRFontStyle} className="text-2xl sm:text-3xl tracking-[0.15rem]">
+              <span style={learnXRFontStyle} className="text-xl sm:text-2xl tracking-[0.12rem]">
                 <span className="text-foreground">Learn</span>
                 <span className="text-primary">XR</span>
                 <TrademarkSymbol className="ml-1" />
               </span>
             </h1>
-            <p className="text-sm sm:text-base text-muted-foreground">Start your immersive learning journey</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">Start your immersive learning journey</p>
           </motion.div>
 
           <AnimatePresence mode="wait">
             {step === 'role-select' ? (
               <motion.div key="role-select" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0">
-                <Card className="w-full mx-auto bg-card/70 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/20 rounded-[calc(var(--radius)+0.125rem)] overflow-hidden">
-                  <div className="p-6 pb-5 sm:p-8 sm:pb-6">
-                    <CardHeader className="p-0 pb-4 sm:pb-5">
-                      <CardTitle className="text-xl sm:text-2xl text-center">Choose Your Role</CardTitle>
-                      <CardDescription className="text-center mt-1.5">Select how you'll be using LearnXR</CardDescription>
+                <Card className="w-full mx-auto relative rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
+                  <div className="relative z-10 p-4 sm:p-5 pb-4">
+                    <CardHeader className="p-0 pb-3">
+                      <CardTitle className="text-lg sm:text-xl text-center text-foreground">Choose Your Role</CardTitle>
+                      <CardDescription className="text-center mt-1 text-sm text-muted-foreground">Select how you'll be using LearnXR</CardDescription>
                     </CardHeader>
-                    <div className="space-y-5 sm:space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="space-y-3 sm:space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {roleOptions.map((role, index) => (
-                        <motion.div key={role.id} custom={index + 2} variants={fadeUpVariants} initial="hidden" animate="visible" className="min-w-0">
-                          <Button
-                            variant="outline"
-                            className="relative h-auto w-full flex flex-col items-start p-5 sm:p-6 pr-12 rounded-lg text-left overflow-visible whitespace-normal"
-                            onClick={() => handleRoleSelect(role.id)}
-                          >
-                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-primary/20 flex items-center justify-center mb-3 sm:mb-4 shrink-0">
-                              <role.icon className="text-xl sm:text-2xl text-primary" />
+                        <motion.button
+                          key={role.id}
+                          type="button"
+                          custom={index + 2}
+                          variants={fadeUpVariants}
+                          initial="hidden"
+                          animate="visible"
+                          onClick={() => handleRoleSelect(role.id)}
+                          className="group relative p-4 pr-10 rounded-2xl border-2 border-border bg-card/50 text-left min-h-[8.5rem] hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex flex-col items-start w-full"
+                          whileHover={{ scale: 1.02, y: -4 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${role.gradient} flex items-center justify-center mb-2 shrink-0 shadow-lg`}>
+                            <role.icon className="text-lg text-white" />
+                          </div>
+                          <h3 className="text-base font-semibold text-foreground mb-0.5 pr-2 group-hover:text-primary transition-colors">{role.title}</h3>
+                          <p className="text-xs sm:text-sm text-muted-foreground leading-snug text-left w-full min-w-0 break-words">{role.description}</p>
+                          <ul className="space-y-1 w-full min-w-0 mt-1">
+                            {role.features.slice(0, 2).map((feature, i) => (
+                              <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <FaCheck className="text-primary text-[10px] shrink-0 mt-0.5" />
+                                <span className="min-w-0 break-words">{feature}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {role.requiresApproval && (
+                            <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500 shrink-0">
+                              <FaExclamationCircle className="text-[10px] shrink-0" />
+                              <span>Requires approval</span>
                             </div>
-                            <h3 className="text-base sm:text-lg font-semibold text-foreground mb-1 pr-2 shrink-0">{role.title}</h3>
-                            <p className="text-xs sm:text-sm text-muted-foreground leading-snug text-left w-full min-w-0 break-words">{role.description}</p>
-                            <ul className="space-y-1.5 w-full min-w-0">
-                              {role.features.slice(0, 2).map((feature, i) => (
-                                <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
-                                  <FaCheck className="text-primary text-[10px] shrink-0 mt-0.5" />
-                                  <span className="min-w-0 break-words">{feature}</span>
-                                </li>
-                              ))}
-                            </ul>
-                            {role.requiresApproval && (
-                              <div className="mt-3 flex items-center gap-1.5 text-xs text-amber-400 shrink-0">
-                                <FaExclamationCircle className="text-[10px] shrink-0" />
-                                <span>Requires approval</span>
-                              </div>
-                            )}
-                            <FaArrowRight className="absolute top-4 right-4 text-muted-foreground w-4 h-4 shrink-0 pointer-events-none" aria-hidden />
-                          </Button>
-                        </motion.div>
+                          )}
+                          <FaArrowRight className="absolute top-3 right-3 text-muted-foreground w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />
+                        </motion.button>
                       ))}
                     </div>
 
-                    <Button
-                      variant="outline"
-                      className="w-full h-auto min-h-[4.5rem] py-4 px-5 flex items-center gap-4 justify-between rounded-lg text-left"
+                    <motion.button
+                      type="button"
                       onClick={() => handleRoleSelect('school')}
+                      className="group w-full p-4 rounded-xl border-2 border-border bg-card/50 hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex items-center gap-4 text-left"
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
                     >
-                      <div className="flex items-center gap-4 min-w-0 flex-1">
-                        <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                          <secondaryOption.icon className="text-xl text-primary" />
-                        </div>
-                        <div className="text-left min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-base font-semibold text-foreground">{secondaryOption.title}</h3>
-                            <Badge variant="secondary" className="text-[10px]">Requires approval</Badge>
-                          </div>
-                          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 break-words">{secondaryOption.description}</p>
-                        </div>
+                      <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${secondaryOption.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
+                        <secondaryOption.icon className="text-lg text-white" />
                       </div>
-                      <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4" aria-hidden />
-                    </Button>
+                      <div className="text-left min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base font-semibold text-foreground group-hover:text-primary transition-colors">{secondaryOption.title}</h3>
+                          <Badge variant="secondary" className="text-[10px]">Requires approval</Badge>
+                        </div>
+                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 break-words">{secondaryOption.description}</p>
+                      </div>
+                      <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4 group-hover:opacity-100" aria-hidden />
+                    </motion.button>
 
                     </div>
                   </div>
-                  <div className="bg-muted/50 border-t border-white/10 rounded-b-[calc(var(--radius)+0.125rem)] p-3">
+                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-3xl p-2.5 sm:p-3">
                     <p className="text-muted-foreground text-center text-sm">
                       Already have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90" asChild>
                         <Link to="/login">Sign In</Link>
                       </Button>
                     </p>
@@ -266,24 +286,25 @@ export const Signup = () => {
               </motion.div>
             ) : (
               <motion.div key="signup-form" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0">
-                <Card className="w-full max-w-sm mx-auto bg-card/70 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/20 rounded-[calc(var(--radius)+0.125rem)] overflow-hidden">
-                  <div className="p-6 pb-5 sm:p-8 sm:pb-6">
-                    <Button variant="ghost" size="sm" className="mb-4 -ml-2 text-muted-foreground hover:text-foreground" onClick={handleBackToRoleSelect}>
-                      <FaArrowLeft className="mr-2 h-4 w-4" />
+                <Card className="w-full max-w-sm mx-auto relative rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
+                  <div className="relative z-10 p-4 sm:p-5 pb-4">
+                    <button type="button" onClick={handleBackToRoleSelect} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 -ml-2 text-sm">
+                      <FaArrowLeft className="h-4 w-4" />
                       Change role
-                    </Button>
+                    </button>
 
                     <div className="mb-1 mt-2">
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-white/10 mb-4">
-                        <div className="w-6 h-6 rounded-md bg-primary/20 flex items-center justify-center shrink-0">
-                          <roleInfo.icon className="text-primary text-xs" />
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border mb-4">
+                        <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${roleInfo.gradient || 'from-primary to-primary/80'} flex items-center justify-center shrink-0`}>
+                          <roleInfo.icon className="text-white text-xs" />
                         </div>
                         <span className="text-xs font-medium text-foreground">{roleInfo.title}</span>
                       </div>
                       <h1 className="text-xl font-semibold text-foreground">Create your account</h1>
                       <p className="text-sm text-muted-foreground mt-1">Welcome! Create an account to get started</p>
                       {roleInfo.requiresApproval && (
-                        <p className="text-amber-400 text-xs flex items-center justify-center gap-1.5 mt-2">
+                        <p className="text-amber-500 text-xs flex items-center justify-center gap-1.5 mt-2">
                           <FaExclamationCircle />
                           Account requires admin approval before full access
                         </p>
@@ -294,26 +315,31 @@ export const Signup = () => {
                       <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mt-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                        className="mt-4 rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
                       >
                         {error}
                       </motion.div>
                     )}
 
                     <div className="mt-6 grid grid-cols-1 gap-3">
-                      <Button
+                      <motion.button
                         type="button"
-                        variant="outline"
-                        className="w-full flex items-center justify-center gap-2"
                         onClick={handleGoogleSignup}
                         disabled={isLoading}
+                        className="w-full flex items-center justify-center gap-3 rounded-xl py-3.5 font-medium bg-card border-2 border-border text-foreground hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
                       >
-                        <FaGoogle className="h-4 w-4" />
-                        <span>Google</span>
-                      </Button>
+                        <FaGoogle className="h-5 w-5" />
+                        <span>Continue with Google</span>
+                      </motion.button>
                     </div>
 
-                    <hr className="my-4 border-dashed border-border" />
+                    <div className="flex items-center gap-4 my-6">
+                      <div className="h-px flex-1 bg-border" />
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">or with email</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                       <div className="space-y-2">
@@ -394,16 +420,18 @@ export const Signup = () => {
                         )}
                       </div>
 
-                      <Button type="submit" className="w-full" disabled={isLoading}>
-                        {isLoading ? 'Creating account...' : <>Continue <FaArrowRight className="ml-2 h-4 w-4" /></>}
-                      </Button>
+                      <motion.button type="submit" disabled={isLoading} className="relative w-full rounded-xl py-3.5 font-semibold text-primary-foreground overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed bg-primary hover:opacity-95 transition-opacity" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <span className="relative flex items-center justify-center gap-2">
+                          {isLoading ? 'Creating account...' : <><span>Continue</span><FaArrowRight className="h-4 w-4" /></>}
+                        </span>
+                      </motion.button>
                     </form>
                   </div>
 
-                  <div className="bg-muted/50 border-t border-white/10 rounded-b-[calc(var(--radius)+0.125rem)] p-3">
+                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-3xl p-2.5 sm:p-3">
                     <p className="text-muted-foreground text-center text-sm">
                       Already have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90" asChild>
                         <Link to="/login">Sign In</Link>
                       </Button>
                     </p>
@@ -413,7 +441,8 @@ export const Signup = () => {
             )}
           </AnimatePresence>
       </div>
+        </div>
       </div>
-    </div>
+    </FuturisticBackground>
   );
 };

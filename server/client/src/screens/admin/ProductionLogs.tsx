@@ -49,11 +49,11 @@ export default function ProductionLogs() {
   // Check permissions
   if (!user || !userProfile || !isSuperadmin(userProfile)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
+      <div className="min-h-screen flex items-center justify-center bg-background pt-24">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
-          <p className="text-slate-400">Only superadmins can view production logs.</p>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Access Denied</h2>
+          <p className="text-muted-foreground">Only superadmins can view production logs.</p>
         </div>
       </div>
     );
@@ -121,9 +121,9 @@ export default function ProductionLogs() {
       case 'info':
         return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
       case 'debug':
-        return 'text-slate-400 bg-slate-500/10 border-slate-500/20';
+        return 'text-muted-foreground bg-slate-500/10 border-slate-500/20';
       default:
-        return 'text-slate-400 bg-slate-500/10 border-slate-500/20';
+        return 'text-muted-foreground bg-slate-500/10 border-slate-500/20';
     }
   };
 
@@ -155,25 +155,25 @@ export default function ProductionLogs() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-background pt-24 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Production Logs</h1>
-          <p className="text-slate-400">View and debug production errors and events</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Production Logs</h1>
+          <p className="text-muted-foreground">View and debug production errors and events</p>
         </div>
 
         {/* Filters */}
-        <div className="bg-slate-900 rounded-lg border border-slate-700/50 p-4 mb-6">
+        <div className="bg-card rounded-lg border border-border p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search logs..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className="w-full pl-10 pr-4 py-2 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
 
@@ -181,7 +181,7 @@ export default function ProductionLogs() {
             <select
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value as LogLevel | 'all')}
-              className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="px-4 py-2 bg-card border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="all">All Levels</option>
               <option value="critical">Critical</option>
@@ -197,21 +197,21 @@ export default function ProductionLogs() {
               placeholder="Filter by context..."
               value={contextFilter}
               onChange={(e) => setContextFilter(e.target.value)}
-              className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="px-4 py-2 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
 
             {/* Actions */}
             <div className="flex gap-2">
               <button
                 onClick={() => fetchLogs()}
-                className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg transition-colors"
               >
                 <RefreshCw className="w-4 h-4" />
                 Refresh
               </button>
               <button
                 onClick={exportLogs}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors"
               >
                 <Download className="w-4 h-4" />
                 Export
@@ -230,19 +230,19 @@ export default function ProductionLogs() {
         {/* Logs List */}
         {loading && logs.length === 0 ? (
           <div className="text-center py-12">
-            <RefreshCw className="w-8 h-8 text-slate-400 animate-spin mx-auto mb-4" />
-            <p className="text-slate-400">Loading logs...</p>
+            <RefreshCw className="w-8 h-8 text-muted-foreground animate-spin mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading logs...</p>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-slate-400">No logs found</p>
+            <p className="text-muted-foreground">No logs found</p>
           </div>
         ) : (
           <div className="space-y-4">
             {filteredLogs.map((log) => (
               <div
                 key={log.id}
-                className={`bg-slate-900 rounded-lg border ${getLevelColor(log.level)} p-4`}
+                className={`bg-card rounded-lg border ${getLevelColor(log.level)} p-4`}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-3">
@@ -250,18 +250,18 @@ export default function ProductionLogs() {
                       {log.level.toUpperCase()}
                     </span>
                     {log.context && (
-                      <span className="text-xs text-slate-400">[{log.context}]</span>
+                      <span className="text-xs text-muted-foreground">[{log.context}]</span>
                     )}
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-muted-foreground">
                       {formatTimestamp(log.timestamp)}
                     </span>
                   </div>
                   {log.userEmail && (
-                    <span className="text-xs text-slate-400">{log.userEmail}</span>
+                    <span className="text-xs text-muted-foreground">{log.userEmail}</span>
                   )}
                 </div>
 
-                <p className="text-white mb-2">{log.message}</p>
+                <p className="text-foreground mb-2">{log.message}</p>
 
                 {log.error && (
                   <div className="mt-3 p-3 bg-slate-800/50 rounded border border-slate-700/50">
@@ -269,14 +269,14 @@ export default function ProductionLogs() {
                       {log.error.name}: {log.error.message}
                     </p>
                     {log.error.code && (
-                      <p className="text-xs text-slate-400 mb-2">Code: {log.error.code}</p>
+                      <p className="text-xs text-muted-foreground mb-2">Code: {log.error.code}</p>
                     )}
                     {log.error.stack && (
                       <details className="mt-2">
-                        <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-300">
+                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground/80">
                           Stack Trace
                         </summary>
-                        <pre className="mt-2 text-xs text-slate-500 overflow-auto max-h-48">
+                        <pre className="mt-2 text-xs text-muted-foreground overflow-auto max-h-48">
                           {log.error.stack}
                         </pre>
                       </details>
@@ -286,16 +286,16 @@ export default function ProductionLogs() {
 
                 {log.metadata && Object.keys(log.metadata).length > 0 && (
                   <details className="mt-3">
-                    <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-300">
+                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground/80">
                       Metadata
                     </summary>
-                    <pre className="mt-2 text-xs text-slate-500 overflow-auto max-h-32">
+                    <pre className="mt-2 text-xs text-muted-foreground overflow-auto max-h-32">
                       {JSON.stringify(log.metadata, null, 2)}
                     </pre>
                   </details>
                 )}
 
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
                   {log.url && (
                     <span>URL: {log.url}</span>
                   )}
@@ -315,7 +315,7 @@ export default function ProductionLogs() {
                 <button
                   onClick={() => fetchLogs(true)}
                   disabled={loading}
-                  className="flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed mx-auto"
+                  className="flex items-center gap-2 px-6 py-3 bg-muted hover:bg-muted/80 text-foreground rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed mx-auto"
                 >
                   {loading ? (
                     <>

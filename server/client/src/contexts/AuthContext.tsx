@@ -19,7 +19,8 @@ import {
   ApprovalStatus, 
   UserProfile,
   requiresApproval,
-  APPROVAL_REQUIRED_ROLES
+  APPROVAL_REQUIRED_ROLES,
+  isGuestUser
 } from '../utils/rbac';
 
 export type ModalType = 'subscription' | 'upgrade' | null;
@@ -129,10 +130,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setProfileLoading(false);
   }, [user, fetchProfile]);
 
-  // Update user profile
+  // Update user profile (guests may only complete onboarding once; no other writes)
   const updateProfile = useCallback(async (data: Partial<UserProfile>) => {
     if (!user?.uid) {
       throw new Error('No user logged in');
+    }
+    // Allow guest to complete onboarding (one-time write with onboardingCompleted + isGuest)
+    if (isGuestUser(profile) && !(data.onboardingCompleted === true && (data.isGuest === true || profile?.isGuest === true))) {
+      throw new Error('Guest users cannot update profile. You are in read-only mode.');
     }
 
     try {
@@ -144,7 +149,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       
       await updateDoc(userDocRef, updateData);
       
-      // Refresh local profile
+      // Refresh local profile so redirect sees updated state
       await refreshProfile();
       
       return;
@@ -153,7 +158,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       toast.error('Failed to update profile');
       throw error;
     }
-  }, [user, refreshProfile]);
+  }, [user, profile, refreshProfile]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !auth) {
@@ -406,21 +411,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const login = async (email: string, password: string) => {
-    if (!auth) {
-      throw new Error('Authentication service is not available');
-    }
-    try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      toast.success('Logged in successfully!');
-      return result;
-    } catch (error: any) {
-      console.error("Login error:", error);
-      toast.error(error.message);
-      throw error;
-    }
-  };
-
   const loginAsGuestStudent = async () => {
     if (!auth || !db) {
       throw new Error('Authentication service is not available');
@@ -437,7 +427,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           name: 'Guest Explorer',
           role: 'student' as UserRole,
           approvalStatus: null as ApprovalStatus,
-          onboardingCompleted: true,
+          onboardingCompleted: false,
           isGuest: true,
           createdAt: now,
           updatedAt: now,
@@ -454,11 +444,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setProfile(profileData);
       }
       setSelectedRole(null);
-      toast.success('Exploring as guest! Try one lesson, then sign up to unlock more.');
+      toast.success('Exploring as guest! Complete the quick setup to continue.');
       return guestUser;
     } catch (error: any) {
       console.error('Guest login error:', error);
       toast.error(error?.message || 'Could not start guest session');
+      throw error;
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      toast.success('Logged in successfully!');
+      return result;
+    } catch (error: any) {
+      console.error("Login error:", error);
+      toast.error(error.message);
       throw error;
     }
   };

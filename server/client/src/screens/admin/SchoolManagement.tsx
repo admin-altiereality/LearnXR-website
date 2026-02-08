@@ -161,7 +161,7 @@ const SchoolManagement = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
           <p className="text-white/60">Loading school management...</p>
@@ -172,7 +172,7 @@ const SchoolManagement = () => {
 
   if (profile?.role !== 'admin' && profile?.role !== 'superadmin') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
         <div className="text-center">
           <p className="text-white/60">Access denied. Admin or Superadmin role required.</p>
         </div>
@@ -183,7 +183,7 @@ const SchoolManagement = () => {
   const principals = users.filter(u => u.role === 'principal' || u.role === 'teacher');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-background pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
@@ -338,7 +338,7 @@ const SchoolManagement = () => {
         {/* Create School Modal */}
         {showCreateModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 rounded-2xl border border-white/10 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-card rounded-2xl border border-border p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold text-white mb-4">Create New School</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -485,7 +485,7 @@ const SchoolManagement = () => {
         {/* Edit School Modal */}
         {showEditModal && selectedSchool && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-900 rounded-2xl border border-white/10 p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-card rounded-2xl border border-border p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold text-white mb-4">Edit School: {selectedSchool.name}</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

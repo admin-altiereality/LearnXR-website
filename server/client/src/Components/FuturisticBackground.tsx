@@ -59,10 +59,10 @@ const ElegantShape = ({
             absolute inset-0 rounded-full
             bg-gradient-to-r to-transparent
             ${gradient}
-            backdrop-blur-[2px] border-2 border-white/[0.15]
-            shadow-[0_8px_32px_0_rgba(255,255,255,0.1)]
+            backdrop-blur-[2px] border-2 border-border
+            shadow-[0_8px_32px_0_rgba(0,0,0,0.15)]
             after:absolute after:inset-0 after:rounded-full
-            after:bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.2),transparent_70%)]
+            after:bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.08),transparent_70%)]
           `}
         />
       </motion.div>
@@ -80,18 +80,18 @@ const FuturisticBackground = ({
   className = ''
 }: FuturisticBackgroundProps) => {
   return (
-    <div className={`min-h-screen relative overflow-hidden bg-[#030303] ${className}`}>
-      {/* Gradient overlay - matching landing page */}
-      <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.05] via-transparent to-rose-500/[0.05] blur-3xl" />
+    <div className={`min-h-screen relative overflow-hidden bg-background ${className}`}>
+      {/* Gradient overlay - theme-aware */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/[0.05] via-transparent to-primary/[0.05] blur-3xl" />
 
-      {/* Elegant floating shapes - matching landing page */}
+      {/* Elegant floating shapes - theme-aware opacity */}
       <div className="absolute inset-0 overflow-hidden">
         <ElegantShape
           delay={0.3}
           width={600}
           height={140}
           rotate={12}
-          gradient="from-indigo-500/[0.15]"
+          gradient="from-primary/[0.12]"
           className="left-[-10%] md:left-[-5%] top-[15%] md:top-[20%]"
         />
 
@@ -100,7 +100,7 @@ const FuturisticBackground = ({
           width={500}
           height={120}
           rotate={-15}
-          gradient="from-rose-500/[0.15]"
+          gradient="from-primary/[0.12]"
           className="right-[-5%] md:right-[0%] top-[70%] md:top-[75%]"
         />
 
@@ -109,7 +109,7 @@ const FuturisticBackground = ({
           width={300}
           height={80}
           rotate={-8}
-          gradient="from-violet-500/[0.15]"
+          gradient="from-primary/[0.1]"
           className="left-[5%] md:left-[10%] bottom-[5%] md:bottom-[10%]"
         />
 
@@ -118,7 +118,7 @@ const FuturisticBackground = ({
           width={200}
           height={60}
           rotate={20}
-          gradient="from-amber-500/[0.15]"
+          gradient="from-primary/[0.1]"
           className="right-[15%] md:right-[20%] top-[10%] md:top-[15%]"
         />
 
@@ -127,13 +127,13 @@ const FuturisticBackground = ({
           width={150}
           height={40}
           rotate={-25}
-          gradient="from-cyan-500/[0.15]"
+          gradient="from-primary/[0.1]"
           className="left-[20%] md:left-[25%] top-[5%] md:top-[10%]"
         />
       </div>
 
-      {/* Top and bottom gradient fade - matching landing page */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#030303] via-transparent to-[#030303]/80 pointer-events-none" />
+      {/* Top and bottom gradient fade - theme-aware */}
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/80 pointer-events-none" />
 
       {/* Content */}
       <div className="relative z-10">

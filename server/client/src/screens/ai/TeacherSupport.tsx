@@ -113,26 +113,27 @@ const TeacherSupport = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-background pt-24 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8 pb-6 border-b border-white/10">
+        <div className="mb-8 pb-6 border-b border-border">
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
               <FaChalkboardTeacher className="text-white text-xl" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
-                <span className="text-white">Learn</span>
+              <h1 className="text-3xl font-bold mb-1 text-foreground" style={learnXRFontStyle}>
+                <span className="text-foreground">Learn</span>
                 <span className="text-primary">XR</span>
                 <TrademarkSymbol />
               </h1>
-              <h2 className="text-xl font-semibold text-white">AI Teacher Support</h2>
-              <p className="text-white/50 text-sm mt-0.5">Lesson plans, content ideas, and grading rubrics</p>
+              <h2 className="text-xl font-semibold text-foreground">AI Teacher Support</h2>
+              <p className="text-muted-foreground text-sm mt-0.5">Lesson plans, content ideas, and grading rubrics</p>
             </div>
           </div>
         </div>
 
-        <div className="flex gap-2 mb-6 border-b border-white/10 pb-2">
+        <div className="flex gap-2 mb-6 border-b border-border pb-2">
           {(
             [
               { id: 'lesson-plan' as Tab, label: 'Lesson plan', icon: FaListUl },
@@ -147,7 +148,7 @@ const TeacherSupport = () => {
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
                 activeTab === id
                   ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                  : 'text-white/60 hover:text-white hover:bg-white/5'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -166,44 +167,44 @@ const TeacherSupport = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-white/70 text-sm mb-1">Subject</label>
+                <label className="block text-muted-foreground text-sm mb-1">Subject</label>
                 <input
                   type="text"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:ring-2 focus:ring-cyan-500/50"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground placeholder-muted-foreground focus:ring-2 focus:ring-primary/50"
                 />
               </div>
               <div>
-                <label className="block text-white/70 text-sm mb-1">Class</label>
+                <label className="block text-muted-foreground text-sm mb-1">Class</label>
                 <input
                   type="text"
                   value={classLevel}
                   onChange={(e) => setClassLevel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:ring-2 focus:ring-cyan-500/50"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground placeholder-muted-foreground focus:ring-2 focus:ring-primary/50"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-white/70 text-sm mb-1">Topic</label>
+              <label className="block text-muted-foreground text-sm mb-1">Topic</label>
               <input
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="e.g. Linear equations, Photosynthesis"
-                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30 focus:ring-2 focus:ring-cyan-500/50"
+                className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground placeholder-muted-foreground focus:ring-2 focus:ring-primary/50"
               />
             </div>
             <div className="flex gap-4 items-end">
               <div className="w-32">
-                <label className="block text-white/70 text-sm mb-1">Duration (min)</label>
+                <label className="block text-muted-foreground text-sm mb-1">Duration (min)</label>
                 <input
                   type="number"
                   min={10}
                   max={120}
                   value={durationMinutes}
                   onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground"
                 />
               </div>
               <button
@@ -216,11 +217,11 @@ const TeacherSupport = () => {
               </button>
             </div>
             {lessonPlan && (
-              <div className="mt-6 p-5 rounded-xl border border-white/10 bg-white/5 space-y-4">
-                <h3 className="text-lg font-semibold text-white">{lessonPlan.title}</h3>
+              <div className="mt-6 p-5 rounded-xl border border-border bg-card/50 space-y-4">
+                <h3 className="text-lg font-semibold text-foreground">{lessonPlan.title}</h3>
                 <div>
                   <h4 className="text-cyan-400 text-sm font-medium mb-2">Objectives</h4>
-                  <ul className="list-disc list-inside text-white/80 text-sm space-y-1">
+                  <ul className="list-disc list-inside text-foreground/80 text-sm space-y-1">
                     {lessonPlan.objectives.map((o, i) => (
                       <li key={i}>{o}</li>
                     ))}
@@ -228,15 +229,15 @@ const TeacherSupport = () => {
                 </div>
                 <div>
                   <h4 className="text-cyan-400 text-sm font-medium mb-2">Materials</h4>
-                  <p className="text-white/80 text-sm">{lessonPlan.materials.join(', ')}</p>
+                  <p className="text-foreground/80 text-sm">{lessonPlan.materials.join(', ')}</p>
                 </div>
                 <div>
                   <h4 className="text-cyan-400 text-sm font-medium mb-2">Steps</h4>
-                  <ol className="space-y-2 text-sm text-white/80">
+                  <ol className="space-y-2 text-sm text-foreground/80">
                     {lessonPlan.steps.map((s) => (
                       <li key={s.step}>
-                        <span className="text-cyan-400 font-medium">Step {s.step}</span>
-                        {s.duration && <span className="text-white/50 ml-2">({s.duration})</span>}
+                        <span className="text-primary font-medium">Step {s.step}</span>
+                        {s.duration && <span className="text-muted-foreground ml-2">({s.duration})</span>}
                         <span className="ml-2">{s.description}</span>
                       </li>
                     ))}
@@ -244,7 +245,7 @@ const TeacherSupport = () => {
                 </div>
                 <div>
                   <h4 className="text-cyan-400 text-sm font-medium mb-2">Assessment ideas</h4>
-                  <ul className="list-disc list-inside text-white/80 text-sm space-y-1">
+                  <ul className="list-disc list-inside text-foreground/80 text-sm space-y-1">
                     {lessonPlan.assessmentIdeas.map((a, i) => (
                       <li key={i}>{a}</li>
                     ))}
@@ -252,7 +253,7 @@ const TeacherSupport = () => {
                 </div>
                 <div>
                   <h4 className="text-cyan-400 text-sm font-medium mb-2">Differentiation</h4>
-                  <ul className="list-disc list-inside text-white/80 text-sm space-y-1">
+                  <ul className="list-disc list-inside text-foreground/80 text-sm space-y-1">
                     {lessonPlan.differentiationTips.map((d, i) => (
                       <li key={i}>{d}</li>
                     ))}
@@ -267,40 +268,40 @@ const TeacherSupport = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-white/70 text-sm mb-1">Subject</label>
+                <label className="block text-muted-foreground text-sm mb-1">Subject</label>
                 <input
                   type="text"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground"
                 />
               </div>
               <div>
-                <label className="block text-white/70 text-sm mb-1">Class</label>
+                <label className="block text-muted-foreground text-sm mb-1">Class</label>
                 <input
                   type="text"
                   value={classLevel}
                   onChange={(e) => setClassLevel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-white/70 text-sm mb-1">Topic</label>
+              <label className="block text-muted-foreground text-sm mb-1">Topic</label>
               <input
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="e.g. Quadratic equations"
-                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30"
+                className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground placeholder-muted-foreground"
               />
             </div>
             <div>
-              <label className="block text-white/70 text-sm mb-1">Type</label>
+              <label className="block text-muted-foreground text-sm mb-1">Type</label>
               <select
                 value={contentType}
                 onChange={(e) => setContentType(e.target.value as typeof contentType)}
-                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground"
               >
                 {CONTENT_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -318,7 +319,7 @@ const TeacherSupport = () => {
               {loading ? 'Loading…' : 'Get suggestions'}
             </button>
             {contentItems.length > 0 && (
-              <ul className="mt-4 p-4 rounded-xl border border-white/10 bg-white/5 space-y-2 text-white/80 text-sm">
+              <ul className="mt-4 p-4 rounded-xl border border-border bg-card/50 space-y-2 text-foreground/80 text-sm">
                 {contentItems.map((item, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <span className="text-cyan-400">•</span>
@@ -334,32 +335,32 @@ const TeacherSupport = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-white/70 text-sm mb-1">Subject</label>
+                <label className="block text-muted-foreground text-sm mb-1">Subject</label>
                 <input
                   type="text"
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground"
                 />
               </div>
               <div>
-                <label className="block text-white/70 text-sm mb-1">Class</label>
+                <label className="block text-muted-foreground text-sm mb-1">Class</label>
                 <input
                   type="text"
                   value={classLevel}
                   onChange={(e) => setClassLevel(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white"
+                  className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-white/70 text-sm mb-1">Assignment type</label>
+              <label className="block text-muted-foreground text-sm mb-1">Assignment type</label>
               <input
                 type="text"
                 value={assignmentType}
                 onChange={(e) => setAssignmentType(e.target.value)}
                 placeholder="e.g. Essay, Lab report, Project"
-                className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-white/30"
+                className="w-full px-3 py-2 rounded-lg bg-card/50 border border-border text-foreground placeholder-muted-foreground"
               />
             </div>
             <button
@@ -371,15 +372,15 @@ const TeacherSupport = () => {
               {loading ? 'Generating…' : 'Generate rubric'}
             </button>
             {rubric && (
-              <div className="mt-6 p-5 rounded-xl border border-white/10 bg-white/5 space-y-4">
-                <p className="text-white/60 text-sm">Max score: {rubric.maxScore}</p>
+              <div className="mt-6 p-5 rounded-xl border border-border bg-card/50 space-y-4">
+                <p className="text-muted-foreground text-sm">Max score: {rubric.maxScore}</p>
                 {rubric.criteria.map((c, i) => (
                   <div key={i}>
-                    <h4 className="text-cyan-400 font-medium mb-2">{c.name}</h4>
-                    <ul className="space-y-1 text-sm text-white/80">
+                    <h4 className="text-primary font-medium mb-2">{c.name}</h4>
+                    <ul className="space-y-1 text-sm text-foreground/80">
                       {c.levels.map((l, j) => (
                         <li key={j}>
-                          <span className="text-white/50">{l.level}:</span> {l.description}
+                          <span className="text-muted-foreground">{l.level}:</span> {l.description}
                         </li>
                       ))}
                     </ul>
@@ -389,6 +390,7 @@ const TeacherSupport = () => {
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

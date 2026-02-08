@@ -345,7 +345,7 @@ const SchoolApprovals = () => {
 
   if (profile?.role !== 'school' && profile?.role !== 'principal') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a]">
+      <div className="min-h-screen flex items-center justify-center bg-background pt-24">
         <div className="text-center">
           <p className="text-white">Only school administrators and principals can access this page.</p>
         </div>
@@ -354,7 +354,7 @@ const SchoolApprovals = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a] p-6">
+    <div className="min-h-screen bg-background pt-24 pb-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-white mb-2">Teacher Approvals</h1>

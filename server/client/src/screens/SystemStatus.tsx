@@ -69,21 +69,21 @@ const SystemStatus = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white py-8">
+    <div className="min-h-screen bg-background text-foreground pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">
+          <h1 className="text-4xl font-bold text-foreground mb-4">
             🛠️ System Status Dashboard
           </h1>
-          <p className="text-gray-400 text-lg">
+          <p className="text-muted-foreground text-lg">
             Monitor system health, test integrations, and debug services
           </p>
         </div>
 
         {/* Navigation Tabs */}
         <div className="flex items-center justify-center mb-8">
-          <nav className="flex space-x-1 rounded-lg backdrop-blur-md bg-white/5 p-1">
+          <nav className="flex space-x-1 rounded-lg backdrop-blur-md bg-card/50 p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -91,7 +91,7 @@ const SystemStatus = () => {
                 className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-all duration-200 ${
                   activeTab === tab.id
                     ? `${tab.bgColor} ${tab.color} border ${tab.borderColor}`
-                    : 'text-gray-400 hover:text-white hover:bg-white/10'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
                 <tab.icon className="w-4 h-4" />

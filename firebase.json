@@ -1,7 +1,8 @@
 {
   "hosting": [
+    
     {
-      "site": "learnxr-evoneuralai",
+      "target": "altiereality",
       "public": "server/client/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [{"source": "**", "destination": "/index.html"}],

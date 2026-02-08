@@ -11,51 +11,50 @@
 
 import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import {
-  AlertCircle,
-  AlertTriangle,
-  BookOpen,
-  Box,
-  CheckCircle,
-  CheckCircle2,
-  Clock,
-  Glasses,
-  GraduationCap,
-  Grid3X3,
-  HelpCircle,
-  List,
-  Loader2,
-  Mic,
-  Play,
-  RefreshCw,
-  Search,
-  Sparkles,
-  Target,
-  Trophy,
-  Volume2,
-  X,
-  XCircle
+    AlertCircle,
+    BookOpen,
+    Box,
+    CheckCircle,
+    CheckCircle2,
+    Clock,
+    Glasses,
+    GraduationCap,
+    Grid3X3,
+    HelpCircle,
+    List,
+    Loader2,
+    Mic,
+    Play,
+    RefreshCw,
+    Search,
+    Sparkles,
+    Target,
+    Trophy,
+    Volume2,
+    X,
+    XCircle
 } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { toast } from 'react-toastify';
 import { LanguageToggle } from '../Components/LanguageSelector';
-import { db } from '../config/firebase';
-import { useAuth } from '../contexts/AuthContext';
-import { useLesson } from '../contexts/LessonContext';
-import {
-  getChapterNameByLanguage,
-  getLearningObjectiveByLanguage,
-  getSubjectNameByLanguage,
-  getTopicNameByLanguage
-} from '../lib/firebase/utils/languageAvailability';
-import { updateTopicApproval } from '../lib/firestore/updateHelpers';
-import { isAdminOnly, isSuperadmin } from '../utils/rbac';
-import { getVRCapabilities } from '../utils/vrDetection';
 import { Button } from '../Components/ui/button';
 import { Card, CardContent } from '../Components/ui/card';
 import { Input } from '../Components/ui/input';
 import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Components/ui/select';
-import { toast } from 'react-toastify';
+import { db } from '../config/firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { useLesson } from '../contexts/LessonContext';
+import {
+    getChapterNameByLanguage,
+    getLearningObjectiveByLanguage,
+    getSubjectNameByLanguage,
+    getTopicNameByLanguage
+} from '../lib/firebase/utils/languageAvailability';
+import { updateTopicApproval } from '../lib/firestore/updateHelpers';
+import { isAdminOnly, isSuperadmin } from '../utils/rbac';
+import { getVRCapabilities } from '../utils/vrDetection';
 
 // Guest student: fixed demo curriculum/class; only first lesson is unlocked
 const GUEST_DEMO_CURRICULUM = 'CBSE';
@@ -1746,11 +1745,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-sm overflow-y-auto"
         onClick={closeLessonModal}
       >
         <div
-          className={`relative w-full max-w-2xl bg-card rounded-2xl border shadow-2xl overflow-hidden border-border ${isCompleted ? 'ring-2 ring-primary/30' : ''}`}
+          className={`relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card rounded-2xl border shadow-2xl overflow-hidden border-border my-auto ${isCompleted ? 'ring-2 ring-primary/30' : ''}`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Close */}
@@ -1764,7 +1763,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           </Button>
 
           {/* Hero */}
-          <div className="relative h-44 sm:h-52 overflow-hidden">
+          <div className="relative h-36 sm:h-44 flex-shrink-0 overflow-hidden">
             {thumbnail ? (
               <img
                 src={thumbnail}
@@ -1808,8 +1807,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
             </div>
           </div>
 
-          {/* Content */}
-          <div className="px-5 sm:px-6 pt-5 pb-6 space-y-5">
+          {/* Content - single scroll area */}
+          <div className="px-5 sm:px-6 pt-4 pb-4 space-y-4 flex-1 min-h-0 overflow-y-auto">
             {learningObjective && (
               <div className="flex gap-3 p-4 rounded-xl bg-muted/40 border border-border">
                 <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center">
