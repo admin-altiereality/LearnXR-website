@@ -578,7 +578,7 @@ const Approvals = () => {
     return (
       <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
         <div className="text-center text-foreground">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-border border-t-primary mx-auto mb-4"></div>
           <p className="text-muted-foreground">Loading pending approvals...</p>
         </div>
       </div>
@@ -598,7 +598,7 @@ const Approvals = () => {
         >
           <button
             onClick={() => navigate('/lessons')}
-            className="flex items-center gap-2 text-muted-foreground hover:text-white/80 transition-colors mb-4"
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-4"
           >
             <FaArrowLeft className="text-sm" />
             <span className="text-sm">Back to Dashboard</span>
@@ -606,9 +606,9 @@ const Approvals = () => {
           
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center">
-                  <FaUserCheck className="text-white" />
+              <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                  <FaUserCheck className="text-primary" />
                 </div>
                 User Management
               </h1>
@@ -619,13 +619,13 @@ const Approvals = () => {
             
             {/* Stats */}
             <div className="flex gap-3">
-              <div className="px-4 py-2 rounded-xl bg-yellow-500/10 border border-yellow-500/20">
-                <span className="text-yellow-400 font-bold text-lg">{stats.pending}</span>
-                <span className="text-yellow-400/70 text-sm ml-2">Pending</span>
+              <div className="px-4 py-2 rounded-xl bg-amber-100 dark:bg-yellow-500/10 border border-amber-300 dark:border-yellow-500/20">
+                <span className="text-amber-800 dark:text-yellow-400 font-bold text-lg">{stats.pending}</span>
+                <span className="text-amber-700 dark:text-yellow-400/70 text-sm ml-2">Pending</span>
               </div>
-              <div className="px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-emerald-400 font-bold text-lg">{stats.approved}</span>
-                <span className="text-emerald-400/70 text-sm ml-2">Approved</span>
+              <div className="px-4 py-2 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/20">
+                <span className="text-emerald-800 dark:text-emerald-400 font-bold text-lg">{stats.approved}</span>
+                <span className="text-emerald-700 dark:text-emerald-400/70 text-sm ml-2">Approved</span>
               </div>
             </div>
           </div>
@@ -637,14 +637,14 @@ const Approvals = () => {
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
-          className="flex gap-2 mb-6 border-b border-white/10"
+          className="flex gap-2 mb-6 border-b border-border"
         >
           <button
             onClick={() => setActiveTab('pending')}
             className={`px-6 py-3 text-sm font-medium transition-all border-b-2 ${
               activeTab === 'pending'
-                ? 'text-cyan-400 border-cyan-400'
-                : 'text-muted-foreground border-transparent hover:text-white/80'
+                ? 'text-primary border-primary'
+                : 'text-muted-foreground border-transparent hover:text-foreground'
             }`}
           >
             Pending Approvals ({stats.pending})
@@ -653,8 +653,8 @@ const Approvals = () => {
             onClick={() => setActiveTab('approved')}
             className={`px-6 py-3 text-sm font-medium transition-all border-b-2 ${
               activeTab === 'approved'
-                ? 'text-cyan-400 border-cyan-400'
-                : 'text-muted-foreground border-transparent hover:text-white/80'
+                ? 'text-primary border-primary'
+                : 'text-muted-foreground border-transparent hover:text-foreground'
             }`}
           >
             Approved Users ({stats.approved})
@@ -671,14 +671,14 @@ const Approvals = () => {
         >
           {/* Search */}
           <div className="relative flex-1">
-            <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+            <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search by name or email..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-11 pr-4 py-3 rounded-xl bg-card/50 border border-border 
-                       text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
+              className="w-full pl-11 pr-4 py-3 rounded-xl bg-background border border-border 
+                       text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
             />
           </div>
           
@@ -691,8 +691,8 @@ const Approvals = () => {
                     onClick={() => setFilterRole(role as typeof filterRole)}
                     className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                       filterRole === role
-                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
-                        : 'bg-card/50 border border-border text-muted-foreground hover:text-white hover:bg-card/50'
+                        ? 'bg-primary/15 border border-primary/50 text-primary'
+                        : 'bg-muted/50 border border-border text-muted-foreground hover:text-foreground hover:bg-muted'
                     }`}
                   >
                     {role === 'all' ? 'All Roles' : role.charAt(0).toUpperCase() + role.slice(1) + 's'}
@@ -704,8 +704,8 @@ const Approvals = () => {
                     onClick={() => setFilterRole(role as typeof filterRole)}
                     className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
                       filterRole === role
-                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400 border'
-                        : 'bg-card/50 border border-border text-muted-foreground hover:text-white hover:bg-card/50'
+                        ? 'bg-primary/15 border border-primary/50 text-primary'
+                        : 'bg-muted/50 border border-border text-muted-foreground hover:text-foreground hover:bg-muted'
                     }`}
                   >
                     {role === 'all' ? 'All Roles' : ROLE_DISPLAY_NAMES[role as UserRole] || role}
@@ -724,8 +724,8 @@ const Approvals = () => {
             animate="visible"
             className="mb-6"
           >
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-              <FaSchool className="text-purple-400" />
+            <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+              <FaSchool className="text-primary" />
               Pending Schools ({pendingSchools.length})
             </h2>
             <div className="space-y-3">
@@ -736,18 +736,18 @@ const Approvals = () => {
                   variants={fadeUpVariants}
                   initial="hidden"
                   animate="visible"
-                  className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4"
+                  className="rounded-xl border border-border bg-muted/30 p-4"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
-                      <h3 className="text-white font-medium mb-1">{school.name}</h3>
+                      <h3 className="text-foreground font-medium mb-1">{school.name}</h3>
                       <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
                         {school.city && <span>{school.city}, {school.state}</span>}
                         {school.contactPhone && <span>{school.contactPhone}</span>}
                         {school.boardAffiliation && <span>{school.boardAffiliation}</span>}
-                        {school.schoolCode && <span className="text-cyan-400 font-mono">Code: {school.schoolCode}</span>}
+                        {school.schoolCode && <span className="text-primary font-mono">Code: {school.schoolCode}</span>}
                       </div>
-                      {!school.schoolCode && <p className="text-xs text-white/40 mt-1">A unique code will be assigned when approved (teachers use it to join this school).</p>}
+                      {!school.schoolCode && <p className="text-xs text-muted-foreground mt-1">A unique code will be assigned when approved (teachers use it to join this school).</p>}
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -791,24 +791,24 @@ const Approvals = () => {
             animate="visible"
             className="mb-6"
           >
-            <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-              <FaSchool className="text-emerald-400" />
+            <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+              <FaSchool className="text-primary" />
               Approved schools (share code with teachers)
             </h2>
             <div className="space-y-3">
               {approvedSchools.map((school) => (
                 <motion.div
                   key={school.id}
-                  className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center justify-between flex-wrap gap-2"
+                  className="rounded-xl border border-border bg-muted/30 p-4 flex items-center justify-between flex-wrap gap-2"
                 >
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-white font-medium">{school.name}</h3>
+                    <h3 className="text-foreground font-medium">{school.name}</h3>
                     <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mt-1">
                       {school.city && <span>{school.city}, {school.state}</span>}
                       {school.schoolCode ? (
-                        <span className="text-cyan-400 font-mono font-medium">Code: {school.schoolCode}</span>
+                        <span className="text-primary font-mono font-medium">Code: {school.schoolCode}</span>
                       ) : (
-                        <span className="text-amber-400">No code – teachers cannot join by code</span>
+                        <span className="text-amber-600 dark:text-amber-400">No code – teachers cannot join by code</span>
                       )}
                     </div>
                   </div>
@@ -817,7 +817,7 @@ const Approvals = () => {
                       type="button"
                       onClick={() => handleGenerateSchoolCode(school.id)}
                       disabled={processingSchoolCodeId === school.id}
-                      className="px-4 py-2 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                      className="px-4 py-2 rounded-lg bg-primary/20 border border-primary/30 text-primary hover:bg-primary/30 transition-all disabled:opacity-50 flex items-center gap-2"
                     >
                       {processingSchoolCodeId === school.id ? (
                         <FaSpinner className="animate-spin" />
@@ -840,15 +840,15 @@ const Approvals = () => {
         >
           {(activeTab === 'pending' && loading) || (activeTab === 'approved' && loadingApproved) ? (
             <div className="text-center py-16 rounded-2xl border border-border bg-card/30">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+              <div className="animate-spin rounded-full h-12 w-12 border-2 border-border border-t-primary mx-auto mb-4"></div>
               <p className="text-muted-foreground">Loading {activeTab === 'pending' ? 'pending' : 'approved'} users...</p>
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-16 rounded-2xl border border-border bg-card/30">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-card/50 flex items-center justify-center">
-                <FaUsers className="text-2xl text-white/30" />
+            <div className="text-center py-16 rounded-2xl border border-border bg-muted/30">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                <FaUsers className="text-2xl text-muted-foreground" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
+              <h3 className="text-xl font-semibold text-foreground mb-2">
                 {activeTab === 'pending' ? 'No Pending Approvals' : 'No Approved Users'}
               </h3>
               <p className="text-muted-foreground">
@@ -893,7 +893,7 @@ const Approvals = () => {
                             
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <h3 className="text-lg font-semibold text-white truncate">
+                                <h3 className="text-lg font-semibold text-foreground truncate">
                                   {user.name || user.displayName || 'Unknown User'}
                                 </h3>
                                 <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${roleColors.bg} ${roleColors.text} ${roleColors.border} border`}>
@@ -952,8 +952,8 @@ const Approvals = () => {
                             {/* View Details Button */}
                             <motion.button
                               onClick={() => toggleExpandUser(user.id)}
-                              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 
-                                       text-muted-foreground hover:text-white hover:bg-white/10 transition-all"
+                              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/50 border border-border 
+                                       text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
                               whileHover={{ scale: 1.02 }}
                               whileTap={{ scale: 0.98 }}
                             >
@@ -1002,8 +1002,8 @@ const Approvals = () => {
                                   value={user.role}
                                   onChange={(e) => handleRoleChange(user.id, e.target.value as UserRole)}
                                   disabled={changingRoleId === user.id}
-                                  className="appearance-none px-4 py-2.5 pr-10 rounded-xl bg-slate-800/50 border border-white/20 
-                                           text-white text-sm font-medium focus:outline-none focus:border-cyan-400/50
+                                  className="appearance-none px-4 py-2.5 pr-10 rounded-xl bg-background border border-border 
+                                           text-foreground text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary
                                            disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer min-w-[160px]"
                                 >
                                   <option value="student">Student</option>
@@ -1015,9 +1015,9 @@ const Approvals = () => {
                                   <option value="superadmin">Super Administrator</option>
                                 </select>
                                 {changingRoleId === user.id ? (
-                                  <FaSpinner className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-400 animate-spin pointer-events-none" />
+                                  <FaSpinner className="absolute right-3 top-1/2 -translate-y-1/2 text-primary animate-spin pointer-events-none" />
                                 ) : (
-                                  <FaCog className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 pointer-events-none" />
+                                  <FaCog className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
                                 )}
                               </div>
                             )}
@@ -1033,10 +1033,10 @@ const Approvals = () => {
                             animate={{ height: 'auto', opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.3 }}
-                            className="border-t border-white/10 bg-white/[0.02]"
+                            className="border-t border-border bg-muted/30"
                           >
                             <div className="p-6">
-                              <h4 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                              <h4 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
                                 <FaUserGraduate />
                                 Onboarding Information
                               </h4>
@@ -1049,7 +1049,7 @@ const Approvals = () => {
                                       <FaBuilding />
                                       School/Institution
                                     </div>
-                                    <p className="text-white font-medium">{user.schoolName || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.schoolName || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1057,7 +1057,7 @@ const Approvals = () => {
                                       <FaMapMarkerAlt />
                                       Location
                                     </div>
-                                    <p className="text-white font-medium">
+                                    <p className="text-foreground font-medium">
                                       {[user.city, user.state].filter(Boolean).join(', ') || 'Not provided'}
                                     </p>
                                   </div>
@@ -1067,7 +1067,7 @@ const Approvals = () => {
                                       <FaPhone />
                                       Phone Number
                                     </div>
-                                    <p className="text-white font-medium">{user.phoneNumber || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.phoneNumber || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1075,7 +1075,7 @@ const Approvals = () => {
                                       <FaBriefcase />
                                       Experience
                                     </div>
-                                    <p className="text-white font-medium">{user.experienceYears || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.experienceYears || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1083,7 +1083,7 @@ const Approvals = () => {
                                       <FaGraduationCap />
                                       Qualifications
                                     </div>
-                                    <p className="text-white font-medium">{user.qualifications || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.qualifications || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1091,7 +1091,7 @@ const Approvals = () => {
                                       <FaBook />
                                       Board Affiliation
                                     </div>
-                                    <p className="text-white font-medium uppercase">{user.boardAffiliation || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium uppercase">{user.boardAffiliation || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border md:col-span-2 lg:col-span-3">
@@ -1149,6 +1149,67 @@ const Approvals = () => {
                                     </div>
                                   </div>
                                 </div>
+                              ) : user.role === 'student' ? (
+                                /* Student Details - data directly from user object */
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+                                      <FaBuilding />
+                                      School
+                                    </div>
+                                    <p className="text-foreground font-medium">{user.school || 'Not provided'}</p>
+                                  </div>
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+                                      <FaUserGraduate />
+                                      Class
+                                    </div>
+                                    <p className="text-foreground font-medium">{user.class || 'Not provided'}</p>
+                                  </div>
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+                                      <FaBook />
+                                      Curriculum
+                                    </div>
+                                    <p className="text-foreground font-medium">{user.curriculum || 'Not provided'}</p>
+                                  </div>
+                                  <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                    <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+                                      <FaMapMarkerAlt />
+                                      Location
+                                    </div>
+                                    <p className="text-foreground font-medium">
+                                      {[user.city, user.state].filter(Boolean).join(', ') || 'Not provided'}
+                                    </p>
+                                  </div>
+                                  {user.age != null && (
+                                    <div className="p-4 rounded-xl bg-card/50 border border-border">
+                                      <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
+                                        <FaUserCheck />
+                                        Age
+                                      </div>
+                                      <p className="text-foreground font-medium">{user.age}</p>
+                                    </div>
+                                  )}
+                                  {/* Onboarding Status */}
+                                  <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 md:col-span-2 lg:col-span-3">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <FaCheck className="text-emerald-400" />
+                                        <span className="text-emerald-400 font-medium">
+                                          Onboarding {user.onboardingCompleted ? 'Completed' : 'Incomplete'}
+                                        </span>
+                                      </div>
+                                      {user.onboardingCompletedAt && (
+                                        <span className="text-muted-foreground text-sm">
+                                          Completed on {new Date(user.onboardingCompletedAt).toLocaleDateString('en-US', {
+                                            month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                                          })}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
                               ) : user.role === 'school' ? (
                                 /* School Details - data directly from user object */
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1157,7 +1218,7 @@ const Approvals = () => {
                                       <FaSchool />
                                       School Name
                                     </div>
-                                    <p className="text-white font-medium">{user.schoolName || user.name || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.schoolName || user.name || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1165,7 +1226,7 @@ const Approvals = () => {
                                       <FaBuilding />
                                       School Type
                                     </div>
-                                    <p className="text-white font-medium capitalize">{user.schoolType || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium capitalize">{user.schoolType || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1173,7 +1234,7 @@ const Approvals = () => {
                                       <FaCalendarAlt />
                                       Established Year
                                     </div>
-                                    <p className="text-white font-medium">{user.establishedYear || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.establishedYear || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border md:col-span-2 lg:col-span-3">
@@ -1181,7 +1242,7 @@ const Approvals = () => {
                                       <FaMapMarkerAlt />
                                       Full Address
                                     </div>
-                                    <p className="text-white font-medium">
+                                    <p className="text-foreground font-medium">
                                       {user.address || 'No address'}
                                       {user.city && `, ${user.city}`}
                                       {user.state && `, ${user.state}`}
@@ -1194,7 +1255,7 @@ const Approvals = () => {
                                       <FaUserCheck />
                                       Contact Person
                                     </div>
-                                    <p className="text-white font-medium">{user.contactPerson || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.contactPerson || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1202,7 +1263,7 @@ const Approvals = () => {
                                       <FaPhone />
                                       Contact Phone
                                     </div>
-                                    <p className="text-white font-medium">{user.contactPhone || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.contactPhone || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1212,7 +1273,7 @@ const Approvals = () => {
                                     </div>
                                     {user.website ? (
                                       <a href={user.website} target="_blank" rel="noopener noreferrer" 
-                                         className="text-cyan-400 hover:underline font-medium truncate block">
+                                         className="text-primary hover:underline font-medium truncate block">
                                         {user.website}
                                       </a>
                                     ) : (
@@ -1225,7 +1286,7 @@ const Approvals = () => {
                                       <FaBook />
                                       Board Affiliation
                                     </div>
-                                    <p className="text-white font-medium uppercase">{user.boardAffiliation || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium uppercase">{user.boardAffiliation || 'Not provided'}</p>
                                   </div>
                                   
                                   <div className="p-4 rounded-xl bg-card/50 border border-border">
@@ -1233,7 +1294,7 @@ const Approvals = () => {
                                       <FaUsers />
                                       Student Count
                                     </div>
-                                    <p className="text-white font-medium">{user.studentCount || 'Not provided'}</p>
+                                    <p className="text-foreground font-medium">{user.studentCount || 'Not provided'}</p>
                                   </div>
                                   
                                   {/* Onboarding Status */}
@@ -1256,19 +1317,37 @@ const Approvals = () => {
                                   </div>
                                 </div>
                               ) : (
-                                <div className="text-center py-8">
-                                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-                                    <FaExclamationCircle className="text-2xl text-amber-400" />
+                                /* Other roles (principal, associate, admin, superadmin) – show status from flag */
+                                <div className="grid grid-cols-1 gap-4">
+                                  <div className={`p-4 rounded-xl border md:col-span-2 lg:col-span-3 ${user.onboardingCompleted ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        {user.onboardingCompleted ? (
+                                          <>
+                                            <FaCheck className="text-emerald-400" />
+                                            <span className="text-emerald-400 font-medium">Onboarding Completed</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <FaExclamationCircle className="text-amber-400" />
+                                            <span className="text-amber-400 font-medium">Onboarding Not Completed</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      {user.onboardingCompletedAt && (
+                                        <span className="text-muted-foreground text-sm">
+                                          Completed on {new Date(user.onboardingCompletedAt).toLocaleDateString('en-US', {
+                                            month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                                          })}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {!user.onboardingCompleted && (
+                                      <p className="text-muted-foreground text-sm mt-2">
+                                        Waiting for user to complete profile setup. Consider reaching out to remind them.
+                                      </p>
+                                    )}
                                   </div>
-                                  <h3 className="text-lg font-semibold text-white mb-2">Onboarding Not Completed</h3>
-                                  <p className="text-muted-foreground mb-4">This user has not completed their onboarding yet.</p>
-                                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                                    <FaClock className="text-amber-400" />
-                                    <span className="text-amber-300 text-sm">Waiting for user to complete profile setup</span>
-                                  </div>
-                                  <p className="text-white/40 text-sm mt-4">
-                                    Consider reaching out to remind them to complete their profile before approval.
-                                  </p>
                                 </div>
                               )}
                             </div>
@@ -1291,26 +1370,26 @@ const Approvals = () => {
           animate="visible"
           className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8"
         >
-          <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6">
+          <div className="rounded-2xl border border-border bg-muted/30 p-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center">
-                <FaChalkboardTeacher className="text-blue-400 text-xl" />
+              <div className="w-12 h-12 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                <FaChalkboardTeacher className="text-primary text-xl" />
               </div>
               <div>
                 <p className="text-muted-foreground text-sm">Total Teachers</p>
-                <p className="text-2xl font-bold text-white">{stats.teachers}</p>
+                <p className="text-2xl font-bold text-foreground">{stats.teachers}</p>
               </div>
             </div>
           </div>
           
-          <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-6">
+          <div className="rounded-2xl border border-border bg-muted/30 p-6">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                <FaSchool className="text-purple-400 text-xl" />
+              <div className="w-12 h-12 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                <FaSchool className="text-primary text-xl" />
               </div>
               <div>
                 <p className="text-muted-foreground text-sm">Total Schools</p>
-                <p className="text-2xl font-bold text-white">{stats.schools}</p>
+                <p className="text-2xl font-bold text-foreground">{stats.schools}</p>
               </div>
             </div>
           </div>

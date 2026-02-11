@@ -25,7 +25,26 @@ import {
 } from '../../services/classManagementService';
 import type { Class } from '../../types/lms';
 import { FaPlus, FaUsers, FaChalkboardTeacher, FaTrash, FaCheck } from 'react-icons/fa';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { Button } from '../../Components/ui/button';
+import { Card, CardContent } from '../../Components/ui/card';
+import { Input } from '../../Components/ui/input';
+import { Label } from '../../Components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../../Components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../Components/ui/select';
+import { Badge } from '../../Components/ui/badge';
 
 const ClassManagement = () => {
   const { profile } = useAuth();
@@ -234,8 +253,8 @@ const ClassManagement = () => {
     return (
       <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-          <p className="text-white/60">Loading class management...</p>
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading class management...</p>
         </div>
       </div>
     );
@@ -247,36 +266,32 @@ const ClassManagement = () => {
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center">
-                <FaUsers className="text-white" />
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                <FaUsers className="text-primary" />
               </div>
               Class Management
             </h1>
-            <p className="text-white/50">Create and manage classes, assign students and teachers</p>
+            <p className="text-muted-foreground">Create and manage classes, assign students and teachers</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all flex items-center gap-2"
-          >
-            <FaPlus />
+          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
+            <FaPlus className="w-4 h-4" />
             Create Class
-          </button>
+          </Button>
         </div>
 
         {/* Classes List */}
         <div className="space-y-4">
           {classes.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaUsers className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No classes created yet</p>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="mt-4 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all"
-              >
-                Create Your First Class
-              </button>
-            </div>
+            <Card className="border-border rounded-2xl">
+              <CardContent className="p-8 text-center">
+                <FaUsers className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No classes created yet</p>
+                <Button className="mt-4" onClick={() => setShowCreateModal(true)}>
+                  Create Your First Class
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             classes.map((classItem) => {
               const classStudents = students.filter(s => 
@@ -287,392 +302,332 @@ const ClassManagement = () => {
               );
 
               return (
-                <div
-                  key={classItem.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-6"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-xl font-semibold text-white mb-1">
-                        {classItem.class_name}
-                      </h3>
-                      <p className="text-white/50 text-sm">
-                        {classItem.curriculum} • {classItem.subject || 'All Subjects'}
-                        {classItem.academic_year && ` • ${classItem.academic_year}`}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setSelectedClass(classItem);
-                        setShowAssignModal(true);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30 transition-all text-sm"
-                    >
-                      Manage
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <FaChalkboardTeacher className="text-purple-400" />
-                        <span className="text-white/70 text-sm font-medium">Teachers ({classTeachers.length})</span>
+                <Card key={classItem.id} className="rounded-xl border-border bg-card">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h3 className="text-xl font-semibold text-foreground mb-1">
+                          {classItem.class_name}
+                        </h3>
+                        <p className="text-muted-foreground text-sm">
+                          {classItem.curriculum} • {classItem.subject || 'All Subjects'}
+                          {classItem.academic_year && ` • ${classItem.academic_year}`}
+                        </p>
                       </div>
-                      <div className="space-y-1">
-                        {classTeachers.length === 0 ? (
-                          <p className="text-white/30 text-sm">No teachers assigned</p>
-                        ) : (
-                          classTeachers.map(teacher => {
-                            const isClassTeacher = classItem.class_teacher_id === teacher.uid;
-                            return (
-                              <div key={teacher.uid} className="flex items-center gap-2">
-                                <span className={`text-sm ${isClassTeacher ? 'text-purple-400 font-medium' : 'text-white/50'}`}>
-                                  {teacher.name || teacher.displayName || teacher.email}
-                                </span>
-                                {isClassTeacher && (
-                                  <span className="px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                    Class Teacher
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedClass(classItem);
+                          setShowAssignModal(true);
+                        }}
+                      >
+                        Manage
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FaChalkboardTeacher className="text-primary" />
+                          <span className="text-foreground text-sm font-medium">Teachers ({classTeachers.length})</span>
+                        </div>
+                        <div className="space-y-1">
+                          {classTeachers.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">No teachers assigned</p>
+                          ) : (
+                            classTeachers.map(teacher => {
+                              const isClassTeacher = classItem.class_teacher_id === teacher.uid;
+                              return (
+                                <div key={teacher.uid} className="flex items-center gap-2">
+                                  <span className={`text-sm ${isClassTeacher ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                                    {teacher.name || teacher.displayName || teacher.email}
                                   </span>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
+                                  {isClassTeacher && (
+                                    <Badge variant="secondary" className="text-xs">Class Teacher</Badge>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <FaUsers className="text-blue-400" />
-                        <span className="text-white/70 text-sm font-medium">Students ({classStudents.length})</span>
-                      </div>
-                      <div className="space-y-1">
-                        {classStudents.length === 0 ? (
-                          <p className="text-white/30 text-sm">No students enrolled</p>
-                        ) : (
-                          classStudents.slice(0, 5).map(student => (
-                            <div key={student.uid} className="text-white/50 text-sm">
-                              {student.name || student.displayName || student.email}
-                            </div>
-                          ))
-                        )}
-                        {classStudents.length > 5 && (
-                          <p className="text-white/30 text-sm">+{classStudents.length - 5} more</p>
-                        )}
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FaUsers className="text-primary" />
+                          <span className="text-foreground text-sm font-medium">Students ({classStudents.length})</span>
+                        </div>
+                        <div className="space-y-1">
+                          {classStudents.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">No students enrolled</p>
+                          ) : (
+                            classStudents.slice(0, 5).map(student => (
+                              <div key={student.uid} className="text-muted-foreground text-sm">
+                                {student.name || student.displayName || student.email}
+                              </div>
+                            ))
+                          )}
+                          {classStudents.length > 5 && (
+                            <p className="text-muted-foreground text-sm">+{classStudents.length - 5} more</p>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               );
             })
           )}
         </div>
 
         {/* Create Class Modal */}
-        {showCreateModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-card rounded-2xl border border-border p-6 max-w-md w-full">
-              <h2 className="text-xl font-semibold text-white mb-4">Create New Class</h2>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Class Name *</label>
-                  <input
-                    type="text"
-                    value={newClassData.class_name}
-                    onChange={(e) => setNewClassData({ ...newClassData, class_name: e.target.value })}
-                    placeholder="e.g., Class 8A, Section B"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
+        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Create New Class</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-foreground">Class Name *</Label>
+                <Input
+                  value={newClassData.class_name}
+                  onChange={(e) => setNewClassData({ ...newClassData, class_name: e.target.value })}
+                  placeholder="e.g., Class 8A, Section B"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Curriculum *</Label>
+                <Select
+                  value={newClassData.curriculum}
+                  onValueChange={(v) => setNewClassData({ ...newClassData, curriculum: v })}
+                >
+                  <SelectTrigger className="bg-background border-border text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CBSE">CBSE</SelectItem>
+                    <SelectItem value="RBSE">RBSE</SelectItem>
+                    <SelectItem value="ICSE">ICSE</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Subject (Optional)</Label>
+                <Input
+                  value={newClassData.subject}
+                  onChange={(e) => setNewClassData({ ...newClassData, subject: e.target.value })}
+                  placeholder="e.g., Science, Mathematics"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Academic Year</Label>
+                <Input
+                  value={newClassData.academic_year}
+                  onChange={(e) => setNewClassData({ ...newClassData, academic_year: e.target.value })}
+                  placeholder="e.g., 2024-2025"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Class Teacher (Optional)</Label>
+                <p className="text-muted-foreground text-xs">The class teacher can approve students in this class</p>
+                <Select
+                  value={newClassData.class_teacher_id || 'none'}
+                  onValueChange={(v) => setNewClassData({ ...newClassData, class_teacher_id: v === 'none' ? '' : v })}
+                >
+                  <SelectTrigger className="bg-background border-border text-foreground">
+                    <SelectValue placeholder="Select a teacher (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select a teacher (optional)</SelectItem>
+                    {teachers.length === 0 ? null : (() => {
+                      const availableTeachers = [...teachers].sort((a, b) => {
+                        if (a.approvalStatus === 'approved' && b.approvalStatus !== 'approved') return -1;
+                        if (a.approvalStatus !== 'approved' && b.approvalStatus === 'approved') return 1;
+                        const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
+                        const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
+                        return nameA.localeCompare(nameB);
+                      });
+                      return availableTeachers.map(teacher => (
+                        <SelectItem key={teacher.uid} value={teacher.uid}>
+                          {teacher.name || teacher.displayName || teacher.email}
+                          {teacher.approvalStatus === 'pending' && ' (Pending Approval)'}
+                          {teacher.approvalStatus === 'rejected' && ' (Rejected)'}
+                          {!teacher.approvalStatus && ' (No Status)'}
+                        </SelectItem>
+                      ));
+                    })()}
+                  </SelectContent>
+                </Select>
+                {teachers.length > 0 && (
+                  <p className="text-muted-foreground text-xs">
+                    {teachers.length} teacher(s) in your school
+                    {teachers.filter(t => t.approvalStatus === 'approved').length > 0 && (
+                      <span className="text-emerald-600 dark:text-emerald-400"> ({teachers.filter(t => t.approvalStatus === 'approved').length} approved)</span>
+                    )}
+                    {teachers.filter(t => t.approvalStatus === 'pending').length > 0 && (
+                      <span className="text-amber-600 dark:text-amber-400"> ({teachers.filter(t => t.approvalStatus === 'pending').length} pending)</span>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCreateModal(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleCreateClass}>
+                Create
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Curriculum *</label>
-                  <select
-                    value={newClassData.curriculum}
-                    onChange={(e) => setNewClassData({ ...newClassData, curriculum: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-400/50"
-                  >
-                    <option value="CBSE">CBSE</option>
-                    <option value="RBSE">RBSE</option>
-                    <option value="ICSE">ICSE</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Subject (Optional)</label>
-                  <input
-                    type="text"
-                    value={newClassData.subject}
-                    onChange={(e) => setNewClassData({ ...newClassData, subject: e.target.value })}
-                    placeholder="e.g., Science, Mathematics"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Academic Year</label>
-                  <input
-                    type="text"
-                    value={newClassData.academic_year}
-                    onChange={(e) => setNewClassData({ ...newClassData, academic_year: e.target.value })}
-                    placeholder="e.g., 2024-2025"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Class Teacher (Optional)</label>
-                  <p className="text-white/40 text-xs mb-2">The class teacher can approve students in this class</p>
-                  <select
-                    value={newClassData.class_teacher_id}
-                    onChange={(e) => setNewClassData({ ...newClassData, class_teacher_id: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-400/50"
-                  >
-                    <option value="">Select a teacher (optional)</option>
-                    {teachers.length === 0 ? (
-                      <option value="" disabled>No teachers available</option>
-                    ) : (
-                      (() => {
-                        // Show ALL teachers from the school - approved, pending, or no status
-                        // This ensures approved teachers are always visible
-                        const availableTeachers = teachers
-                          .filter(t => {
-                            // Include all teachers - we'll mark their status
-                            return true;
-                          })
+        {/* Assign Students/Teachers Modal */}
+        <Dialog open={showAssignModal && !!selectedClass} onOpenChange={(open) => { if (!open) { setShowAssignModal(false); setSelectedClass(null); } }}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Manage: {selectedClass?.class_name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6">
+              {/* Assign Teachers */}
+              <div>
+                <h3 className="text-foreground font-medium mb-3 flex items-center gap-2">
+                  <FaChalkboardTeacher className="text-primary" />
+                  Assign Teachers
+                </h3>
+                <Card className="mb-3 border-border bg-muted/30">
+                  <CardContent className="p-3">
+                    <Label className="text-muted-foreground text-xs mb-2 block">Class Teacher:</Label>
+                    <Select
+                      value={selectedClass?.class_teacher_id || 'none'}
+                      onValueChange={(v) => selectedClass && handleSetClassTeacher(selectedClass.id, v === 'none' ? null : v)}
+                    >
+                      <SelectTrigger className="w-full bg-background border-border text-foreground text-sm">
+                        <SelectValue placeholder="No class teacher assigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No class teacher assigned</SelectItem>
+                        {teachers
+                          .filter(t => true)
                           .sort((a, b) => {
-                            // Sort approved first, then by name
                             if (a.approvalStatus === 'approved' && b.approvalStatus !== 'approved') return -1;
                             if (a.approvalStatus !== 'approved' && b.approvalStatus === 'approved') return 1;
                             const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
                             const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
                             return nameA.localeCompare(nameB);
-                          });
-                        
-                        return availableTeachers.map(teacher => (
-                          <option key={teacher.uid} value={teacher.uid}>
-                            {teacher.name || teacher.displayName || teacher.email}
-                            {teacher.approvalStatus === 'pending' && ' (Pending Approval)'}
-                            {teacher.approvalStatus === 'rejected' && ' (Rejected)'}
-                            {!teacher.approvalStatus && ' (No Status)'}
-                          </option>
-                        ));
-                      })()
-                    )}
-                  </select>
-                  {teachers.length > 0 && (
-                    <p className="text-white/40 text-xs mt-1">
-                      {teachers.length} teacher(s) in your school
-                      {teachers.filter(t => t.approvalStatus === 'approved').length > 0 && (
-                        <span className="text-emerald-400"> ({teachers.filter(t => t.approvalStatus === 'approved').length} approved)</span>
-                      )}
-                      {teachers.filter(t => t.approvalStatus === 'pending').length > 0 && (
-                        <span className="text-amber-400"> ({teachers.filter(t => t.approvalStatus === 'pending').length} pending)</span>
-                      )}
-                    </p>
+                          })
+                          .map(teacher => (
+                            <SelectItem key={teacher.uid} value={teacher.uid}>
+                              {teacher.name || teacher.displayName || teacher.email}
+                              {teacher.approvalStatus === 'pending' && ' (Pending)'}
+                              {teacher.approvalStatus === 'rejected' && ' (Rejected)'}
+                              {!teacher.approvalStatus && ' (No Status)'}
+                              {teacher.managed_class_ids?.includes(selectedClass?.id) && ' (Assigned)'}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-muted-foreground text-xs mt-2">The class teacher can approve students in this class.</p>
+                  </CardContent>
+                </Card>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {teachers.length === 0 ? (
+                    <p className="text-muted-foreground text-sm p-2">No teachers available in your school</p>
+                  ) : (
+                    teachers
+                      .filter(t => t.approvalStatus === 'approved' || !t.approvalStatus)
+                      .sort((a, b) => {
+                        const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
+                        const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
+                        return nameA.localeCompare(nameB);
+                      })
+                      .map(teacher => {
+                        const isAssigned = teacher.managed_class_ids?.includes(selectedClass?.id);
+                        const isClassTeacher = selectedClass?.class_teacher_id === teacher.uid;
+                        return (
+                          <div
+                            key={teacher.uid}
+                            className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-foreground text-sm">
+                                {teacher.name || teacher.displayName || teacher.email}
+                              </span>
+                              {isClassTeacher && (
+                                <Badge variant="secondary" className="text-xs">Class Teacher</Badge>
+                              )}
+                            </div>
+                            <Button
+                              variant={isAssigned ? 'destructive' : 'default'}
+                              size="sm"
+                              onClick={() => {
+                                if (!selectedClass) return;
+                                if (isAssigned) {
+                                  removeTeacherFromClass(profile, teacher.uid, selectedClass.id);
+                                } else {
+                                  handleAssignTeacher(teacher.uid, selectedClass.id);
+                                }
+                              }}
+                            >
+                              {isAssigned ? <><FaTrash className="mr-1" /> Remove</> : <><FaCheck className="mr-1" /> Assign</>}
+                            </Button>
+                          </div>
+                        );
+                      })
                   )}
                 </div>
               </div>
 
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateClass}
-                  className="flex-1 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all"
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Assign Students/Teachers Modal */}
-        {showAssignModal && selectedClass && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-card rounded-2xl border border-border p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-              <h2 className="text-xl font-semibold text-white mb-4">
-                Manage: {selectedClass.class_name}
-              </h2>
-
-              <div className="space-y-6">
-                {/* Assign Teachers */}
-                <div>
-                  <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                    <FaChalkboardTeacher className="text-purple-400" />
-                    Assign Teachers
-                  </h3>
-                  <div className="mb-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                    <p className="text-purple-300 text-xs mb-2">Class Teacher:</p>
-                    <select
-                      value={selectedClass.class_teacher_id || ''}
-                      onChange={(e) => handleSetClassTeacher(selectedClass.id, e.target.value || null)}
-                      className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-purple-400/50"
-                    >
-                      <option value="">No class teacher assigned</option>
-                      {(() => {
-                        // Show ALL teachers from the school - approved, pending, or no status
-                        const availableTeachers = teachers
-                          .filter(t => {
-                            // Include all teachers - we'll mark their status
-                            return true;
-                          })
-                          .sort((a, b) => {
-                            // Sort approved first, then by name
-                            if (a.approvalStatus === 'approved' && b.approvalStatus !== 'approved') return -1;
-                            if (a.approvalStatus !== 'approved' && b.approvalStatus === 'approved') return 1;
-                            const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
-                            const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
-                            return nameA.localeCompare(nameB);
-                          });
-                        
-                        return availableTeachers.map(teacher => (
-                          <option key={teacher.uid} value={teacher.uid}>
-                            {teacher.name || teacher.displayName || teacher.email}
-                            {teacher.approvalStatus === 'pending' && ' (Pending)'}
-                            {teacher.approvalStatus === 'rejected' && ' (Rejected)'}
-                            {!teacher.approvalStatus && ' (No Status)'}
-                            {teacher.managed_class_ids?.includes(selectedClass.id) && ' (Assigned)'}
-                          </option>
-                        ));
-                      })()}
-                    </select>
-                    <p className="text-white/40 text-xs mt-2">The class teacher can approve students in this class. Select any approved teacher from your school.</p>
-                  </div>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {teachers.length === 0 ? (
-                      <p className="text-white/50 text-sm p-2">No teachers available in your school</p>
-                    ) : (
-                      teachers
-                        .filter(t => {
-                          // Show all approved teachers from the school
-                          return t.approvalStatus === 'approved' || !t.approvalStatus;
-                        })
-                        .sort((a, b) => {
-                          // Sort by name for better UX
-                          const nameA = (a.name || a.displayName || a.email || '').toLowerCase();
-                          const nameB = (b.name || b.displayName || b.email || '').toLowerCase();
-                          return nameA.localeCompare(nameB);
-                        })
-                        .map(teacher => {
-                          const isAssigned = teacher.managed_class_ids?.includes(selectedClass.id);
-                          const isClassTeacher = selectedClass.class_teacher_id === teacher.uid;
-                          return (
-                            <div
-                              key={teacher.uid}
-                              className="flex items-center justify-between p-2 rounded-lg bg-white/5"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="text-white/70 text-sm">
-                                  {teacher.name || teacher.displayName || teacher.email}
-                                </span>
-                                {isClassTeacher && (
-                                  <span className="px-1.5 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                    Class Teacher
-                                  </span>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => {
-                                  if (isAssigned) {
-                                    removeTeacherFromClass(profile, teacher.uid, selectedClass.id);
-                                  } else {
-                                    handleAssignTeacher(teacher.uid, selectedClass.id);
-                                  }
-                                }}
-                                className={`px-3 py-1 rounded-lg text-sm transition-all ${
-                                  isAssigned
-                                    ? 'bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30'
-                                    : 'bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30'
-                                }`}
-                              >
-                                {isAssigned ? (
-                                  <>
-                                    <FaTrash className="inline mr-1" />
-                                    Remove
-                                  </>
-                                ) : (
-                                  <>
-                                    <FaCheck className="inline mr-1" />
-                                    Assign
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                          );
-                        })
-                    )}
-                  </div>
-                </div>
-
-                {/* Assign Students */}
-                <div>
-                  <h3 className="text-white font-medium mb-3 flex items-center gap-2">
-                    <FaUsers className="text-blue-400" />
-                    Assign Students
-                  </h3>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {students.map(student => {
-                      const isEnrolled = student.class_ids?.includes(selectedClass.id);
-                      return (
-                        <div
-                          key={student.uid}
-                          className="flex items-center justify-between p-2 rounded-lg bg-white/5"
+              {/* Assign Students */}
+              <div>
+                <h3 className="text-foreground font-medium mb-3 flex items-center gap-2">
+                  <FaUsers className="text-primary" />
+                  Assign Students
+                </h3>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {students.map(student => {
+                    const isEnrolled = student.class_ids?.includes(selectedClass?.id);
+                    return (
+                      <div
+                        key={student.uid}
+                        className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border"
+                      >
+                        <span className="text-foreground text-sm">
+                          {student.name || student.displayName || student.email}
+                        </span>
+                        <Button
+                          variant={isEnrolled ? 'destructive' : 'outline'}
+                          size="sm"
+                          onClick={() => {
+                            if (!selectedClass) return;
+                            if (isEnrolled) {
+                              removeStudentFromClass(profile, student.uid, selectedClass.id);
+                            } else {
+                              handleAssignStudent(student.uid, selectedClass.id);
+                            }
+                          }}
                         >
-                          <span className="text-white/70 text-sm">
-                            {student.name || student.displayName || student.email}
-                          </span>
-                          <button
-                            onClick={() => {
-                              if (isEnrolled) {
-                                removeStudentFromClass(profile, student.uid, selectedClass.id);
-                              } else {
-                                handleAssignStudent(student.uid, selectedClass.id);
-                              }
-                            }}
-                            className={`px-3 py-1 rounded-lg text-sm transition-all ${
-                              isEnrolled
-                                ? 'bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30'
-                                : 'bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30'
-                            }`}
-                          >
-                            {isEnrolled ? (
-                              <>
-                                <FaTrash className="inline mr-1" />
-                                Remove
-                              </>
-                            ) : (
-                              <>
-                                <FaCheck className="inline mr-1" />
-                                Enroll
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          {isEnrolled ? <><FaTrash className="mr-1" /> Remove</> : <><FaCheck className="mr-1" /> Enroll</>}
+                        </Button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-
-              <button
-                onClick={() => {
-                  setShowAssignModal(false);
-                  setSelectedClass(null);
-                }}
-                className="w-full mt-6 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-all"
-              >
-                Close
-              </button>
             </div>
-          </div>
-        )}
+            <Button
+              variant="outline"
+              className="w-full mt-6"
+              onClick={() => { setShowAssignModal(false); setSelectedClass(null); }}
+            >
+              Close
+            </Button>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

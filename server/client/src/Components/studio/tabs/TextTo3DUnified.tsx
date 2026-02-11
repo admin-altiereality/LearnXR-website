@@ -146,7 +146,7 @@ export const TextTo3DUnified = ({
             // Set empty array but don't block UI
             setScriptTo3dAssets([]);
             // Show toast but don't set error state (allows UI to render)
-            toast.warn('Could not load assets. Please ensure you have admin or superadmin role.');
+            toast.warn('Could not load assets. Staff (Admin, Super Admin, or Associate) role required.');
           } else {
             // For other errors, set error state
             setError(fetchError);
@@ -227,7 +227,7 @@ export const TextTo3DUnified = ({
       
       // Show user-friendly error message
       if (classification.type === 'permission') {
-        toast.error('Permission denied. Please ensure you have admin or superadmin role in your user profile.');
+        toast.error('Permission denied. Staff (Admin, Super Admin, or Associate) role required.');
       } else {
         toast.error(classification.userMessage || 'Failed to update approval');
       }
@@ -492,7 +492,7 @@ export const TextTo3DUnified = ({
       
       // Show user-friendly error message
       if (classification.type === 'permission') {
-        toast.error('Permission denied. Please ensure you have admin or superadmin role in your user profile.');
+        toast.error('Permission denied. Staff (Admin, Super Admin, or Associate) role required.');
       } else {
         toast.error(classification.userMessage || 'Failed to generate 3D asset');
       }
@@ -555,13 +555,13 @@ export const TextTo3DUnified = ({
       )}
       
       {/* Section Tabs */}
-      <div className="flex gap-2 border-b border-slate-700/50">
+      <div className="flex gap-2 border-b border-border">
         <button
           onClick={() => setActiveSection('text-to-3d')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeSection === 'text-to-3d'
-              ? 'text-cyan-400 border-cyan-500'
-              : 'text-slate-400 border-transparent hover:text-white'
+              ? 'text-primary border-primary'
+              : 'text-muted-foreground border-transparent hover:text-foreground'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -574,7 +574,7 @@ export const TextTo3DUnified = ({
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeSection === 'script-to-3d'
               ? 'text-purple-400 border-purple-500'
-              : 'text-slate-400 border-transparent hover:text-white'
+              : 'text-muted-foreground border-transparent hover:text-foreground'
           }`}
         >
           <div className="flex items-center gap-2">
@@ -589,10 +589,10 @@ export const TextTo3DUnified = ({
         <div className="space-y-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
             </div>
           ) : currentAssets.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
+            <div className="text-center py-12 text-muted-foreground">
               <Sparkles className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>No Text-to-3D assets found</p>
             </div>
@@ -605,8 +605,8 @@ export const TextTo3DUnified = ({
                     onClick={() => setSelectedTextTo3d(asset)}
                     className={`p-3 rounded-lg border cursor-pointer transition-all ${
                       currentSelected?.id === asset.id
-                        ? 'bg-cyan-500/10 border-cyan-500/30'
-                        : 'bg-slate-800/30 border-slate-700/30 hover:border-slate-600/50'
+                        ? 'bg-primary/10 border-primary/30'
+                        : 'bg-muted/50 border-border hover:border-border'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
@@ -615,7 +615,7 @@ export const TextTo3DUnified = ({
                       ) : (
                         <Clock className="w-4 h-4 text-amber-400" />
                       )}
-                      <span className="text-sm font-medium text-white truncate">
+                      <span className="text-sm font-medium text-foreground truncate">
                         {asset.prompt?.substring(0, 40)}...
                       </span>
                     </div>
@@ -636,10 +636,10 @@ export const TextTo3DUnified = ({
               </div>
               {currentSelected && (
                 <div className="lg:col-span-2 space-y-4">
-                  <div className="bg-slate-800/30 rounded-lg border border-slate-700/30 p-4">
+                  <div className="bg-muted/50 rounded-lg border border-border p-4">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-lg font-semibold text-white mb-2">{currentSelected.prompt}</h3>
+                        <h3 className="text-lg font-semibold text-foreground mb-2">{currentSelected.prompt}</h3>
                         <div className="flex items-center gap-2">
                           <span className={`px-2 py-1 text-xs rounded ${
                             currentSelected.approval_status ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
@@ -648,10 +648,10 @@ export const TextTo3DUnified = ({
                           </span>
                           {currentSelected.status && (
                             <span className={`px-2 py-1 text-xs rounded ${
-                              currentSelected.status === 'ready' ? 'bg-cyan-500/10 text-cyan-400' :
+                              currentSelected.status === 'ready' ? 'bg-primary/10 text-primary' :
                               currentSelected.status === 'generating' ? 'bg-blue-500/10 text-blue-400' :
                               currentSelected.status === 'failed' ? 'bg-red-500/10 text-red-400' :
-                              'bg-slate-700/50 text-slate-400'
+                              'bg-muted text-muted-foreground'
                             }`}>
                               {currentSelected.status}
                             </span>
@@ -689,7 +689,7 @@ export const TextTo3DUnified = ({
                           <span className="text-sm text-blue-400">{generationProgress[currentSelected.id].message}</span>
                           <span className="text-xs text-blue-300">{Math.round(generationProgress[currentSelected.id].progress)}%</span>
                         </div>
-                        <div className="w-full bg-slate-900/50 rounded-full h-2">
+                        <div className="w-full bg-muted rounded-full h-2">
                           <div
                             className="bg-blue-500 h-2 rounded-full transition-all"
                             style={{ width: `${generationProgress[currentSelected.id].progress}%` }}
@@ -708,7 +708,7 @@ export const TextTo3DUnified = ({
                         <button
                           onClick={() => handleGenerate3DAsset(currentSelected.id, currentSelected, 'text_to_3d')}
                           disabled={generatingAssetId === currentSelected.id}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-white border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
+                          className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-foreground border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
                         >
                           {generatingAssetId === currentSelected.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -720,12 +720,12 @@ export const TextTo3DUnified = ({
                     )}
 
                     {currentSelected.status === 'ready' && currentSelected.meshy_asset_id && (
-                      <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                      <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
                         <div className="flex items-center gap-2 mb-2">
-                          <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                          <span className="text-sm font-medium text-cyan-400">Asset Generated</span>
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-medium text-primary">Asset Generated</span>
                         </div>
-                        <p className="text-xs text-cyan-300">Available in 3D Assets section above</p>
+                        <p className="text-xs text-primary">Available in 3D Assets section above</p>
                       </div>
                     )}
                   </div>
@@ -738,7 +738,7 @@ export const TextTo3DUnified = ({
         <div className="space-y-4">
           {/* Script Input */}
           <div className="p-4 rounded-lg border border-purple-500/20 bg-purple-500/5">
-            <h3 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
               <Search className="w-4 h-4 text-purple-400" />
               Detect 3D Objects from Script
             </h3>
@@ -746,7 +746,7 @@ export const TextTo3DUnified = ({
               value={explanationScript}
               onChange={(e) => setExplanationScript(e.target.value)}
               placeholder="Paste avatar explanation script here..."
-              className="w-full h-24 bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none mb-3"
+              className="w-full h-24 bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none mb-3"
               disabled={detecting}
             />
             <div className="flex gap-2">
@@ -775,7 +775,7 @@ export const TextTo3DUnified = ({
               </PermissionGate>
               <button
                 onClick={() => setShowManualEntry(!showManualEntry)}
-                className="px-4 py-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
+                className="px-4 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
               >
                 <Package className="w-4 h-4" />
                 {showManualEntry ? 'Cancel' : 'Add Manually'}
@@ -788,7 +788,7 @@ export const TextTo3DUnified = ({
                   <span className="text-sm text-purple-400">{detectionMessage}</span>
                   <span className="text-xs text-purple-300">{detectionProgress}%</span>
                 </div>
-                <div className="w-full bg-slate-900/50 rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2">
                   <div
                     className="bg-purple-500 h-2 rounded-full transition-all"
                     style={{ width: `${detectionProgress}%` }}
@@ -798,13 +798,13 @@ export const TextTo3DUnified = ({
             )}
 
             {showManualEntry && (
-              <div className="mt-3 p-3 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+              <div className="mt-3 p-3 rounded-lg bg-cyan-500/5 border border-primary/20">
                 <input
                   type="text"
                   value={manualPrompt}
                   onChange={(e) => setManualPrompt(e.target.value)}
                   placeholder="e.g., A detailed wooden table"
-                  className="w-full bg-slate-900/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 mb-2"
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50 mb-2"
                   disabled={addingManual}
                   onKeyDown={(e) => e.key === 'Enter' && !addingManual && manualPrompt.trim() && handleAddManual()}
                 />
@@ -816,7 +816,7 @@ export const TextTo3DUnified = ({
                   <button
                     onClick={handleAddManual}
                     disabled={addingManual || !manualPrompt.trim()}
-                    className="w-full px-4 py-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full px-4 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {addingManual ? (
                       <>
@@ -841,10 +841,10 @@ export const TextTo3DUnified = ({
               <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
             </div>
           ) : scriptTo3dAssets.length === 0 ? (
-            <div className="text-center py-12 text-slate-400">
+            <div className="text-center py-12 text-muted-foreground">
               <Brain className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>No Script-to-3D assets found</p>
-              <p className="text-xs text-slate-500 mt-1">Detect objects or add manually</p>
+              <p className="text-xs text-muted-foreground mt-1">Detect objects or add manually</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -855,7 +855,7 @@ export const TextTo3DUnified = ({
                     className={`p-3 rounded-lg border transition-all ${
                       currentSelected?.id === asset.id
                         ? 'bg-purple-500/10 border-purple-500/30'
-                        : 'bg-slate-800/30 border-slate-700/30 hover:border-slate-600/50'
+                        : 'bg-muted/50 border-border hover:border-border'
                     }`}
                   >
                     <div 
@@ -868,7 +868,7 @@ export const TextTo3DUnified = ({
                         ) : (
                           <Clock className="w-4 h-4 text-amber-400" />
                         )}
-                        <span className="text-sm font-medium text-white truncate flex-1">
+                        <span className="text-sm font-medium text-foreground truncate flex-1">
                           {asset.prompt?.substring(0, 40)}...
                         </span>
                       </div>
@@ -887,7 +887,7 @@ export const TextTo3DUnified = ({
                     </div>
                     {/* Delete button for manually added assets */}
                     {asset.created_by && asset.created_by === user?.uid && (
-                      <div className="mt-2 pt-2 border-t border-slate-700/30">
+                      <div className="mt-2 pt-2 border-t border-border">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -912,10 +912,10 @@ export const TextTo3DUnified = ({
               </div>
               {currentSelected && (
                 <div className="lg:col-span-2 space-y-4">
-                  <div className="bg-slate-800/30 rounded-lg border border-slate-700/30 p-4">
+                  <div className="bg-muted/50 rounded-lg border border-border p-4">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-lg font-semibold text-white mb-2">{currentSelected.prompt}</h3>
+                        <h3 className="text-lg font-semibold text-foreground mb-2">{currentSelected.prompt}</h3>
                         <div className="flex items-center gap-2">
                           <span className={`px-2 py-1 text-xs rounded ${
                             currentSelected.approval_status ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
@@ -924,10 +924,10 @@ export const TextTo3DUnified = ({
                           </span>
                           {currentSelected.status && (
                             <span className={`px-2 py-1 text-xs rounded ${
-                              currentSelected.status === 'ready' ? 'bg-cyan-500/10 text-cyan-400' :
+                              currentSelected.status === 'ready' ? 'bg-primary/10 text-primary' :
                               currentSelected.status === 'generating' ? 'bg-blue-500/10 text-blue-400' :
                               currentSelected.status === 'failed' ? 'bg-red-500/10 text-red-400' :
-                              'bg-slate-700/50 text-slate-400'
+                              'bg-muted text-muted-foreground'
                             }`}>
                               {currentSelected.status}
                             </span>
@@ -987,7 +987,7 @@ export const TextTo3DUnified = ({
                           <span className="text-sm text-blue-400">{generationProgress[currentSelected.id].message}</span>
                           <span className="text-xs text-blue-300">{Math.round(generationProgress[currentSelected.id].progress)}%</span>
                         </div>
-                        <div className="w-full bg-slate-900/50 rounded-full h-2">
+                        <div className="w-full bg-muted rounded-full h-2">
                           <div
                             className="bg-blue-500 h-2 rounded-full transition-all"
                             style={{ width: `${generationProgress[currentSelected.id].progress}%` }}
@@ -1006,7 +1006,7 @@ export const TextTo3DUnified = ({
                         <button
                           onClick={() => handleGenerate3DAsset(currentSelected.id, currentSelected, 'avatar_to_3d')}
                           disabled={generatingAssetId === currentSelected.id}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-white border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
+                          className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-foreground border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
                         >
                           {generatingAssetId === currentSelected.id ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1018,12 +1018,12 @@ export const TextTo3DUnified = ({
                     )}
 
                     {currentSelected.status === 'ready' && currentSelected.meshy_asset_id && (
-                      <div className="p-3 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                      <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
                         <div className="flex items-center gap-2 mb-2">
-                          <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                          <span className="text-sm font-medium text-cyan-400">Asset Generated</span>
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-medium text-primary">Asset Generated</span>
                         </div>
-                        <p className="text-xs text-cyan-300">Available in 3D Assets section above</p>
+                        <p className="text-xs text-primary">Available in 3D Assets section above</p>
                       </div>
                     )}
                   </div>

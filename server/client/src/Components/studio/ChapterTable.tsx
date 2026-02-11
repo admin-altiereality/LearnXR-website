@@ -75,10 +75,14 @@ export const ChapterTable = ({
     }
   }, [profile]);
   
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '—';
+  const formatDate = (dateInput?: string | { toDate?: () => Date } | null) => {
+    if (dateInput == null) return '—';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
+      const date = typeof dateInput === 'object' && typeof dateInput.toDate === 'function'
+        ? dateInput.toDate()
+        : new Date(dateInput as string);
+      if (Number.isNaN(date.getTime())) return '—';
+      return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -384,26 +388,27 @@ export const ChapterTable = ({
               {/* Topics List (when expanded) */}
               {isExpanded && (
                 <div className="divide-y divide-border bg-muted/10">
-                  {group.topics.map(({ chapter, topic, topicPriority }) => {
+                  {group.topics.map(({ chapter, topic, topicPriority }, index) => {
                     const contentStatus = getContentStatus(chapter);
-                    // Use topic_name if it exists and is not empty, otherwise use a generic topic name
-                    // Never fallback to chapter_name as that's confusing
-                    const topicName = (topic?.topic_name && topic.topic_name.trim()) 
-                      ? topic.topic_name 
-                      : `Topic ${topicPriority || '?'}`;
-                    
+                    const displayNum = topic?.topic_priority ?? index + 1;
+                    const topicName = (topic?.topic_name && topic.topic_name.trim())
+                      ? topic.topic_name
+                      : `Topic ${displayNum}`;
                     const approval = topic?.approval || {};
-                    let isApproved = approval?.approved === true || approval?.approved === 'true';
-                    if (!topic?.approval && (chapter as any).approved === true) isApproved = true;
+                    const isApproved =
+                      approval?.approved === true ||
+                      approval?.approved === 'true' ||
+                      (topic as { approved?: boolean })?.approved === true ||
+                      (!topic?.approval && (chapter as { approved?: boolean }).approved === true);
 
                     return (
                       <div
-                        key={chapter.id}
+                        key={`${chapter.id}_${topic?.topic_id ?? index}`}
                         className={`${tableGrid} py-3 items-center min-h-[52px] pl-12 sm:pl-14 hover:bg-muted/20 transition-colors border-l-2 border-transparent hover:border-primary/40`}
                       >
                         <div className="flex items-center justify-center">
                           <span className="inline-flex items-center justify-center w-8 h-8 text-xs font-bold text-primary bg-primary/10 rounded-md border border-border">
-                            {topicPriority}
+                            {displayNum}
                           </span>
                         </div>
                         <div className="flex items-center min-w-0">
@@ -446,9 +451,12 @@ export const ChapterTable = ({
                         </div>
                         <div className="flex items-center justify-end gap-2">
                           {(() => {
-                            const approval = topic?.approval || {};
-                            const isApproved = approval.approved === true;
-                            const approvalKey = `${chapter.id}_${topic?.topic_id || ''}`;
+                            const approvalInner = topic?.approval || {};
+                            const isApprovedInner =
+                              approvalInner?.approved === true ||
+                              approvalInner?.approved === 'true' ||
+                              (topic as { approved?: boolean })?.approved === true;
+                            const approvalKey = `${chapter.id}_${topic?.topic_id ?? ''}`;
                             const isUpdating = updatingApproval === approvalKey;
                             return (
                               <>
@@ -456,16 +464,16 @@ export const ChapterTable = ({
                                   <Button
                                     type="button"
                                     size="sm"
-                                    variant={isApproved ? 'destructive' : 'default'}
+                                    variant={isApprovedInner ? 'destructive' : 'default'}
                                     className="gap-1.5 text-xs h-8"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      handleApprovalToggle(chapter.id, topic.topic_id, isApproved);
+                                      handleApprovalToggle(chapter.id, topic.topic_id, isApprovedInner);
                                     }}
                                     disabled={isUpdating}
-                                    title={isApproved ? 'Unapprove topic' : 'Approve topic'}
+                                    title={isApprovedInner ? 'Unapprove topic' : 'Approve topic'}
                                   >
-                                    {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isApproved ? <><XCircle className="w-3.5 h-3.5" />Unapprove</> : <><CheckCircle2 className="w-3.5 h-3.5" />Approve</>}
+                                    {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isApprovedInner ? <><XCircle className="w-3.5 h-3.5" />Unapprove</> : <><CheckCircle2 className="w-3.5 h-3.5" />Approve</>}
                                   </Button>
                                 )}
                               </>

@@ -43,7 +43,10 @@ import {
   FaFilter,
   FaChartBar,
   FaTrophy,
-  FaExclamationTriangle
+  FaExclamationTriangle,
+  FaRobot,
+  FaFlask,
+  FaMagic
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -493,6 +496,41 @@ const TeacherDashboard = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Teaching & Creation Tools - Create (includes AI Teacher Support in top-right) */}
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <FaMagic className="text-primary" />
+            Teaching & Creation Tools
+          </h2>
+          <Link to="/main">
+            <Card className="border border-border bg-card hover:bg-accent/20 hover:border-primary/40 transition-all cursor-pointer group max-w-2xl">
+              <CardContent className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-14 h-14 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0 group-hover:bg-cyan-500/30 transition-colors">
+                    <FaFlask className="text-cyan-400 text-2xl" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-foreground mb-1">Create</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
+                      Generate 360° skybox environments and 3D assets. Use AI Teacher Support in the top-right for lesson plans, content ideas, and grading rubrics.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="secondary" className="text-xs">Skybox</Badge>
+                      <Badge variant="secondary" className="text-xs">3D Assets</Badge>
+                      <Badge variant="secondary" className="text-xs">AI Teacher Support</Badge>
+                      <Badge variant="secondary" className="text-xs">XR Ready</Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-4 text-primary text-sm font-medium">
+                      <span>Open Create Studio</span>
+                      <FaArrowRight className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* Student Approvals */}

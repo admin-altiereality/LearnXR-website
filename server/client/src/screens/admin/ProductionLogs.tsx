@@ -8,9 +8,12 @@ import { useState, useEffect } from 'react';
 import { collection, query, orderBy, limit, getDocs, Timestamp, where, startAfter, QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
-import { isSuperadmin } from '../../utils/rbac';
+import { isAdminOnly, isSuperadmin } from '../../utils/rbac';
 import { AlertCircle, Search, Filter, Download, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { LogLevel } from '../../services/productionLogger';
+
+/** Firestore may return Timestamp, { seconds, nanoseconds }, or ISO string */
+type TimestampLike = Timestamp | { seconds: number; nanoseconds: number } | string | number;
 
 interface LogEntry {
   id: string;
@@ -23,18 +26,18 @@ interface LogEntry {
     stack?: string;
     code?: string;
   };
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   userId?: string;
   userEmail?: string;
   userRole?: string;
   url?: string;
   userAgent?: string;
-  timestamp: Timestamp;
+  timestamp: TimestampLike;
   sessionId?: string;
 }
 
 export default function ProductionLogs() {
-  const { user, userProfile } = useAuth();
+  const { user, profile, profileLoading } = useAuth();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,14 +49,27 @@ export default function ProductionLogs() {
   const [searchQuery, setSearchQuery] = useState('');
   const [contextFilter, setContextFilter] = useState<string>('');
 
-  // Check permissions
-  if (!user || !userProfile || !isSuperadmin(userProfile)) {
+  // Wait for profile to load before deciding access
+  if (profileLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background pt-24">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-border border-t-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Check permissions (admin and superadmin can view)
+  const canViewLogs = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  if (!profile || !canViewLogs) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background pt-24">
         <div className="text-center">
           <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-foreground mb-2">Access Denied</h2>
-          <p className="text-muted-foreground">Only superadmins can view production logs.</p>
+          <p className="text-muted-foreground">Only administrators can view production logs.</p>
         </div>
       </div>
     );
@@ -127,9 +143,21 @@ export default function ProductionLogs() {
     }
   };
 
-  const formatTimestamp = (timestamp: Timestamp) => {
-    const date = timestamp.toDate();
-    return date.toLocaleString();
+  const formatTimestamp = (timestamp: TimestampLike): string => {
+    if (!timestamp) return '—';
+    if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+      const date = new Date(timestamp);
+      return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+    }
+    if (typeof (timestamp as Timestamp).toDate === 'function') {
+      return (timestamp as Timestamp).toDate().toLocaleString();
+    }
+    const t = timestamp as { seconds: number; nanoseconds?: number };
+    if (typeof t.seconds === 'number') {
+      const date = new Date(t.seconds * 1000 + (t.nanoseconds ?? 0) / 1e6);
+      return date.toLocaleString();
+    }
+    return '—';
   };
 
   const filteredLogs = logs.filter(log => {

@@ -1,16 +1,27 @@
 import { Topic, Scene, LanguageCode } from '../../../types/curriculum';
 import { FileText, Hash, Tag, Target, HelpCircle, Box, Image, Loader2, CheckCircle, XCircle, Volume2, Globe, Sparkles } from 'lucide-react';
+import { Badge } from '@/Components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/Components/ui/card';
+import { Input } from '@/Components/ui/input';
+import { Label } from '@/Components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/Components/ui/select';
+import { cn } from '@/lib/utils';
 import { LanguageToggle } from '../../../Components/LanguageSelector';
 import {
   getChapterNameByLanguage,
   getTopicNameByLanguage,
   getLearningObjectiveByLanguage,
 } from '../../../lib/firebase/utils/languageAvailability';
-import type { CurriculumChapter, Topic as FirebaseTopic } from '../../../types/firebase';
+import type { CurriculumChapter } from '../../../types/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import { useState, useEffect, useCallback } from 'react';
-import { getChapterImages } from '../../../lib/firestore/queries';
+import { useState, useEffect } from 'react';
 
 interface ContentAvailability {
   hasMCQs: boolean;
@@ -65,7 +76,7 @@ export const OverviewTab = ({
 }: OverviewTabProps) => {
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(propLanguage || 'en');
   const [chapterData, setChapterData] = useState<CurriculumChapter | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [, setLoading] = useState(false);
   const [bundleAvailability, setBundleAvailability] = useState<ContentAvailability>({
     hasMCQs: false,
     mcqCount: 0,
@@ -244,8 +255,8 @@ export const OverviewTab = ({
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-          <span className="text-sm text-slate-400">Loading content availability...</span>
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <span className="text-sm text-muted-foreground">Loading content availability...</span>
         </div>
       </div>
     );
@@ -268,7 +279,7 @@ export const OverviewTab = ({
       <div className="space-y-6">
         {/* Language Toggle */}
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-medium text-slate-400">Content Language</h3>
+          <Label className="text-muted-foreground">Content Language</Label>
           <LanguageToggle
             value={selectedLanguage}
             onChange={setSelectedLanguage}
@@ -280,24 +291,24 @@ export const OverviewTab = ({
         {/* Chapter Name */}
         {(chapterNameEn || chapterNameHi) && (
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-              <FileText className="w-4 h-4 text-cyan-400" />
+            <Label className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-primary" />
               Chapter Name
-            </label>
+            </Label>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <div className="text-xs text-slate-500 flex items-center gap-1">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
                   <span>🇬🇧</span> English
                 </div>
-                <div className="bg-slate-800/50 border border-slate-600/50 rounded-xl px-4 py-3 text-white">
+                <div className="rounded-lg border border-input bg-muted/50 px-4 py-3 text-sm text-foreground">
                   {chapterNameEn || 'Not available'}
                 </div>
               </div>
               <div className="space-y-1">
-                <div className="text-xs text-slate-500 flex items-center gap-1">
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
                   <span>🇮🇳</span> Hindi
                 </div>
-                <div className="bg-slate-800/50 border border-slate-600/50 rounded-xl px-4 py-3 text-white">
+                <div className="rounded-lg border border-input bg-muted/50 px-4 py-3 text-sm text-foreground">
                   {chapterNameHi || 'Not available'}
                 </div>
               </div>
@@ -307,17 +318,16 @@ export const OverviewTab = ({
         
         {/* Topic Name */}
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <FileText className="w-4 h-4 text-cyan-400" />
+          <Label className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-primary" />
             Topic Name
-          </label>
+          </Label>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <div className="text-xs text-slate-500 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>🇬🇧</span> English
               </div>
-              <input
-                type="text"
+              <Input
                 value={selectedLanguage === 'en' ? (topicNameEn || topicFormState.topic_name || '') : topicNameEn || ''}
                 onChange={(e) => {
                   if (selectedLanguage === 'en') {
@@ -326,34 +336,23 @@ export const OverviewTab = ({
                 }}
                 disabled={isReadOnly || selectedLanguage !== 'en'}
                 placeholder="Enter topic name (English)..."
-                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                         px-4 py-3 text-white placeholder:text-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                         disabled:opacity-50 disabled:cursor-not-allowed
-                         transition-all duration-200"
+                className="h-11"
               />
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-slate-500 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>🇮🇳</span> Hindi
               </div>
-              <input
-                type="text"
+              <Input
                 value={selectedLanguage === 'hi' ? (topicNameHi || '') : topicNameHi || ''}
                 onChange={(e) => {
                   if (selectedLanguage === 'hi') {
-                    // For Hindi, we'd need to update topic_name_by_language
-                    // This is a simplified version - full implementation would update the nested structure
                     onTopicChange('topic_name', e.target.value);
                   }
                 }}
                 disabled={isReadOnly || selectedLanguage !== 'hi'}
                 placeholder="Enter topic name (Hindi)..."
-                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                         px-4 py-3 text-white placeholder:text-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                         disabled:opacity-50 disabled:cursor-not-allowed
-                         transition-all duration-200"
+                className="h-11"
               />
             </div>
           </div>
@@ -361,52 +360,45 @@ export const OverviewTab = ({
         
         {/* Priority & Scene Type Row */}
         <div className="grid grid-cols-2 gap-6">
-          {/* Topic Priority */}
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-              <Hash className="w-4 h-4 text-cyan-400" />
+            <Label className="flex items-center gap-2">
+              <Hash className="w-4 h-4 text-primary" />
               Topic Priority
-            </label>
-            <input
+            </Label>
+            <Input
               type="number"
               value={topicFormState.topic_priority || 1}
               onChange={(e) => onTopicChange('topic_priority', parseInt(e.target.value) || 1)}
               disabled={isReadOnly}
               min={1}
-              className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                       px-4 py-3 text-white
-                       focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       transition-all duration-200"
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Determines the order in the topic list
             </p>
           </div>
           
-          {/* Scene Type */}
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-              <Tag className="w-4 h-4 text-cyan-400" />
+            <Label className="flex items-center gap-2">
+              <Tag className="w-4 h-4 text-primary" />
               Scene Type
-            </label>
-            <select
+            </Label>
+            <Select
               value={topicFormState.scene_type || 'interactive'}
-              onChange={(e) => onTopicChange('scene_type', e.target.value)}
+              onValueChange={(v) => onTopicChange('scene_type', v)}
               disabled={isReadOnly}
-              className="w-full appearance-none bg-slate-800/50 border border-slate-600/50 rounded-xl
-                       px-4 py-3 text-white
-                       focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                       disabled:opacity-50 disabled:cursor-not-allowed
-                       transition-all duration-200"
             >
-              {sceneTypes.map((type) => (
-                <option key={type.value} value={type.value}>
-                  {type.label}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-500">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sceneTypes.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
               Defines how the scene will be presented
             </p>
           </div>
@@ -414,13 +406,13 @@ export const OverviewTab = ({
         
         {/* Learning Objective */}
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <Target className="w-4 h-4 text-cyan-400" />
+          <Label className="flex items-center gap-2">
+            <Target className="w-4 h-4 text-primary" />
             Learning Objective
-          </label>
+          </Label>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1">
-              <div className="text-xs text-slate-500 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>🇬🇧</span> English
               </div>
               <textarea
@@ -433,94 +425,84 @@ export const OverviewTab = ({
                 disabled={isReadOnly || selectedLanguage !== 'en'}
                 placeholder="What should students learn from this topic? (English)"
                 rows={4}
-                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                         px-4 py-3 text-white placeholder:text-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                         disabled:opacity-50 disabled:cursor-not-allowed resize-none
-                         transition-all duration-200"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
               />
             </div>
             <div className="space-y-1">
-              <div className="text-xs text-slate-500 flex items-center gap-1">
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>🇮🇳</span> Hindi
               </div>
               <textarea
                 value={selectedLanguage === 'hi' ? (learningObjectiveHi || '') : learningObjectiveHi || ''}
                 onChange={(e) => {
                   if (selectedLanguage === 'hi') {
-                    // For Hindi, we'd need to update learning_objective_by_language
-                    // This is a simplified version
                     onSceneChange('learning_objective', e.target.value);
                   }
                 }}
                 disabled={isReadOnly || selectedLanguage !== 'hi'}
                 placeholder="What should students learn from this topic? (Hindi)"
                 rows={4}
-                className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl
-                         px-4 py-3 text-white placeholder:text-slate-500
-                         focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50
-                         disabled:opacity-50 disabled:cursor-not-allowed resize-none
-                         transition-all duration-200"
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
               />
             </div>
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             A clear statement of what learners will be able to do after completing this topic
           </p>
         </div>
         
-        {/* Content Availability Card - Revamped with Bundle Approach */}
-        <div className="mt-8 p-6 bg-gradient-to-br from-slate-800/40 to-slate-900/40 rounded-xl border border-slate-700/50 shadow-lg">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-                <Globe className="w-5 h-5 text-cyan-400" />
+        {/* Content Availability Card */}
+        <Card className="mt-8">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <Globe className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Content Availability</CardTitle>
+                  <p className="text-xs text-muted-foreground">Language: {selectedLanguage === 'en' ? 'English 🇬🇧' : 'Hindi 🇮🇳'}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-semibold text-white">Content Availability</h3>
-                <p className="text-xs text-slate-400">Language: {selectedLanguage === 'en' ? 'English 🇬🇧' : 'Hindi 🇮🇳'}</p>
-              </div>
+              {availability.loading && (
+                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              )}
             </div>
-            {availability.loading && (
-              <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
-            )}
-          </div>
-          
+          </CardHeader>
+          <CardContent className="space-y-4">
           {availability.loading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
-              <span className="ml-3 text-sm text-slate-400">Analyzing content from bundle...</span>
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+              <span className="ml-3 text-sm text-muted-foreground">Analyzing content from bundle...</span>
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Scene Status - Enhanced */}
-              <div className={`p-4 rounded-lg border-2 transition-all ${
-                availability.sceneStatus === 'published'
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
-                  : availability.sceneStatus === 'draft'
-                  ? 'bg-amber-500/10 border-amber-500/30'
-                  : 'bg-slate-700/30 border-slate-600/30'
-              }`}>
+              {/* Scene Status */}
+              <div className={cn(
+                'p-4 rounded-lg border-2 transition-all',
+                availability.sceneStatus === 'published' && 'bg-emerald-500/10 border-emerald-500/30',
+                availability.sceneStatus === 'draft' && 'bg-amber-500/10 border-amber-500/30',
+                availability.sceneStatus === 'pending' && 'bg-muted/50 border-border'
+              )}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      availability.sceneStatus === 'published'
-                        ? 'bg-emerald-500/20'
-                        : availability.sceneStatus === 'draft'
-                        ? 'bg-amber-500/20'
-                        : 'bg-slate-700/50'
-                    }`}>
+                    <div className={cn(
+                      'w-10 h-10 rounded-lg flex items-center justify-center',
+                      availability.sceneStatus === 'published' && 'bg-emerald-500/20',
+                      availability.sceneStatus === 'draft' && 'bg-amber-500/20',
+                      availability.sceneStatus === 'pending' && 'bg-muted'
+                    )}>
                       {availability.sceneStatus === 'published' ? (
-                        <CheckCircle className="w-5 h-5 text-emerald-400" />
+                        <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                       ) : availability.sceneStatus === 'draft' ? (
-                        <Loader2 className="w-5 h-5 text-amber-400" />
+                        <Loader2 className="w-5 h-5 text-amber-600 dark:text-amber-400" />
                       ) : (
-                        <XCircle className="w-5 h-5 text-slate-500" />
+                        <XCircle className="w-5 h-5 text-muted-foreground" />
                       )}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-white">Scene Status</p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-sm font-medium text-foreground">Scene Status</p>
+                      <p className="text-xs text-muted-foreground">
                         {availability.sceneStatus === 'published' 
                           ? 'Published and ready' 
                           : availability.sceneStatus === 'draft'
@@ -531,293 +513,115 @@ export const OverviewTab = ({
                   </div>
                   <div className="flex items-center gap-2">
                     {availability.hasSkybox && (
-                      <span className="px-2.5 py-1 text-xs font-medium text-emerald-400 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                      <Badge variant="secondary" className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
                         Skybox ✓
-                      </span>
+                      </Badge>
                     )}
-                    <span className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${
-                      availability.sceneStatus === 'published'
-                        ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                        : availability.sceneStatus === 'draft'
-                        ? 'text-amber-400 bg-amber-500/10 border border-amber-500/20'
-                        : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                    }`}>
+                    <Badge variant={availability.sceneStatus === 'published' ? 'default' : 'secondary'} className={cn(
+                      availability.sceneStatus === 'published' && 'bg-emerald-600 hover:bg-emerald-600',
+                      availability.sceneStatus === 'draft' && 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/20',
+                      availability.sceneStatus === 'pending' && 'bg-muted text-muted-foreground'
+                    )}>
                       {availability.sceneStatus === 'published' ? 'Published' : availability.sceneStatus === 'draft' ? 'Draft' : 'Pending'}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
               </div>
               
-              {/* Content Grid - Enhanced */}
+              {/* Content Grid */}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                {/* MCQs */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.hasMCQs && availability.mcqsWithOptions > 0
-                    ? 'bg-emerald-500/10 border-emerald-500/30 hover:border-emerald-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <HelpCircle className={`w-4 h-4 ${
-                      availability.hasMCQs && availability.mcqsWithOptions > 0 ? 'text-emerald-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">MCQs</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.hasMCQs && availability.mcqsWithOptions > 0 ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                        <span className="text-lg font-bold text-emerald-400">{availability.mcqsWithOptions}</span>
-                        <span className="text-xs text-slate-400">/ {availability.mcqCount} total</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">None</span>
-                      </>
-                    )}
-                  </div>
-                  {availability.mcqCount > 0 && availability.mcqsWithOptions === 0 && (
-                    <p className="text-[10px] text-amber-400 mt-1">⚠️ Missing options</p>
-                  )}
-                </div>
-                
-                {/* TTS */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.hasTTS && availability.ttsWithAudio > 0
-                    ? 'bg-blue-500/10 border-blue-500/30 hover:border-blue-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Volume2 className={`w-4 h-4 ${
-                      availability.hasTTS && availability.ttsWithAudio > 0 ? 'text-blue-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">TTS Audio</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.hasTTS && availability.ttsWithAudio > 0 ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                        <span className="text-lg font-bold text-blue-400">{availability.ttsWithAudio}</span>
-                        <span className="text-xs text-slate-400">/ {availability.ttsCount} total</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">None</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                {/* 3D Assets */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.has3DAssets
-                    ? 'bg-violet-500/10 border-violet-500/30 hover:border-violet-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Box className={`w-4 h-4 ${
-                      availability.has3DAssets ? 'text-violet-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">3D Assets</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.has3DAssets ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                        <span className="text-lg font-bold text-violet-400">{availability.assetCount}</span>
-                        <span className="text-xs text-slate-400">assets</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">None</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Images */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.hasImages
-                    ? 'bg-amber-500/10 border-amber-500/30 hover:border-amber-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Image className={`w-4 h-4 ${
-                      availability.hasImages ? 'text-amber-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">Images</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.hasImages ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-                        <span className="text-lg font-bold text-amber-400">{availability.imageCount}</span>
-                        <span className="text-xs text-slate-400">images</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">None</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Avatar Scripts */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.hasAvatarScripts
-                    ? 'bg-cyan-500/10 border-cyan-500/30 hover:border-cyan-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <FileText className={`w-4 h-4 ${
-                      availability.hasAvatarScripts ? 'text-cyan-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">Avatar Scripts</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.hasAvatarScripts ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                        <span className="text-sm font-bold text-cyan-400">Available</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">None</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Skybox */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.hasSkybox
-                    ? 'bg-indigo-500/10 border-indigo-500/30 hover:border-indigo-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Globe className={`w-4 h-4 ${
-                      availability.hasSkybox ? 'text-indigo-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">Skybox</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.hasSkybox ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                        <span className="text-sm font-bold text-indigo-400">Configured</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">Missing</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Text-to-3D Assets */}
-                <div className={`p-4 rounded-lg border transition-all ${
-                  availability.hasTextTo3dAssets
-                    ? 'bg-purple-500/10 border-purple-500/30 hover:border-purple-500/50'
-                    : 'bg-slate-700/30 border-slate-600/30'
-                }`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <Sparkles className={`w-4 h-4 ${
-                      availability.hasTextTo3dAssets ? 'text-purple-400' : 'text-slate-500'
-                    }`} />
-                    <p className="text-xs font-medium text-slate-300">Text-to-3D</p>
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    {availability.hasTextTo3dAssets ? (
-                      <>
-                        <CheckCircle className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                        <span className="text-lg font-bold text-purple-400">{availability.textTo3dApprovedCount}</span>
-                        <span className="text-xs text-slate-400">/ {availability.textTo3dAssetsCount} approved</span>
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                        <span className="text-sm text-slate-500">None</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+                {[
+                  { key: 'mcqs', label: 'MCQs', Icon: HelpCircle, has: availability.hasMCQs && availability.mcqsWithOptions > 0, count: availability.mcqsWithOptions, total: availability.mcqCount, extra: availability.mcqCount > 0 && availability.mcqsWithOptions === 0 && '⚠️ Missing options' },
+                  { key: 'tts', label: 'TTS Audio', Icon: Volume2, has: availability.hasTTS && availability.ttsWithAudio > 0, count: availability.ttsWithAudio, total: availability.ttsCount },
+                  { key: '3d', label: '3D Assets', Icon: Box, has: availability.has3DAssets, count: availability.assetCount, suffix: 'assets' },
+                  { key: 'images', label: 'Images', Icon: Image, has: availability.hasImages, count: availability.imageCount, suffix: 'images' },
+                  { key: 'avatar', label: 'Avatar Scripts', Icon: FileText, has: availability.hasAvatarScripts, labelYes: 'Available' },
+                  { key: 'skybox', label: 'Skybox', Icon: Globe, has: availability.hasSkybox, labelYes: 'Configured' },
+                  { key: 'text3d', label: 'Text-to-3D', Icon: Sparkles, has: availability.hasTextTo3dAssets, count: availability.textTo3dApprovedCount, total: availability.textTo3dAssetsCount, suffix: 'approved' },
+                ].map(({ key, label, Icon, has, count, total, suffix, labelYes, extra }) => (
+                  <Card key={key} className={cn('transition-colors', has ? 'border-primary/30' : '')}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Icon className={cn('w-4 h-4', has ? 'text-primary' : 'text-muted-foreground')} />
+                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        {has ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-primary flex-shrink-0" />
+                            {labelYes ? (
+                              <span className="text-sm font-bold text-foreground">{labelYes}</span>
+                            ) : (
+                              <>
+                                <span className="text-lg font-bold text-foreground">{count}</span>
+                                {total != null && <span className="text-xs text-muted-foreground">/ {total} total</span>}
+                                {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                            <span className="text-sm text-muted-foreground">None</span>
+                          </>
+                        )}
+                      </div>
+                      {extra && <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">{extra}</p>}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
               
-              {/* Summary Bar */}
-              <div className="mt-4 pt-4 border-t border-slate-700/50">
+              <div className="mt-4 pt-4 border-t border-border">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Content Readiness:</span>
+                  <span className="text-muted-foreground">Content Readiness:</span>
                   <div className="flex items-center gap-4">
-                    <span className={`px-2 py-1 rounded ${
-                      availability.hasMCQs && availability.mcqsWithOptions > 0 
-                        ? 'text-emerald-400 bg-emerald-500/10' 
-                        : 'text-slate-500 bg-slate-700/30'
-                    }`}>
+                    <Badge variant={availability.hasMCQs && availability.mcqsWithOptions > 0 ? 'default' : 'secondary'} className="text-[10px]">
                       MCQs {availability.hasMCQs && availability.mcqsWithOptions > 0 ? '✓' : '✗'}
-                    </span>
-                    <span className={`px-2 py-1 rounded ${
-                      availability.hasTTS && availability.ttsWithAudio > 0 
-                        ? 'text-blue-400 bg-blue-500/10' 
-                        : 'text-slate-500 bg-slate-700/30'
-                    }`}>
+                    </Badge>
+                    <Badge variant={availability.hasTTS && availability.ttsWithAudio > 0 ? 'default' : 'secondary'} className="text-[10px]">
                       TTS {availability.hasTTS && availability.ttsWithAudio > 0 ? '✓' : '✗'}
-                    </span>
-                    <span className={`px-2 py-1 rounded ${
-                      availability.hasSkybox 
-                        ? 'text-indigo-400 bg-indigo-500/10' 
-                        : 'text-slate-500 bg-slate-700/30'
-                    }`}>
+                    </Badge>
+                    <Badge variant={availability.hasSkybox ? 'default' : 'secondary'} className="text-[10px]">
                       Skybox {availability.hasSkybox ? '✓' : '✗'}
-                    </span>
-                    <span className={`px-2 py-1 rounded ${
-                      availability.sceneStatus === 'published' 
-                        ? 'text-emerald-400 bg-emerald-500/10' 
-                        : 'text-amber-400 bg-amber-500/10'
-                    }`}>
+                    </Badge>
+                    <Badge variant={availability.sceneStatus === 'published' ? 'default' : 'secondary'} className="text-[10px]">
                       {availability.sceneStatus === 'published' ? 'Published' : 'Not Published'}
-                    </span>
+                    </Badge>
                   </div>
                 </div>
               </div>
             </div>
           )}
-        </div>
+          </CardContent>
+        </Card>
         
         {/* Scene Status Card */}
-        <div className="mt-4 p-4 bg-slate-800/20 rounded-xl border border-slate-700/20">
-          <div className="flex items-center justify-between">
+        <Card className="mt-4">
+          <CardContent className="p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center
-                            ${topicFormState.has_scene 
-                              ? 'bg-emerald-500/10 border border-emerald-500/20' 
-                              : 'bg-slate-700/30 border border-slate-600/30'}`}>
+              <div className={cn(
+                'w-10 h-10 rounded-lg flex items-center justify-center border',
+                topicFormState.has_scene ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-muted border-border'
+              )}>
                 {topicFormState.has_scene ? (
-                  <CheckCircle className="w-5 h-5 text-emerald-400" />
+                  <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 ) : (
-                  <XCircle className="w-5 h-5 text-slate-500" />
+                  <XCircle className="w-5 h-5 text-muted-foreground" />
                 )}
               </div>
               <div>
-                <p className="text-sm font-medium text-white">Scene Configuration</p>
-                <p className="text-xs text-slate-400">
+                <p className="text-sm font-medium text-foreground">Scene Configuration</p>
+                <p className="text-xs text-muted-foreground">
                   {topicFormState.has_scene ? 'Scene is configured with skybox/assets' : 'No scene configured yet'}
                 </p>
               </div>
             </div>
-            <span className={`px-3 py-1.5 text-xs font-semibold rounded-full
-                           ${topicFormState.has_scene
-                             ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                             : 'text-slate-400 bg-slate-700/50 border border-slate-600/30'
-                           }`}>
+            <Badge variant={topicFormState.has_scene ? 'default' : 'secondary'} className={topicFormState.has_scene ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
               {topicFormState.has_scene ? 'Ready' : 'Pending'}
-            </span>
-          </div>
-        </div>
+            </Badge>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

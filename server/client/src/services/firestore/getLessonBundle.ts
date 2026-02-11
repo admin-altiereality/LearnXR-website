@@ -22,6 +22,11 @@ import {
 import { db } from '../../config/firebase';
 import type { LanguageCode } from '../../types/curriculum';
 import { extractTopicScriptsForLanguage } from '../../lib/firestore/queries';
+import {
+  getLatestUnapprovedVersionForUser,
+  getChapterSnapshot,
+} from '../lessonVersionService';
+import type { LessonDraftSnapshot } from '../../types/lessonVersion';
 
 // Collection names
 const COLLECTION_CURRICULUM_CHAPTERS = 'curriculum_chapters';
@@ -433,14 +438,92 @@ function filterByLanguage<T extends { language?: string; lang?: string; id?: str
 }
 
 /**
- * Get complete lesson bundle for a chapter and language
+ * Merge Associate's draft snapshot into the published bundle.
+ * Overlays overview, scene_skybox, avatar_script, mcqs, images, assets3d onto the bundle.
+ */
+function mergeDraftIntoBundle(
+  bundle: LessonBundle,
+  draft: LessonDraftSnapshot,
+  topicId: string
+): void {
+  const topic = bundle.chapter?.topics?.find((t: any) => t.topic_id === topicId);
+  if (topic && draft.overview) {
+    if (draft.overview.topic_name !== undefined) topic.topic_name = draft.overview.topic_name;
+    if (draft.overview.learning_objective !== undefined) topic.learning_objective = draft.overview.learning_objective;
+    if (draft.overview.topic_priority !== undefined) topic.topic_priority = draft.overview.topic_priority;
+    if (draft.overview.scene_type !== undefined) topic.scene_type = draft.overview.scene_type;
+  }
+  if (topic && draft.scene_skybox) {
+    if (draft.scene_skybox.in3d_prompt !== undefined) topic.in3d_prompt = draft.scene_skybox.in3d_prompt;
+    if (draft.scene_skybox.camera_guidance !== undefined) topic.camera_guidance = draft.scene_skybox.camera_guidance;
+    if (draft.scene_skybox.skybox_id !== undefined) topic.skybox_id = draft.scene_skybox.skybox_id;
+    if (draft.scene_skybox.skybox_url !== undefined) topic.skybox_url = draft.scene_skybox.skybox_url;
+    if (draft.scene_skybox.asset_list !== undefined) {
+      if (!topic.sharedAssets) topic.sharedAssets = {};
+      topic.sharedAssets.asset_list = draft.scene_skybox.asset_list;
+    }
+    if (draft.scene_skybox.sharedAssets) {
+      if (!topic.sharedAssets) topic.sharedAssets = {};
+      Object.assign(topic.sharedAssets, draft.scene_skybox.sharedAssets);
+    }
+  }
+  if (draft.avatar_script) {
+    bundle.avatarScripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+    if (draft.avatar_script.intro !== undefined) bundle.avatarScripts.intro = draft.avatar_script.intro;
+    if (draft.avatar_script.explanation !== undefined) bundle.avatarScripts.explanation = draft.avatar_script.explanation;
+    if (draft.avatar_script.outro !== undefined) bundle.avatarScripts.outro = draft.avatar_script.outro;
+    if (draft.avatar_script.intro !== undefined) bundle.intro = draft.avatar_script.intro;
+    if (draft.avatar_script.explanation !== undefined) bundle.explanation = draft.avatar_script.explanation;
+    if (draft.avatar_script.outro !== undefined) bundle.outro = draft.avatar_script.outro;
+  }
+  if (Array.isArray(draft.mcqs)) {
+    bundle.mcqs = draft.mcqs.map((m) => ({
+      id: m.id || `mcq_${Math.random()}`,
+      question: m.question || m.question_text,
+      options: Array.isArray(m.options) ? m.options : [],
+      correct_option_index: m.correct_option_index ?? 0,
+      explanation: m.explanation || '',
+      question_text: m.question,
+    }));
+  }
+  if (Array.isArray(draft.images) && draft.images.length >= 0) {
+    bundle.images = draft.images.map((img) => ({
+      ...img,
+      image_url: img.image_url ?? img.url,
+      url: img.url ?? img.image_url,
+    }));
+  }
+  if (Array.isArray(draft.assets3d) && draft.assets3d.length >= 0) {
+    bundle.assets3d = draft.assets3d.map((a) => ({
+      ...a,
+      glb_url: a.glb_url ?? a.file_url,
+      file_url: a.file_url ?? a.glb_url,
+    }));
+  }
+  // Update bundle skybox when draft has skybox_url (Associate may have changed skybox)
+  if (draft.scene_skybox?.skybox_url) {
+    const url = draft.scene_skybox.skybox_url;
+    bundle.skybox = {
+      ...(bundle.skybox || {}),
+      skybox_url: url,
+      imageUrl: url,
+      file_url: url,
+    };
+  }
+}
+
+/**
+ * Get complete lesson bundle for a chapter and language.
+ * When userId + userRole='associate' are passed, overlays the Associate's latest unapproved draft.
  */
 export async function getLessonBundle(params: {
   chapterId: string;
   lang: LanguageCode;
   topicId?: string; // Optional: specific topic to extract data from
+  userId?: string; // Optional: when Associate, fetch and overlay their draft
+  userRole?: string; // Optional: must be 'associate' to overlay draft
 }): Promise<LessonBundle> {
-  const { chapterId, lang, topicId } = params;
+  const { chapterId, lang, topicId, userId, userRole } = params;
 
   console.log(`[getLessonBundle] Fetching bundle for chapter ${chapterId}, language ${lang}`);
 
@@ -469,17 +552,20 @@ export async function getLessonBundle(params: {
     console.log(`[getLessonBundle] Extracted IDs from ${topicId ? `topic ${topicId}` : 'first topic'}:`, extractedIds);
 
     // Step 3: Fetch linked documents in parallel
-    const [mcqsRaw, ttsRaw, skyboxData, pdfData, meshyAssetsRaw, imagesRaw, textTo3dAssetsRaw, pdfSuitableImages] = await Promise.all([
+    const [mcqsRaw, ttsRaw, skyboxData, pdfData, meshyAssetsRaw, imagesRaw, textTo3dAssetsRaw] = await Promise.all([
       extractedIds.mcqIds.length > 0
         ? fetchDocsByIds(COLLECTION_CHAPTER_MCQS, extractedIds.mcqIds)
         : Promise.resolve([]),
       extractedIds.ttsIds.length > 0
         ? fetchDocsByIds(COLLECTION_CHAPTER_TTS, extractedIds.ttsIds)
         : Promise.resolve([]),
-      extractedIds.skyboxId
-        ? (async () => {
+      (() => {
+        const skyboxIdRaw = extractedIds.skyboxId;
+        const skyboxIdStr = typeof skyboxIdRaw === 'string' ? skyboxIdRaw : (skyboxIdRaw as any)?.id;
+        if (!skyboxIdStr) return Promise.resolve(null);
+        return (async () => {
             try {
-              const skyboxRef = doc(db, COLLECTION_SKYBOXES, extractedIds.skyboxId!);
+              const skyboxRef = doc(db, COLLECTION_SKYBOXES, skyboxIdStr);
               const skyboxSnap = await getDoc(skyboxRef);
               if (skyboxSnap.exists()) {
                 return { id: skyboxSnap.id, ...skyboxSnap.data() };
@@ -488,8 +574,8 @@ export async function getLessonBundle(params: {
               console.warn(`[getLessonBundle] Failed to fetch skybox:`, err);
             }
             return null;
-          })()
-        : Promise.resolve(null),
+          })();
+      })(),
       extractedIds.pdfId
         ? (async () => {
             try {
@@ -686,51 +772,38 @@ export async function getLessonBundle(params: {
           return [];
         }
       })(),
-      // Check PDF collection for images (both suitable_for_3d and all images)
-      // This is for /studio/content page to display PDF images
-      (async () => {
-        try {
-          if (!pdfData) return [];
-          
-          // Fetch ALL images from PDF (not just suitable_for_3d)
-          // PDF images are stored in pdfData.images array
-          if (pdfData.images && Array.isArray(pdfData.images)) {
-            // Map all PDF images with proper fields
-            const pdfImages = pdfData.images.map((img: any, idx: number) => {
-              // Handle various field names for image URLs
-              const imageUrl = img.url || img.image_url || img.imageUrl || img.fileUrl || img.file_url || '';
-              const thumbnailUrl = img.thumbnail_url || img.thumbnailUrl || img.thumbnail || imageUrl;
-              
-              return {
-                id: img.id || `pdf_image_${pdfData.id}_${idx}`,
-                source: 'pdf',
-                pdf_id: pdfData.id,
-                pdf_name: pdfData.name || pdfData.filename || 'PDF Document',
-                image_url: imageUrl,
-                thumbnail_url: thumbnailUrl,
-                url: imageUrl, // Also include as 'url' for compatibility
-                name: img.name || img.filename || `PDF Image ${idx + 1}`,
-                description: img.description || img.caption || '',
-                suitable_for_3d: img.suitable_for_3d === true,
-                type: img.type || (img.suitable_for_3d ? 'pdf_3d' : 'pdf'),
-                order: img.order ?? idx,
-                ...img, // Include all other fields
-              };
-            });
-            
-            if (pdfImages.length > 0) {
-              console.log(`[getLessonBundle] Found ${pdfImages.length} PDF images (${pdfImages.filter((i: any) => i.suitable_for_3d).length} suitable for 3D)`);
-            }
-            
-            return pdfImages;
-          }
-          return [];
-        } catch (err) {
-          console.warn(`[getLessonBundle] Error checking PDF images:`, err);
-          return [];
-        }
-      })(),
     ]);
+
+    // Derive PDF images from fetched pdfData (cannot reference pdfData inside Promise.all)
+    let pdfSuitableImages: any[] = [];
+    try {
+      if (pdfData && pdfData.images && Array.isArray(pdfData.images)) {
+        pdfSuitableImages = pdfData.images.map((img: any, idx: number) => {
+          const imageUrl = img.url || img.image_url || img.imageUrl || img.fileUrl || img.file_url || '';
+          const thumbnailUrl = img.thumbnail_url || img.thumbnailUrl || img.thumbnail || imageUrl;
+          return {
+            id: img.id || `pdf_image_${pdfData.id}_${idx}`,
+            source: 'pdf',
+            pdf_id: pdfData.id,
+            pdf_name: pdfData.name || pdfData.filename || 'PDF Document',
+            image_url: imageUrl,
+            thumbnail_url: thumbnailUrl,
+            url: imageUrl,
+            name: img.name || img.filename || `PDF Image ${idx + 1}`,
+            description: img.description || img.caption || '',
+            suitable_for_3d: img.suitable_for_3d === true,
+            type: img.type || (img.suitable_for_3d ? 'pdf_3d' : 'pdf'),
+            order: img.order ?? idx,
+            ...img,
+          };
+        });
+        if (pdfSuitableImages.length > 0) {
+          console.log(`[getLessonBundle] Found ${pdfSuitableImages.length} PDF images (${pdfSuitableImages.filter((i: any) => i.suitable_for_3d).length} suitable for 3D)`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[getLessonBundle] Error checking PDF images:`, err);
+    }
 
     // Step 4: Apply language filtering
     const mcqsBeforeFilter = mcqsRaw.length;
@@ -1002,6 +1075,25 @@ export async function getLessonBundle(params: {
       hasPdf: !!bundle.pdf,
       textTo3dApproved: bundle.textTo3dAssets.filter((a: any) => a.approval_status === true).length,
     });
+
+    // Associate draft overlay: when user is Associate, fetch their latest unapproved version and overlay
+    if (userRole === 'associate' && userId) {
+      const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
+      if (effectiveTopicId) {
+        try {
+          const version = await getLatestUnapprovedVersionForUser(chapterId, effectiveTopicId, userId);
+          if (version?.snapshot_ref) {
+            const draft = await getChapterSnapshot(version.snapshot_ref);
+            if (draft) {
+              mergeDraftIntoBundle(bundle, draft, effectiveTopicId);
+              console.log('[getLessonBundle] Overlaid Associate draft for topic', effectiveTopicId);
+            }
+          }
+        } catch (err) {
+          console.warn('[getLessonBundle] Associate draft overlay failed:', err);
+        }
+      }
+    }
 
     return bundle;
   } catch (error) {

@@ -1097,7 +1097,9 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const loadSkybox = async () => {
-      if (!activeLesson?.topic) {
+      // Use effectiveLesson so we get topic from sessionStorage when activeLesson is null (e.g. on refresh)
+      const topic = effectiveLesson?.topic;
+      if (!topic) {
         setSkyboxLoading(false);
         return;
       }
@@ -1105,21 +1107,23 @@ const VRLessonPlayerInner = () => {
       setSkyboxLoading(true);
       setSkyboxError(null);
       
-      const topic = activeLesson.topic;
+      // Resolve skybox URL (topic-level or sharedAssets)
+      const skyboxUrl = topic.skybox_url || topic.sharedAssets?.skybox_url || '';
+      const skyboxId = topic.skybox_id || topic.sharedAssets?.skybox_id;
       
-      if (topic.skybox_url) {
+      if (skyboxUrl) {
         setSkyboxData({
-          id: topic.skybox_id || 'direct_url',
-          imageUrl: topic.skybox_url,
-          file_url: topic.skybox_url,
+          id: skyboxId || 'direct_url',
+          imageUrl: skyboxUrl,
+          file_url: skyboxUrl,
           status: 'complete',
         });
         setSkyboxLoading(false);
         return;
       }
       
-      if (topic.skybox_id) {
-        const data = await fetchSkyboxFromFirestore(topic.skybox_id);
+      if (skyboxId) {
+        const data = await fetchSkyboxFromFirestore(skyboxId);
         if (data) {
           setSkyboxData(data);
         } else {
@@ -1133,7 +1137,7 @@ const VRLessonPlayerInner = () => {
     };
     
     loadSkybox();
-  }, [activeLesson]);
+  }, [effectiveLesson]);
 
   // ============================================================================
   // Fetch 3D Asset (Platform-aware: FBX for Android, USDZ for iOS, GLB for Web)

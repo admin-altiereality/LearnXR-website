@@ -292,6 +292,34 @@
         { "fieldPath": "completion_status", "order": "ASCENDING" }
       ],
       "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "lesson_versions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "chapterId", "order": "ASCENDING" },
+        { "fieldPath": "topicId", "order": "ASCENDING" },
+        { "fieldPath": "versionNumber", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "lesson_versions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "chapterId", "order": "ASCENDING" },
+        { "fieldPath": "versionNumber", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "versions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "topicId", "order": "ASCENDING" },
+        { "fieldPath": "version_number", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []

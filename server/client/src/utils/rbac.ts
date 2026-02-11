@@ -106,11 +106,11 @@ export const STUDENT_ONBOARDING_ROLES: UserRole[] = ['student'];
  * Defines which roles can access which route categories
  */
 export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
-  public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
-  auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
-  lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin'],
+  public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
+  auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
+  lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
   create: ['teacher', 'admin', 'superadmin'], // School administrators removed
-  studio: ['admin', 'superadmin'],
+  studio: ['admin', 'superadmin', 'associate'], // Associate can refine lessons (no delete)
   developer: ['admin', 'superadmin'],
   class_management: ['teacher', 'school', 'principal', 'admin', 'superadmin'],
   admin: ['admin', 'superadmin'],
@@ -180,8 +180,15 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   // Superadmin routes
   '/admin/approvals': 'superadmin',
   '/admin/chapter-approvals': 'superadmin',
+  '/admin/lesson-edit-requests': 'admin', // Admin/Superadmin approve associate lesson edits
   '/admin/schools': 'admin',
-  '/admin/logs': 'superadmin',
+  '/admin/logs': 'admin',
+  
+  // Associate dashboard (staff only)
+  '/dashboard/associate': 'studio',
+  
+  // Secret backend login - no category (public route, role check after login)
+  '/secretbackend': 'public',
 };
 
 // ============================================================================
@@ -455,8 +462,8 @@ export function hasCompletedSchoolOnboarding(profile: UserProfile | null): boole
 export function hasCompletedOnboarding(profile: UserProfile | null): boolean {
   if (!profile) return false;
   
-  // Admin and superadmin don't need onboarding
-  if (profile.role === 'admin' || profile.role === 'superadmin') {
+  // Admin, superadmin, and associate don't need onboarding (staff roles)
+  if (profile.role === 'admin' || profile.role === 'superadmin' || profile.role === 'associate') {
     return true;
   }
   
@@ -645,6 +652,8 @@ export function getDefaultPage(role: UserRole): string {
       return '/dashboard/principal';
     case 'school':
       return '/lessons';
+    case 'associate':
+      return '/dashboard/associate';
     case 'admin':
     case 'superadmin':
       return '/studio/content';
@@ -674,9 +683,33 @@ export function getAccessiblePages(role: UserRole): string[] {
 
 /**
  * Check if user can edit lesson content
- * Both admin and superadmin can edit
+ * Admin, superadmin, and associate can edit (associate changes require approval)
  */
 export function canEditLesson(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'admin' || profile.role === 'superadmin' || profile.role === 'associate';
+}
+
+/**
+ * Check if user can submit lesson edits for approval (Associate only)
+ */
+export function canSubmitLessonForApproval(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'associate';
+}
+
+/**
+ * Check if user can approve/reject associate lesson edit requests
+ */
+export function canApproveLessonEdits(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  return profile.role === 'admin' || profile.role === 'superadmin';
+}
+
+/**
+ * Check if user can delete any content (Associate cannot delete)
+ */
+export function canDeleteContent(profile: UserProfile | null): boolean {
   if (!profile) return false;
   return profile.role === 'admin' || profile.role === 'superadmin';
 }

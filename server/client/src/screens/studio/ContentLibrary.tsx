@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
@@ -246,6 +246,30 @@ const ContentLibrary = () => {
     }
   };
 
+  // Merge raw chapter data (with topics) for the table so topic rows and approval display correctly
+  const tableChapters = useMemo(() => {
+    return rawChapters
+      .filter((rc) => chapterHasContentForLanguage(rc.data, selectedLanguage))
+      .map((rc) => ({
+        id: rc.id,
+        chapter_number: rc.data.chapter_number,
+        chapter_name: rc.data.chapter_name,
+        current_version: 'v1',
+        topic_count: rc.data.topics?.length ?? 0,
+        updated_at: rc.data.updatedAt,
+        curriculum_id: rc.data.curriculum,
+        class_id: String(rc.data.class),
+        subject_id: rc.data.subject,
+        curriculum: rc.data.curriculum,
+        class: rc.data.class,
+        subject: rc.data.subject,
+        topics: rc.data.topics ?? [],
+        approved: rc.data.approved,
+        approvedAt: rc.data.approvedAt,
+        approvedBy: rc.data.approvedBy,
+      })) as Chapter[];
+  }, [rawChapters, selectedLanguage]);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex">
@@ -369,7 +393,7 @@ const ContentLibrary = () => {
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Results</span>
                     </div>
                     <p className="text-2xl font-semibold text-foreground">
-                      {chapters.length}
+                      {tableChapters.length}
                       <span className="text-sm font-normal text-muted-foreground ml-2">chapters</span>
                     </p>
                   </CardContent>
@@ -466,10 +490,10 @@ const ContentLibrary = () => {
             </Card>
           )}
 
-          {chapters.length > 0 && (
+          {tableChapters.length > 0 && (
             <>
               <ChapterTable
-                chapters={chapters}
+                chapters={tableChapters}
                 onOpenChapter={handleOpenChapter}
                 loading={loading}
                 onApprovalChange={() => loadChapters(true)}

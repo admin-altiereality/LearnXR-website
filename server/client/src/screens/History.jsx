@@ -2,10 +2,27 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { AnimatePresence, motion } from 'framer-motion';
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Button } from '@/Components/ui/button';
+import { Card, CardContent, CardHeader } from '@/Components/ui/card';
+import { Badge } from '@/Components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/Components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/Components/ui/dialog';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { AssetViewerWithSkybox } from '../Components/AssetViewerWithSkybox';
 import { skyboxApiService } from '../services/skyboxApiService';
+import { Grid3X3, List, RefreshCw, Plus, ImageIcon, AlertCircle, Loader2, X } from 'lucide-react';
 
 const History = ({ setBackgroundSkybox }) => {
   const [history, setHistory] = useState([]);
@@ -680,16 +697,16 @@ const History = ({ setBackgroundSkybox }) => {
     switch (status) {
       case 'completed':
       case 'complete':
-        return 'text-emerald-300 bg-emerald-500/20 border-emerald-500/40 shadow-emerald-500/20';
+        return 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/20 border-emerald-500/40';
       case 'pending':
       case 'processing':
-        return 'text-amber-300 bg-amber-500/20 border-amber-500/40 shadow-amber-500/20';
+        return 'text-amber-700 dark:text-amber-400 bg-amber-500/20 border-amber-500/40';
       case 'failed':
-        return 'text-red-300 bg-red-500/20 border-red-500/40 shadow-red-500/20';
+        return 'text-destructive bg-destructive/20 border-destructive/40';
       case 'partial':
-        return 'text-blue-300 bg-blue-500/20 border-blue-500/40 shadow-blue-500/20';
+        return 'text-blue-700 dark:text-blue-400 bg-blue-500/20 border-blue-500/40';
       default:
-        return 'text-gray-300 bg-gray-500/20 border-gray-500/40 shadow-gray-500/20';
+        return 'text-muted-foreground bg-muted border-border';
     }
   };
 
@@ -708,17 +725,10 @@ const History = ({ setBackgroundSkybox }) => {
   };
 
   return (
-    <div className="flex-1 bg-transparent min-h-screen py-24 relative">
-      {/* Layered Background with Texture */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute inset-0 bg-layered bg-texture opacity-100" />
-        <div className="absolute inset-0 bg-gradient-to-br from-cyan-950/20 via-transparent to-purple-950/20" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(59,130,246,0.1),transparent_50%)]" />
-      </div>
-
+    <div className="flex-1 min-h-screen py-24 bg-background">
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Editorial Header with Distinctive Typography */}
-        <motion.div 
+        {/* Header */}
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
@@ -726,197 +736,136 @@ const History = ({ setBackgroundSkybox }) => {
         >
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-8">
             <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 backdrop-blur-sm mb-4">
-                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-xs justify-center items-center text-center font-mono font-semibold text-cyan-300 uppercase tracking-wider">Archive</span>
-              </div>
-              <h1 className="font-display text-5xl md:text-6xl lg:text-7xl font-bold leading-tight">
-                <span className="bg-gradient-to-r from-white via-cyan-200 to-purple-200 bg-clip-text text-transparent">
-                  Generation
-                </span>
+              <Badge variant="secondary" className="mb-4 gap-2 bg-primary/10 text-primary border-primary/20">
+                <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                Archive
+              </Badge>
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight text-foreground">
+                Generation
                 <br />
-                <span className="bg-gradient-to-r from-cyan-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
-                  History
-                </span>
+                <span className="text-primary">History</span>
               </h1>
-              <p className="font-body text-lg text-gray-300/80 max-w-2xl leading-relaxed">
+              <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
                 A curated archive of your creative journey—every environment, every variation, every moment of inspiration.
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+              <Button
+                variant="outline"
                 onClick={() => {
-                  console.log('🔄 Manual refresh triggered');
                   setLoading(true);
                   setTimeout(() => setLoading(false), 1000);
                 }}
-                className="px-5 py-2.5 bg-[#1a1a1a]/80 hover:bg-[#222]/80 backdrop-blur-xl border border-gray-700/50 rounded-xl text-gray-300 hover:text-white transition-all duration-300 text-sm font-medium font-body"
                 title="Refresh history"
               >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>Refresh</span>
-                </div>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/main')}
-                className="px-6 py-3 bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 hover:from-cyan-400 hover:via-purple-400 hover:to-pink-400 text-white rounded-xl transition-all duration-300 font-semibold shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 border border-cyan-400/20 font-display"
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  <span>Create New</span>
-                </div>
-              </motion.button>
+                <RefreshCw className="w-4 h-4" />
+                Refresh
+              </Button>
+              <Button onClick={() => navigate('/main')}>
+                <Plus className="w-4 h-4" />
+                Create New
+              </Button>
             </div>
           </div>
 
-          {/* Editorial Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-[#141414]/60 backdrop-blur-xl rounded-2xl border border-gray-800/50 shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1 bg-[#1a1a1a]/80 rounded-xl p-1 border border-gray-700/50">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setViewMode('grid')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 font-body ${
-                    viewMode === 'grid'
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                    </svg>
-                    <span>Grid</span>
-                  </div>
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setViewMode('list')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 font-body ${
-                    viewMode === 'list'
-                      ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-cyan-300 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
-                      : 'text-gray-400 hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                    </svg>
-                    <span>List</span>
-                  </div>
-                </motion.button>
+          {/* Controls */}
+          <Card className="p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="flex rounded-lg border border-border bg-muted/30 p-1">
+                  <Button
+                    variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('grid')}
+                    className="gap-2"
+                  >
+                    <Grid3X3 className="w-4 h-4" />
+                    Grid
+                  </Button>
+                  <Button
+                    variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setViewMode('list')}
+                    className="gap-2"
+                  >
+                    <List className="w-4 h-4" />
+                    List
+                  </Button>
+                </div>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-4 py-2.5 bg-[#1a1a1a]/80 border border-gray-700/50 rounded-xl text-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 backdrop-blur-sm font-body transition-all duration-300"
-              >
-                <option value="all">All Status</option>
-                <option value="completed">Completed</option>
-                <option value="pending">Pending</option>
-                <option value="failed">Failed</option>
-              </select>
+              <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted/50 border border-border">
+                <span className="text-sm font-semibold text-foreground">{filteredHistory.length}</span>
+                <span className="text-sm text-muted-foreground">
+                  {filteredHistory.length !== 1 ? 'generations' : 'generation'}
+                </span>
+              </div>
             </div>
-
-            <div className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a]/80 rounded-xl border border-gray-700/50">
-              <span className="text-sm font-mono font-semibold text-cyan-300">{filteredHistory.length}</span>
-              <span className="text-sm text-gray-400 font-body">
-                {filteredHistory.length !== 1 ? 'generations' : 'generation'}
-              </span>
-            </div>
-          </div>
+          </Card>
         </motion.div>
         
         {error && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 p-6 bg-gradient-to-br from-red-950/30 to-orange-950/20 backdrop-blur-xl rounded-2xl border border-red-500/30 shadow-xl shadow-red-500/10"
-          >
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center border border-red-500/30">
-                <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+          <Card className="mb-8 border-destructive/50 bg-destructive/5">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-destructive/20 flex items-center justify-center border border-destructive/30">
+                  <AlertCircle className="w-6 h-6 text-destructive" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-lg text-destructive mb-2">Error loading history</p>
+                  <p className="text-sm text-muted-foreground mb-4">{error}</p>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setError(null);
+                      setLoading(true);
+                      window.location.reload();
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="text-red-300 font-display font-semibold mb-2 text-lg">Error loading history</p>
-                <p className="text-red-300/80 text-sm font-body mb-4">{error}</p>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => {
-                    setError(null);
-                    setLoading(true);
-                    window.location.reload();
-                  }}
-                  className="px-5 py-2.5 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg shadow-red-500/25"
-                >
-                  Retry
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
+            </CardContent>
+          </Card>
         )}
-        
+
         {loading ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex items-center justify-center h-96"
-          >
+          <div className="flex items-center justify-center h-96">
             <div className="flex flex-col items-center space-y-6">
-              <div className="relative">
-                <div className="w-16 h-16 border-4 border-cyan-500/20 rounded-full" />
-                <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-cyan-400 border-r-purple-400 rounded-full animate-spin" />
-              </div>
+              <Loader2 className="w-12 h-12 text-primary animate-spin" />
               <div className="text-center space-y-2">
-                <p className="font-display text-xl font-semibold bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text text-transparent">
-                  Loading your archive
-                </p>
-                <p className="font-body text-sm text-gray-400">Gathering your creative journey...</p>
+                <p className="text-xl font-semibold text-foreground">Loading your archive</p>
+                <p className="text-sm text-muted-foreground">Gathering your creative journey...</p>
               </div>
             </div>
-          </motion.div>
+          </div>
         ) : filteredHistory.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="relative bg-gradient-to-br from-[#141414]/80 via-[#0a0a0a]/80 to-[#1a1a1a]/80 backdrop-blur-xl rounded-3xl p-16 text-center border border-gray-800/50 shadow-2xl overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.1),transparent_70%)]" />
-            <div className="relative z-10">
-              <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 flex items-center justify-center border border-cyan-500/30 shadow-lg shadow-cyan-500/20">
-                <svg className="w-12 h-12 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+          <Card className="p-16 text-center">
+            <CardContent className="flex flex-col items-center">
+              <div className="w-24 h-24 mb-6 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                <ImageIcon className="w-12 h-12 text-primary" />
               </div>
-              <h3 className="font-display text-3xl font-bold text-white mb-3">Your archive awaits</h3>
-              <p className="font-body text-lg text-gray-300/80 mb-8 max-w-md mx-auto leading-relaxed">
+              <h3 className="text-3xl font-bold text-foreground mb-3">Your archive awaits</h3>
+              <p className="text-lg text-muted-foreground mb-8 max-w-md mx-auto leading-relaxed">
                 Every creation tells a story. Start your first chapter by generating an In3D.Ai environment.
               </p>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => navigate('/main')}
-                className="px-8 py-4 bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 hover:from-cyan-400 hover:via-purple-400 hover:to-pink-400 text-white rounded-xl transition-all duration-300 font-display font-semibold text-lg shadow-xl shadow-cyan-500/30 border border-cyan-400/20"
-              >
+              <Button size="lg" onClick={() => navigate('/main')}>
+                <Plus className="w-4 h-4" />
                 Create Your First Environment
-              </motion.button>
-            </div>
-          </motion.div>
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
@@ -937,15 +886,14 @@ const History = ({ setBackgroundSkybox }) => {
                   onMouseEnter={() => setHoveredGroup(item.id)}
                   onMouseLeave={() => setHoveredGroup(null)}
                 >
-                  {/* Main In3D.Ai Environment - Editorial Card Design */}
+                  {/* Main card */}
                   <motion.div
                     whileHover={{ y: -4 }}
                     className={`
-                      relative group bg-gradient-to-br from-[#141414]/90 via-[#0a0a0a]/90 to-[#1a1a1a]/90
-                      backdrop-blur-xl rounded-3xl overflow-hidden shadow-2xl
+                      relative group bg-card rounded-2xl overflow-hidden shadow-lg
                       transform transition-all duration-500 cursor-pointer
-                      border border-gray-800/50 hover:border-cyan-500/50
-                      ${selectedSkybox?.id === item.id ? 'ring-2 ring-cyan-500/70 shadow-cyan-500/30' : ''}
+                      border border-border hover:border-primary/50
+                      ${selectedSkybox?.id === item.id ? 'ring-2 ring-primary shadow-primary/20' : ''}
                       ${viewMode === 'list' ? 'flex items-center space-x-6 p-6' : ''}
                     `}
                     onClick={() => handleSkyboxClick(item)}
@@ -958,12 +906,7 @@ const History = ({ setBackgroundSkybox }) => {
                       }
                     }}
                   >
-                    {/* Gradient Overlay on Hover */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/0 via-purple-500/0 to-pink-500/0 group-hover:from-cyan-500/5 group-hover:via-purple-500/5 group-hover:to-pink-500/5 transition-all duration-500 pointer-events-none" />
-                    
-                    {/* Subtle Texture Overlay */}
-                    <div className="absolute inset-0 bg-texture opacity-30 pointer-events-none" />
-                    {/* Image Container - Editorial Style */}
+                    {/* Image Container */}
                     <div className={`relative overflow-hidden ${viewMode === 'grid' ? 'aspect-[16/9]' : 'w-40 h-40 flex-shrink-0 rounded-2xl'}`}>
                       {item.file_url ? (
                         <img
@@ -976,16 +919,14 @@ const History = ({ setBackgroundSkybox }) => {
                           }}
                         />
                       ) : null}
-                      <div 
-                        className={`w-full h-full flex items-center justify-center bg-gradient-to-br from-[#0a0a0a] via-[#141414] to-[#1a1a1a] ${
+                      <div
+                        className={`w-full h-full flex items-center justify-center bg-muted ${
                           item.file_url ? 'hidden' : 'flex'
                         }`}
                       >
                         <div className="text-center">
-                          <svg className="w-16 h-16 text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                          <p className="text-xs font-mono text-gray-500 uppercase tracking-wider">No Preview</p>
+                          <ImageIcon className="w-16 h-16 text-muted-foreground mx-auto mb-3" />
+                          <p className="text-xs text-muted-foreground uppercase tracking-wider">No Preview</p>
                         </div>
                       </div>
 
@@ -1012,50 +953,38 @@ const History = ({ setBackgroundSkybox }) => {
                             <span className="uppercase tracking-wider">{item.status}</span>
                           </span>
                         </span>
-                        {/* Source Indicator - Editorial Style */}
                         {item.source && (
-                          <span className="px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg bg-[#1a1a1a]/90 backdrop-blur-xl text-gray-300 border border-gray-700/50 uppercase tracking-wider">
+                          <Badge variant="outline" className="text-[10px] uppercase">
                             {item.source === 'skyboxes' ? 'Skybox' : 'Job'}
-                          </span>
+                          </Badge>
                         )}
                       </div>
 
-                      {/* Style Badge - Top Right */}
                       {item.style_id && getStyleName(item) && (
-                        <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
-                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-xl rounded-lg border border-purple-500/30 shadow-xl">
-                            <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                            </svg>
-                            <span className="text-[10px] font-display font-semibold text-purple-300 uppercase tracking-wider">{getStyleName(item)}</span>
-                          </div>
+                        <div className="absolute top-4 right-4 z-10">
+                          <Badge variant="secondary" className="text-[10px] uppercase">
+                            {getStyleName(item)}
+                          </Badge>
                         </div>
                       )}
 
-                      {/* Editorial Hover Overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end">
+                      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end">
                         <div className="p-6 w-full">
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 backdrop-blur-xl border border-cyan-500/30 flex items-center justify-center">
-                                <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
+                              <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                                <ImageIcon className="w-5 h-5 text-primary" />
                               </div>
-                              <span className="text-white font-display font-semibold text-sm">Apply to background</span>
+                              <span className="text-foreground font-semibold text-sm">Apply to background</span>
                             </div>
                             <div className="flex items-center gap-2">
                               {/* Preview Button */}
                               <button
                                 onClick={(e) => handlePreviewClick(item, e)}
-                                className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-xl transition-all duration-300 hover:scale-110 border border-white/20"
+                                className="p-2.5 bg-background/80 hover:bg-background rounded-xl transition-all border border-border"
                                 title="Preview"
                               >
-                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
+                                <ImageIcon className="w-5 h-5 text-foreground" />
                               </button>
                               {/* Download Button */}
                               <button
@@ -1063,17 +992,17 @@ const History = ({ setBackgroundSkybox }) => {
                                   e.stopPropagation();
                                   downloadImage(item.file_url, `${item.title}.jpg`);
                                 }}
-                                className="p-2.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-xl transition-all duration-300 hover:scale-110 border border-white/20"
+                                className="p-2.5 bg-background/80 hover:bg-background rounded-xl transition-all border border-border"
                                 title="Download"
                               >
-                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                               </button>
                             </div>
                           </div>
                           {item.prompt && (
-                            <p className="text-xs text-gray-200/90 line-clamp-2 mb-2 font-body leading-relaxed">{item.prompt}</p>
+                            <p className="text-xs text-muted-foreground line-clamp-2 mb-2 leading-relaxed">{item.prompt}</p>
                           )}
                         </div>
                       </div>
@@ -1082,26 +1011,25 @@ const History = ({ setBackgroundSkybox }) => {
                     {/* Editorial Content Section */}
                     <div className={`relative z-10 ${viewMode === 'grid' ? 'p-6' : 'flex-1 p-6'}`}>
                       <div className="flex items-start justify-between mb-4">
-                        <h3 className="font-display text-xl font-bold text-white line-clamp-2 flex-1 pr-3 group-hover:text-cyan-300 transition-colors duration-300 leading-tight">
+                        <h3 className="text-xl font-bold text-foreground line-clamp-2 flex-1 pr-3 group-hover:text-primary transition-colors leading-tight">
                           {formatTitle(item.title)}
                         </h3>
                         {item.variations && item.variations.length > 0 && (
-                          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 backdrop-blur-sm">
-                            <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <Badge variant="secondary" className="gap-1.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                             </svg>
-                            <span className="text-xs font-display font-bold text-purple-300">{item.variations.length}</span>
-                          </div>
+                            {item.variations.length}
+                          </Badge>
                         )}
                       </div>
                       
                       {item.prompt && (
-                        <p className="font-body text-sm text-gray-300/70 mb-5 line-clamp-2 leading-relaxed">{item.prompt}</p>
+                        <p className="text-sm text-muted-foreground mb-5 line-clamp-2 leading-relaxed">{item.prompt}</p>
                       )}
-                      
-                      <div className="flex items-center justify-between pt-4 border-t border-gray-800/50">
-                        <div className="flex items-center gap-2.5 text-xs text-gray-400 font-body">
-                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="flex items-center justify-between pt-4 border-t border-border">
+                        <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           <span className="font-mono">{formatDate(item.created_at)}</span>
@@ -1109,12 +1037,9 @@ const History = ({ setBackgroundSkybox }) => {
                         <div className="flex items-center gap-2">
                           {/* Style Badge */}
                           {item.style_id && getStyleName(item) && (
-                            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg border border-purple-500/30 backdrop-blur-sm">
-                              <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                              </svg>
-                              <span className="text-[10px] font-display font-semibold text-purple-300 uppercase tracking-wider">{getStyleName(item)}</span>
-                            </div>
+                            <Badge variant="secondary" className="text-[10px] uppercase">
+                              {getStyleName(item)}
+                            </Badge>
                           )}
                           {item.metadata?.hasMesh && (
                             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 rounded-lg border border-emerald-500/30 backdrop-blur-sm">
@@ -1129,29 +1054,28 @@ const History = ({ setBackgroundSkybox }) => {
                     </div>
                   </motion.div>
 
-                  {/* Editorial Variations Section */}
                   {item.variations && item.variations.length > 0 && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.2 }}
-                      className="mt-6 space-y-4 pt-6 border-t border-gray-800/50"
+                      className="mt-6 space-y-4 pt-6 border-t border-border"
                       onMouseEnter={() => setHoveredVariationsSection(item.id)}
                       onMouseLeave={() => setHoveredVariationsSection(null)}
                     >
                       <div className="flex items-center justify-between mb-3 cursor-pointer group/header">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/30 flex items-center justify-center transition-all duration-300 group-hover/header:from-purple-500/30 group-hover/header:to-pink-500/30 group-hover/header:border-purple-400/50">
+                          <div className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center transition-all group-hover/header:bg-primary/30 group-hover/header:border-primary/50">
                             <svg className="w-4 h-4 text-purple-400 transition-transform duration-300 group-hover/header:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                             </svg>
                           </div>
-                          <h4 className="font-display text-sm font-bold text-gray-200 uppercase tracking-wider transition-colors duration-300 group-hover/header:text-purple-300">Variations</h4>
+                          <h4 className="text-sm font-bold text-foreground uppercase tracking-wider transition-colors group-hover/header:text-primary">Variations</h4>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono text-gray-500 font-semibold transition-colors duration-300 group-hover/header:text-purple-400">{item.variations.length} total</span>
-                          <svg 
-                            className={`w-4 h-4 text-gray-500 transition-all duration-300 ${hoveredVariationsSection === item.id ? 'rotate-180 text-purple-400' : ''}`} 
+                          <span className="text-xs text-muted-foreground font-semibold transition-colors group-hover/header:text-primary">{item.variations.length} total</span>
+                          <svg
+                            className={`w-4 h-4 text-muted-foreground transition-all ${hoveredVariationsSection === item.id ? 'rotate-180 text-primary' : ''}`} 
                             fill="none" 
                             stroke="currentColor" 
                             viewBox="0 0 24 24"
@@ -1240,15 +1164,14 @@ const History = ({ setBackgroundSkybox }) => {
                             whileHover={{ scale: 1.05, y: -4 }}
                             whileTap={{ scale: 0.95 }}
                             className={`
-                              relative group bg-gradient-to-br from-[#1a1a1a]/90 to-[#0a0a0a]/90 backdrop-blur-xl 
-                              rounded-2xl overflow-hidden shadow-xl
+                              relative group bg-card rounded-2xl overflow-hidden shadow-lg
                               transform transition-all duration-500 cursor-pointer
-                              border ${is3DAsset ? 'border-emerald-500/40 hover:border-emerald-500/70' : 'border-gray-800/50 hover:border-purple-500/60'}
-                              ${selectedVariation?.id === variation.id ? 'ring-2 ring-purple-500/70 shadow-purple-500/30' : ''}
+                              border ${is3DAsset ? 'border-emerald-500/40 hover:border-emerald-500/70' : 'border-border hover:border-primary/50'}
+                              ${selectedVariation?.id === variation.id ? 'ring-2 ring-primary' : ''}
                             `}
                             onClick={() => handleVariationClick(variationWithParent)}
                           >
-                            <div className="aspect-square relative overflow-hidden bg-[#0a0a0a]">
+                            <div className="aspect-square relative overflow-hidden bg-muted">
                               {previewImageUrl && !is3DAsset ? (
                                 <img
                                   src={previewImageUrl}
@@ -1339,25 +1262,23 @@ const History = ({ setBackgroundSkybox }) => {
                                   )}
                                 </>
                               ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#0a0a0a] to-[#1a1a1a]">
-                                  <svg className="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                  </svg>
+                                <div className="w-full h-full flex items-center justify-center bg-muted">
+                                  <ImageIcon className="w-10 h-10 text-muted-foreground" />
                                 </div>
                               )}
 
                               {/* Editorial Variation Number Badge */}
-                              <div className={`absolute top-3 left-3 text-white text-xs font-display font-bold px-2.5 py-1 rounded-xl shadow-xl backdrop-blur-xl border ${
+                              <div className={`absolute top-3 left-3 text-primary-foreground text-xs font-bold px-2.5 py-1 rounded-xl border ${
                                 is3DAsset 
-                                  ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 border-emerald-400/30' 
-                                  : 'bg-gradient-to-r from-purple-600 to-pink-600 border-purple-400/30'
+                                  ? 'bg-emerald-600 border-emerald-400/30' 
+                                  : 'bg-primary border-primary/30'
                               }`}>
                                 #{variation.variationIndex + 1}
                               </div>
                               
                               {/* 3D Asset Badge */}
                               {is3DAsset && (
-                                <div className="absolute top-3 right-3 bg-gradient-to-r from-emerald-500/90 to-cyan-500/90 text-white text-[10px] font-display font-bold px-2.5 py-1 rounded-xl shadow-xl backdrop-blur-xl border border-emerald-400/40 uppercase tracking-wider flex items-center gap-1.5">
+                                <div className="absolute top-3 right-3 bg-emerald-600 text-primary-foreground text-[10px] font-bold px-2.5 py-1 rounded-xl border border-emerald-400/40 uppercase tracking-wider flex items-center gap-1.5">
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                                   </svg>
@@ -1369,7 +1290,7 @@ const History = ({ setBackgroundSkybox }) => {
                               <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-end">
                                 <div className="p-4 w-full">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-white text-xs font-display font-semibold flex items-center gap-2">
+                                    <span className="text-foreground text-xs font-semibold flex items-center gap-2">
                                       <div className={`w-6 h-6 rounded-lg backdrop-blur-xl border flex items-center justify-center ${
                                         is3DAsset 
                                           ? 'bg-emerald-500/20 border-emerald-400/30' 
@@ -1400,7 +1321,7 @@ const History = ({ setBackgroundSkybox }) => {
                                           className="p-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-lg transition-all duration-300 hover:scale-110 border border-white/20"
                                           title="Preview 3D Model"
                                         >
-                                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <svg className="w-3.5 h-3.5 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                           </svg>
@@ -1419,14 +1340,14 @@ const History = ({ setBackgroundSkybox }) => {
                                         className="p-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-xl rounded-lg transition-all duration-300 hover:scale-110 border border-white/20"
                                         title={is3DAsset ? "Download 3D Model" : "Download"}
                                       >
-                                        <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-3.5 h-3.5 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
                                       </button>
                                     </div>
                                   </div>
                                   {variation.title && (
-                                    <p className="text-[10px] text-gray-300/80 line-clamp-1 mt-2 font-body leading-relaxed">{variation.title}</p>
+                                    <p className="text-[10px] text-muted-foreground line-clamp-1 mt-2 leading-relaxed">{variation.title}</p>
                                   )}
                                 </div>
                               </div>
@@ -1447,92 +1368,49 @@ const History = ({ setBackgroundSkybox }) => {
         )}
       </div>
 
-      {/* Editorial Preview Modal */}
-      <AnimatePresence>
-        {previewItem && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-xl"
-            onClick={closePreview}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-full h-full max-w-7xl max-h-[90vh] m-4 bg-gradient-to-br from-[#141414]/95 via-[#0a0a0a]/95 to-[#1a1a1a]/95 backdrop-blur-2xl rounded-3xl overflow-hidden border border-gray-800/50 shadow-2xl"
-            >
-              {/* Texture Overlay */}
-              <div className="absolute inset-0 bg-texture opacity-20 pointer-events-none" />
-              
-              {/* Close Button */}
-              <motion.button
-                whileHover={{ scale: 1.1, rotate: 90 }}
-                whileTap={{ scale: 0.9 }}
-                onClick={closePreview}
-                className="absolute top-6 right-6 z-10 p-3 bg-[#1a1a1a]/90 hover:bg-[#222]/90 backdrop-blur-xl rounded-xl transition-all duration-300 border border-gray-700/50 shadow-lg"
-                aria-label="Close preview"
-              >
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </motion.button>
+      {/* Preview Modal */}
+      <Dialog open={!!previewItem} onOpenChange={(open) => !open && closePreview()}>
+        <DialogContent
+          className="max-w-7xl max-h-[90vh] w-full h-full p-0 gap-0 overflow-hidden flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="relative flex flex-col h-full bg-background">
 
-              {/* Preview Content */}
-              <div className="w-full h-full flex flex-col relative z-10">
-                {/* Editorial Header */}
-                <div className="p-8 border-b border-gray-800/50 bg-gradient-to-r from-[#141414]/80 to-[#0a0a0a]/80 backdrop-blur-xl">
-                  <h2 className="font-display text-3xl font-bold text-white mb-3 bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
-                    {formatTitle(previewItem.title)}
-                  </h2>
-                  {previewItem.prompt && (
-                    <p className="font-body text-gray-300/80 text-base mb-4 leading-relaxed">{previewItem.prompt}</p>
+            <div className="flex-1 flex flex-col min-h-0">
+                <DialogHeader className="p-8 border-b border-border space-y-2">
+                  <DialogTitle className="text-3xl font-bold text-foreground">
+                    {formatTitle(previewItem?.title)}
+                  </DialogTitle>
+                  {previewItem?.prompt && (
+                    <p className="text-muted-foreground text-base leading-relaxed">{previewItem.prompt}</p>
                   )}
-                  {/* Style Badge in Preview */}
-                  {previewItem.style_id && getStyleName(previewItem) && (
+                  {previewItem?.style_id && getStyleName(previewItem) && (
                     <div className="mb-4 flex items-center gap-2">
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 backdrop-blur-sm">
-                        <svg className="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                        </svg>
-                        <span className="text-xs font-display font-semibold text-purple-300">{getStyleName(previewItem)}</span>
-                      </div>
+                      <Badge variant="secondary">{getStyleName(previewItem)}</Badge>
                     </div>
                   )}
-                  <div className="flex items-center gap-4 text-xs">
-                    <span className="flex items-center gap-2 font-body text-gray-400">
-                      <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center gap-4 text-xs flex-wrap">
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <span className="font-mono">{formatDate(previewItem.created_at)}</span>
+                      <span className="font-mono">{formatDate(previewItem?.created_at)}</span>
                     </span>
-                    <span className={`px-3 py-1.5 rounded-xl border backdrop-blur-xl font-display font-bold text-xs uppercase tracking-wider ${getStatusColor(previewItem.status)}`}>
-                      {previewItem.status}
+                    <span className={`px-3 py-1.5 rounded-xl border text-xs uppercase font-bold ${getStatusColor(previewItem?.status)}`}>
+                      {previewItem?.status}
                     </span>
-                    {previewItem.source && (
-                      <span className="px-3 py-1.5 rounded-xl bg-[#1a1a1a]/80 text-gray-300 border border-gray-700/50 font-mono text-xs uppercase tracking-wider backdrop-blur-xl">
-                        {previewItem.source === 'skyboxes' ? 'Skybox' : 'Job'}
-                      </span>
+                    {previewItem?.source && (
+                      <Badge variant="outline">{previewItem.source === 'skyboxes' ? 'Skybox' : 'Job'}</Badge>
                     )}
                   </div>
-                </div>
+                </DialogHeader>
 
-                {/* Preview Body */}
-                <div className="flex-1 relative overflow-hidden">
-                  {previewType === '3d' && previewItem.meshUrl && 
+                <div className="flex-1 relative overflow-hidden min-h-0">
+                  {previewType === '3d' && previewItem?.meshUrl && 
                    !previewItem.meshUrl.toLowerCase().includes('.mp4') &&
                    !previewItem.meshUrl.toLowerCase().includes('output.mp4') &&
                    !previewItem.meshUrl.toLowerCase().includes('/output/output.mp4') ? (
-                    // 3D Preview
                     <div className="w-full h-full">
-                      {console.log('🔍 Rendering 3D preview with:', {
-                        meshUrl: previewItem.meshUrl,
-                        meshFormat: previewItem.meshFormat,
-                        skyboxUrl: previewItem.file_url || previewItem.jobData?.skyboxUrl
-                      })}
                       <AssetViewerWithSkybox
                         assetUrl={previewItem.meshUrl}
                         skyboxImageUrl={previewItem.file_url || previewItem.jobData?.skyboxUrl}
@@ -1550,7 +1428,7 @@ const History = ({ setBackgroundSkybox }) => {
                       <div className="absolute bottom-4 right-4 flex gap-2">
                         <button
                           onClick={() => window.open(previewItem.meshUrl, '_blank')}
-                          className="px-4 py-2 bg-cyan-600/80 hover:bg-cyan-500 text-white text-sm rounded-lg backdrop-blur-sm transition-colors"
+                          className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 text-sm rounded-lg transition-colors"
                           title="Open 3D model in new tab"
                         >
                           Open in New Tab
@@ -1558,13 +1436,12 @@ const History = ({ setBackgroundSkybox }) => {
                       </div>
                     </div>
                   ) : (
-                    // Editorial Skybox Image Preview
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#0a0a0a] via-[#141414] to-[#1a1a1a] p-8">
-                      {previewItem.file_url ? (
+                    <div className="w-full h-full flex items-center justify-center bg-muted p-8">
+                      {previewItem?.file_url ? (
                         <img
                           src={previewItem.file_url}
                           alt={previewItem.title}
-                          className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-gray-800/50"
+                          className="max-w-full max-h-full object-contain rounded-2xl shadow-lg border border-border"
                           onError={(e) => {
                             e.target.style.display = 'none';
                             e.target.nextSibling.style.display = 'flex';
@@ -1573,78 +1450,52 @@ const History = ({ setBackgroundSkybox }) => {
                       ) : null}
                       <div className="hidden w-full h-full items-center justify-center">
                         <div className="text-center">
-                          <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-gray-800/50 to-gray-900/50 flex items-center justify-center border border-gray-700/50">
-                            <svg className="w-10 h-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          </div>
-                          <p className="font-body text-gray-400">No preview available</p>
+                          <ImageIcon className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground">No preview available</p>
                         </div>
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* Editorial Footer Actions */}
-                <div className="p-8 border-t border-gray-800/50 bg-gradient-to-r from-[#141414]/80 to-[#0a0a0a]/80 backdrop-blur-xl flex items-center justify-between">
+                <div className="p-8 border-t border-border flex items-center justify-between flex-wrap gap-4 bg-muted/30">
                   <div className="flex items-center gap-4">
-                    {previewItem.variations && previewItem.variations.length > 0 && (
-                      <div className="flex items-center gap-2.5 px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 backdrop-blur-sm">
-                        <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                        </svg>
-                        <span className="font-display font-semibold text-sm text-gray-200">{previewItem.variations.length} variations</span>
-                      </div>
+                    {previewItem?.variations && previewItem.variations.length > 0 && (
+                      <Badge variant="secondary">{previewItem.variations.length} variations</Badge>
                     )}
-                    {previewItem.metadata?.hasMesh && (
-                      <div className="flex items-center gap-2.5 px-4 py-2 bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 rounded-xl border border-emerald-500/30 backdrop-blur-sm">
-                        <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                        </svg>
-                        <span className="font-display font-semibold text-sm text-emerald-300">3D Asset Available</span>
-                      </div>
+                    {previewItem?.metadata?.hasMesh && (
+                      <Badge variant="secondary" className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+                        3D Asset Available
+                      </Badge>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                    <Button
                       onClick={() => {
-                        if (previewType === '3d' && previewItem.meshUrl) {
+                        if (previewType === '3d' && previewItem?.meshUrl) {
                           window.open(previewItem.meshUrl, '_blank');
-                        } else if (previewItem.file_url) {
+                        } else if (previewItem?.file_url) {
                           downloadImage(previewItem.file_url, `${previewItem.title}.jpg`);
                         }
                       }}
-                      className="px-6 py-3 bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 hover:from-cyan-400 hover:via-purple-400 hover:to-pink-400 text-white rounded-xl transition-all duration-300 font-display font-semibold flex items-center gap-2 shadow-lg shadow-cyan-500/25 border border-cyan-400/20"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
                       Download
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
+                    </Button>
+                    <Button
+                      variant="secondary"
                       onClick={() => {
                         handleSkyboxClick(previewItem);
                         closePreview();
                       }}
-                      className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-400 hover:to-cyan-500 text-white rounded-xl transition-all duration-300 font-display font-semibold flex items-center gap-2 shadow-lg shadow-emerald-500/25 border border-emerald-400/20"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
                       Apply
-                    </motion.button>
+                    </Button>
                   </div>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

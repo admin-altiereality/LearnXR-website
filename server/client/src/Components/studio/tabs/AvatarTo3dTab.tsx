@@ -500,7 +500,7 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
           error?.message?.includes('permission') || 
           error?.message?.includes('Permission') ||
           error?.code === 7) {
-        toast.error('Permission denied. Please ensure you have admin or superadmin role in your user profile.');
+        toast.error('Permission denied. Staff (Admin, Super Admin, or Associate) role required.');
         console.error('Permission error details:', {
           code: error?.code,
           message: error?.message,

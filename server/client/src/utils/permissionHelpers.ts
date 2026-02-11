@@ -32,12 +32,12 @@ export function checkPermission(
     return { allowed: true };
   }
 
-  // Write operations require admin or superadmin
+  // Write operations require admin, superadmin, or associate
   const canEdit = canEditLesson(profile);
   if (!canEdit) {
     return {
       allowed: false,
-      reason: 'Admin or superadmin role required',
+      reason: 'Admin, superadmin, or associate role required',
       errorCode: 'permission-denied',
       canRetry: false,
     };
@@ -76,7 +76,7 @@ export function handlePermissionError(
     const { operation, resource } = context;
     
     let userMessage = 'Permission denied. ';
-    let requiresRole: UserRole[] = ['admin', 'superadmin'];
+    let requiresRole: UserRole[] = ['admin', 'superadmin', 'associate'];
     let action = 'Contact your administrator to request access.';
 
     if (operation === 'delete' && context.assetData) {
@@ -86,12 +86,13 @@ export function handlePermissionError(
         requiresRole = ['superadmin'];
         action = 'Only superadmin can delete core assets.';
       } else {
-        userMessage += 'You need admin or superadmin role to delete assets.';
+        userMessage += 'You need admin or superadmin role to delete assets. (Associate cannot delete.)';
+        requiresRole = ['admin', 'superadmin'];
       }
     } else if (operation === 'create' || operation === 'update') {
-      userMessage += 'You need admin or superadmin role to modify assets.';
+      userMessage += 'You need admin, superadmin, or associate role to modify assets.';
     } else {
-      userMessage += 'You need admin or superadmin role to perform this action.';
+      userMessage += 'You need admin, superadmin, or associate role to perform this action.';
     }
 
     return {
@@ -182,5 +183,8 @@ export function getRequiredRole(
       return ['superadmin'];
     }
   }
-  return ['admin', 'superadmin'];
+  if (operation === 'delete') {
+    return ['admin', 'superadmin'];
+  }
+  return ['admin', 'superadmin', 'associate'];
 }
