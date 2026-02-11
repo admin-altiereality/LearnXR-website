@@ -8,13 +8,15 @@ import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
-import { RoleGuard, TeacherGuard, AdminGuard, SuperAdminGuard } from './Components/auth/RoleGuard';
+import { RoleGuard, TeacherGuard, AdminGuard, SuperAdminGuard, StudioGuard } from './Components/auth/RoleGuard';
+import { SecretBackendLogin } from './Components/auth/SecretBackendLogin';
 import { Signup } from './Components/auth/Signup';
 import { ErrorBoundary } from './Components/ErrorBoundary';
 import MinimalFooter from './Components/MinimalFooter';
 import Sidebar from './Components/Sidebar';
 import MainSection from './Components/MainSection';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
@@ -63,13 +65,14 @@ import StudentDashboard from './screens/dashboard/StudentDashboard';
 import TeacherDashboard from './screens/dashboard/TeacherDashboard';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
 import SchoolDashboard from './screens/dashboard/SchoolDashboard';
+import AssociateDashboard from './screens/dashboard/AssociateDashboard';
 import ClassManagement from './screens/admin/ClassManagement';
 import SchoolManagement from './screens/admin/SchoolManagement';
 import ProductionLogs from './screens/admin/ProductionLogs';
+import LessonEditRequests from './screens/admin/LessonEditRequests';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import PersonalizedLearning from './screens/ai/PersonalizedLearning';
-import TeacherSupport from './screens/ai/TeacherSupport';
 import TeacherAssessments from './screens/assessments/TeacherAssessments';
 import StudentAssessments from './screens/assessments/StudentAssessments';
 import TakeAssessment from './screens/assessments/TakeAssessment';
@@ -81,12 +84,12 @@ const AssessmentsPage = () => {
   return <TeacherAssessments />;
 };
 
-// Conditional Footer - Shows minimal footer on all pages except VR player and studio
+// Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson', '/main'];
   
-  // Hide footer completely on immersive experiences
+  // Hide footer completely on immersive experiences and main (environment studio) page
   if (hideFooterRoutes.includes(location.pathname) || 
       location.pathname.startsWith('/studio/')) {
     return null;
@@ -425,6 +428,7 @@ function App() {
     if (threeJsError) {
       return (
         <AuthProvider>
+          <ThemeProvider>
           <LessonProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
@@ -438,7 +442,7 @@ function App() {
                 <ConditionalSidebar />
 
                 {/* Main content area – same background as sidebar for homogeneous look */}
-                <div className="flex-1 flex flex-col min-h-screen bg-background">
+                <div className="relative flex-1 flex flex-col min-h-screen bg-background overflow-hidden">
                 <main className="flex-1 bg-background">
                   <div className="">
                     <Routes>
@@ -446,6 +450,7 @@ function App() {
                       <Route path="/login" element={<Login />} />
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
+                      <Route path="/secretbackend" element={<SecretBackendLogin />} />
                       
                       {/* Landing page - redirects authenticated users to /lessons */}
                       <Route path="/" element={<SmartLanding />} />
@@ -635,16 +640,16 @@ function App() {
                       {/* Studio / Chapter Editor - admin and superadmin only (no school) */}
                       <Route path="/studio/content" element={
                         <ProtectedRoute>
-                          <AdminGuard>
+                          <StudioGuard>
                             <ContentLibrary />
-                          </AdminGuard>
+                          </StudioGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/content/:chapterId" element={
                         <ProtectedRoute>
-                          <AdminGuard>
+                          <StudioGuard>
                             <ChapterEditor />
-                          </AdminGuard>
+                          </StudioGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/firestore-debug" element={
@@ -756,6 +761,7 @@ function App() {
             </CreateGenerationProvider>
           </AssetGenerationProvider>
           </LessonProvider>
+          </ThemeProvider>
         {/* Subscription removed */}
       </AuthProvider>
       );
@@ -764,6 +770,7 @@ function App() {
     return (
       <ErrorBoundary>
         <AuthProvider>
+          <ThemeProvider>
           <LessonProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
@@ -779,7 +786,7 @@ function App() {
                 <ConditionalSidebar />
 
                 {/* Main content area – same background as sidebar for homogeneous look */}
-                <div className="flex-1 flex flex-col min-h-screen bg-background">
+                <div className="relative flex-1 flex flex-col min-h-screen bg-background overflow-hidden">
                 <main className="flex-1 bg-background">
                   <div className="">
                     <Routes>
@@ -787,6 +794,7 @@ function App() {
                       <Route path="/login" element={<Login />} />
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
+                      <Route path="/secretbackend" element={<SecretBackendLogin />} />
                       
                       {/* Landing page - redirects authenticated users to /lessons */}
                       <Route path="/" element={<SmartLanding />} />
@@ -978,6 +986,13 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/dashboard/associate" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['associate']}>
+                            <AssociateDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Personalized Learning (AI) - Students only */}
                       <Route path="/personalized-learning" element={
@@ -988,14 +1003,8 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* AI Teacher Support - Teachers and above */}
-                      <Route path="/teacher-support" element={
-                        <ProtectedRoute>
-                          <TeacherGuard>
-                            <TeacherSupport />
-                          </TeacherGuard>
-                        </ProtectedRoute>
-                      } />
+                      {/* AI Teacher Support - Merged into Create page (/main), redirect for backward compatibility */}
+                      <Route path="/teacher-support" element={<Navigate to="/main" replace />} />
                       
                       {/* Automated Assessments - Students (take/list) and teachers+ (create/list/grade) */}
                       <Route path="/assessments" element={
@@ -1031,12 +1040,19 @@ function App() {
                         </ProtectedRoute>
                       } />
                       
-                      {/* Production Logs - Superadmin only */}
+                      {/* Production Logs - Admin and Superadmin */}
                       <Route path="/admin/logs" element={
                         <ProtectedRoute>
-                          <SuperAdminGuard>
+                          <AdminGuard>
                             <ProductionLogs />
-                          </SuperAdminGuard>
+                          </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/lesson-edit-requests" element={
+                        <ProtectedRoute>
+                          <AdminGuard>
+                            <LessonEditRequests />
+                          </AdminGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -1084,16 +1100,16 @@ function App() {
                       {/* Studio / Chapter Editor - admin and superadmin only (no school) */}
                       <Route path="/studio/content" element={
                         <ProtectedRoute>
-                          <AdminGuard>
+                          <StudioGuard>
                             <ContentLibrary />
-                          </AdminGuard>
+                          </StudioGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/content/:chapterId" element={
                         <ProtectedRoute>
-                          <AdminGuard>
+                          <StudioGuard>
                             <ChapterEditor />
-                          </AdminGuard>
+                          </StudioGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/studio/firestore-debug" element={
@@ -1209,6 +1225,7 @@ function App() {
             </CreateGenerationProvider>
           </AssetGenerationProvider>
           </LessonProvider>
+          </ThemeProvider>
         {/* Subscription removed */}
       </AuthProvider>
     </ErrorBoundary>

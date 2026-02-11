@@ -16,12 +16,12 @@ export interface ErrorMessage {
  * Error message map
  */
 export const ERROR_MESSAGES: Record<string, ErrorMessage> = {
-  // Permission errors
+  // Permission errors (admin, superadmin, or associate can add/edit; delete may be restricted)
   'permission-denied': {
-    userMessage: 'You need admin or superadmin role to perform this action.',
+    userMessage: 'You need admin, superadmin, or associate role to add or edit content. If you have that role, try deploying Firestore rules or disable ad blockers.',
     technicalMessage: 'Permission denied: User does not have required role',
     canRetry: false,
-    action: 'Contact your administrator to request access.',
+    action: 'Contact your administrator or try in an incognito window.',
   },
   'unauthenticated': {
     userMessage: 'You must be logged in to perform this action.',
@@ -110,10 +110,19 @@ export function getErrorMessage(errorCode: string): ErrorMessage {
 }
 
 /**
+ * Normalize error code (Firebase uses 7 for permission-denied)
+ */
+function normalizeErrorCode(code: string | number): string {
+  if (code === 7 || code === '7') return 'permission-denied';
+  return String(code);
+}
+
+/**
  * Get user-friendly error message
  */
 export function getUserErrorMessage(error: any): string {
-  const errorCode = error?.code || error?.error?.code || 'unknown';
+  const raw = error?.code ?? error?.error?.code ?? 'unknown';
+  const errorCode = normalizeErrorCode(raw);
   const message = getErrorMessage(errorCode);
   return message.userMessage;
 }
@@ -122,8 +131,8 @@ export function getUserErrorMessage(error: any): string {
  * Get error action suggestion
  */
 export function getErrorAction(error: any): string | undefined {
-  const errorCode = error?.code || error?.error?.code || 'unknown';
-  const message = getErrorMessage(errorCode);
+  const raw = error?.code ?? error?.error?.code ?? 'unknown';
+  const message = getErrorMessage(normalizeErrorCode(raw));
   return message.action;
 }
 
@@ -131,7 +140,7 @@ export function getErrorAction(error: any): string | undefined {
  * Check if error is retryable
  */
 export function isErrorRetryable(error: any): boolean {
-  const errorCode = error?.code || error?.error?.code || 'unknown';
-  const message = getErrorMessage(errorCode);
+  const raw = error?.code ?? error?.error?.code ?? 'unknown';
+  const message = getErrorMessage(normalizeErrorCode(raw));
   return message.canRetry;
 }

@@ -21,7 +21,25 @@ import {
 } from '../../services/schoolManagementService';
 import type { School } from '../../types/lms';
 import { FaPlus, FaSchool, FaEdit, FaUsers, FaMapMarkerAlt, FaPhone, FaGlobe, FaGraduationCap, FaBuilding, FaCalendarAlt } from 'react-icons/fa';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { Button } from '../../Components/ui/button';
+import { Card, CardContent } from '../../Components/ui/card';
+import { Input } from '../../Components/ui/input';
+import { Label } from '../../Components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../../Components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../Components/ui/select';
 
 const SchoolManagement = () => {
   const { profile } = useAuth();
@@ -163,8 +181,8 @@ const SchoolManagement = () => {
     return (
       <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
-          <p className="text-white/60">Loading school management...</p>
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading school management...</p>
         </div>
       </div>
     );
@@ -173,9 +191,11 @@ const SchoolManagement = () => {
   if (profile?.role !== 'admin' && profile?.role !== 'superadmin') {
     return (
       <div className="min-h-screen bg-background pt-24 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-white/60">Access denied. Admin or Superadmin role required.</p>
-        </div>
+        <Card className="max-w-md border-border">
+          <CardContent className="pt-6 text-center">
+            <p className="text-muted-foreground">Access denied. Admin or Superadmin role required.</p>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -188,36 +208,32 @@ const SchoolManagement = () => {
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center">
-                <FaSchool className="text-white" />
+            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                <FaSchool className="text-primary" />
               </div>
               School Management
             </h1>
-            <p className="text-white/50">Create and manage schools, assign principals</p>
+            <p className="text-muted-foreground">Create and manage schools, assign principals</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all flex items-center gap-2"
-          >
-            <FaPlus />
+          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
+            <FaPlus className="w-4 h-4" />
             Create School
-          </button>
+          </Button>
         </div>
 
         {/* Schools List */}
         <div className="space-y-4">
           {schools.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaSchool className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No schools created yet</p>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="mt-4 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all"
-              >
-                Create Your First School
-              </button>
-            </div>
+            <Card className="border-border rounded-2xl">
+              <CardContent className="p-8 text-center">
+                <FaSchool className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No schools created yet</p>
+                <Button className="mt-4" onClick={() => setShowCreateModal(true)}>
+                  Create Your First School
+                </Button>
+              </CardContent>
+            </Card>
           ) : (
             schools.map((school) => {
               const schoolPrincipal = users.find(u => 
@@ -227,311 +243,334 @@ const SchoolManagement = () => {
               const schoolTeachers = users.filter(u => u.school_id === school.id && u.role === 'teacher');
 
               return (
-                <div
-                  key={school.id}
-                  className="rounded-xl border border-white/10 bg-white/[0.02] p-6"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <h3 className="text-xl font-semibold text-white mb-2 flex items-center gap-2">
-                        <FaSchool className="text-purple-400" />
-                        {school.name}
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-white/60">
-                        {school.address && (
-                          <div className="flex items-center gap-2">
-                            <FaMapMarkerAlt className="text-blue-400" />
-                            <span>{school.address}, {school.city}, {school.state} {school.pincode}</span>
-                          </div>
-                        )}
-                        {school.contactPhone && (
-                          <div className="flex items-center gap-2">
-                            <FaPhone className="text-green-400" />
-                            <span>{school.contactPhone}</span>
-                          </div>
-                        )}
-                        {school.website && (
-                          <div className="flex items-center gap-2">
-                            <FaGlobe className="text-cyan-400" />
-                            <a href={school.website} target="_blank" rel="noopener noreferrer" className="hover:text-cyan-400">
-                              {school.website}
-                            </a>
-                          </div>
-                        )}
-                        {school.boardAffiliation && (
-                          <div className="flex items-center gap-2">
-                            <FaGraduationCap className="text-yellow-400" />
-                            <span>{school.boardAffiliation}</span>
-                          </div>
-                        )}
-                        {school.establishedYear && (
-                          <div className="flex items-center gap-2">
-                            <FaCalendarAlt className="text-orange-400" />
-                            <span>Est. {school.establishedYear}</span>
-                          </div>
-                        )}
-                        {school.schoolType && (
-                          <div className="flex items-center gap-2">
-                            <FaBuilding className="text-pink-400" />
-                            <span>{school.schoolType}</span>
-                          </div>
-                        )}
+                <Card key={school.id} className="rounded-xl border-border bg-card">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <h3 className="text-xl font-semibold text-foreground mb-2 flex items-center gap-2">
+                          <FaSchool className="text-primary" />
+                          {school.name}
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-muted-foreground">
+                          {school.address && (
+                            <div className="flex items-center gap-2">
+                              <FaMapMarkerAlt className="text-primary shrink-0" />
+                              <span>{school.address}, {school.city}, {school.state} {school.pincode}</span>
+                            </div>
+                          )}
+                          {school.contactPhone && (
+                            <div className="flex items-center gap-2">
+                              <FaPhone className="text-primary shrink-0" />
+                              <span>{school.contactPhone}</span>
+                            </div>
+                          )}
+                          {school.website && (
+                            <div className="flex items-center gap-2">
+                              <FaGlobe className="text-primary shrink-0" />
+                              <a href={school.website} target="_blank" rel="noopener noreferrer" className="hover:text-primary">
+                                {school.website}
+                              </a>
+                            </div>
+                          )}
+                          {school.boardAffiliation && (
+                            <div className="flex items-center gap-2">
+                              <FaGraduationCap className="text-primary shrink-0" />
+                              <span>{school.boardAffiliation}</span>
+                            </div>
+                          )}
+                          {school.establishedYear && (
+                            <div className="flex items-center gap-2">
+                              <FaCalendarAlt className="text-primary shrink-0" />
+                              <span>Est. {school.establishedYear}</span>
+                            </div>
+                          )}
+                          {school.schoolType && (
+                            <div className="flex items-center gap-2">
+                              <FaBuilding className="text-primary shrink-0" />
+                              <span>{school.schoolType}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
+                      <Button variant="outline" size="sm" onClick={() => openEditModal(school)} className="gap-2">
+                        <FaEdit />
+                        Edit
+                      </Button>
                     </div>
-                    <button
-                      onClick={() => openEditModal(school)}
-                      className="px-3 py-1.5 rounded-lg bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30 transition-all text-sm flex items-center gap-2"
-                    >
-                      <FaEdit />
-                      Edit
-                    </button>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-white/10">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <FaUsers className="text-purple-400" />
-                        <span className="text-white/70 text-sm font-medium">Principal</span>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-border">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FaUsers className="text-primary" />
+                          <span className="text-foreground text-sm font-medium">Principal</span>
+                        </div>
+                        {schoolPrincipal ? (
+                          <p className="text-muted-foreground text-sm">{schoolPrincipal.name || schoolPrincipal.displayName || schoolPrincipal.email}</p>
+                        ) : (
+                          <Select
+                            onValueChange={(value) => value && handleAssignPrincipal(school.id, value)}
+                          >
+                            <SelectTrigger className="w-full bg-background border-border text-foreground">
+                              <SelectValue placeholder="Assign Principal" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {principals.map(p => (
+                                <SelectItem key={p.uid} value={p.uid}>
+                                  {p.name || p.displayName || p.email}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
-                      {schoolPrincipal ? (
-                        <p className="text-white/50 text-sm">{schoolPrincipal.name || schoolPrincipal.displayName || schoolPrincipal.email}</p>
-                      ) : (
-                        <select
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              handleAssignPrincipal(school.id, e.target.value);
-                            }
-                          }}
-                          className="w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-cyan-400/50"
-                          defaultValue=""
-                        >
-                          <option value="">Assign Principal</option>
-                          {principals.map(p => (
-                            <option key={p.uid} value={p.uid}>
-                              {p.name || p.displayName || p.email}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <FaUsers className="text-blue-400" />
-                        <span className="text-white/70 text-sm font-medium">Teachers ({schoolTeachers.length})</span>
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FaUsers className="text-primary" />
+                          <span className="text-foreground text-sm font-medium">Teachers ({schoolTeachers.length})</span>
+                        </div>
+                        <p className="text-muted-foreground text-sm">{schoolTeachers.length} teachers</p>
                       </div>
-                      <p className="text-white/50 text-sm">{schoolTeachers.length} teachers</p>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <FaUsers className="text-green-400" />
-                        <span className="text-white/70 text-sm font-medium">Students ({schoolStudents.length})</span>
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FaUsers className="text-primary" />
+                          <span className="text-foreground text-sm font-medium">Students ({schoolStudents.length})</span>
+                        </div>
+                        <p className="text-muted-foreground text-sm">{schoolStudents.length} students</p>
                       </div>
-                      <p className="text-white/50 text-sm">{schoolStudents.length} students</p>
                     </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               );
             })
           )}
         </div>
 
         {/* Create School Modal */}
-        {showCreateModal && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-card rounded-2xl border border-border p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-xl font-semibold text-white mb-4">Create New School</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="text-white/70 text-sm mb-1 block">School Name *</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.name}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, name: e.target.value })}
-                    placeholder="Enter school name"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="text-white/70 text-sm mb-1 block">Address</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.address}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, address: e.target.value })}
-                    placeholder="Street address"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">City</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.city}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, city: e.target.value })}
-                    placeholder="City"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">State</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.state}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, state: e.target.value })}
-                    placeholder="State"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Pincode</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.pincode}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, pincode: e.target.value })}
-                    placeholder="Pincode"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Contact Person</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.contactPerson}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, contactPerson: e.target.value })}
-                    placeholder="Contact person name"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Contact Phone</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.contactPhone}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, contactPhone: e.target.value })}
-                    placeholder="Phone number"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Website</label>
-                  <input
-                    type="url"
-                    value={newSchoolData.website}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, website: e.target.value })}
-                    placeholder="https://example.com"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Board Affiliation</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.boardAffiliation}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, boardAffiliation: e.target.value })}
-                    placeholder="e.g., CBSE, RBSE, ICSE"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">Established Year</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.establishedYear}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, establishedYear: e.target.value })}
-                    placeholder="Year"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-white/70 text-sm mb-1 block">School Type</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.schoolType}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, schoolType: e.target.value })}
-                    placeholder="e.g., Private, Public, International"
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
+        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Create New School</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2 space-y-2">
+                <Label className="text-foreground">School Name *</Label>
+                <Input
+                  value={newSchoolData.name}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, name: e.target.value })}
+                  placeholder="Enter school name"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
               </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateSchool}
-                  className="flex-1 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all"
-                >
-                  Create School
-                </button>
+              <div className="md:col-span-2 space-y-2">
+                <Label className="text-foreground">Address</Label>
+                <Input
+                  value={newSchoolData.address}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, address: e.target.value })}
+                  placeholder="Street address"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">City</Label>
+                <Input
+                  value={newSchoolData.city}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, city: e.target.value })}
+                  placeholder="City"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">State</Label>
+                <Input
+                  value={newSchoolData.state}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, state: e.target.value })}
+                  placeholder="State"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Pincode</Label>
+                <Input
+                  value={newSchoolData.pincode}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, pincode: e.target.value })}
+                  placeholder="Pincode"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Contact Person</Label>
+                <Input
+                  value={newSchoolData.contactPerson}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, contactPerson: e.target.value })}
+                  placeholder="Contact person name"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Contact Phone</Label>
+                <Input
+                  value={newSchoolData.contactPhone}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, contactPhone: e.target.value })}
+                  placeholder="Phone number"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Website</Label>
+                <Input
+                  type="url"
+                  value={newSchoolData.website}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, website: e.target.value })}
+                  placeholder="https://example.com"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Board Affiliation</Label>
+                <Input
+                  value={newSchoolData.boardAffiliation}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, boardAffiliation: e.target.value })}
+                  placeholder="e.g., CBSE, RBSE, ICSE"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Established Year</Label>
+                <Input
+                  value={newSchoolData.establishedYear}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, establishedYear: e.target.value })}
+                  placeholder="Year"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">School Type</Label>
+                <Input
+                  value={newSchoolData.schoolType}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, schoolType: e.target.value })}
+                  placeholder="e.g., Private, Public, International"
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
               </div>
             </div>
-          </div>
-        )}
+            <div className="flex gap-3 mt-6">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCreateModal(false)}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleCreateSchool}>
+                Create School
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Edit School Modal */}
-        {showEditModal && selectedSchool && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-card rounded-2xl border border-border p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <h2 className="text-xl font-semibold text-white mb-4">Edit School: {selectedSchool.name}</h2>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Same form fields as create modal */}
-                <div className="md:col-span-2">
-                  <label className="text-white/70 text-sm mb-1 block">School Name *</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.name}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, name: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-                {/* Include all other fields similar to create modal */}
-                <div className="md:col-span-2">
-                  <label className="text-white/70 text-sm mb-1 block">Address</label>
-                  <input
-                    type="text"
-                    value={newSchoolData.address}
-                    onChange={(e) => setNewSchoolData({ ...newSchoolData, address: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder:text-white/30 focus:outline-none focus:border-cyan-400/50"
-                  />
-                </div>
-                {/* Add all other fields... */}
+        <Dialog open={showEditModal && !!selectedSchool} onOpenChange={(open) => { if (!open) { setShowEditModal(false); setSelectedSchool(null); } }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Edit School: {selectedSchool?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2 space-y-2">
+                <Label className="text-foreground">School Name *</Label>
+                <Input
+                  value={newSchoolData.name}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, name: e.target.value })}
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
               </div>
-
-              <div className="flex gap-3 mt-6">
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setSelectedSchool(null);
-                  }}
-                  className="flex-1 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateSchool}
-                  className="flex-1 px-4 py-2 rounded-xl bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all"
-                >
-                  Update School
-                </button>
+              <div className="md:col-span-2 space-y-2">
+                <Label className="text-foreground">Address</Label>
+                <Input
+                  value={newSchoolData.address}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, address: e.target.value })}
+                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">City</Label>
+                <Input
+                  value={newSchoolData.city}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, city: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">State</Label>
+                <Input
+                  value={newSchoolData.state}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, state: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Pincode</Label>
+                <Input
+                  value={newSchoolData.pincode}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, pincode: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Contact Person</Label>
+                <Input
+                  value={newSchoolData.contactPerson}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, contactPerson: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Contact Phone</Label>
+                <Input
+                  value={newSchoolData.contactPhone}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, contactPhone: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Website</Label>
+                <Input
+                  type="url"
+                  value={newSchoolData.website}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, website: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Board Affiliation</Label>
+                <Input
+                  value={newSchoolData.boardAffiliation}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, boardAffiliation: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Established Year</Label>
+                <Input
+                  value={newSchoolData.establishedYear}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, establishedYear: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">School Type</Label>
+                <Input
+                  value={newSchoolData.schoolType}
+                  onChange={(e) => setNewSchoolData({ ...newSchoolData, schoolType: e.target.value })}
+                  className="bg-background border-border text-foreground"
+                />
               </div>
             </div>
-          </div>
-        )}
+            <div className="flex gap-3 mt-6">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowEditModal(false); setSelectedSchool(null); }}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleUpdateSchool}>
+                Update School
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

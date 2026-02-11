@@ -87,11 +87,39 @@ const ContentBadges = memo(({ chapter }) => (
 ));
 
 // GRID VIEW - Lesson Card (Topic-based) - Memoized to prevent flickering
-const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
+const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin, onApprovalChange }) => {
+  const { profile } = useAuth();
+  const [updatingApproval, setUpdatingApproval] = useState(false);
   const { topic, chapter, chapterInfo } = lessonItem;
   const thumbnail = topic.skybox_url || chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
+  
+  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  const approval = topic.approval || {};
+  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
+  
+  const handleApprovalToggle = async (e) => {
+    e.stopPropagation();
+    if (!canApprove || !profile || !onApprovalChange) return;
+    const newApproved = !isApproved;
+    setUpdatingApproval(true);
+    try {
+      await updateTopicApproval({
+        chapterId: chapter.id,
+        topicId: topic.topic_id,
+        approved: newApproved,
+        userId: profile.uid,
+      });
+      onApprovalChange(chapter.id, topic.topic_id, newApproved);
+      toast.success(`Topic ${newApproved ? 'approved' : 'unapproved'} successfully`);
+    } catch (error) {
+      console.error('Error updating topic approval:', error);
+      toast.error('Failed to update approval status');
+    } finally {
+      setUpdatingApproval(false);
+    }
+  };
   
   // Get language-specific topic name (primary) and chapter name (secondary)
   const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || 'Untitled Topic';
@@ -191,8 +219,22 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
         </div>
         <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{getSubjectNameByLanguage(chapterInfo.subject || '', selectedLanguage)}</p>
         <p className="text-[10px] text-muted-foreground mb-1 line-clamp-1">{chapterName}</p>
-        <div className="flex items-center justify-between mt-auto pt-1">
-          <span className="text-[10px] text-muted-foreground">Topic {topic.topic_priority ?? '?'}</span>
+        <div className="flex items-center justify-between mt-auto pt-1 gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[10px] text-muted-foreground">Topic {topic.topic_priority ?? '?'}</span>
+            {canApprove && (
+              <Button
+                variant={isApproved ? 'destructive' : 'default'}
+                size="sm"
+                className="h-6 px-2 gap-0.5 text-[10px]"
+                onClick={(e) => { e.stopPropagation(); handleApprovalToggle(e); }}
+                disabled={updatingApproval}
+                title={isApproved ? 'Unapprove' : 'Approve'}
+              >
+                {updatingApproval ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : isApproved ? <XCircle className="w-2.5 h-2.5" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
+              </Button>
+            )}
+          </div>
           <ContentBadges chapter={chapter} />
         </div>
       </div>
@@ -216,9 +258,9 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
   // Check if user can approve (admin or superadmin)
   const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
   
-  // Get approval status
+  // Get approval status (support approval.approved and top-level topic.approved from Firestore)
   const approval = topic.approval || {};
-  const isApproved = approval.approved === true;
+  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
   const approvedAt = approval.approvedAt;
   
   // Format approvedAt timestamp
@@ -357,9 +399,37 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
 
 // LIST VIEW - Lesson Item (Topic-based) - Memoized
 const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', onApprovalChange, isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
+  const { profile } = useAuth();
+  const [updatingApproval, setUpdatingApproval] = useState(false);
   const { topic, chapter, chapterInfo } = lessonItem;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
+  
+  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  const approval = topic.approval || {};
+  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
+  
+  const handleApprovalToggle = async (e) => {
+    e.stopPropagation();
+    if (!canApprove || !profile || !onApprovalChange) return;
+    const newApproved = !isApproved;
+    setUpdatingApproval(true);
+    try {
+      await updateTopicApproval({
+        chapterId: chapter.id,
+        topicId: topic.topic_id,
+        approved: newApproved,
+        userId: profile.uid,
+      });
+      onApprovalChange(chapter.id, topic.topic_id, newApproved);
+      toast.success(`Topic ${newApproved ? 'approved' : 'unapproved'} successfully`);
+    } catch (error) {
+      console.error('Error updating topic approval:', error);
+      toast.error('Failed to update approval status');
+    } finally {
+      setUpdatingApproval(false);
+    }
+  };
   
   // Get language-specific topic name (primary) and chapter name (secondary)
   const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || 'Untitled Topic';
@@ -416,7 +486,22 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
               </>
             )}
           </div>
-          <h3 className="text-base font-semibold truncate mb-1 text-foreground">{topicName}</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-base font-semibold truncate text-foreground">{topicName}</h3>
+            {canApprove && (
+              isApproved ? (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/20 text-primary border border-primary/30 shrink-0">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Approved
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-muted text-muted-foreground border border-border shrink-0">
+                  <XCircle className="w-3 h-3" />
+                  Not Approved
+                </span>
+              )
+            )}
+          </div>
           <p className="text-xs text-muted-foreground truncate mb-1">{chapterName}</p>
           {learningObjective && (
             <p className="text-xs text-muted-foreground truncate">{learningObjective}</p>
@@ -425,17 +510,43 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
         
         <ContentBadges chapter={chapter} />
         
-        <Button
-          size="sm"
-          className="gap-2 shadow-lg"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenModal(chapter, topic);
-          }}
-        >
-          <Play className="w-4 h-4" />
-          {isCompleted ? 'Replay' : 'View'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {canApprove && (
+            <Button
+              variant={isApproved ? 'destructive' : 'default'}
+              size="sm"
+              onClick={handleApprovalToggle}
+              disabled={updatingApproval}
+              className="h-8 gap-1"
+              title={isApproved ? 'Unapprove topic' : 'Approve topic'}
+            >
+              {updatingApproval ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : isApproved ? (
+                <>
+                  <XCircle className="w-3 h-3" />
+                  Unapprove
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-3 h-3" />
+                  Approve
+                </>
+              )}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="gap-2 shadow-lg"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenModal(chapter, topic);
+            }}
+          >
+            <Play className="w-4 h-4" />
+            {isCompleted ? 'Replay' : 'View'}
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -934,23 +1045,24 @@ const Lessons = ({ setBackgroundSkybox }) => {
           // - Other regular users only see APPROVED topics
           const approval = topic.approval || {};
           // Handle both boolean true and string "true" for approval
-          const isTopicApproved = approval.approved === true || approval.approved === 'true';
+          const isTopicApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
           const isChapterApproved = chapter.approved === true;
           
           // Check if topic has an approval field (not empty object)
           const hasTopicApproval = topic.approval && typeof topic.approval === 'object' && Object.keys(topic.approval).length > 0;
           
-          // For students and teachers: topic is approved OR (chapter is approved AND topic has no approval field - backward compatibility)
+          // Topic visibility: individually approved topics visible to students/teachers
+          // Fallback: topic with no approval field shows when chapter is approved (legacy content)
           const shouldShowTopic = isTopicApproved || (isChapterApproved && !hasTopicApproval);
           
           if (canApprove) {
-            // Admins/superadmins can see all topics
+            // Admins/superadmins see all topics (including unapproved, to manage approval)
             allTopics.push({
               topic,
               chapter,
             });
           } else if (isStudent || isTeacher) {
-            // Students and teachers: show approved topics OR topics in approved chapters (if topic has no approval field)
+            // Students and teachers: approved topics OR legacy (chapter approved, no topic approval field)
             if (shouldShowTopic) {
               allTopics.push({
                 topic,
@@ -958,7 +1070,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
               });
             }
           } else if (shouldShowTopic) {
-            // Other users: approved topics or backward compatibility
+            // Other users: same visibility rule
             allTopics.push({
               topic,
               chapter,
@@ -1157,10 +1269,15 @@ const Lessons = ({ setBackgroundSkybox }) => {
       // Use unified getLessonBundle function
       const { getLessonBundle } = await import('../services/firestore/getLessonBundle');
       
+      const isAssociate = profile?.role === 'associate';
+      
       // Fetch complete lesson bundle for selected language
+      // When Associate: overlay their latest unapproved draft so they see their edits after refresh
       const bundle = await getLessonBundle({
         chapterId: chapter.id,
         lang: selectedLanguage,
+        topicId: topicInput?.topic_id,
+        ...(isAssociate && user?.uid ? { userId: user.uid, userRole: 'associate' } : {}),
       });
 
       const fullData = bundle.chapter;
@@ -1340,7 +1457,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       setDataLoading(false);
       setDataReady(false);
     }
-  }, [selectedLanguage]);
+  }, [selectedLanguage, profile?.role, user?.uid]);
 
   // Open lesson detail modal and start fetching data
   const openLessonModal = useCallback((chapter, topicInput) => {
@@ -2208,6 +2325,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                           isLockedForGuest={isLockedForGuest}
                           onGuestSignup={handleGuestSignup}
                           onGuestLogin={handleGuestLogin}
+                          onApprovalChange={handleApprovalChange}
                         />
                       </div>
                     );})}

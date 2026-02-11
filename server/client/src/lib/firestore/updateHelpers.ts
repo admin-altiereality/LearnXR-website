@@ -138,12 +138,14 @@ export const updateTopicApproval = async (options: UpdateTopicApprovalOptions): 
   }
   
   // Update approval fields
+  // Note: serverTimestamp() cannot be used inside arrays in Firestore.
+  // Use ISO string for approvedAt when storing in the topics array.
   updatedTopics[topicIndex] = {
     ...topic,
     approval: {
       approved: approved,
-      approvedAt: approved ? serverTimestamp() : null,
-    } as any, // Type assertion needed for serverTimestamp()
+      approvedAt: approved ? new Date().toISOString() : null,
+    } as any,
   };
   
   await updateDoc(chapterRef, {

@@ -417,18 +417,18 @@ export const SceneTab = ({
     !imageLoadError;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-[#050810]">
+    <div className="h-full flex flex-col overflow-hidden bg-background">
       {/* Full-screen Background */}
       <div className="relative flex-1 min-h-0">
         {/* Loading state for data */}
         {loadingSkybox ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#050810]">
+          <div className="absolute inset-0 flex items-center justify-center bg-background">
             <div className="text-center">
               <div className="relative w-16 h-16 mx-auto mb-4">
-                <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20" />
-                <div className="absolute inset-0 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+                <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
+                <div className="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin" />
               </div>
-              <p className="text-sm text-slate-400">Loading scene data...</p>
+              <p className="text-sm text-muted-foreground">Loading scene data...</p>
             </div>
           </div>
         ) : isValidSkyboxUrl && showFullPreview ? (
@@ -463,8 +463,8 @@ export const SceneTab = ({
                   onError={() => setImageLoadError(true)}
                 />
                 {/* Gradient overlays for 2D view */}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#050810] via-transparent to-[#050810]/30" />
-                <div className="absolute inset-0 bg-gradient-to-r from-[#050810]/40 via-transparent to-[#050810]/40" />
+                <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/30" />
+                <div className="absolute inset-0 bg-gradient-to-r from-background/40 via-transparent to-background/40" />
                 {/* Vignette */}
                 <div className="absolute inset-0" style={{
                   background: 'radial-gradient(ellipse at center, transparent 40%, rgba(5,8,16,0.6) 100%)'
@@ -474,7 +474,7 @@ export const SceneTab = ({
           </>
         ) : (
           /* No Skybox State */
-          <div className="absolute inset-0 bg-[#050810]">
+          <div className="absolute inset-0 bg-background">
             {/* Animated Grid Background */}
             <div className="absolute inset-0 opacity-30">
               <div className="absolute inset-0" style={{
@@ -486,7 +486,7 @@ export const SceneTab = ({
               }} />
             </div>
             {/* Floating Orbs */}
-            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/5 rounded-full blur-3xl animate-pulse" />
             <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-violet-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
             
             {/* No skybox message */}
@@ -494,10 +494,10 @@ export const SceneTab = ({
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="text-center p-8 max-w-lg">
                   <div className="w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 flex items-center justify-center border border-white/10">
-                    <Image className="w-12 h-12 text-cyan-400" />
+                    <Image className="w-12 h-12 text-primary" />
                   </div>
-                  <h3 className="text-2xl font-bold text-white mb-3">Create Your Environment</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">
+                  <h3 className="text-2xl font-bold text-foreground mb-3">Create Your Environment</h3>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
                     Generate immersive 360° skybox environments using BlockadeLabs AI. 
                     Describe your scene and select a style to get started.
                   </p>
@@ -511,7 +511,7 @@ export const SceneTab = ({
         {isValidSkyboxUrl && showFullPreview && view360 && !viewer360Error && (
           <>
             <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/60 to-transparent pointer-events-none z-10" />
-            <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-[#050810] via-[#050810]/90 to-transparent pointer-events-none z-10" />
+            <div className="absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-background via-background/90 to-transparent pointer-events-none z-10" />
           </>
         )}
         
@@ -525,13 +525,13 @@ export const SceneTab = ({
                 {/* Header */}
                 <div className="px-4 py-3 bg-gradient-to-r from-cyan-500/10 to-violet-500/10 border-b border-white/5">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-white/80 uppercase tracking-wider flex items-center gap-2">
+                    <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wider flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                       Environment Active
                     </span>
                     <button
                       onClick={() => setShowInfoPanel(false)}
-                      className="text-white/40 hover:text-white/80 transition-colors"
+                      className="text-foreground/40 hover:text-foreground/80 transition-colors"
                     >
                       <Minimize2 className="w-4 h-4" />
                     </button>
@@ -543,16 +543,16 @@ export const SceneTab = ({
                   {/* Skybox ID */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] text-cyan-400/80 uppercase tracking-wider font-medium">Skybox ID</span>
+                      <span className="text-[10px] text-primary/80 uppercase tracking-wider font-medium">Skybox ID</span>
                       <button
                         onClick={() => copyToClipboard(currentSkyboxId, 'Skybox ID')}
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-foreground/40 hover:text-foreground transition-all"
                       >
                         {copiedId === 'Skybox ID' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                     </div>
-                    <div className="px-3 py-2 bg-slate-900/50 rounded-lg border border-cyan-500/20">
-                      <p className="text-xs text-white font-mono truncate">{currentSkyboxId}</p>
+                    <div className="px-3 py-2 bg-muted rounded-lg border border-primary/20">
+                      <p className="text-xs text-foreground font-mono truncate">{currentSkyboxId}</p>
                     </div>
                   </div>
                   
@@ -563,12 +563,12 @@ export const SceneTab = ({
                         <span className="text-[10px] text-violet-400/80 uppercase tracking-wider font-medium">Remix ID</span>
                         <button
                           onClick={() => copyToClipboard(currentRemixId, 'Remix ID')}
-                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all"
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-foreground/40 hover:text-foreground transition-all"
                         >
                           {copiedId === 'Remix ID' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
-                      <div className="px-3 py-2 bg-slate-900/50 rounded-lg border border-violet-500/20">
+                      <div className="px-3 py-2 bg-muted rounded-lg border border-violet-500/20">
                         <p className="text-xs text-violet-300 font-mono truncate">{currentRemixId}</p>
                       </div>
                     </div>
@@ -591,7 +591,7 @@ export const SceneTab = ({
                 onClick={() => setShowInfoPanel(true)}
                 className="p-3 bg-black/60 backdrop-blur-sm rounded-xl border border-white/10 hover:bg-black/80 transition-all"
               >
-                <Info className="w-5 h-5 text-cyan-400" />
+                <Info className="w-5 h-5 text-primary" />
               </button>
             )}
             
@@ -639,8 +639,8 @@ export const SceneTab = ({
                       }}
                       className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all
                                ${!view360 
-                                 ? 'bg-cyan-500/20 text-cyan-300' 
-                                 : 'text-white/60 hover:text-white'
+                                 ? 'bg-primary/20 text-primary' 
+                                 : 'text-foreground/60 hover:text-foreground'
                                }`}
                     >
                       <ImageIcon className="w-4 h-4" />
@@ -653,8 +653,8 @@ export const SceneTab = ({
                       }}
                       className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all
                                ${view360 && !viewer360Error
-                                 ? 'bg-cyan-500/20 text-cyan-300' 
-                                 : 'text-white/60 hover:text-white'
+                                 ? 'bg-primary/20 text-primary' 
+                                 : 'text-foreground/60 hover:text-foreground'
                                }`}
                     >
                       <Globe className="w-4 h-4" />
@@ -664,7 +664,7 @@ export const SceneTab = ({
                   
                   <button
                     onClick={() => setShowFullPreview(!showFullPreview)}
-                    className="p-2.5 bg-black/50 hover:bg-black/70 rounded-xl backdrop-blur-sm border border-white/10 text-white/80 transition-all"
+                    className="p-2.5 bg-black/50 hover:bg-black/70 rounded-xl backdrop-blur-sm border border-white/10 text-foreground/80 transition-all"
                   >
                     {showFullPreview ? <Minimize2 className="w-5 h-5" /> : <Image className="w-5 h-5" />}
                   </button>
@@ -672,7 +672,7 @@ export const SceneTab = ({
                     href={currentSkyboxUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-2.5 bg-black/50 hover:bg-black/70 rounded-xl backdrop-blur-sm border border-white/10 text-white/80 transition-all"
+                    className="p-2.5 bg-black/50 hover:bg-black/70 rounded-xl backdrop-blur-sm border border-white/10 text-foreground/80 transition-all"
                   >
                     <ExternalLink className="w-5 h-5" />
                   </a>
@@ -685,7 +685,7 @@ export const SceneTab = ({
         {/* Interaction hint for 360 view */}
         {isValidSkyboxUrl && view360 && !viewer360Error && imageLoaded && (
           <div className="absolute bottom-80 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-            <div className="px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full text-xs text-white/60 flex items-center gap-2 animate-pulse">
+            <div className="px-4 py-2 bg-black/60 backdrop-blur-sm rounded-full text-xs text-foreground/60 flex items-center gap-2 animate-pulse">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
               </svg>
@@ -697,12 +697,12 @@ export const SceneTab = ({
         {/* ==================== GENERATION PROGRESS ==================== */}
         {generating && (
           <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/85 backdrop-blur-md">
-            <div className="text-center p-10 bg-gradient-to-b from-slate-900/90 to-slate-800/90 rounded-3xl border border-cyan-500/20 shadow-2xl shadow-cyan-500/10 max-w-md">
+            <div className="text-center p-10 bg-gradient-to-b from-slate-900/90 to-slate-800/90 rounded-3xl border border-primary/20 shadow-2xl shadow-cyan-500/10 max-w-md">
               <div className="relative w-28 h-28 mx-auto mb-8">
                 {/* Outer glow */}
-                <div className="absolute inset-0 rounded-full bg-cyan-500/20 blur-xl animate-pulse" />
+                <div className="absolute inset-0 rounded-full bg-primary/20 blur-xl animate-pulse" />
                 {/* Track */}
-                <div className="absolute inset-0 rounded-full border-4 border-slate-700/50" />
+                <div className="absolute inset-0 rounded-full border-4 border-border" />
                 {/* Progress */}
                 <svg className="absolute inset-0 w-full h-full -rotate-90">
                   <circle
@@ -730,10 +730,10 @@ export const SceneTab = ({
                   </span>
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">Generating Environment</h3>
-              <p className="text-slate-400 text-sm mb-6">Creating your immersive 360° skybox...</p>
-              <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
-                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              <h3 className="text-xl font-bold text-foreground mb-2">Generating Environment</h3>
+              <p className="text-muted-foreground text-sm mb-6">Creating your immersive 360° skybox...</p>
+              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                <Zap className="w-3.5 h-3.5 text-primary" />
                 Powered by BlockadeLabs AI
               </div>
             </div>
@@ -746,14 +746,14 @@ export const SceneTab = ({
             <div className="max-w-5xl mx-auto">
               {/* Current Prompt Display */}
               {currentPrompt && currentSkyboxUrl && (
-                <div className="mb-4 p-4 bg-black/60 backdrop-blur-md rounded-2xl border border-slate-700/30">
+                <div className="mb-4 p-4 bg-black/60 backdrop-blur-md rounded-2xl border border-border">
                   <div className="flex items-start gap-3">
-                    <div className="p-2 bg-cyan-500/10 rounded-lg">
-                      <Sparkles className="w-4 h-4 text-cyan-400" />
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Sparkles className="w-4 h-4 text-primary" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Active Scene Prompt</span>
-                      <p className="text-sm text-slate-300 mt-1 leading-relaxed">{currentPrompt}</p>
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Active Scene Prompt</span>
+                      <p className="text-sm text-foreground mt-1 leading-relaxed">{currentPrompt}</p>
                     </div>
                   </div>
                 </div>
@@ -763,10 +763,10 @@ export const SceneTab = ({
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 {/* LEFT: Prompt Input */}
                 <div className="lg:col-span-2">
-                  <div className="bg-black/60 backdrop-blur-md rounded-2xl border border-slate-600/30 p-5">
+                  <div className="bg-black/60 backdrop-blur-md rounded-2xl border border-border p-5">
                     <div className="flex items-center justify-between mb-4">
-                      <label className="flex items-center gap-2 text-sm font-semibold text-white">
-                        <Sparkles className="w-5 h-5 text-cyan-400" />
+                      <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <Sparkles className="w-5 h-5 text-primary" />
                         Scene Description
                       </label>
                       <button
@@ -788,9 +788,9 @@ export const SceneTab = ({
 
 Example: A mystical ancient library with towering bookshelves reaching into darkness, floating candles casting warm golden light..."
                       rows={4}
-                      className="w-full bg-slate-900/50 border border-slate-600/30 rounded-xl
-                               px-4 py-3.5 text-white placeholder:text-slate-500 text-sm leading-relaxed
-                               focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40
+                      className="w-full bg-muted border border-border rounded-xl
+                               px-4 py-3.5 text-foreground placeholder:text-muted-foreground text-sm leading-relaxed
+                               focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/40
                                disabled:opacity-50 disabled:cursor-not-allowed resize-none
                                transition-all duration-200"
                     />
@@ -801,7 +801,7 @@ Example: A mystical ancient library with towering bookshelves reaching into dark
                 <div className="space-y-4">
                   {/* Style Selector */}
                   <div className="bg-black/60 backdrop-blur-md rounded-2xl border border-emerald-500/20 p-4">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-3">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-foreground mb-3">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
                       BlockadeLabs Style
                     </label>
@@ -817,7 +817,7 @@ Example: A mystical ancient library with towering bookshelves reaching into dark
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
                           <div className="absolute bottom-0 left-0 right-0 p-2">
-                            <p className="text-xs font-semibold text-white truncate">{selectedStyle.name}</p>
+                            <p className="text-xs font-semibold text-foreground truncate">{selectedStyle.name}</p>
                           </div>
                         </div>
                       </div>
@@ -825,7 +825,7 @@ Example: A mystical ancient library with towering bookshelves reaching into dark
                     
                     {/* Dropdown */}
                     {loadingStyles ? (
-                      <div className="flex items-center gap-2 text-xs text-slate-500 py-3">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground py-3">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Loading styles...
                       </div>
@@ -835,8 +835,8 @@ Example: A mystical ancient library with towering bookshelves reaching into dark
                           value={selectedStyle?.id ?? ''}
                           onChange={handleStyleChange}
                           disabled={isReadOnly || generating}
-                          className="w-full appearance-none bg-slate-900/60 border border-emerald-500/20 
-                                   rounded-xl px-4 py-2.5 pr-10 text-sm text-white
+                          className="w-full appearance-none bg-muted border border-emerald-500/20 
+                                   rounded-xl px-4 py-2.5 pr-10 text-sm text-foreground
                                    focus:outline-none focus:ring-2 focus:ring-emerald-500/30
                                    disabled:opacity-50 transition-all cursor-pointer"
                         >
@@ -860,10 +860,10 @@ Example: A mystical ancient library with towering bookshelves reaching into dark
                              text-base font-bold uppercase tracking-wider rounded-2xl
                              transition-all duration-300 shadow-xl
                              ${generating
-                               ? 'bg-slate-700 cursor-not-allowed'
+                               ? 'bg-muted cursor-not-allowed'
                                : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 hover:shadow-[0_0_40px_rgba(6,182,212,0.5)] hover:-translate-y-1 active:translate-y-0'
                              }
-                             text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-xl`}
+                             text-foreground disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-xl`}
                   >
                     {generating ? (
                       <>

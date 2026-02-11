@@ -1,15 +1,1 @@
-{
-  "projects": {
-    "default": "lexrn1"
-  },
-  "targets": {
-    "lexrn1": {
-      "hosting": {
-        "altiereality": [
-          "altiereality"
-        ]
-      }
-    }
-  },
-  "etags": {}
-}
+{"projects":{"default":"learnxr-evoneuralai"},"targets":{"learnxr-evoneuralai":{"hosting":{"altiereality":["learnxr-evoneuralai"]}}},"etags":{}}

@@ -175,8 +175,8 @@ export const SourceTab = ({ bundle, chapterId, topicId }: SourceTabProps) => {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[320px] gap-3 text-slate-400">
-        <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+      <div className="flex flex-col items-center justify-center min-h-[320px] gap-3 text-muted-foreground">
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
         <span className="text-sm">Loading source PDF...</span>
       </div>
     );
@@ -188,12 +188,12 @@ export const SourceTab = ({ bundle, chapterId, topicId }: SourceTabProps) => {
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
           <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <h3 className="font-medium text-slate-200">Source PDF unavailable</h3>
-            <p className="text-sm text-slate-400 mt-1">{error}</p>
+            <h3 className="font-medium text-foreground">Source PDF unavailable</h3>
+            <p className="text-sm text-muted-foreground mt-1">{error}</p>
             <button
               type="button"
               onClick={loadPdf}
-              className="mt-3 text-sm text-cyan-400 hover:text-cyan-300"
+              className="mt-3 text-sm text-primary hover:text-primary"
             >
               Try again
             </button>
@@ -210,21 +210,21 @@ export const SourceTab = ({ bundle, chapterId, topicId }: SourceTabProps) => {
   return (
     <div className="flex flex-col h-full p-4">
       <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2 text-slate-300">
-          <FileText className="w-5 h-5 text-cyan-400" />
+        <div className="flex items-center gap-2 text-foreground">
+          <FileText className="w-5 h-5 text-primary" />
           <span className="font-medium">{pdfName}</span>
         </div>
         <a
           href={pdfUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-cyan-400 hover:text-cyan-300"
+          className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary"
         >
           <ExternalLink className="w-4 h-4" />
           Open in new tab
         </a>
       </div>
-      <div className="flex-1 min-h-0 rounded-lg border border-slate-700/50 bg-slate-900/50 overflow-hidden">
+      <div className="flex-1 min-h-0 rounded-lg border border-border bg-muted overflow-hidden">
         <iframe
           title={pdfName}
           src={pdfUrl}

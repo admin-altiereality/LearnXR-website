@@ -45,6 +45,7 @@ import api from '../config/axios';
 import LessonMCQPanel from './LessonMCQPanel';
 import { LessonModeOverlay } from './LessonModeOverlay';
 import { useLesson } from '../contexts/LessonContext';
+import { AITeacherSupportPanel } from './AITeacherSupportPanel';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -2998,6 +2999,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         </div>
       </div>
 
+      {/* AI Teacher Support Panel - Top right corner (merged with Create page) */}
+      <div className="fixed top-4 right-4 md:right-8 z-[25]">
+        <AITeacherSupportPanel />
+      </div>
+
       {/* Layer 1: Bottom Dock Control Panel (Generation Panel - Highest z-index) */}
       <div
         className={`absolute inset-x-0 bottom-0 flex items-end justify-center transition-all duration-400 z-[30] ${
@@ -3014,10 +3020,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           <div
             className={`
               relative z-[999]
-              bg-black/10
-              backdrop-blur-0
-              border border-[#ffffff]/10
-              shadow-[0_-8px_32px_rgba(0,0,0,0.8),0_0_0_1px_rgba(255,255,255,0.05)] 
+              bg-card/95
+              backdrop-blur-sm
+              border border-gray-300 dark:border-border
+              shadow-lg
               overflow-hidden 
               transition-all duration-300
               rounded-lg
@@ -3025,19 +3031,19 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             `}
           >
             {/* Top Bar / Header */}
-            <div className="flex items-center justify-between mb-1 pb-1 border-b border-[#ffffff]/5">
+            <div className="flex items-center justify-between mb-1 pb-1 border-b border-border">
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-[#0f0f0f]/50 border border-[#ffffff]/5">
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-muted/80 border border-border rounded">
                   <span className="w-2 h-2 rounded-full bg-green-500/90 shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
                   <span className="w-2 h-2 rounded-full bg-yellow-400/80" />
                   <span className="w-2 h-2 rounded-full bg-red-500/80" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xs tracking-[0.2em] text-gray-400 uppercase font-semibold">
+                  <span className="text-xs tracking-[0.2em] text-foreground uppercase font-semibold">
                     IN3D ENVIRONMENT STUDIO
                   </span>
                   {!isMinimized && (
-                    <span className="text-[10px] text-gray-500 mt-0.5 font-medium">
+                    <span className="text-[10px] text-muted-foreground mt-0.5 font-medium">
                       Prompt-based skybox & asset generation
                     </span>
                   )}
@@ -3051,7 +3057,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                 {setBackgroundSkybox && (
                   <button
                     onClick={togglePanelSize}
-                    className="w-8 h-8 flex items-center justify-center bg-[#0f0f0f]/50 border border-[#ffffff]/10 hover:bg-[#1a1a1a]/50 hover:border-[#ffffff]/15 text-gray-300 transition-all duration-200 rounded-md"
+                    className="w-8 h-8 flex items-center justify-center bg-muted/80 border border-border hover:bg-muted hover:border-border text-foreground transition-all duration-200 rounded-md"
                     aria-label={isMinimized ? "Expand panel" : "Minimize panel"}
                   >
                     <svg
@@ -3074,14 +3080,14 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
             {/* Minimized State */}
             {isMinimized ? (
-              <div className="flex items-center justify-between text-xs text-gray-300">
+              <div className="flex items-center justify-between text-xs text-foreground">
                 <button
                   onClick={() => setIsMinimized(false)}
-                  className="px-3 py-1 bg-[#1f1f1f] border border-[#333333] hover:bg-[#262626] text-[11px] tracking-[0.16em] uppercase rounded-md"
+                  className="px-3 py-1 bg-muted border border-border hover:bg-muted/80 text-[11px] tracking-[0.16em] uppercase rounded-md text-foreground"
                 >
                   New Generation
                 </button>
-                <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                   {generatedVariations.length > 0 && (
                     <span>
                       {currentVariationIndex + 1}/{generatedVariations.length} variations
@@ -3139,11 +3145,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                   <div className={`md:col-span-2 space-y-0.5 flex flex-col transition-all duration-300 ${
                     (isGenerating || isGenerating3DAsset) ? 'opacity-80 scale-[0.98]' : ''
                   }`}>
-                    <div className={`border border-sky-500/30 bg-gray-800/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md transition-all duration-300 ${
-                      (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-sky-500/50 shadow-[0_0_24px_rgba(14,165,233,0.2)] border-sky-500/50' : 'hover:border-sky-500/40'
+                    <div className={`border border-primary/30 bg-muted/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md transition-all duration-300 ${
+                      (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-primary/50 border-primary/50' : 'hover:border-primary/40'
                     } ${(isGenerating || isGenerating3DAsset) ? 'scale-[0.98]' : ''}`}>
-                      <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
-                        <span className="text-[9px] tracking-[0.15em] text-gray-400 uppercase font-semibold flex items-center gap-1.5">
+                      <div className="flex items-center justify-between pb-0.5 border-b border-border">
+                        <span className="text-[9px] tracking-[0.15em] text-muted-foreground uppercase font-semibold flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-sky-400/70 shadow-[0_0_6px_rgba(14,165,233,0.5)]" />
                           Prompt
                           {(isGenerating || isGenerating3DAsset) && (
@@ -3163,7 +3169,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               <svg className="w-3 h-3 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                               </svg>
-                              <span className="text-[10px] tracking-[0.2em] text-gray-400 uppercase font-medium">
+                              <span className="text-[10px] tracking-[0.2em] text-muted-foreground uppercase font-medium">
                                 Auto-Enhance
                               </span>
                               {isEnhancing && (
@@ -3306,8 +3312,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               </span>
                             )}
                           </button>
-                          <div className="flex items-center gap-2 px-2 py-0.5 bg-[#0a0a0a]/50 border border-[#ffffff]/5">
-                            <span className="text-[10px] text-gray-400 font-semibold tabular-nums">
+                          <div className="flex items-center gap-2 px-2 py-0.5 bg-muted/80 border border-border rounded">
+                            <span className="text-[10px] text-muted-foreground font-semibold tabular-nums">
                               {prompt.length}/600
                             </span>
                           </div>
@@ -3735,16 +3741,16 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 maxLength={600}
                                 rows={2}
                                 placeholder={isListening || isAvatarListening ? "Listening... Speak your prompt now" : "Describe the environment: lighting, mood, props, architecture..."}
-                                className={`w-full text-xs bg-gray-800/50 border border-gray-700/50 px-1.5 py-0.5 pr-12 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 resize-none transition-all duration-300 font-normal leading-tight rounded-md ${
+                                className={`w-full text-xs bg-background border border-border px-1.5 py-0.5 pr-12 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 resize-none transition-all duration-300 font-normal leading-tight rounded-md ${
                                   (isGenerating || isGenerating3DAsset) ? 'h-12' : 'h-16'
                                 } ${
                                   isListening || isAvatarListening
-                                    ? 'border-red-500/60 ring-2 ring-red-500/30 focus:ring-red-500/50 focus:border-red-500/60 shadow-[0_0_15px_rgba(239,68,68,0.2)]'
-                                    : 'focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_15px_rgba(14,165,233,0.15)]'
+                                    ? 'border-red-500/60 ring-2 ring-red-500/30 focus:ring-red-500/50 focus:border-red-500/60'
+                                    : 'focus:ring-primary/40 focus:border-primary/60'
                                 } ${
                                   isGenerating || isGenerating3DAsset 
                                     ? 'opacity-90 cursor-default' 
-                                    : 'hover:border-[#2a2a2a]'
+                                    : 'hover:border-border'
                                 }`}
                                 value={prompt}
                                 onChange={(e) => {
@@ -3784,7 +3790,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               {/* Overlay showing highlighted text */}
                               {hasHighlight && (
                                 <div
-                                  className="absolute inset-0 pointer-events-none select-none px-2 py-1 pr-12 text-xs text-gray-100 leading-relaxed overflow-hidden"
+                                  className="absolute inset-0 pointer-events-none select-none px-2 py-1 pr-12 text-xs text-foreground leading-relaxed overflow-hidden"
                                   style={{
                                     whiteSpace: 'pre-wrap',
                                     wordWrap: 'break-word',
@@ -3808,11 +3814,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
                     {/* Advanced Prompt Controls */}
                     <div className={`space-y-0.5 transition-all duration-300 ${(isGenerating || isGenerating3DAsset) ? 'opacity-70' : ''}`}>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-0.5 pt-0.5 border-t border-[#ffffff]/5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-0.5 pt-0.5 border-t border-border">
                           <div className="md:col-span-1">
                             <label
                               htmlFor="variations"
-                              className="block text-[9px] tracking-[0.15em] text-gray-400 uppercase mb-0.5 font-semibold"
+                              className="block text-[9px] tracking-[0.15em] text-muted-foreground uppercase mb-0.5 font-semibold"
                             >
                               Variations
                             </label>
@@ -3822,10 +3828,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               min="1"
                               max="10"
                               placeholder="1–10"
-                              className={`w-full text-xs bg-gray-800/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-300 rounded-md ${
+                              className={`w-full text-xs bg-background border border-border px-1.5 py-0.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all duration-300 rounded-md ${
                                 isGenerating || isGenerating3DAsset 
                                   ? 'opacity-90 cursor-default' 
-                                  : 'hover:border-gray-600/50 hover:bg-gray-800/60'
+                                  : 'hover:border-border'
                               }`}
                               value={numVariations}
                               onChange={(e) => {
@@ -3844,7 +3850,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <div className="md:col-span-2">
                             <label
                               htmlFor="negativeText"
-                              className="block text-[9px] tracking-[0.15em] text-gray-400 uppercase mb-0.5 font-semibold"
+                              className="block text-[9px] tracking-[0.15em] text-muted-foreground uppercase mb-0.5 font-semibold"
                             >
                               Negative Prompt
                             </label>
@@ -3852,10 +3858,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               type="text"
                               id="negativeText"
                               placeholder="Elements to avoid: low-res, blurry, washed out..."
-                              className={`w-full text-xs bg-gray-800/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 placeholder-gray-500/60 focus:outline-none focus:ring-2 focus:ring-sky-500/40 focus:border-sky-500/60 focus:shadow-[0_0_20px_rgba(14,165,233,0.2)] transition-all duration-300 rounded-md ${
+                              className={`w-full text-xs bg-background border border-border px-1.5 py-0.5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all duration-300 rounded-md ${
                                 isGenerating || isGenerating3DAsset 
                                   ? 'opacity-90 cursor-default' 
-                                  : 'hover:border-gray-600/50 hover:bg-gray-800/60'
+                                  : 'hover:border-border'
                               }`}
                               value={negativeText}
                               onChange={(e) => {
@@ -3877,8 +3883,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             transition-all duration-300 shadow-lg border rounded-md
                             ${
                               !currentImageForDownload
-                                ? 'bg-gray-800/60 text-gray-500 cursor-not-allowed border-gray-700/30 shadow-none'
-                                : 'bg-gray-700 hover:bg-gray-600 text-white border-gray-600 hover:shadow-[0_0_16px_rgba(107,114,128,0.3)] hover:-translate-y-0.5 active:translate-y-0'
+                                ? 'bg-muted/60 text-muted-foreground cursor-not-allowed border-border shadow-none'
+                                : 'bg-muted hover:bg-muted/80 text-foreground border-border hover:-translate-y-0.5 active:translate-y-0'
                             }
                           `}
                           onClick={() => setShowDownloadPopup(true)}
@@ -3933,15 +3939,15 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
                     {/* Debug / Meshy Test - ONLY visible with ?dev=true */}
                     {isDevMode && (
-                      <div className="border border-[#343434] bg-[#151515] rounded-md px-2.5 py-2 space-y-1.5">
+                      <div className="border border-border bg-muted/50 rounded-md px-2.5 py-2 space-y-1.5">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] tracking-[0.16em] text-gray-500 uppercase flex items-center gap-1.5">
+                          <span className="text-[10px] tracking-[0.16em] text-muted-foreground uppercase flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
                             Dev Mode
                           </span>
                           <button
                             onClick={() => setShowTestPanel(!showTestPanel)}
-                            className="px-2.5 py-1 rounded-md bg-[#262626] hover:bg-[#2f2f2f] text-[10px] text-gray-200 uppercase tracking-[0.12em]"
+                            className="px-2.5 py-1 rounded-md bg-muted hover:bg-muted/80 text-[10px] text-foreground uppercase tracking-[0.12em]"
                           >
                             {showTestPanel ? 'Hide' : 'Show'}
                           </button>
@@ -3963,7 +3969,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           Debug Services (Console)
                         </button>
                         {showTestPanel && (
-                          <div className="mt-1.5 border-t border-[#2a2a2a] pt-1.5">
+                          <div className="mt-1.5 border-t border-border pt-1.5">
                             <MeshyTestPanel />
                           </div>
                         )}
@@ -3976,11 +3982,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                     (isGenerating || isGenerating3DAsset) ? 'opacity-80 scale-[0.98]' : ''
                   }`}>
                     {/* Style selector */}
-                    <div className={`border border-emerald-500/50 bg-gray-800/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md ${
+                    <div className={`border border-primary/30 bg-muted/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-emerald-500/50 shadow-[0_0_24px_rgba(16,185,129,0.2)] border-emerald-500/60' : 'hover:border-emerald-500/60'
                     } transition-all duration-300`}>
-                          <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
-                            <span className="text-[9px] tracking-[0.15em] text-gray-400 uppercase font-semibold flex items-center gap-1.5">
+                          <div className="flex items-center justify-between pb-0.5 border-b border-border">
+                            <span className="text-[9px] tracking-[0.15em] text-muted-foreground uppercase font-semibold flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
                               In3D.Ai Style
                               {(isGenerating || isGenerating3DAsset) && selectedSkybox && (
@@ -3988,7 +3994,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               )}
                             </span>
                             {selectedSkybox && (
-                              <span className="text-[9px] text-gray-300 font-semibold px-2 py-0.5 rounded-md bg-[#0a0a0a]/50 border border-[#ffffff]/5">
+                              <span className="text-[9px] text-foreground font-semibold px-2 py-0.5 rounded-md bg-muted/80 border border-border">
                                 {selectedSkybox.name}
                               </span>
                             )}
@@ -3996,7 +4002,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
 
                        {/* Active style preview above style list – mimic Skybox panel */}
                        {selectedSkybox && !(isGenerating || isGenerating3DAsset) && (
-                         <div className="overflow-hidden border border-[#ffffff]/10 bg-black/20 shadow-[inset_0_2px_8px_rgba(0,0,0,0.5)] rounded-md">
+                         <div className="overflow-hidden border border-border bg-muted/50 rounded-md">
                            <div className="relative">
                              {selectedSkybox.image_jpg && (
                                <img
@@ -4005,8 +4011,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                  className="w-full h-6 object-cover"
                                />
                              )}
-                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/80 to-transparent px-1.5 py-0.5">
-                               <p className="text-[9px] font-bold text-gray-100 truncate">
+                             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background/95 via-background/80 to-transparent px-1.5 py-0.5">
+                               <p className="text-[9px] font-bold text-foreground truncate">
                                  {selectedSkybox.name}
                                </p>
                              </div>
@@ -4015,7 +4021,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                        )}
 
                       {stylesLoading ? (
-                        <div className="text-[9px] text-gray-500 py-0.5 font-medium">Loading styles…</div>
+                        <div className="text-[9px] text-muted-foreground py-0.5 font-medium">Loading styles…</div>
                       ) : stylesError ? (
                         <div className="text-[9px] text-red-400 py-0.5 font-medium">{stylesError}</div>
                       ) : (
@@ -4023,10 +4029,10 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           <select
                             value={selectedSkybox?.id ?? ''}
                             onChange={handleSkyboxStyleChange}
-                            className={`w-full appearance-none border border-emerald-500/60 bg-gray-800/60 px-1.5 py-0.5 pr-8 text-xs text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/70 focus:shadow-[0_0_20px_rgba(16,185,129,0.25)] transition-all duration-300 rounded-md ${
+                            className={`w-full appearance-none border border-primary/60 bg-background px-1.5 py-0.5 pr-8 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/70 transition-all duration-300 rounded-md ${
                               isGenerating || isGenerating3DAsset 
                                 ? 'opacity-90 cursor-default' 
-                                : 'hover:border-emerald-500/80 hover:bg-gray-800/60'
+                                : 'hover:border-primary/80'
                             }`}
                             disabled={isGenerating || isGenerating3DAsset}
                           >
@@ -4061,7 +4067,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                     </div>
 
                     {/* Generation button */}
-                    <div className="border border-[#ffffff]/10 bg-gray-800/60 px-1.5 py-1 backdrop-blur-sm flex-1 flex flex-col justify-end rounded-md">
+                    <div className="border border-border bg-muted/60 px-1.5 py-1 backdrop-blur-sm flex-1 flex flex-col justify-end rounded-md">
                       <div className="space-y-0.5">
                         <button
                           className={`
@@ -4437,7 +4443,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                   <div className={`md:col-span-1 space-y-0.5 flex flex-col transition-all duration-300 ${
                     (isGenerating || isGenerating3DAsset) ? 'opacity-80 scale-[0.98]' : ''
                   }`}>
-                    <div className={`border border-purple-500/30 bg-gray-800/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md ${
+                    <div className={`border border-primary/30 bg-muted/60 px-1.5 py-1 space-y-0.5 backdrop-blur-sm rounded-md ${
                       (isGenerating || isGenerating3DAsset) ? 'ring-1 ring-purple-500/50 shadow-[0_0_24px_rgba(168,85,247,0.2)] border-purple-500/50' : 'hover:border-purple-500/40'
                     } transition-all duration-300`}>
                       <div className="flex items-center justify-between pb-0.5 border-b border-[#ffffff]/5">
@@ -4459,7 +4465,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       </div>
                       <div className="space-y-0.5">
                         {assistantsLoading ? (
-                          <div className="text-[8px] text-gray-400 text-center py-2">
+                          <div className="text-[8px] text-muted-foreground text-center py-2">
                             Loading assistants...
                           </div>
                         ) : availableAssistants.length === 0 ? (
@@ -4469,14 +4475,14 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                         ) : (
                           <>
                             <div>
-                              <label className="block text-[8px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">
+                              <label className="block text-[8px] font-medium text-muted-foreground mb-0.5 uppercase tracking-wider">
                                 Curriculum
                               </label>
                               <select
                                 value={avatarConfig.curriculum}
                                 onChange={(e) => setAvatarConfig(prev => ({ ...prev, curriculum: e.target.value, class: '', subject: '' }))}
                                 disabled={getAvailableCurriculums.length === 0}
-                                className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full text-xs bg-background border border-border px-1.5 py-0.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <option value="" disabled>Select option</option>
                                 {getAvailableCurriculums.map(cur => (
@@ -4486,12 +4492,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             </div>
                             <div className="grid grid-cols-2 gap-0.5">
                               <div>
-                                <label className="block text-[8px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Class</label>
+                                <label className="block text-[8px] font-medium text-muted-foreground mb-0.5 uppercase tracking-wider">Class</label>
                                 <select
                                   value={avatarConfig.class}
                                   onChange={(e) => setAvatarConfig(prev => ({ ...prev, class: e.target.value, subject: '' }))}
                                   disabled={!avatarConfig.curriculum || getAvailableClasses.length === 0}
-                                  className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="w-full text-xs bg-background border border-border px-1.5 py-0.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <option value="" disabled>Select option</option>
                                   {getAvailableClasses.map(cls => (
@@ -4500,12 +4506,12 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 </select>
                               </div>
                               <div>
-                                <label className="block text-[8px] font-medium text-gray-400 mb-0.5 uppercase tracking-wider">Subject</label>
+                                <label className="block text-[8px] font-medium text-muted-foreground mb-0.5 uppercase tracking-wider">Subject</label>
                                 <select
                                   value={avatarConfig.subject}
                                   onChange={(e) => setAvatarConfig(prev => ({ ...prev, subject: e.target.value }))}
                                   disabled={!avatarConfig.curriculum || !avatarConfig.class || getAvailableSubjects.length === 0}
-                                  className="w-full text-xs bg-gray-900/60 border border-gray-700/50 px-1.5 py-0.5 text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="w-full text-xs bg-background border border-border px-1.5 py-0.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-all rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <option value="" disabled>Select option</option>
                                   {getAvailableSubjects.map(sub => (
@@ -4519,7 +4525,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                       </div>
                       
                       {/* Unified Microphone Button and Start Button */}
-                      <div className="pt-0.5 border-t border-[#ffffff]/5 space-y-0.5">
+                      <div className="pt-0.5 border-t border-border space-y-0.5">
                         <div className="flex gap-1">
                           {/* Voice Input Button - Left Side */}
                           {isVoiceSupported && (
@@ -4534,7 +4540,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                   isListening
                                     ? 'bg-red-600 hover:bg-red-500 text-white shadow-[0_0_24px_rgba(220,38,38,0.5)] animate-pulse'
                                     : (isGenerating || isGenerating3DAsset)
-                                    ? 'bg-gray-800/60 text-gray-500 cursor-not-allowed border border-gray-700/30'
+                                    ? 'bg-muted/60 text-muted-foreground cursor-not-allowed border border-border'
                                     : 'bg-purple-600 hover:bg-purple-500 text-white hover:shadow-[0_0_24px_rgba(168,85,247,0.5)] hover:-translate-y-0.5 active:translate-y-0'
                                 }
                               `}

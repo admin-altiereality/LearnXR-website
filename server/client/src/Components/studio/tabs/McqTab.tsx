@@ -43,6 +43,8 @@ interface McqTabProps {
   subject?: string;
   classLevel?: string;
   curriculum?: string;
+  /** When false (e.g. Associate role), hide delete question button */
+  canDeleteContent?: boolean;
 }
 
 const difficultyOptions = [
@@ -66,6 +68,7 @@ export const McqTab = ({
   subject,
   classLevel,
   curriculum,
+  canDeleteContent = true,
 }: McqTabProps) => {
   const [expandedMcq, setExpandedMcq] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -254,8 +257,8 @@ export const McqTab = ({
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 text-cyan-500 animate-spin mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Loading MCQs from chapter_mcqs...</p>
+          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Loading MCQs from chapter_mcqs...</p>
         </div>
       </div>
     );
@@ -267,16 +270,16 @@ export const McqTab = ({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white">Multiple Choice Questions</h2>
-            <p className="text-sm text-slate-400 mt-1">
+            <h2 className="text-lg font-semibold text-foreground">Multiple Choice Questions</h2>
+            <p className="text-sm text-muted-foreground mt-1">
               {visibleMcqs.length} {selectedLanguage === 'en' ? 'English' : 'Hindi'} question{visibleMcqs.length !== 1 ? 's' : ''} 
-              <span className="text-cyan-400/60 ml-1">(from chapter_mcqs)</span>
+              <span className="text-primary/60 ml-1">(from chapter_mcqs)</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
             {/* Language Toggle */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Language:</span>
+              <span className="text-xs text-muted-foreground">Language:</span>
               <LanguageToggle
                 value={selectedLanguage}
                 onChange={handleLanguageChange}
@@ -288,9 +291,9 @@ export const McqTab = ({
               <button
                 onClick={handleRefresh}
                 disabled={loading}
-                className="p-2 text-slate-400 hover:text-white
-                         bg-slate-800/50 hover:bg-slate-700/50
-                         rounded-lg border border-slate-600/50
+                className="p-2 text-muted-foreground hover:text-foreground
+                         bg-muted hover:bg-muted/50
+                         rounded-lg border border-border
                          transition-all duration-200"
                 title="Refresh MCQs"
               >
@@ -302,7 +305,7 @@ export const McqTab = ({
                 onClick={handleGenerateWithAi}
                 disabled={isReadOnly || generating}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                         text-white bg-gradient-to-r from-violet-500 to-purple-600
+                         text-foreground bg-gradient-to-r from-violet-500 to-purple-600
                          hover:from-violet-400 hover:to-purple-500
                          rounded-lg shadow-lg shadow-violet-500/25
                          transition-all duration-200 disabled:opacity-50"
@@ -320,7 +323,7 @@ export const McqTab = ({
               onClick={handleAddMcq}
               disabled={isReadOnly}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                       text-white bg-gradient-to-r from-cyan-500 to-blue-600
+                       text-foreground bg-gradient-to-r from-cyan-500 to-blue-600
                        hover:from-cyan-400 hover:to-blue-500
                        rounded-lg shadow-lg shadow-cyan-500/25
                        transition-all duration-200 disabled:opacity-50"
@@ -363,10 +366,10 @@ export const McqTab = ({
         {/* MCQ List */}
         {visibleMcqs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 
-                        bg-slate-800/20 rounded-xl border border-slate-700/30">
-            <HelpCircle className="w-12 h-12 text-slate-600 mb-3" />
-            <p className="text-slate-400">No questions yet</p>
-            <p className="text-sm text-slate-500 mt-1">
+                        bg-muted/50 rounded-xl border border-border">
+            <HelpCircle className="w-12 h-12 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground">No questions yet</p>
+            <p className="text-sm text-muted-foreground mt-1">
               Click "Add Question" to create the first MCQ
             </p>
           </div>
@@ -381,10 +384,10 @@ export const McqTab = ({
               return (
                 <div
                   key={mcqId}
-                  className={`bg-slate-800/30 rounded-xl border transition-all duration-200
+                  className={`bg-muted/50 rounded-xl border transition-all duration-200
                             ${isExpanded 
                               ? 'border-cyan-500/30 shadow-lg shadow-cyan-500/5' 
-                              : 'border-slate-700/30 hover:border-slate-600/50'
+                              : 'border-border hover:border-border'
                             }`}
                 >
                   {/* Header */}
@@ -392,14 +395,14 @@ export const McqTab = ({
                     onClick={() => toggleExpand(mcqId)}
                     className="w-full flex items-center gap-3 p-4 text-left"
                   >
-                    <GripVertical className="w-4 h-4 text-slate-600" />
+                    <GripVertical className="w-4 h-4 text-muted-foreground" />
                     <span className="w-8 h-8 flex items-center justify-center 
-                                   text-sm font-semibold text-cyan-400 
-                                   bg-cyan-500/10 rounded-lg">
+                                   text-sm font-semibold text-primary 
+                                   bg-primary/10 rounded-lg">
                       {index + 1}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-white truncate">
+                      <p className="text-sm text-foreground truncate">
                         {mcq.question || 'Untitled Question'}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
@@ -407,34 +410,34 @@ export const McqTab = ({
                                        ${difficultyConfig.color}`}>
                           {difficultyConfig.label}
                         </span>
-                        <span className="text-[10px] text-slate-500">
+                        <span className="text-[10px] text-muted-foreground">
                           {mcq.options?.length || 0} options
                         </span>
                       </div>
                     </div>
                     {isExpanded ? (
-                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
                     ) : (
-                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
                     )}
                   </button>
                   
                   {/* Expanded Content */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 pt-0 space-y-4 border-t border-slate-700/30 mt-0">
+                    <div className="px-4 pb-4 pt-0 space-y-4 border-t border-border mt-0">
                       <div className="pt-4" />
                       
                       {/* Question */}
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-400">Question</label>
+                        <label className="text-xs font-medium text-muted-foreground">Question</label>
                         <textarea
                           value={mcq.question}
                           onChange={(e) => handleUpdateMcq(index, 'question', e.target.value)}
                           disabled={isReadOnly}
                           placeholder="Enter the question..."
                           rows={2}
-                          className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg
-                                   px-3 py-2.5 text-sm text-white placeholder:text-slate-500
+                          className="w-full bg-muted border border-border rounded-lg
+                                   px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground
                                    focus:outline-none focus:ring-2 focus:ring-cyan-500/50 
                                    disabled:opacity-50 resize-none"
                         />
@@ -443,11 +446,11 @@ export const McqTab = ({
                       {/* Options */}
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <label className="text-xs font-medium text-slate-400">Options</label>
+                          <label className="text-xs font-medium text-muted-foreground">Options</label>
                           <button
                             onClick={() => handleAddOption(index)}
                             disabled={isReadOnly || (mcq.options?.length || 0) >= 6}
-                            className="text-xs text-cyan-400 hover:text-cyan-300 
+                            className="text-xs text-primary hover:text-primary 
                                      disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             + Add Option
@@ -469,8 +472,8 @@ export const McqTab = ({
                                 className={`w-6 h-6 rounded-full flex items-center justify-center
                                          transition-all duration-200 flex-shrink-0
                                          ${mcq.correct_option_index === optIndex
-                                           ? 'bg-emerald-500 text-white'
-                                           : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                                           ? 'bg-emerald-500 text-foreground'
+                                           : 'bg-muted text-muted-foreground hover:bg-muted'
                                          }`}
                               >
                                 {mcq.correct_option_index === optIndex && (
@@ -483,8 +486,8 @@ export const McqTab = ({
                                 onChange={(e) => handleUpdateOption(index, optIndex, e.target.value)}
                                 disabled={isReadOnly}
                                 placeholder={`Option ${optIndex + 1}`}
-                                className="flex-1 bg-slate-900/50 border border-slate-600/50 rounded-lg
-                                         px-3 py-2 text-sm text-white placeholder:text-slate-500
+                                className="flex-1 bg-muted border border-border rounded-lg
+                                         px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground
                                          focus:outline-none focus:ring-2 focus:ring-cyan-500/50 
                                          disabled:opacity-50"
                               />
@@ -492,7 +495,7 @@ export const McqTab = ({
                                 <button
                                   onClick={() => handleRemoveOption(index, optIndex)}
                                   disabled={isReadOnly}
-                                  className="p-1.5 text-slate-400 hover:text-red-400 
+                                  className="p-1.5 text-muted-foreground hover:text-red-400 
                                            rounded transition-colors disabled:opacity-50"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -502,22 +505,22 @@ export const McqTab = ({
                             ));
                           })()}
                         </div>
-                        <p className="text-[10px] text-slate-500">
+                        <p className="text-[10px] text-muted-foreground">
                           Click the circle to mark the correct answer
                         </p>
                       </div>
                       
                       {/* Explanation */}
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-400">Explanation</label>
+                        <label className="text-xs font-medium text-muted-foreground">Explanation</label>
                         <textarea
                           value={mcq.explanation}
                           onChange={(e) => handleUpdateMcq(index, 'explanation', e.target.value)}
                           disabled={isReadOnly}
                           placeholder="Explain why this is the correct answer..."
                           rows={2}
-                          className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg
-                                   px-3 py-2.5 text-sm text-white placeholder:text-slate-500
+                          className="w-full bg-muted border border-border rounded-lg
+                                   px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground
                                    focus:outline-none focus:ring-2 focus:ring-cyan-500/50 
                                    disabled:opacity-50 resize-none"
                         />
@@ -525,7 +528,7 @@ export const McqTab = ({
                       
                       {/* Difficulty */}
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-400">Difficulty</label>
+                        <label className="text-xs font-medium text-muted-foreground">Difficulty</label>
                         <div className="flex gap-2">
                           {difficultyOptions.map((diff) => (
                             <button
@@ -536,7 +539,7 @@ export const McqTab = ({
                                        transition-all duration-200 disabled:opacity-50
                                        ${mcq.difficulty === diff.value
                                          ? diff.color
-                                         : 'text-slate-400 bg-slate-800/50 border-slate-600/50 hover:bg-slate-700/50'
+                                         : 'text-muted-foreground bg-muted border-border hover:bg-muted/50'
                                        }`}
                             >
                               {diff.label}
@@ -545,19 +548,21 @@ export const McqTab = ({
                         </div>
                       </div>
                       
-                      {/* Delete Button */}
-                      <div className="pt-2 border-t border-slate-700/30">
-                        <button
-                          onClick={() => handleDeleteMcq(index)}
-                          disabled={isReadOnly}
-                          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium
-                                   text-red-400 hover:text-red-300 hover:bg-red-500/10
-                                   rounded-lg transition-all duration-200 disabled:opacity-50"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Delete Question
-                        </button>
-                      </div>
+                      {/* Delete Button - hidden for Associate (cannot delete content) */}
+                      {canDeleteContent && (
+                        <div className="pt-2 border-t border-border">
+                          <button
+                            onClick={() => handleDeleteMcq(index)}
+                            disabled={isReadOnly}
+                            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium
+                                     text-red-400 hover:text-red-300 hover:bg-red-500/10
+                                     rounded-lg transition-all duration-200 disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete Question
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

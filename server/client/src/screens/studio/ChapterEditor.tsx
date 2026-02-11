@@ -6,7 +6,6 @@ import {
     AlertTriangle,
     ArrowLeft,
     BookOpen,
-    ChevronDown,
     EyeOff,
     Loader2,
     Save,
@@ -16,6 +15,23 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { Button } from '@/Components/ui/button';
+import { Card, CardContent } from '@/Components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/Components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/Components/ui/select';
 import { LanguageSelector } from '../../Components/LanguageSelector';
 import { LaunchLessonButton } from '../../Components/studio/LaunchLessonButton';
 import { TopicEditor } from '../../Components/studio/TopicEditor';
@@ -34,13 +50,7 @@ import {
     getEditHistory,
     getTopics
 } from '../../lib/firestore/queries';
-import {
-    createScene,
-    publishScene,
-    updateMCQs,
-    updateScene,
-    updateTopic
-} from '../../lib/firestore/updateHelpers';
+import { publishScene } from '../../lib/firestore/updateHelpers';
 import {
     Chapter,
     ChapterVersion,
@@ -50,13 +60,46 @@ import {
     Scene,
     Topic
 } from '../../types/curriculum';
-import { canDeleteLesson } from '../../utils/rbac';
+import {
+  createEditRequest,
+  getPendingRequestForChapter,
+} from '../../services/chapterEditRequestService';
+import {
+  buildSnapshotFromBundle,
+  buildDraftSnapshotFromBundle,
+  buildChangedTabsFieldsAndDiff,
+  createVersionInChapter,
+  getChangedSections,
+  getLatestVersionFromChapter,
+  getVersionsFromChapter,
+} from '../../services/lessonVersionService';
+import type { LessonVersion } from '../../types/lessonVersion';
+import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
+import { canDeleteLesson, canDeleteContent, canSubmitLessonForApproval } from '../../utils/rbac';
+import { useLessonDraftStore } from '../../stores/lessonDraftStore';
+import { computeDiff, getChangedTabsFromChanges, buildChangeSummary } from '../../utils/diffEngine';
 
 const ChapterEditor = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, profile } = useAuth();
+
+  // Zustand draft store — single source of truth for lesson edits
+  const draftStore = useLessonDraftStore();
+  const isDraftDirty = useLessonDraftStore((s) => s.isDirty());
+
+  // Warn on page leave if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (useLessonDraftStore.getState().isDirty()) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
   
   // Context from navigation
   const navState = location.state as {
@@ -74,7 +117,7 @@ const ChapterEditor = () => {
   // Chapter data
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [versions, setVersions] = useState<ChapterVersion[]>([]);
-  const [currentVersion, setCurrentVersion] = useState<ChapterVersion | null>(null);
+  const [_currentVersion, setCurrentVersion] = useState<ChapterVersion | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string>('');
   
   // Topics
@@ -85,12 +128,13 @@ const ChapterEditor = () => {
   const [scene, setScene] = useState<Scene | null>(null);
   const [mcqs, setMcqs] = useState<MCQ[]>([]);
   const [editHistory, setEditHistory] = useState<EditHistoryEntry[]>([]);
+  const [lessonVersions, setLessonVersions] = useState<LessonVersion[]>([]);
   const [flattenedMcqInfo, setFlattenedMcqInfo] = useState<{ hasFlattened: boolean; count: number }>({
     hasFlattened: false,
     count: 0,
   });
   
-  // Form state for dirty tracking
+  // Form state for dirty tracking (shared across all tabs — switching Overview/Scene/Avatar/MCQs does NOT reset these; only switching topic or language does, so you can edit multiple tabs and Save draft once)
   const [topicFormState, setTopicFormState] = useState<Partial<Topic>>({});
   const [sceneFormState, setSceneFormState] = useState<Partial<Scene>>({});
   const [mcqFormState, setMcqFormState] = useState<MCQFormState[]>([]);
@@ -109,6 +153,8 @@ const ChapterEditor = () => {
   const [deletingLesson, setDeletingLesson] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [isReadOnly, setIsReadOnly] = useState(false);
+  const [pendingEditRequest, setPendingEditRequest] = useState(false);
+  const [submittingForApproval, setSubmittingForApproval] = useState(false);
   
   // Content availability state
   const [currentBundle, setCurrentBundle] = useState<any>(null); // Store current bundle for passing to tabs
@@ -136,10 +182,15 @@ const ChapterEditor = () => {
         
         if (result.currentVersion) {
           setSelectedVersionId(result.currentVersion.id);
-          // Admin and superadmin can always edit, regardless of version status
-          const canEdit = result.currentVersion.status === 'active' || 
-                         (profile?.role === 'admin' || profile?.role === 'superadmin');
+          // Admin, superadmin, and associate can always edit. Associate can use all tabs (Overview, Scene, 3D Assets, Images, Avatar, MCQs), Save Draft, Publish, and Submit for approval.
+          const canEdit = result.currentVersion.status === 'active' ||
+                         (profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'associate');
           setIsReadOnly(!canEdit);
+        }
+        // Associate: check for existing pending edit request
+        if (profile?.role === 'associate' && user?.uid && chapterId) {
+          const pending = await getPendingRequestForChapter(chapterId, user.uid);
+          setPendingEditRequest(!!pending);
         }
       } catch (error) {
         console.error('Error loading chapter:', error);
@@ -150,7 +201,7 @@ const ChapterEditor = () => {
     };
     
     loadChapter();
-  }, [chapterId]);
+  }, [chapterId, profile?.role, user?.uid]);
   
   // Load topics when version changes
   useEffect(() => {
@@ -175,7 +226,7 @@ const ChapterEditor = () => {
   }, [chapterId, selectedVersionId]);
   
   // Load content availability for the topic - using bundle data only (unified pipeline)
-  const loadContentAvailability = useCallback(async (topicId: string, bundle: any) => {
+  const loadContentAvailability = useCallback(async (_topicId: string, bundle: any) => {
     if (!chapterId || !bundle) {
       setContentAvailability(prev => ({ ...prev, loading: false }));
       return;
@@ -185,8 +236,8 @@ const ChapterEditor = () => {
     
     try {
       // Use bundle data exclusively (already language-filtered and complete)
-      const mcqsData = bundle.mcqs || [];
-      const ttsData = bundle.tts || [];
+      const mcqsData = (bundle.mcqs || []) as Array<{ options?: unknown }>;
+      const ttsData = (bundle.tts || []) as Array<{ audio_url?: string; audioUrl?: string; url?: string }>;
       const assetsData = bundle.assets3d || [];
       const imagesData = bundle.images || []; // Use bundle.images instead of separate fetch
       
@@ -202,7 +253,8 @@ const ChapterEditor = () => {
       const mcqsWithOptions = mcqsData.filter(m => m.options && Array.isArray(m.options) && m.options.length > 0);
       
       // Check if TTS entries have audio URLs
-      const ttsWithAudio = ttsData.filter(t => t.audio_url || t.audioUrl || t.url);
+      type TtsEntry = { audio_url?: string; audioUrl?: string; url?: string };
+      const ttsWithAudio = ttsData.filter((t: TtsEntry) => !!(t.audio_url || t.audioUrl || t.url));
       
       setContentAvailability({
         hasMCQs: mcqsWithOptions.length > 0, // Only count MCQs with options
@@ -240,11 +292,14 @@ const ChapterEditor = () => {
     setLoadingTopic(true);
     try {
       // Use unified bundle to fetch ALL data (MCQs, TTS, avatar scripts, images, etc.)
+      // When user is Associate, pass userId + userRole so their draft is overlayed (avatar script, etc.)
       const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
       const bundle = await getLessonBundle({
         chapterId,
         lang: selectedLanguage,
         topicId: topic.id, // Pass specific topic ID
+        userId: profile?.role === 'associate' ? user?.uid : undefined,
+        userRole: profile?.role === 'associate' ? 'associate' : undefined,
       });
       
       console.log('📦 Loaded lesson bundle:', {
@@ -326,25 +381,62 @@ const ChapterEditor = () => {
       setTopicDirty(false);
       setSceneDirty(false);
       setMcqDirty(false);
+
+      // Update topic form state from bundle (includes Associate draft overlay if any)
+      const overlayedTopic = bundle.chapter?.topics?.find(
+        (t: { topic_id?: string }) => t.topic_id === topic.id || t.topic_id === (topic as { topic_id?: string }).topic_id
+      );
+      if (overlayedTopic) {
+        setTopicFormState((prev) => ({
+          ...prev,
+          topic_name: overlayedTopic.topic_name ?? prev?.topic_name,
+          learning_objective: overlayedTopic.learning_objective ?? prev?.learning_objective,
+          topic_priority: overlayedTopic.topic_priority ?? prev?.topic_priority,
+          scene_type: overlayedTopic.scene_type ?? prev?.scene_type,
+          in3d_prompt: overlayedTopic.in3d_prompt ?? prev?.in3d_prompt,
+          camera_guidance: overlayedTopic.camera_guidance ?? prev?.camera_guidance,
+          skybox_id: overlayedTopic.skybox_id ?? prev?.skybox_id,
+          skybox_url: overlayedTopic.skybox_url ?? prev?.skybox_url,
+        }));
+      }
+
+      // Load the new standardized snapshot into the Zustand draft store
+      try {
+        const draftSnapshot = buildDraftSnapshotFromBundle(bundle, topic.id);
+        draftStore.loadLesson(draftSnapshot, {
+          chapterId,
+          topicId: topic.id,
+          versionId: selectedVersionId,
+          lang: selectedLanguage,
+        });
+        console.log('📦 Draft store loaded with standardized snapshot');
+      } catch (storeError) {
+        console.warn('Draft store load failed (non-blocking):', storeError);
+      }
     } catch (error) {
       console.error('Error loading topic data:', error);
       toast.error('Failed to load topic data');
     } finally {
       setLoadingTopic(false);
     }
-  }, [chapterId, selectedVersionId, selectedLanguage, loadContentAvailability]);
+  }, [chapterId, selectedVersionId, selectedLanguage, loadContentAvailability, user?.uid, profile?.role]);
   
   // MCQs are now loaded via the bundle in loadTopicData - no separate function needed
   
-  // Load edit history only when History tab is opened
+  // Load edit history (legacy) and lesson versions when History tab is opened
   const loadHistory = useCallback(async () => {
-    if (!chapterId || !selectedVersionId || !selectedTopic) return;
+    if (!chapterId || !selectedTopic?.id) return;
     
     try {
-      const history = await getEditHistory(chapterId, selectedVersionId, selectedTopic.id);
+      const [history, versions] = await Promise.all([
+        getEditHistory(chapterId, selectedVersionId || '', selectedTopic.id),
+        getVersionsFromChapter(chapterId, selectedTopic.id),
+      ]);
       setEditHistory(history);
+      setLessonVersions(versions);
     } catch (error) {
       console.error('Error loading history:', error);
+      setLessonVersions([]);
     }
   }, [chapterId, selectedVersionId, selectedTopic]);
   
@@ -364,17 +456,22 @@ const ChapterEditor = () => {
   }, [selectedLanguage]);
   
   const handleSelectTopic = (topic: Topic) => {
-    // Warn about unsaved changes
-    if (topicDirty || sceneDirty || mcqDirty) {
+    // Warn about unsaved changes (check both legacy dirty flags and draft store)
+    const storeIsDirty = useLessonDraftStore.getState().isDirty();
+    if (topicDirty || sceneDirty || mcqDirty || storeIsDirty) {
       const confirm = window.confirm('You have unsaved changes. Discard them?');
       if (!confirm) return;
     }
+    
+    // Reset the draft store before loading new topic
+    draftStore.resetStore();
     
     setSelectedTopic(topic);
     setTopicFormState({ ...topic });
     setMcqs([]);
     setMcqFormState([]);
     setEditHistory([]);
+    setLessonVersions([]);
     loadTopicData(topic);
   };
   
@@ -382,52 +479,70 @@ const ChapterEditor = () => {
     const version = versions.find((v) => v.id === versionId);
     setSelectedVersionId(versionId);
     setCurrentVersion(version || null);
-    // Admin and superadmin can always edit, regardless of version status
-    const canEdit = version?.status === 'active' || 
-                   (profile?.role === 'admin' || profile?.role === 'superadmin');
+    // Admin, superadmin, and associate can always edit (all tabs, Save Draft, Publish, Submit for approval)
+    const canEdit = version?.status === 'active' ||
+                   (profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'associate');
     setIsReadOnly(!canEdit);
     setSelectedTopic(null);
     setScene(null);
     setMcqs([]);
   };
   
-  // Form change handlers
+  // Form change handlers — update both local state AND Zustand draft store
   const handleTopicChange = (field: keyof Topic, value: unknown) => {
     setTopicFormState((prev) => ({ ...prev, [field]: value }));
     setTopicDirty(true);
+    // Also update the draft store (overview tab)
+    const { draftSnapshot, updateTabPartial } = useLessonDraftStore.getState();
+    if (draftSnapshot) {
+      updateTabPartial('overview', { [field]: value } as Partial<typeof draftSnapshot.overview>);
+    }
   };
   
   const handleSceneChange = (field: keyof Scene, value: unknown) => {
     setSceneFormState((prev) => ({ ...prev, [field]: value }));
     setSceneDirty(true);
+    // Map scene fields to the correct draft store tab
+    const { draftSnapshot, updateTabPartial } = useLessonDraftStore.getState();
+    if (draftSnapshot) {
+      const avatarFields = ['avatar_intro', 'avatar_explanation', 'avatar_outro'];
+      if (avatarFields.includes(field as string)) {
+        // Avatar script field — map to avatar_script tab
+        const avatarKey = (field as string).replace('avatar_', '') as string;
+        updateTabPartial('avatar_script', { [avatarKey]: value } as Partial<typeof draftSnapshot.avatar_script>);
+      } else {
+        // Scene/skybox field — map to scene_skybox tab
+        updateTabPartial('scene_skybox', { [field]: value } as Partial<typeof draftSnapshot.scene_skybox>);
+      }
+    }
   };
   
   const handleMcqsChange = (mcqs: MCQFormState[]) => {
     setMcqFormState(mcqs);
     setMcqDirty(true);
+    // Also update the draft store (mcqs tab)
+    const { updateTab } = useLessonDraftStore.getState();
+    updateTab('mcqs', mcqs.map((m) => ({
+      id: m.id,
+      question: m.question,
+      options: m.options,
+      correct_option_index: m.correct_option_index,
+      explanation: m.explanation,
+      difficulty: m.difficulty,
+    })));
   };
   
-  // Save handler
+  // Save handler — writes to curriculum_chapters/{chapterId}/versions ONLY (main doc untouched until Superadmin approves)
   const handleSave = async () => {
     if (!chapterId || !selectedVersionId || !selectedTopic || !user?.email) {
       toast.error('Missing required data');
       return;
     }
-    
+
     setSaving(true);
     try {
-      // Save topic changes
+      // Update local state so UI reflects edits (no Firestore write to main collections)
       if (topicDirty) {
-        await updateTopic({
-          chapterId,
-          versionId: selectedVersionId,
-          topicId: selectedTopic.id,
-          original: selectedTopic,
-          updated: topicFormState,
-          userId: user.email,
-        });
-        
-        // Update local state
         setTopics((prev) =>
           prev.map((t) =>
             t.id === selectedTopic.id ? { ...t, ...topicFormState } : t
@@ -436,52 +551,87 @@ const ChapterEditor = () => {
         setSelectedTopic((prev) => prev ? { ...prev, ...topicFormState } : null);
         setTopicDirty(false);
       }
-      
-      // Save scene changes
       if (sceneDirty) {
-        if (scene) {
-          await updateScene({
-            chapterId,
-            versionId: selectedVersionId,
-            topicId: selectedTopic.id,
-            original: scene,
-            updated: sceneFormState,
-            userId: user.email,
-            language: selectedLanguage, // Pass language for new format
-          });
-        } else {
-          await createScene({
-            chapterId,
-            versionId: selectedVersionId,
-            topicId: selectedTopic.id,
-            scene: sceneFormState,
-            userId: user.email,
-            language: selectedLanguage, // Pass language for new format
-          });
-        }
-        
-        setScene((prev) => prev ? { ...prev, ...sceneFormState } as Scene : sceneFormState as Scene);
+        setScene((prev) => (prev ? { ...prev, ...sceneFormState } as Scene : sceneFormState as Scene));
         setSceneDirty(false);
       }
-      
-      // Save MCQ changes
       if (mcqDirty) {
-        await updateMCQs({
-          chapterId,
-          versionId: selectedVersionId,
-          topicId: selectedTopic.id,
-          originalMcqs: mcqs,
-          updatedMcqs: mcqFormState,
-          userId: user.email,
-        });
-        
-        // Refresh MCQs
-        // MCQs are loaded via bundle in loadTopicData
-        await loadTopicData(selectedTopic);
+        setMcqs(mcqFormState.filter((m) => !(m as { _isDeleted?: boolean })._isDeleted));
         setMcqDirty(false);
       }
-      
-      toast.success('Changes saved successfully');
+
+      // Create version in curriculum_chapters/{chapterId}/versions (main doc untouched)
+      try {
+        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId,
+          lang: selectedLanguage,
+          topicId: selectedTopic.id,
+          userId: profile?.role === 'associate' ? user?.uid : undefined,
+          userRole: profile?.role === 'associate' ? 'associate' : undefined,
+        });
+
+        const storeState = useLessonDraftStore.getState();
+        const originalSnapshot = storeState.originalSnapshot;
+        let newDraftSnapshot = storeState.draftSnapshot ?? buildDraftSnapshotFromBundle(bundle, selectedTopic.id);
+
+        let draftForDiff = newDraftSnapshot;
+        if (storeState.pendingDeleteRequests.length > 0) {
+          draftForDiff = JSON.parse(JSON.stringify(newDraftSnapshot)) as typeof newDraftSnapshot;
+          for (const req of storeState.pendingDeleteRequests) {
+            if (req.tab === 'assets3d') {
+              draftForDiff.assets3d = (draftForDiff.assets3d || []).filter((a: { id?: string }) => a.id !== req.itemId);
+            } else if (req.tab === 'images') {
+              draftForDiff.images = (draftForDiff.images || []).filter((i: { id?: string }) => i.id !== req.itemId);
+            }
+          }
+        }
+
+        const isAssociateDelete = profile?.role === 'associate';
+        const changes = computeDiff(originalSnapshot, draftForDiff, { isAssociateDelete });
+        const changedTabsNew = getChangedTabsFromChanges(changes);
+        const changeSummaryNew = changes.length > 0 ? buildChangeSummary(changes) : 'Saved';
+
+        const newSnapshot = buildSnapshotFromBundle(bundle, selectedTopic.id);
+        const prevVersion = await getLatestVersionFromChapter(chapterId, selectedTopic.id);
+        const legacyChangedSections =
+          changes.length === 0
+            ? getChangedSections(prevVersion?.bundleSnapshotJSON ?? null, newSnapshot)
+            : [];
+        const legacyBuild =
+          changes.length === 0
+            ? buildChangedTabsFieldsAndDiff(prevVersion?.bundleSnapshotJSON ?? null, newSnapshot)
+            : { changed_fields: {} as Record<string, string[]>, diff: {} as Record<string, { old: string; new: string }> };
+
+        await createVersionInChapter({
+          chapterId,
+          topicId: selectedTopic.id,
+          createdBy: user.uid,
+          createdByEmail: user.email ?? undefined,
+          createdByRole: profile?.role,
+          changeSummary: changeSummaryNew,
+          draftSnapshot: newDraftSnapshot,
+          changed_tabs: changedTabsNew,
+          changes,
+          edited_by: { uid: user.uid, email: user.email ?? undefined, role: profile?.role },
+          bundleSnapshot: newSnapshot,
+          parentVersionId: prevVersion?.id ?? null,
+          changedSections: legacyChangedSections,
+          changed_fields: legacyBuild.changed_fields,
+          diff: legacyBuild.diff,
+        });
+
+        draftStore.commitDraft();
+
+        const versions = await getVersionsFromChapter(chapterId, selectedTopic.id);
+        setLessonVersions(versions);
+      } catch (versionError) {
+        console.warn('Version creation failed:', versionError);
+        toast.error('Failed to save version');
+        return;
+      }
+
+      toast.success('Draft saved to versions (v1, v2, v3…). Main lesson doc unchanged until Superadmin approves.');
     } catch (error) {
       console.error('Error saving changes:', error);
       toast.error('Failed to save changes');
@@ -490,6 +640,43 @@ const ChapterEditor = () => {
     }
   };
   
+  // Submit for approval (Associate only). Saves any unsaved changes first, then creates the request.
+  const handleSubmitForApproval = async () => {
+    if (!chapterId || !user?.uid || !chapter) return;
+    if (pendingEditRequest) {
+      toast.info('You already have a pending approval request for this chapter.');
+      return;
+    }
+    setSubmittingForApproval(true);
+    try {
+      if (topicDirty || sceneDirty || mcqDirty) {
+        await handleSave();
+      }
+      await createEditRequest({
+        chapterId,
+        requestedBy: user.uid,
+        requestedByEmail: user.email ?? undefined,
+        chapterName: getChapterNameByLanguage(chapter as unknown as CurriculumChapter, selectedLanguage) || chapter.chapter_name,
+        chapterNumber: chapter.chapter_number,
+      });
+      setPendingEditRequest(true);
+      toast.success('Submitted for approval. An Admin will review your changes.');
+    } catch (error: unknown) {
+      console.error('Error submitting for approval:', error);
+      const msg = error && typeof (error as any).message === 'string' ? (error as any).message : '';
+      const isPermission = /permission|insufficient|denied/i.test(msg);
+      if (isPermission || /ERR_BLOCKED_BY_CLIENT|network/i.test(msg)) {
+        toast.error(
+          'Request blocked or denied. Try disabling ad blockers or privacy extensions for this site, or use an incognito window. Then retry.'
+        );
+      } else {
+        toast.error('Failed to submit for approval');
+      }
+    } finally {
+      setSubmittingForApproval(false);
+    }
+  };
+
   // Delete lesson handler (superadmin only)
   const handleDeleteLesson = async () => {
     if (!chapterId || !profile || !canDeleteLesson(profile)) {
@@ -573,7 +760,7 @@ const ChapterEditor = () => {
     
     try {
       // Get the topic document with flattened MCQs
-      const topicDoc = await fetch(`/chapters/${chapterId}/versions/${selectedVersionId}/topics/${selectedTopic.id}`);
+      await fetch(`/chapters/${chapterId}/versions/${selectedVersionId}/topics/${selectedTopic.id}`);
       // For now, we'll just show the button - actual implementation would need the raw topic data
       toast.info('MCQ normalization would convert legacy format to subcollection');
     } catch (error) {
@@ -586,10 +773,10 @@ const ChapterEditor = () => {
   
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-          <p className="text-slate-400">Loading chapter...</p>
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+          <p className="text-muted-foreground">Loading chapter...</p>
         </div>
       </div>
     );
@@ -597,54 +784,45 @@ const ChapterEditor = () => {
   
   if (!chapter) {
     return (
-      <div className="min-h-screen bg-[#0a0f1a] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <AlertCircle className="w-12 h-12 text-red-400" />
-          <h2 className="text-xl font-semibold text-white">Chapter not found</h2>
-          <button
-            onClick={() => navigate('/studio/content')}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-cyan-400 
-                     bg-cyan-500/10 rounded-lg border border-cyan-500/30"
-          >
+          <AlertCircle className="w-12 h-12 text-destructive" />
+          <h2 className="text-xl font-semibold text-foreground">Chapter not found</h2>
+          <Button variant="outline" onClick={() => navigate('/studio/content')}>
             <ArrowLeft className="w-4 h-4" />
             Back to Content Library
-          </button>
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0f1a]">
+    <div className="min-h-screen bg-background">
       {/* Sticky Header */}
-      <header className="sticky top-0 z-40 bg-[#0d1424]/95 backdrop-blur-md border-b border-slate-700/50">
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b border-border">
         <div className="max-w-[1800px] mx-auto px-6 py-3">
           <div className="flex items-center justify-between">
             {/* Left: Back + Chapter Info */}
             <div className="flex items-center gap-4">
-              <button
-                onClick={() => navigate('/studio/content')}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800/50 
-                         rounded-lg transition-colors"
-              >
+              <Button variant="ghost" size="icon" onClick={() => navigate('/studio/content')}>
                 <ArrowLeft className="w-5 h-5" />
-              </button>
+              </Button>
               
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/20 
-                              border border-cyan-500/30">
-                  <BookOpen className="w-5 h-5 text-cyan-400" />
+                <div className="p-2 rounded-xl bg-primary/10 border border-primary/30">
+                  <BookOpen className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h1 className="text-lg font-semibold text-white">
-                    Chapter {chapter.chapter_number}: {getChapterNameByLanguage(chapter, selectedLanguage) || chapter.chapter_name}
+                  <h1 className="text-lg font-semibold text-foreground">
+                    Chapter {chapter.chapter_number}: {getChapterNameByLanguage(chapter as unknown as CurriculumChapter, selectedLanguage) || chapter.chapter_name}
                   </h1>
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>{topics.length} topics</span>
                     {selectedTopic && (
                       <>
                         <span>•</span>
-                        <span className="text-cyan-400">{getTopicNameByLanguage(selectedTopic, selectedLanguage) || selectedTopic.topic_name}</span>
+                        <span className="text-primary">{getTopicNameByLanguage(selectedTopic as unknown as FirebaseTopic, selectedLanguage) || selectedTopic.topic_name}</span>
                       </>
                     )}
                   </div>
@@ -654,31 +832,26 @@ const ChapterEditor = () => {
             
             {/* Center: Version Selector and Language Selector */}
             <div className="flex items-center gap-3">
-              <div className="relative">
-                <select
-                  value={selectedVersionId}
-                  onChange={(e) => handleVersionChange(e.target.value)}
-                  className="appearance-none bg-slate-800/50 border border-slate-600/50 rounded-lg
-                           pl-4 pr-10 py-2 text-sm text-white
-                           focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                >
+              <Select value={selectedVersionId} onValueChange={handleVersionChange}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Version" />
+                </SelectTrigger>
+                <SelectContent>
                   {versions.map((v) => (
-                    <option key={v.id} value={v.id}>
+                    <SelectItem key={v.id} value={v.id}>
                       {v.version || v.id} {v.status === 'active' ? '(active)' : `(${v.status})`}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+                </SelectContent>
+              </Select>
               
               <LanguageSelector
-                selectedLanguage={selectedLanguage}
-                onLanguageChange={setSelectedLanguage}
+                value={selectedLanguage}
+                onChange={setSelectedLanguage}
               />
               
               {isReadOnly && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium
-                              text-amber-400 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg border border-amber-500/20">
                   <EyeOff className="w-3.5 h-3.5" />
                   Read Only
                 </div>
@@ -688,19 +861,16 @@ const ChapterEditor = () => {
             {/* Right: Actions */}
             <div className="flex items-center gap-3">
               {isDirty && (
-                <span className="text-xs text-amber-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
                   Unsaved changes
                 </span>
               )}
               
-              <button
+              <Button
+                variant="secondary"
                 onClick={handleSave}
                 disabled={!isDirty || saving || isReadOnly}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                         text-white bg-slate-700 hover:bg-slate-600
-                         rounded-lg border border-slate-600
-                         transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -708,16 +878,11 @@ const ChapterEditor = () => {
                   <Save className="w-4 h-4" />
                 )}
                 Save Draft
-              </button>
+              </Button>
               
-              <button
+              <Button
                 onClick={handlePublish}
                 disabled={publishing || isReadOnly || sceneFormState.status === 'published'}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                         text-white bg-gradient-to-r from-cyan-500 to-blue-600
-                         hover:from-cyan-400 hover:to-blue-500
-                         rounded-lg shadow-lg shadow-cyan-500/25
-                         transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {publishing ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -725,7 +890,24 @@ const ChapterEditor = () => {
                   <Send className="w-4 h-4" />
                 )}
                 Publish
-              </button>
+              </Button>
+              
+              {/* Associate: Submit for approval (saves unsaved changes automatically if any) */}
+              {canSubmitLessonForApproval(profile) && (
+                <Button
+                  variant="outline"
+                  onClick={handleSubmitForApproval}
+                  disabled={submittingForApproval || pendingEditRequest}
+                  title={pendingEditRequest ? 'Request already pending' : 'Save and send your changes to Admin for approval'}
+                >
+                  {submittingForApproval ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  {pendingEditRequest ? 'Pending approval' : 'Submit for approval'}
+                </Button>
+              )}
               
               {/* Launch Lesson Button */}
               {selectedTopic && chapterId && (
@@ -754,16 +936,10 @@ const ChapterEditor = () => {
               
               {/* Delete Lesson Button (Superadmin only) */}
               {canDeleteLesson(profile) && (
-                <button
-                  onClick={() => setShowDeleteLessonModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium
-                           text-red-400 bg-red-500/10 hover:bg-red-500/20
-                           rounded-lg border border-red-500/30
-                           transition-all duration-200"
-                >
+                <Button variant="destructive" onClick={() => setShowDeleteLessonModal(true)}>
                   <Trash2 className="w-4 h-4" />
                   Delete Lesson
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -773,7 +949,7 @@ const ChapterEditor = () => {
       {/* Main Content */}
       <div className="flex">
         {/* Left Panel: Topic List */}
-        <aside className="w-80 min-h-[calc(100vh-65px)] bg-[#0d1424] border-r border-slate-700/50">
+        <aside className="w-80 min-h-[calc(100vh-65px)] bg-card border-r border-border">
           <TopicList
             topics={topics}
             selectedTopic={selectedTopic}
@@ -797,6 +973,7 @@ const ChapterEditor = () => {
               scene={scene}
               mcqs={mcqs}
               editHistory={editHistory}
+              lessonVersions={lessonVersions}
               topicFormState={topicFormState}
               sceneFormState={sceneFormState}
               mcqFormState={mcqFormState}
@@ -812,75 +989,67 @@ const ChapterEditor = () => {
               flattenedMcqInfo={flattenedMcqInfo}
               onNormalizeMCQs={handleNormalizeMCQs}
               contentAvailability={contentAvailability}
-              selectedLanguage={selectedLanguage}
               language={selectedLanguage}
               bundle={currentBundle}
               learningObjective={sceneFormState?.learning_objective as string | undefined}
               subject={navState?.subjectId ?? (chapter as any)?.subject_id}
               classLevel={navState?.classId ?? (chapter as any)?.class_id}
               curriculum={navState?.curriculumId ?? (chapter as any)?.curriculum_id}
+              canDeleteContent={canDeleteContent(profile)}
+              userId={profile?.role === 'associate' ? user?.uid : undefined}
+              userRole={profile?.role === 'associate' ? 'associate' : undefined}
             />
           ) : (
-            <div className="flex flex-col items-center justify-center h-full py-20">
-              <div className="p-4 rounded-2xl bg-slate-800/30 mb-4">
-                <BookOpen className="w-12 h-12 text-slate-500" />
-              </div>
-              <h3 className="text-lg font-medium text-white mb-2">
-                Select a Topic
-              </h3>
-              <p className="text-slate-400 text-center max-w-md">
-                Choose a topic from the left panel to start editing.
-              </p>
-            </div>
+            <Card className="m-6 flex flex-col items-center justify-center py-20">
+              <CardContent className="flex flex-col items-center text-center">
+                <div className="p-4 rounded-2xl bg-muted mb-4">
+                  <BookOpen className="w-12 h-12 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium text-foreground mb-2">
+                  Select a Topic
+                </h3>
+                <p className="text-muted-foreground text-center max-w-md">
+                  Choose a topic from the left panel to start editing.
+                </p>
+              </CardContent>
+            </Card>
           )}
         </main>
       </div>
       
       {/* Delete Lesson Confirmation Modal */}
-      {showDeleteLessonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-slate-900 rounded-2xl border border-slate-700/50 shadow-2xl max-w-md w-full mx-4 overflow-hidden">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
-                <AlertTriangle className="w-8 h-8 text-red-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">Delete Entire Lesson?</h3>
-              <p className="text-slate-400 mb-2">
-                Are you sure you want to delete <strong>"{chapter.chapter_name}"</strong>?
-              </p>
-              <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-sm text-red-400 flex items-center gap-2 justify-center">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span>This will <strong>permanently delete</strong> the entire lesson, all topics, MCQs, TTS, assets, and images. This action <strong>cannot be undone</strong>.</span>
-                </p>
-              </div>
-              <div className="flex items-center justify-center gap-3">
-                <button
-                  onClick={() => setShowDeleteLessonModal(false)}
-                  className="px-6 py-2.5 text-sm font-medium text-slate-400 hover:text-white
-                           bg-slate-800 hover:bg-slate-700 rounded-lg transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteLesson}
-                  disabled={deletingLesson}
-                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-medium
-                           text-white bg-red-600 hover:bg-red-500
-                           rounded-lg transition-all disabled:opacity-50"
-                >
-                  {deletingLesson ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-4 h-4" />
-                  )}
-                  Delete Lesson
-                </button>
-              </div>
+      <Dialog open={showDeleteLessonModal} onOpenChange={setShowDeleteLessonModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-2">
+              <AlertTriangle className="w-8 h-8 text-destructive" />
             </div>
+            <DialogTitle className="text-center">Delete Entire Lesson?</DialogTitle>
+            <DialogDescription className="text-center">
+              Are you sure you want to delete <strong>"{chapter.chapter_name}"</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg">
+            <p className="text-sm text-destructive flex items-center gap-2 justify-center">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>This will <strong>permanently delete</strong> the entire lesson, all topics, MCQs, TTS, assets, and images. This action <strong>cannot be undone</strong>.</span>
+            </p>
           </div>
-        </div>
-      )}
+          <DialogFooter className="flex-row justify-center gap-3 sm:justify-center">
+            <Button variant="outline" onClick={() => setShowDeleteLessonModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteLesson} disabled={deletingLesson}>
+              {deletingLesson ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              Delete Lesson
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

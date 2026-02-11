@@ -11,6 +11,7 @@ import apiKeyRoutes from './apiKey';
 import lmsRoutes from './lms';
 import aiEducationRoutes from './aiEducation';
 import assessmentRoutes from './assessment';
+import authRoutes from './auth';
 
 const router = express.Router();
 
@@ -122,6 +123,11 @@ console.log('AI Education routes mounted at /ai-education');
 console.log('Mounting Assessment routes...');
 router.use('/assessment', assessmentRoutes);
 console.log('Assessment routes mounted at /assessment');
+
+// Mount Auth routes (e.g. reCAPTCHA verification for secret backend login)
+console.log('Mounting Auth routes...');
+router.use('/auth', authRoutes);
+console.log('Auth routes mounted at /auth');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

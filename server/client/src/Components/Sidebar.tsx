@@ -20,9 +20,9 @@ import {
   FaBars,
   FaServer,
   FaUsers,
+  FaEdit,
   FaFileAlt,
   FaLightbulb,
-  FaRobot,
   FaClipboardList,
   FaSun,
   FaMoon
@@ -101,7 +101,7 @@ const Sidebar = () => {
   };
 
   // Don't render sidebar on these pages
-  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
+  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
   if (hiddenPages.some(page => location.pathname.startsWith(page)) || !user) {
     return null;
   }
@@ -111,6 +111,7 @@ const Sidebar = () => {
   const isTeacher = userRole === 'teacher';
   const isPrincipal = userRole === 'principal';
   const isSchool = userRole === 'school';
+  const isAssociate = userRole === 'associate';
   const isAdmin = userRole === 'admin';
   const isSuperadmin = userRole === 'superadmin';
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;
@@ -118,12 +119,20 @@ const Sidebar = () => {
   const canCreate = isTeacher || isAdminOrSuperadmin;
 
   // Build navigation items based on role according to the spec:
+  // Associate: Dashboard, Lessons only (refine lessons, submit for approval)
   // Student: Dashboard, Lessons, Profile
   // Teacher: Dashboard, Lessons, Create, Explore, History, Studio, Profile, Settings
   // Principal: Dashboard, Lessons, Profile, Settings
   // Admin/Superadmin: Dashboard (Content), Lessons, Create, Explore, History, Approvals, System, Profile, Settings
   const getNavItems = (): NavItem[] => {
     const items: NavItem[] = [];
+
+    // Associate: only Dashboard and Lessons
+    if (isAssociate) {
+      items.push({ path: '/dashboard/associate', label: 'Dashboard', icon: FaTachometerAlt });
+      items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+      return items;
+    }
 
     // LMS Dashboards - role-based
     if (isStudent) {
@@ -147,17 +156,14 @@ const Sidebar = () => {
       items.push({ path: '/personalized-learning', label: 'Personalized Learning', icon: FaLightbulb });
     }
 
-    // AI Teacher Support - teachers and above (lesson plans, rubrics, content suggestions)
-    if (isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
-      items.push({ path: '/teacher-support', label: 'AI Teacher Support', icon: FaRobot });
-    }
+    // AI Teacher Support merged into Create page (top-right panel) - no separate nav item
 
     // Automated Assessments - students (take/list) and teachers+ (create/list/grade)
     if (isStudent || isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
       items.push({ path: '/assessments', label: 'Assessments', icon: FaClipboardList });
     }
 
-    // Creator tools - teachers, schools, admin, superadmin (no Studio for teacher/principal/school)
+    // Creator tools - teachers, schools, admin, superadmin (includes AI Teacher Support panel in top-right)
     if (canCreate) {
       items.push({ path: '/main', label: 'Create', icon: FaFlask });
       items.push({ path: '/explore', label: 'Explore', icon: FaCubes });
@@ -179,14 +185,11 @@ const Sidebar = () => {
     // Admin tools - only for admin/superadmin
     if (isAdminOrSuperadmin) {
       items.push({ path: '/admin/approvals', label: 'Approvals', icon: FaUserCheck });
+      items.push({ path: '/admin/lesson-edit-requests', label: 'Lesson Edit Requests', icon: FaEdit });
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
-      items.push({ path: '/system-status', label: 'System', icon: FaServer });
-    }
-
-    // Superadmin only tools
-    if (isSuperadmin) {
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
+      items.push({ path: '/system-status', label: 'System', icon: FaServer });
     }
 
     // Principal can also access class management, student approvals, and teacher approvals
@@ -208,6 +211,7 @@ const Sidebar = () => {
       case 'teacher': return FaChalkboardTeacher;
       case 'principal': return FaSchool;
       case 'school': return FaSchool;
+      case 'associate': return FaUser;
       case 'admin': return FaShieldAlt;
       case 'superadmin': return FaCrown;
       default: return FaUser;
@@ -221,6 +225,7 @@ const Sidebar = () => {
       case 'teacher': return 'text-blue-400';
       case 'principal': return 'text-indigo-400';
       case 'school': return 'text-primary';
+      case 'associate': return 'text-cyan-400';
       case 'admin': return 'text-amber-400';
       case 'superadmin': return 'text-rose-400';
       default: return 'text-gray-400';
@@ -233,6 +238,7 @@ const Sidebar = () => {
       case 'teacher': return 'bg-blue-500/20';
       case 'principal': return 'bg-indigo-500/20';
       case 'school': return 'bg-primary/20';
+      case 'associate': return 'bg-cyan-500/20';
       case 'admin': return 'bg-amber-500/20';
       case 'superadmin': return 'bg-rose-500/20';
       default: return 'bg-gray-500/20';
@@ -275,7 +281,7 @@ const Sidebar = () => {
       <div className="flex h-full flex-col">
         <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-2">
           <Link
-            to={isAdminOrSuperadmin ? '/studio/content' : '/lessons'}
+            to={isAdminOrSuperadmin ? '/studio/content' : isAssociate ? '/dashboard/associate' : '/lessons'}
             className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent"
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">

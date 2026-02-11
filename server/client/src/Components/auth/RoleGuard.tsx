@@ -68,6 +68,7 @@ export const RoleGuard = ({
           teacher: 2,
           principal: 2,
           school: 2,
+          associate: 2,
           admin: 3,
           superadmin: 4,
         };
@@ -164,6 +165,16 @@ export const AdminOrSchoolGuard = ({ children }: { children: React.ReactNode }) 
  */
 export const AdminGuard = ({ children }: { children: React.ReactNode }) => (
   <RoleGuard allowedRoles={['admin', 'superadmin']}>
+    {children}
+  </RoleGuard>
+);
+
+/**
+ * StudioGuard - Allows admin, superadmin, and associate (Content Library / Chapter Editor).
+ * Associate can refine lessons but cannot delete; changes require admin approval.
+ */
+export const StudioGuard = ({ children }: { children: React.ReactNode }) => (
+  <RoleGuard allowedRoles={['admin', 'superadmin', 'associate']}>
     {children}
   </RoleGuard>
 );

@@ -8,6 +8,7 @@ import * as admin from 'firebase-admin';
 
 // Public endpoints that don't require authentication
 const PUBLIC_PATHS = [
+  '/auth/verify-recaptcha',  // Secret Backend Login reCAPTCHA verification
   '/skybox/styles',
   '/health',
   '/env-check',
