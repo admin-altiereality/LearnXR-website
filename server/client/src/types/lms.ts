@@ -137,3 +137,85 @@ export interface Principal {
   managed_school_id?: string;
   role: 'principal';
 }
+
+// =============================================================================
+// Class Launch – Sessions and live progress
+// =============================================================================
+
+/** Payload when teacher launches a curriculum lesson to the class */
+export interface LaunchedLesson {
+  chapter_id: string;
+  topic_id: string;
+  curriculum?: string;
+  class_name?: string;
+  subject?: string;
+}
+
+/** Payload when teacher sends current Create-page scene to the class */
+export interface LaunchedScene {
+  type: 'create_scene';
+  skybox_id?: string | null;
+  skybox_glb_url?: string;
+  /** Equirectangular image URL for 360 viewer (optional; used by class-scene viewer) */
+  skybox_image_url?: string;
+  name?: string;
+}
+
+/** Status of a class session */
+export type ClassSessionStatus = 'waiting' | 'active' | 'ended';
+
+/**
+ * Class session – teacher starts one per class; students join by code.
+ * When teacher launches a lesson or scene, all joined students receive it.
+ */
+export interface ClassSession {
+  id: string;
+  teacher_uid: string;
+  school_id: string;
+  class_id: string;
+  status: ClassSessionStatus;
+  /** Short code for students to join (e.g. 6-char alphanumeric) */
+  session_code: string;
+  /** Set when teacher launches a curriculum lesson */
+  launched_lesson: LaunchedLesson | null;
+  /** Set when teacher sends scene from Create page */
+  launched_scene: LaunchedScene | null;
+  created_at: Timestamp | string;
+  updated_at: Timestamp | string;
+}
+
+/**
+ * Student progress within a class session (subcollection progress/{student_uid}).
+ * Teacher sees live phase per student.
+ */
+export type SessionLessonPhase =
+  | 'idle'
+  | 'loading'
+  | 'intro'
+  | 'explanation'
+  | 'exploration'
+  | 'outro'
+  | 'quiz'
+  | 'completed';
+
+/** Per-question result for teacher quiz analytics */
+export interface SessionQuizAnswer {
+  question_index: number;
+  correct: boolean;
+  selected_option_index: number;
+}
+
+export interface SessionStudentProgress {
+  student_uid: string;
+  display_name?: string;
+  /** Student email (for teacher display when name is not set) */
+  email?: string;
+  phase: SessionLessonPhase;
+  /** Optional link to lesson_launches doc for LMS */
+  launch_id?: string | null;
+  last_updated: Timestamp | string;
+  /** Set when student completes the lesson quiz (phase === 'completed') */
+  quiz_score?: number | null;
+  quiz_total?: number | null;
+  quiz_answers?: SessionQuizAnswer[] | null;
+}

@@ -104,14 +104,20 @@ export async function getStudentEvaluation(
 export async function getClassEvaluation(
   classId: string,
   params?: GetClassEvaluationParams
-): Promise<ClassEvaluation> {
+): Promise<ClassEvaluation | null> {
   const searchParams = new URLSearchParams();
   if (params?.fromDate) searchParams.set('fromDate', params.fromDate);
   if (params?.toDate) searchParams.set('toDate', params.toDate);
   if (params?.limit != null) searchParams.set('limit', String(params.limit));
   const query = searchParams.toString();
   const url = `/lms/classes/${encodeURIComponent(classId)}/evaluation${query ? `?${query}` : ''}`;
-  const { data } = await api.get<{ success: boolean; data: ClassEvaluation }>(url);
-  if (!data.success || !data.data) throw new Error('Failed to fetch class evaluation');
-  return data.data;
+  try {
+    const { data } = await api.get<{ success: boolean; data: ClassEvaluation }>(url);
+    if (!data.success || !data.data) return null;
+    return data.data;
+  } catch (err: unknown) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (status === 404) return null; // Endpoint not deployed
+    throw err;
+  }
 }

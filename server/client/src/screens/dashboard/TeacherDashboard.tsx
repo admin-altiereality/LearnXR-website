@@ -8,9 +8,10 @@
  * - View data from both managed and shared classes
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDocs } from 'firebase/firestore';
+import { useClassSession } from '../../contexts/ClassSessionContext';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDocs, getDoc, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
@@ -46,9 +47,21 @@ import {
   FaExclamationTriangle,
   FaRobot,
   FaFlask,
-  FaMagic
+  FaMagic,
+  FaVideo,
+  FaCopy,
+  FaStopCircle,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '../../Components/ui/dialog';
+import { toast } from 'react-toastify';
 
 interface SubjectPerformance {
   subject: string;
@@ -77,6 +90,18 @@ interface ClassInsight {
 
 const TeacherDashboard = () => {
   const { user, profile } = useAuth();
+  const {
+    activeSessionId,
+    activeSession,
+    progressList,
+    startSession,
+    launchLesson: launchLessonToClass,
+    endSession,
+    leaveSessionAsTeacher,
+    sessionLoading: sessionContextLoading,
+    sessionError: sessionContextError,
+    clearSessionError,
+  } = useClassSession();
   const [managedClasses, setManagedClasses] = useState<Class[]>([]);
   const [sharedClasses, setSharedClasses] = useState<Class[]>([]);
   const [allTeachers, setAllTeachers] = useState<any[]>([]);
@@ -87,6 +112,8 @@ const TeacherDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [sharingClassId, setSharingClassId] = useState<string | null>(null);
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
+  const [schoolCode, setSchoolCode] = useState<string | null>(null);
+  const [studentDisplayNames, setStudentDisplayNames] = useState<Record<string, string>>({});
   const [stats, setStats] = useState({
     totalClasses: 0,
     sharedClasses: 0,
@@ -100,6 +127,13 @@ const TeacherDashboard = () => {
   const [evaluationClassId, setEvaluationClassId] = useState<string | null>(null);
   const [classEvaluation, setClassEvaluation] = useState<ClassEvaluation | null>(null);
   const [classEvaluationLoading, setClassEvaluationLoading] = useState(false);
+  // Class launch session
+  const [sessionClassId, setSessionClassId] = useState<string>('');
+  const [launchLessonModalOpen, setLaunchLessonModalOpen] = useState(false);
+  const [chaptersForLaunch, setChaptersForLaunch] = useState<any[]>([]);
+  const [selectedLaunchChapterId, setSelectedLaunchChapterId] = useState<string>('');
+  const [selectedLaunchTopicId, setSelectedLaunchTopicId] = useState<string>('');
+  const [launchLessonModalLoading, setLaunchLessonModalLoading] = useState(false);
 
   // Get all classes (managed + shared)
   const allClasses = useMemo(() => {
@@ -128,6 +162,17 @@ const TeacherDashboard = () => {
 
     return () => unsubscribeTeachers();
   }, [user?.uid, profile]);
+
+  // Fetch school code for display
+  useEffect(() => {
+    const schoolId = profile?.school_id || profile?.managed_school_id;
+    if (!schoolId) return;
+    getDoc(doc(db, 'schools', schoolId))
+      .then((snap) => {
+        if (snap.exists()) setSchoolCode(snap.data()?.schoolCode || null);
+      })
+      .catch(() => {});
+  }, [profile?.school_id, profile?.managed_school_id]);
 
   // Fetch pending students
   useEffect(() => {
@@ -398,7 +443,7 @@ const TeacherDashboard = () => {
     }
   }, [allClasses, evaluationClassId]);
 
-  // Fetch class evaluation when selected class changes
+  // Fetch class evaluation when selected class changes (API may 404 if endpoint not deployed)
   useEffect(() => {
     if (!evaluationClassId) {
       setClassEvaluation(null);
@@ -406,10 +451,140 @@ const TeacherDashboard = () => {
     }
     setClassEvaluationLoading(true);
     getClassEvaluation(evaluationClassId)
-      .then(setClassEvaluation)
+      .then((data) => setClassEvaluation(data ?? null))
       .catch(() => setClassEvaluation(null))
       .finally(() => setClassEvaluationLoading(false));
   }, [evaluationClassId]);
+
+  // Class launch: fetch chapters when launch modal opens; dedupe so each chapter appears once, merge topics
+  const fetchChaptersForLaunch = useCallback(async () => {
+    setLaunchLessonModalLoading(true);
+    try {
+      const snap = await getDocs(collection(db, 'curriculum_chapters'));
+      const raw = snap.docs
+        .map((d) => ({ id: d.id, ...d.data(), topics: d.data()?.topics || [] }))
+        .filter((ch: any) => (ch.topics?.length || 0) > 0);
+
+      // Dedupe by logical chapter (same name + curriculum + class + subject) so each chapter shows once
+      const key = (ch: any) =>
+        [ch.chapter_number, ch.chapter_name, ch.curriculum, ch.class_name ?? ch.class, ch.subject].join('|');
+      const byKey = new Map<string, any[]>();
+      for (const ch of raw) {
+        const k = key(ch);
+        if (!byKey.has(k)) byKey.set(k, []);
+        byKey.get(k)!.push(ch);
+      }
+
+      const list = Array.from(byKey.entries())
+        .map(([_, docs]) => {
+          const first = docs[0];
+          const seenTopicIds = new Set<string>();
+          const mergedTopics: any[] = [];
+          for (const doc of docs) {
+            for (const t of doc.topics || []) {
+              const tid = t.topic_id ?? t.id;
+              if (!tid || seenTopicIds.has(tid)) continue;
+              seenTopicIds.add(tid);
+              mergedTopics.push({ ...t, topic_id: tid, topic_name: t.topic_name || String(tid) });
+            }
+          }
+          return {
+            ...first,
+            topics: mergedTopics.sort((a: any, b: any) => (a.topic_priority ?? 999) - (b.topic_priority ?? 999)),
+          };
+        })
+        .filter((ch: any) => (ch.topics?.length || 0) > 0)
+        .sort((a: any, b: any) => (a.chapter_number || 0) - (b.chapter_number || 0));
+
+      setChaptersForLaunch(list);
+      setSelectedLaunchChapterId('');
+      setSelectedLaunchTopicId('');
+    } catch (e) {
+      console.error('Fetch chapters for launch:', e);
+      toast.error('Failed to load lessons');
+    } finally {
+      setLaunchLessonModalLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (launchLessonModalOpen) fetchChaptersForLaunch();
+  }, [launchLessonModalOpen, fetchChaptersForLaunch]);
+
+  // Show session error to user
+  useEffect(() => {
+    if (sessionContextError) {
+      toast.error(sessionContextError);
+      clearSessionError();
+    }
+  }, [sessionContextError, clearSessionError]);
+
+  // Subscribe to student profiles so we show current name (e.g. after they change it in profile)
+  const progressStudentUids = useMemo(
+    () => [...new Set(progressList.map((p) => p.student_uid))].sort().join(','),
+    [progressList]
+  );
+  useEffect(() => {
+    if (!activeSessionId || !progressStudentUids) {
+      setStudentDisplayNames({});
+      return;
+    }
+    const uids = progressStudentUids.split(',').filter(Boolean);
+    const unsubs: Unsubscribe[] = uids.map((uid) =>
+      onSnapshot(doc(db, 'users', uid), (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          const name = ((d.displayName ?? d.name) ?? '').toString().trim();
+          if (name) setStudentDisplayNames((prev) => ({ ...prev, [uid]: name }));
+        }
+      })
+    );
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }, [activeSessionId, progressStudentUids]);
+
+  const copySessionCode = useCallback(() => {
+    if (activeSession?.session_code) {
+      navigator.clipboard.writeText(activeSession.session_code);
+      toast.success('Session code copied');
+    }
+  }, [activeSession?.session_code]);
+
+  const handleStartSession = useCallback(async () => {
+    if (!sessionClassId) {
+      toast.error('Select a class first');
+      return;
+    }
+    const id = await startSession(sessionClassId);
+    if (id) toast.success('Class session started. Share the code with students.');
+  }, [sessionClassId, startSession]);
+
+  const handleLaunchLesson = useCallback(async () => {
+    if (!selectedLaunchChapterId || !selectedLaunchTopicId) {
+      toast.error('Select a chapter and topic');
+      return;
+    }
+    const ch = chaptersForLaunch.find((c: any) => c.id === selectedLaunchChapterId);
+    const topic = ch?.topics?.find((t: any) => t.topic_id === selectedLaunchTopicId);
+    if (!ch || !topic) return;
+    const ok = await launchLessonToClass({
+      chapter_id: selectedLaunchChapterId,
+      topic_id: topic.topic_id,
+      curriculum: ch.curriculum || '',
+      class_name: String(ch.class_name ?? ch.class ?? ''),
+      subject: ch.subject || '',
+    });
+    if (ok) {
+      toast.success('Lesson launched to class');
+      setLaunchLessonModalOpen(false);
+    }
+  }, [selectedLaunchChapterId, selectedLaunchTopicId, chaptersForLaunch, launchLessonToClass]);
+
+  const handleEndSession = useCallback(async () => {
+    const ok = await endSession();
+    if (ok) toast.success('Session ended');
+  }, [endSession]);
 
   // Update stats
   useEffect(() => {
@@ -492,10 +667,164 @@ const TeacherDashboard = () => {
                   <TrademarkSymbol />
                 </h1>
                 <h2 className="text-xl font-semibold text-foreground">Teacher Dashboard</h2>
-                <p className="text-muted-foreground text-sm mt-0.5">Comprehensive insights for your assigned classes</p>
+                <div className="flex items-center gap-3 mt-1 flex-wrap">
+                  <p className="text-muted-foreground text-sm">Comprehensive insights for your assigned classes</p>
+                  {schoolCode && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">School Code</span>
+                      <span className="font-mono font-bold text-primary text-base tracking-wider">{schoolCode}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Class Session - Launch lesson to connected headsets */}
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <FaVideo className="text-primary" />
+            Class Launch
+          </h2>
+          <Card className="border border-border bg-card max-w-2xl">
+            <CardContent className="p-6">
+              {!activeSessionId ? (
+                <>
+                  <p className="text-muted-foreground text-sm mb-4">
+                    Start a session and share the code with students. When you launch a lesson, everyone in the session will receive it on their device.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="min-w-[200px]">
+                      <label className="text-xs font-medium text-muted-foreground block mb-1">Class</label>
+                      <Select value={sessionClassId} onValueChange={setSessionClassId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allClasses.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.class_name} {c.subject ? `– ${c.subject}` : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      onClick={handleStartSession}
+                      disabled={sessionContextLoading || allClasses.length === 0}
+                    >
+                      {sessionContextLoading ? 'Starting…' : 'Start class session'}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <p className="text-muted-foreground text-sm">Session active. Students can join with this code:</p>
+                    <Button variant="outline" size="sm" onClick={leaveSessionAsTeacher}>
+                      Leave session (local)
+                    </Button>
+                  </div>
+                  <div
+                    className="flex items-center gap-3 p-4 rounded-lg bg-primary/10 border border-primary/30 mb-4 cursor-pointer hover:bg-primary/15 transition-colors"
+                    onClick={copySessionCode}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && copySessionCode()}
+                  >
+                    <span className="font-mono text-2xl font-bold tracking-widest text-primary">
+                      {activeSession?.session_code ?? '—'}
+                    </span>
+                    <FaCopy className="text-muted-foreground shrink-0" />
+                    <span className="text-xs text-muted-foreground">Click to copy</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => setLaunchLessonModalOpen(true)} className="gap-2">
+                      <FaVideo className="w-4 h-4" />
+                      Launch lesson to class
+                    </Button>
+                    <Button variant="destructive" onClick={handleEndSession} disabled={sessionContextLoading} className="gap-2">
+                      <FaStopCircle className="w-4 h-4" />
+                      End session
+                    </Button>
+                  </div>
+                  {progressList.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <p className="text-sm font-medium text-foreground mb-3">Live progress ({progressList.length} student(s))</p>
+                      <div className="space-y-2">
+                        {progressList.map((p) => {
+                          const phaseLabel = (() => {
+                            const pn = String(p.phase || 'idle');
+                            if (pn === 'intro') return 'Intro';
+                            if (pn === 'explanation') return 'Explanation';
+                            if (pn === 'exploration') return 'Exploration';
+                            if (pn === 'outro') return 'Outro';
+                            if (pn === 'quiz') return 'Quiz';
+                            if (pn === 'completed') return 'Completed';
+                            if (pn === 'loading') return 'Loading…';
+                            if (pn === 'idle') return 'Waiting';
+                            return 'Waiting';
+                          })();
+                          const isComplete = p.phase === 'completed';
+                          const isQuiz = p.phase === 'quiz';
+                          const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                          const lastUpdated = p.last_updated ? (typeof p.last_updated === 'string' ? new Date(p.last_updated) : (p.last_updated as { toDate?: () => Date })?.toDate?.() ?? null) : null;
+                          const hasQuizData = p.quiz_score != null && p.quiz_total != null && (p.quiz_total as number) > 0;
+                          const quizAnswers = (p.quiz_answers as Array<{ question_index: number; correct: boolean; selected_option_index: number }> | undefined) ?? [];
+                          return (
+                            <Card key={p.student_uid} className={`border ${isComplete ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}>
+                              <CardContent className="p-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isComplete ? 'bg-primary' : isQuiz ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground'}`} />
+                                    <span className="font-medium text-foreground truncate" title={displayLabel}>{displayLabel}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={isComplete ? 'default' : isQuiz ? 'secondary' : 'outline'} className="font-normal">
+                                      {phaseLabel}
+                                    </Badge>
+                                    {lastUpdated && (
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                        {lastUpdated.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                {hasQuizData && (
+                                  <div className="pt-2 border-t border-border/60">
+                                    <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                                      Quiz: {String(p.quiz_score)}/{String(p.quiz_total)}
+                                    </p>
+                                    {quizAnswers.length > 0 && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {quizAnswers
+                                          .slice()
+                                          .sort((a, b) => a.question_index - b.question_index)
+                                          .map((a, i) => (
+                                            <span
+                                              key={i}
+                                              className={`inline-flex items-center justify-center w-6 h-5 rounded text-[10px] font-medium ${a.correct ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'}`}
+                                              title={a.correct ? `Q${a.question_index + 1} correct` : `Q${a.question_index + 1} wrong`}
+                                            >
+                                              {a.correct ? '✓' : '✗'}
+                                            </span>
+                                          ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Teaching & Creation Tools - Create (includes AI Teacher Support in top-right) */}
@@ -651,8 +980,8 @@ const TeacherDashboard = () => {
               <CardDescription>Average score and completion by subject</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[280px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="w-full" style={{ minHeight: 200 }}>
+                <ResponsiveContainer width="100%" height={280} minHeight={200}>
                   <BarChart data={subjectPerformance.slice(0, 8)} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                     <XAxis dataKey="subject" tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} />
                     <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }} />
@@ -961,6 +1290,111 @@ const TeacherDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Launch lesson to class modal – visual card-based selection */}
+      <Dialog open={launchLessonModalOpen} onOpenChange={setLaunchLessonModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Launch lesson to class</DialogTitle>
+            <DialogDescription className="sr-only">Select a chapter and topic to launch to all students in the class session.</DialogDescription>
+          </DialogHeader>
+          <p className="text-muted-foreground text-sm">Choose a chapter, then a topic. All joined students will receive this lesson.</p>
+          {launchLessonModalLoading ? (
+            <div className="py-6 text-center text-muted-foreground">Loading lessons…</div>
+          ) : (
+            <div className="flex flex-col gap-4 flex-1 min-h-0">
+              {/* Chapter cards */}
+              <div>
+                <label className="text-xs font-medium text-foreground block mb-2">Chapter</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {chaptersForLaunch.map((ch: any) => {
+                    const selected = ch.id === selectedLaunchChapterId;
+                    const meta = [ch.curriculum, ch.class_name ? `Class ${ch.class_name}` : '', ch.subject].filter(Boolean).join(' · ');
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => { setSelectedLaunchChapterId(ch.id); setSelectedLaunchTopicId(''); }}
+                        className={`text-left rounded-lg border-2 p-3 transition-all ${
+                          selected
+                            ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
+                            : 'border-border bg-card hover:border-primary/50 hover:bg-accent/20'
+                        }`}
+                      >
+                        <div className="flex gap-3">
+                          <div className="w-16 h-16 rounded-md bg-muted flex-shrink-0 flex items-center justify-center text-muted-foreground">
+                            <FaBook className="w-6 h-6" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-foreground truncate">
+                              {ch.chapter_number != null ? `Ch ${ch.chapter_number}. ` : ''}{ch.chapter_name || ch.id}
+                            </p>
+                            {meta && <p className="text-xs text-muted-foreground truncate">{meta}</p>}
+                            <p className="text-xs text-muted-foreground/80 mt-0.5">{ch.topics?.length || 0} topic(s)</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Topic list when chapter selected */}
+              {selectedLaunchChapterId && (() => {
+                const ch = chaptersForLaunch.find((c: any) => c.id === selectedLaunchChapterId);
+                const topics = ch?.topics || [];
+                return (
+                  <div>
+                    <label className="text-xs font-medium text-foreground block mb-2">Topic</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
+                      {topics.map((t: any, idx: number) => {
+                        const selected = t.topic_id === selectedLaunchTopicId;
+                        const label = (t.topic_priority != null ? `${t.topic_priority}. ` : `${idx + 1}. `) + (t.topic_name || t.topic_id);
+                        return (
+                          <button
+                            key={t.topic_id}
+                            type="button"
+                            onClick={() => setSelectedLaunchTopicId(t.topic_id)}
+                            className={`text-left rounded-lg border-2 px-3 py-2.5 transition-all ${
+                              selected ? 'border-primary bg-primary/10' : 'border-border bg-card hover:border-primary/50 hover:bg-accent/20'
+                            }`}
+                          >
+                            <p className="text-sm font-medium text-foreground truncate">{label}</p>
+                            {t.learning_objective && (
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">{t.learning_objective}</p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* Summary */}
+              {selectedLaunchChapterId && selectedLaunchTopicId && (() => {
+                const ch = chaptersForLaunch.find((c: any) => c.id === selectedLaunchChapterId);
+                const topic = ch?.topics?.find((t: any) => t.topic_id === selectedLaunchTopicId);
+                if (!ch || !topic) return null;
+                const meta = [ch.curriculum, ch.class_name ? `Class ${ch.class_name}` : ''].filter(Boolean).join(' · ');
+                return (
+                  <div className="rounded-lg border-2 border-primary/40 bg-primary/10 p-3 space-y-1 flex-shrink-0">
+                    <p className="text-xs font-medium text-muted-foreground">You will launch</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {ch.chapter_name || ch.id} → {topic.topic_name || topic.topic_id}
+                    </p>
+                    {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0 flex-shrink-0">
+            <Button variant="outline" onClick={() => setLaunchLessonModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleLaunchLesson} disabled={!selectedLaunchChapterId || !selectedLaunchTopicId || sessionContextLoading}>
+              Launch to class
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

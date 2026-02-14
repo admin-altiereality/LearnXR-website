@@ -35,7 +35,7 @@ class TextToSpeechService {
   }
 
   /**
-   * Generate speech and upload to Firebase Storage
+   * Generate speech and upload to Firebase Storage (MP3 format)
    * Returns a public URL to the audio file
    */
   async generateSpeechFile(
@@ -61,6 +61,41 @@ class TextToSpeechService {
     await file.makePublic();
     
     // Return public URL
+    return `https://storage.googleapis.com/${bucket.name}/audio/${filename}`;
+  }
+
+  /**
+   * Generate WAV speech file and upload to Firebase Storage
+   * Returns a public URL to the audio file (legacy format - used by workflow)
+   */
+  async generateWavFile(
+    text: string,
+    filename: string,
+    voice?: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer'
+  ): Promise<string> {
+    const audio = await this.openai.audio.speech.create({
+      model: 'tts-1-hd',
+      voice: voice || 'nova',
+      input: text,
+      speed: 1.0,
+      response_format: 'wav',
+    });
+
+    const buffer = Buffer.from(await audio.arrayBuffer());
+
+    const bucket = getStorage().bucket();
+    const file = bucket.file(`audio/${filename}`);
+
+    await file.save(buffer, {
+      metadata: {
+        contentType: 'audio/wav',
+        cacheControl: 'public, max-age=31536000',
+      },
+      public: true,
+    });
+
+    await file.makePublic();
+
     return `https://storage.googleapis.com/${bucket.name}/audio/${filename}`;
   }
 }

@@ -162,7 +162,7 @@ export const SecretBackendLogin = () => {
 
   if (user && profileLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="h-[100dvh] w-screen overflow-hidden flex items-center justify-center bg-background p-4">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-2 border-primary border-t-transparent mx-auto mb-4" />
           <p className="text-muted-foreground">Verifying access...</p>
@@ -174,7 +174,7 @@ export const SecretBackendLogin = () => {
   // Logged in but profile failed to load (e.g. Firestore blocked by extension)
   if (user && !profileLoading && !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
+      <div className="h-[100dvh] w-screen overflow-hidden flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
         <Card className="w-full max-w-md border-amber-500/30 bg-card/95 shadow-xl">
           <CardHeader>
             <CardTitle className="text-lg text-amber-600 dark:text-amber-400">Profile could not be loaded</CardTitle>
@@ -212,7 +212,7 @@ export const SecretBackendLogin = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
+    <div className="h-[100dvh] w-screen overflow-hidden flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
       <Card className="w-full max-w-md border-border bg-card/95 shadow-xl">
         <CardHeader className="space-y-1 text-center pb-2">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 border border-primary/30 mb-2">

@@ -17,6 +17,11 @@ import LearnXRLoader from './Components/LearnXRLoader';
 // Global error handlers for production debugging
 // These will catch errors that occur outside React components
 window.addEventListener('error', (event) => {
+  const msg = (event.message || '').toLowerCase();
+  if (msg.includes('message port closed') || msg.includes('message channel closed') || msg.includes('before a response was received') || msg.includes('runtime.lasterror')) {
+    event.preventDefault();
+    return;
+  }
   const errorDetails = {
     message: event.message,
     filename: event.filename,
@@ -61,8 +66,25 @@ window.addEventListener('error', (event) => {
   );
 }, true);
 
+// Benign errors from extensions/iframes (Firebase Auth, Razorpay, etc.) - don't log or surface
+function isBenignExtensionRejection(reason) {
+  const msg = (reason?.message || String(reason || '')).toLowerCase();
+  return (
+    msg.includes('message port closed') ||
+    msg.includes('message channel closed') ||
+    msg.includes('before a response was received') ||
+    msg.includes('runtime.lasterror') ||
+    msg.includes('extension context invalidated')
+  );
+}
+
 // Catch unhandled promise rejections
 window.addEventListener('unhandledrejection', (event) => {
+  if (isBenignExtensionRejection(event.reason)) {
+    event.preventDefault();
+    return;
+  }
+
   const rejectionDetails = {
     reason: event.reason,
     promise: event.promise,

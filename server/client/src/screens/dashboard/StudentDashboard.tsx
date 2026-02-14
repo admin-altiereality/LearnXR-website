@@ -5,8 +5,10 @@
  * scores, and completion status. Students can ONLY see their own data.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useClassSession } from '../../contexts/ClassSessionContext';
+import { useLesson } from '../../contexts/LessonContext';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
@@ -17,18 +19,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Badge } from '../../Components/ui/badge';
 import { Progress } from '../../Components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '../../Components/ui/avatar';
-import { Link } from 'react-router-dom';
+import { Button } from '../../Components/ui/button';
+import { Input } from '../../Components/ui/input';
+import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 
 const GUEST_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=LearnXRGuest';
 
 const StudentDashboard = () => {
   const { user, profile } = useAuth();
+  const navigate = useNavigate();
+  const { startLesson: contextStartLesson } = useLesson();
+  const {
+    joinedSessionId,
+    joinedSession,
+    joinSession,
+    leaveSessionAsStudent,
+    sessionLoading: sessionJoinLoading,
+    sessionError: sessionJoinError,
+    clearSessionError,
+  } = useClassSession();
   const isGuest = profile?.isGuest === true && profile?.role === 'student';
   const [lessonLaunches, setLessonLaunches] = useState<LessonLaunch[]>([]);
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<Class[]>([]);
   const [classTeachers, setClassTeachers] = useState<Map<string, UserProfile>>(new Map());
+  const [sessionCodeInput, setSessionCodeInput] = useState('');
+  const launchedLessonHandledRef = useRef<string | null>(null);
+  const launchedSceneHandledRef = useRef<string | null>(null);
   const [stats, setStats] = useState({
     totalLessons: 0,
     completedLessons: 0,
@@ -87,6 +106,134 @@ const StudentDashboard = () => {
       unsubscribeScores();
     };
   }, [user?.uid, profile]);
+
+  // When teacher launches a lesson to the class, fetch bundle and open XR player
+  useEffect(() => {
+    const launched = joinedSession?.launched_lesson;
+    if (!launched || !joinedSessionId || !user?.uid) return;
+    const key = `${launched.chapter_id}_${launched.topic_id}`;
+    if (launchedLessonHandledRef.current === key) return;
+    launchedLessonHandledRef.current = key;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId: launched.chapter_id,
+          lang: 'en',
+          topicId: launched.topic_id,
+        });
+        if (cancelled) return;
+        const fullData = bundle.chapter;
+        const topic = fullData.topics?.find((t) => t.topic_id === launched.topic_id) || fullData.topics?.[0];
+        if (!topic) return;
+        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+        let assetUrls = topic.asset_urls || [];
+        const assetIds = topic.asset_ids || [];
+        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+        safeAssets3d.forEach((asset) => {
+          if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
+            assetUrls.push(asset.glb_url);
+            assetIds.push(asset.id || `asset_${assetUrls.length}`);
+          }
+        });
+        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+        const mcqs = safeMcqs.map((m) => ({
+          id: m.id || `mcq_${Math.random()}`,
+          question: m.question || m.question_text || '',
+          options: Array.isArray(m.options) ? m.options : [],
+          correct_option_index: m.correct_option_index ?? 0,
+          explanation: m.explanation || '',
+        }));
+        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+        const ttsAudio = safeTts
+          .map((tts) => ({
+            id: tts.id || '',
+            script_type: tts.script_type || tts.section || 'full',
+            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+            language: tts.language || tts.lang || 'en',
+          }))
+          .filter((tts) => (tts.language || 'en').toLowerCase() === 'en');
+        const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+        const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
+
+        const cleanChapter = {
+          chapter_id: String(launched.chapter_id),
+          chapter_name: fullData.chapter_name || 'Untitled Chapter',
+          chapter_number: Number(fullData.chapter_number) || 1,
+          curriculum: String(launched.curriculum || fullData.curriculum || ''),
+          class_name: String((launched.class_name || fullData.class_name) ?? ''),
+          subject: String((launched.subject || fullData.subject) ?? ''),
+        };
+        const cleanTopic = {
+          topic_id: String(topic.topic_id ?? launched.topic_id),
+          topic_name: topic.topic_name || 'Untitled Topic',
+          topic_priority: Number(topic.topic_priority) || 1,
+          learning_objective: topic.learning_objective || '',
+          skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
+          skybox_remix_id: topic.skybox_remix_id ?? null,
+          skybox_url: skyboxUrl,
+          skybox_glb_url: skyboxGlb,
+          avatar_intro: scripts.intro || '',
+          avatar_explanation: scripts.explanation || '',
+          avatar_outro: scripts.outro || '',
+          asset_urls: assetUrls,
+          asset_ids: assetIds,
+          mcq_ids: topic.mcq_ids || [],
+          mcqs,
+          tts_ids: topic.tts_ids || [],
+          tts_audio_url: topic.tts_audio_url || '',
+          ttsAudio,
+          language: 'en',
+        };
+        const fullLessonData = {
+          chapter: cleanChapter,
+          topic: cleanTopic,
+          image3dasset: fullData.image3dasset ?? null,
+          meshy_asset_ids: fullData.meshy_asset_ids ?? [],
+          assets3d: safeAssets3d,
+          startedAt: new Date().toISOString(),
+          _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
+          language: 'en',
+          ttsAudio,
+        };
+        sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+        sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+        if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
+        setTimeout(() => navigate('/xrlessonplayer'), 200);
+      } catch (err) {
+        console.error('Failed to open launched lesson:', err);
+        launchedLessonHandledRef.current = null;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [joinedSession?.launched_lesson, joinedSessionId, user?.uid, navigate, contextStartLesson]);
+
+  // When teacher sends a scene to the class, open class-scene viewer
+  useEffect(() => {
+    const scene = joinedSession?.launched_scene;
+    if (!scene || scene.type !== 'create_scene' || !joinedSessionId || !user?.uid) return;
+    const key = `scene_${joinedSessionId}_${scene.skybox_image_url || scene.skybox_id || 'default'}`;
+    if (launchedSceneHandledRef.current === key) return;
+    launchedSceneHandledRef.current = key;
+    try {
+      sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
+      sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+      setTimeout(() => navigate('/class-scene'), 200);
+    } catch (e) {
+      console.error('Failed to open launched scene:', e);
+      launchedSceneHandledRef.current = null;
+    }
+  }, [joinedSession?.launched_scene, joinedSessionId, user?.uid, navigate]);
+
+  // Show session join error
+  useEffect(() => {
+    if (sessionJoinError) {
+      toast.error(sessionJoinError);
+      clearSessionError();
+    }
+  }, [sessionJoinError, clearSessionError]);
 
   // Fetch student's classes and their teachers (skip for guest)
   useEffect(() => {
@@ -263,6 +410,44 @@ const StudentDashboard = () => {
           </CardContent>
         </Card>
 
+        {/* Join class session - students only */}
+        {!isGuest && (
+          <Card className="mb-8 rounded-xl border-primary/30 border bg-card">
+            <CardContent className="p-4">
+              {!joinedSessionId ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Join class session (enter code from your teacher):</span>
+                  <Input
+                    type="text"
+                    value={sessionCodeInput}
+                    onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. ABC123"
+                    className="w-28 font-mono uppercase tracking-wider bg-background border-border"
+                    maxLength={8}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      const ok = await joinSession(sessionCodeInput.trim());
+                      if (ok) setSessionCodeInput('');
+                    }}
+                    disabled={sessionJoinLoading || !sessionCodeInput.trim()}
+                  >
+                    {sessionJoinLoading ? 'Joining...' : 'Join'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-primary font-medium">Joined. Waiting for teacher to launch a lesson...</span>
+                  <Button size="sm" variant="outline" onClick={leaveSessionAsStudent}>
+                    Leave session
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Class Teacher Information - guest sees CTA to sign up */}
         {isGuest && (
           <div className="mb-8">
@@ -381,7 +566,7 @@ const StudentDashboard = () => {
         </div>
 
         {/* Progress by subject (from evaluation API) */}
-        {(evaluation?.bySubject?.length > 0 || evaluationLoading) && (
+        {(Array.isArray(evaluation?.bySubject) && evaluation.bySubject.length > 0 || evaluationLoading) && (
           <div className="mb-8">
             <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
               <FaChartLine className="text-primary" />

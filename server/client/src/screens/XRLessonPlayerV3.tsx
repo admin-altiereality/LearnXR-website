@@ -16,20 +16,23 @@
  * Skybox source: stored_glb_url from skyboxes collection
  */
 
-import React, { useEffect, useRef, useState, useCallback, Component, ErrorInfo } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
-import { VRButton } from 'three/examples/jsm/webxr/VRButton';
-import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
+import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
 import { VRLessonExperience } from '../utils/webxr/vrLessonExperience';
 import { StableLayoutSystem } from '../utils/webxr/stableLayoutSystem';
 import { SceneLayoutSystem, PlacementStrategy, AssetPlacement } from '../utils/webxr/sceneLayoutSystem';
 import { db } from '../config/firebase';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home, Play } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { reportSessionProgress, type ReportSessionQuizPayload } from '../services/classSessionService';
+import type { SessionLessonPhase } from '../types/lms';
 
 // WebXR Utilities
 import {
@@ -152,6 +155,7 @@ class XRPlayerErrorBoundary extends React.Component<
 const XRLessonPlayerV3: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, profile } = useAuth();
   
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -220,6 +224,7 @@ const XRLessonPlayerV3: React.FC = () => {
   const [skyboxUrl, setSkyboxUrl] = useState<string | null>(null);
   const [fallbackImageUrl, setFallbackImageUrl] = useState<string | null>(null);
   const [isVRSupported, setIsVRSupported] = useState<boolean | null>(null);
+  const [isSceneReady, setIsSceneReady] = useState(false);
   
   // Lesson content state
   const [ttsData, setTtsData] = useState<TTSData[]>([]);
@@ -234,7 +239,9 @@ const XRLessonPlayerV3: React.FC = () => {
   const [selectedMcqOption, setSelectedMcqOption] = useState<number | null>(null);
   const [mcqAnswered, setMcqAnswered] = useState(false);
   const [mcqScore, setMcqScore] = useState(0);
-  
+  const mcqAnswerHistoryRef = useRef<Array<{ questionIndex: number; correct: boolean; selectedOptionIndex: number }>>([]);
+  const pendingQuizReportRef = useRef<ReportSessionQuizPayload | null>(null);
+
   // TTS State Machine
   type TTSState = 'idle' | 'playing' | 'paused' | 'ended';
   const [ttsState, setTtsState] = useState<TTSState>('idle');
@@ -343,6 +350,49 @@ const XRLessonPlayerV3: React.FC = () => {
     
     loadLessonData();
   }, [addDebug]);
+
+  // Report phase to class session for teacher live progress (when launched from class session)
+  useEffect(() => {
+    const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null;
+    if (!sessionId || !user?.uid) return;
+    const map: Record<LessonPhase, SessionLessonPhase> = {
+      waiting: 'idle',
+      intro: 'intro',
+      content: 'explanation',
+      outro: 'outro',
+      mcq: 'quiz',
+      complete: 'completed',
+    };
+    const phase = map[lessonPhase];
+    if (phase === 'completed' && pendingQuizReportRef.current) {
+      const quiz = pendingQuizReportRef.current;
+      pendingQuizReportRef.current = null;
+      reportSessionProgress(
+        sessionId,
+        user.uid,
+        profile?.displayName ?? profile?.name ?? undefined,
+        'completed',
+        undefined,
+        quiz,
+        profile?.email ?? user?.email ?? undefined
+      ).catch(() => {});
+    } else {
+      reportSessionProgress(
+        sessionId,
+        user.uid,
+        profile?.displayName ?? profile?.name ?? undefined,
+        phase,
+        undefined,
+        undefined,
+        profile?.email ?? user?.email ?? undefined
+      ).catch(() => {});
+    }
+  }, [lessonPhase, user?.uid, user?.email, profile?.displayName, profile?.name, profile?.email]);
+
+  // Reset quiz answer history when entering MCQ phase
+  useEffect(() => {
+    if (lessonPhase === 'mcq') mcqAnswerHistoryRef.current = [];
+  }, [lessonPhase]);
   
   // ============================================================================
   // Fetch Skybox GLB URL from Firestore
@@ -886,6 +936,7 @@ const XRLessonPlayerV3: React.FC = () => {
       
       addDebug('All conditions met, initializing scene...');
       setLoadingMessage('Setting up VR scene...');
+      setIsSceneReady(false);
       
       // Create scene
       const scene = new THREE.Scene();
@@ -1149,6 +1200,81 @@ const XRLessonPlayerV3: React.FC = () => {
         }
       }
     
+    if (rendererRef.current && sceneRef.current && cameraRef.current) {
+      setIsSceneReady(true);
+
+      // If WebXR is not supported, enable a 2D/desktop fallback UI flow:
+      // - mark scene as ready
+      // - set loading state to 'ready'
+      // - create the start panel so users can click to begin without a headset
+      // - attach a pointer event listener that raycasts from the camera to UI panels
+      if (!isVRSupported) {
+        try {
+          setLoadingState('ready');
+          // Create the start panel (will be a clickable canvas texture)
+          createStartPanel();
+
+          // Pointer handler: translate screen pointer to a ray and detect UI button clicks
+          const handlePointerDown = (event: PointerEvent) => {
+            try {
+              if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !raycasterRef.current) return;
+              const rect = rendererRef.current.domElement.getBoundingClientRect();
+              const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+              const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+              const mouse = new THREE.Vector2(x, y);
+              raycasterRef.current.setFromCamera(mouse, cameraRef.current);
+
+              const uiPanels = [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].filter(Boolean) as THREE.Mesh[];
+              const intersects = raycasterRef.current.intersectObjects(uiPanels, false);
+              if (intersects.length === 0) return;
+
+              const intersect = intersects[0];
+              const panel = intersect.object as THREE.Mesh;
+              if (!panel.userData.hasButtons || !panel.userData.buttons) return;
+
+              // Convert world hit point to local panel coordinates, then to canvas pixels
+              const localPoint = new THREE.Vector3();
+              panel.worldToLocal(localPoint.copy(intersect.point));
+
+              const canvasWidth = panel.userData.canvasWidth || 1000;
+              const canvasHeight = panel.userData.canvasHeight || 700;
+
+              // Panel geometry assumed to be width=2.0, height=1.4 (see createStartPanel)
+              const canvasX = ((localPoint.x + 1.0) / 2.0) * canvasWidth;
+              const canvasY = ((1.0 - localPoint.y) / 1.4) * canvasHeight;
+
+              for (const button of panel.userData.buttons) {
+                const { bounds, action } = button;
+                if (
+                  canvasX >= bounds.x &&
+                  canvasX <= bounds.x + bounds.width &&
+                  canvasY >= bounds.y &&
+                  canvasY <= bounds.y + bounds.height
+                ) {
+                  try {
+                    if (action && typeof action === 'function') {
+                      action();
+                    }
+                  } catch (err: any) {
+                    console.error('[XRLessonPlayerV3] Desktop UI action error:', err);
+                  }
+                  return;
+                }
+              }
+            } catch (err: any) {
+              console.error('[XRLessonPlayerV3] Desktop pointer handler error:', err);
+            }
+          };
+
+          // Store handlers on renderer ref so cleanup can access same references
+          (rendererRef as any)._desktopPointerDown = handlePointerDown;
+          window.addEventListener('pointerdown', handlePointerDown);
+        } catch (err: any) {
+          console.error('[XRLessonPlayerV3] Desktop fallback init error:', err);
+        }
+      }
+    }
+
     // Setup lighting
     // High ambient light since skybox uses MeshBasicMaterial (self-illuminating)
     // These lights are mainly for future 3D assets inside the skybox
@@ -1324,6 +1450,11 @@ const XRLessonPlayerV3: React.FC = () => {
     const setupController = (controllerIndex: number, controller: THREE.Group) => {
       if (controllersSetupRef.current.has(controllerIndex)) {
         return; // Already setup
+      }
+      
+      if (!rendererRef.current) {
+        console.error('[XRLessonPlayerV3] Renderer not initialized when setting up controller');
+        return;
       }
       
       controllersSetupRef.current.add(controllerIndex);
@@ -1920,11 +2051,13 @@ const XRLessonPlayerV3: React.FC = () => {
               });
               
               // Collect asset objects (layer: 'asset')
-              sceneRef.current.traverse((obj) => {
-                if (obj.userData.isInteractable && obj.visible && obj.userData.layer === 'asset') {
-                  assetObjects.push(obj);
-                }
-              });
+              if (sceneRef.current) {
+                sceneRef.current.traverse((obj) => {
+                  if (obj.userData.isInteractable && obj.visible && obj.userData.layer === 'asset') {
+                    assetObjects.push(obj);
+                  }
+                });
+              }
               
               // Priority: UI layer first, then assets
               const uiIntersects = raycaster.intersectObjects(uiPanels, false);
@@ -2057,8 +2190,19 @@ const XRLessonPlayerV3: React.FC = () => {
     
       // Cleanup
       return () => {
+        setIsSceneReady(false);
         try {
           window.removeEventListener('resize', handleResize);
+          // Remove desktop pointer handler if we attached one
+          try {
+            const desktopHandler = (rendererRef as any)?._desktopPointerDown;
+            if (desktopHandler) {
+              window.removeEventListener('pointerdown', desktopHandler);
+              (rendererRef as any)._desktopPointerDown = null;
+            }
+          } catch (e) {
+            // ignore
+          }
           if (rendererRef.current) {
             rendererRef.current.setAnimationLoop(null);
             rendererRef.current.dispose();
@@ -2126,9 +2270,9 @@ const XRLessonPlayerV3: React.FC = () => {
     
     try {
       // Allow asset loading when scene is ready OR when in VR
-      if (!sceneRef.current) {
-        console.warn('[XRLessonPlayerV3] Asset loading skipped: scene ref is null');
-        addDebug(`❌ Asset loading skipped: scene ref is null`);
+      if (!sceneRef.current || !isSceneReady) {
+        console.warn('[XRLessonPlayerV3] Asset loading skipped: scene not ready');
+        addDebug(`❌ Asset loading skipped: scene not ready`);
         return;
       }
       
@@ -2959,7 +3103,7 @@ const XRLessonPlayerV3: React.FC = () => {
       console.error('[XRLessonPlayerV3] Asset loading error:', assetErr);
       addDebug(`❌ Asset loading error: ${assetErr?.message || assetErr}`);
     }
-  }, [meshyAssets, loadingState, addDebug]);
+  }, [meshyAssets, loadingState, addDebug, isSceneReady]);
   
   // Force asset loading when meshyAssets becomes available (separate trigger)
   useEffect(() => {
@@ -2968,12 +3112,12 @@ const XRLessonPlayerV3: React.FC = () => {
       addDebug(`🔄 MeshyAssets available: ${meshyAssets.length} asset(s)`);
       
       // If scene is ready, try loading immediately
-      if (sceneRef.current && (loadingState === 'ready' || loadingState === 'in-vr')) {
+      if (isSceneReady && (loadingState === 'ready' || loadingState === 'in-vr')) {
         console.log('[XRLessonPlayerV3] Scene ready, assets should load now');
         addDebug(`✅ Scene ready with ${meshyAssets.length} assets - loading should trigger`);
       }
     }
-  }, [meshyAssets.length, loadingState]);
+  }, [meshyAssets.length, loadingState, isSceneReady, addDebug]);
   
   // ============================================================================
   // TTS Audio Controls with State Machine
@@ -3008,7 +3152,7 @@ const XRLessonPlayerV3: React.FC = () => {
     let targetSections: string[] = ['full'];
     if (phase === 'intro') {
       targetSections = ['intro', 'introduction', 'avatar_intro'];
-    } else if (phase === 'content' || phase === 'explanation') {
+    } else if (phase === 'content') {
       targetSections = ['explanation', 'content', 'avatar_explanation', 'main'];
     } else if (phase === 'outro') {
       targetSections = ['outro', 'conclusion', 'avatar_outro', 'summary'];
@@ -4163,7 +4307,11 @@ const XRLessonPlayerV3: React.FC = () => {
     
     setSelectedMcqOption(optionIndex);
     setMcqAnswered(true);
-    
+    mcqAnswerHistoryRef.current = [
+      ...mcqAnswerHistoryRef.current,
+      { questionIndex: currentMcqIndex, correct: isCorrect, selectedOptionIndex: optionIndex },
+    ];
+
     if (isCorrect) {
       setMcqScore(prev => prev + 1);
       debugQuiz(`✅ CORRECT! Selected: ${optionIndex} (${currentMcq.options?.[optionIndex]}), Correct: ${correctIndex} (${currentMcq.options?.[correctIndex]})`);
@@ -4174,18 +4322,32 @@ const XRLessonPlayerV3: React.FC = () => {
   
   const handleMCQNext = useCallback(() => {
     if (!mcqAnswered) return;
-    
+
     if (currentMcqIndex < mcqData.length - 1) {
       setCurrentMcqIndex(prev => prev + 1);
       setSelectedMcqOption(null);
       setMcqAnswered(false);
       addDebug(`Moving to question ${currentMcqIndex + 2}`);
     } else {
-      // Quiz complete
+      // Quiz complete: build quiz payload for teacher analytics (ref already has all answers from handleMCQOptionSelect)
+      const history = mcqAnswerHistoryRef.current;
+      const score = history.filter((a) => a.correct).length;
+      const total = mcqData.length;
+      if (total > 0) {
+        pendingQuizReportRef.current = {
+          score,
+          total,
+          answers: history.map((a) => ({
+            question_index: a.questionIndex,
+            correct: a.correct,
+            selected_option_index: a.selectedOptionIndex,
+          })),
+        };
+      }
       setLessonPhase('complete');
-      debugQuiz(`Quiz complete! Score: ${mcqScore}/${mcqData.length}`);
+      debugQuiz(`Quiz complete! Score: ${score}/${total}`);
     }
-  }, [mcqAnswered, currentMcqIndex, mcqData.length, mcqScore, addDebug]);
+  }, [mcqAnswered, currentMcqIndex, mcqData, addDebug, debugQuiz]);
   
   // ============================================================================
   // Create VR MCQ Quiz Panel UI
