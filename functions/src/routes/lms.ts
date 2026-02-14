@@ -14,7 +14,9 @@ import { authenticateUser } from '../middleware/auth';
 import {
   requireSchoolAccess,
   requireStudentAccess,
+  requireClassAccess,
 } from '../middleware/rbac';
+import { getClassEvaluation } from '../services/evaluationService';
 
 const router = express.Router();
 
@@ -87,6 +89,43 @@ router.get('/students/:studentId/progress', requireStudentAccess(), async (req, 
       success: false,
       error: 'Failed to fetch student progress',
       message: error.message,
+    });
+  }
+});
+
+/**
+ * Get class evaluation (aggregated scores, attempts, completion, by-student summaries)
+ * GET /api/lms/classes/:classId/evaluation
+ * Query: fromDate (ISO), toDate (ISO), limit (number)
+ */
+router.get('/classes/:classId/evaluation', requireClassAccess(), async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const fromDate = typeof req.query.fromDate === 'string' ? req.query.fromDate : undefined;
+    const toDate = typeof req.query.toDate === 'string' ? req.query.toDate : undefined;
+    const limitParam = req.query.limit;
+    const limit = limitParam !== undefined ? Math.min(Number(limitParam) || 200, 500) : undefined;
+
+    const evaluation = await getClassEvaluation(classId, { fromDate, toDate, limit });
+
+    if (!evaluation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Class not found',
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: evaluation,
+    });
+  } catch (error: any) {
+    console.error('Error fetching class evaluation:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch class evaluation',
+      message: error?.message || 'Unknown error',
     });
   }
 });

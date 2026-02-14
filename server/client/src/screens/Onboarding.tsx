@@ -677,7 +677,7 @@ const Onboarding = () => {
 
   if (loading) {
     return (
-      <FuturisticBackground className="h-screen w-full">
+      <FuturisticBackground className="h-[100dvh] w-screen overflow-hidden">
         <div className="relative z-10 flex h-full items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-10 w-10 border-2 border-border border-t-primary mx-auto mb-4" />
@@ -694,22 +694,22 @@ const Onboarding = () => {
     switch (effectiveStep) {
       case 1: // Age & Basic Info
         return (
-          <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <FaChild className="text-xl text-primary" />
+          <motion.div key="s1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-2">
+              <div className="w-10 h-10 mx-auto mb-1 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FaChild className="text-lg text-primary" />
               </div>
-              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">How old are you?</h2>
-              <p className="text-muted-foreground text-sm">We use this to personalize your experience</p>
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-0.5">How old are you?</h2>
+              <p className="text-muted-foreground text-xs">We use this to personalize your experience</p>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-1.5">
               {ageOptions.map((age) => (
                 <Button
                   key={age.id}
                   type="button"
                   variant={studentData.age === age.id ? 'default' : 'outline'}
                   size="sm"
-                  className="relative h-auto py-3"
+                  className="relative h-auto py-2 text-xs"
                   onClick={() => setStudentData(prev => ({ ...prev, age: age.id }))}
                 >
                   {studentData.age === age.id && <FaCheck className="absolute top-1 right-1 h-3 w-3" />}
@@ -736,18 +736,18 @@ const Onboarding = () => {
 
       case 2: // Curriculum (Class selection moved to step 3 with school)
         return (
-          <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <FaGraduationCap className="text-xl text-primary" />
+          <motion.div key="s2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-2">
+              <div className="w-10 h-10 mx-auto mb-1 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FaGraduationCap className="text-lg text-primary" />
               </div>
-              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">Education Details</h2>
-              <p className="text-muted-foreground text-sm">Your current academic level</p>
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-0.5">Education Details</h2>
+              <p className="text-muted-foreground text-xs">Your current academic level</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <Label className="text-foreground mb-2 block">Which class level are you in? (For reference)</Label>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                <Label className="text-foreground text-sm mb-1 block">Which class level are you in? (For reference)</Label>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
                   {classOptions.map((cls) => (
                     <Button
                       key={cls.id}
@@ -763,14 +763,14 @@ const Onboarding = () => {
                 <p className="text-xs text-muted-foreground mt-1">You'll select your actual class in the next step</p>
               </div>
               <div>
-                <Label className="text-foreground mb-2 block">Which curriculum do you follow? *</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <Label className="text-foreground text-sm mb-1 block">Which curriculum do you follow? *</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                   {curriculumOptions.map((c) => (
                     <Button
                       key={c.id}
                       type="button"
                       variant={studentData.curriculum === c.id ? 'default' : 'outline'}
-                      className="min-h-[5rem] min-w-0 h-auto py-3 px-3 text-left justify-start flex flex-col items-start w-full"
+                      className="min-h-[3.5rem] min-w-0 h-auto py-2 px-2 text-left justify-start flex flex-col items-start w-full text-xs"
                       onClick={() => setStudentData(prev => ({ ...prev, curriculum: c.id }))}
                     >
                       <span className="font-medium shrink-0">{c.label}</span>
@@ -785,16 +785,16 @@ const Onboarding = () => {
 
       case 3: // School & Location (school by code only; no class selection)
         return (
-          <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <FaSchool className="text-xl text-primary" />
+          <motion.div key="s3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-2">
+              <div className="w-10 h-10 mx-auto mb-1 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FaSchool className="text-lg text-primary" />
               </div>
-              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">School Information</h2>
-              <p className="text-muted-foreground text-sm">Enter your school code, then choose your class and location.</p>
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-0.5">School Information</h2>
+              <p className="text-muted-foreground text-xs">Enter your school code, then choose your class and location.</p>
             </div>
-            <div className="space-y-4">
-              <div className="space-y-2">
+            <div className="space-y-3">
+              <div className="space-y-1.5">
                 <Label className="text-foreground">School code *</Label>
                 <p className="text-xs text-muted-foreground">Get the code from your school to join</p>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -917,22 +917,22 @@ const Onboarding = () => {
 
       case 4: // Learning Preferences
         return (
-          <motion.div key="s4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center">
-                <FaHeart className="text-xl text-primary" />
+          <motion.div key="s4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-2">
+              <div className="w-10 h-10 mx-auto mb-1 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FaHeart className="text-lg text-primary" />
               </div>
-              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">How Do You Learn Best?</h2>
-              <p className="text-muted-foreground text-sm">Select all that apply to personalize your lessons</p>
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-0.5">How Do You Learn Best?</h2>
+              <p className="text-muted-foreground text-xs">Select all that apply to personalize your lessons</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {learningPreferenceOptions.map((pref) => (
                 <Button
                   key={pref.id}
                   type="button"
                   variant={studentData.learningPreferences.includes(pref.id) ? 'default' : 'outline'}
-                  className={`h-auto p-4 sm:p-5 rounded-xl text-left justify-start border-2 transition-colors ${
+                  className={`h-auto p-3 rounded-lg text-left justify-start border-2 transition-colors text-sm ${
                     studentData.learningPreferences.includes(pref.id) ? 'border-primary' : 'border-border'
                   }`}
                   onClick={() => setStudentData(prev => ({
@@ -958,21 +958,21 @@ const Onboarding = () => {
 
       case 5: // Review & Confirm
         return (
-          <motion.div key="s5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center">
-                <FaCheckCircle className="text-xl text-primary" />
+          <motion.div key="s5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-2">
+              <div className="w-10 h-10 mx-auto mb-1 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <FaCheckCircle className="text-lg text-primary" />
               </div>
-              <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">Review Your Profile</h2>
-              <p className="text-muted-foreground text-sm">Confirm your details before we continue</p>
+              <h2 className="text-base sm:text-lg font-semibold text-foreground mb-0.5">Review Your Profile</h2>
+              <p className="text-muted-foreground text-xs">Confirm your details before we continue</p>
             </div>
 
-            <div className="space-y-4">
-              <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
-                <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaUserGraduate className="h-4 w-4" /> Personal Information
+            <div className="space-y-2">
+              <div className="p-3 rounded-lg bg-muted/30 border border-border">
+                <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <FaUserGraduate className="h-3.5 w-3.5" /> Personal Information
                 </h3>
-                <div className="grid grid-cols-2 gap-2 sm:gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-1.5 gap-y-1 text-xs">
                   <div className="text-muted-foreground">Age</div><div className="text-foreground truncate">{studentData.age} years</div>
                   <div className="text-muted-foreground">Class</div><div className="text-foreground">{isGuestUser(profile) ? '—' : 'From school'}</div>
                   <div className="text-muted-foreground">Curriculum</div><div className="text-foreground uppercase truncate">{studentData.curriculum || '—'}</div>
@@ -986,11 +986,11 @@ const Onboarding = () => {
               </div>
 
               {!isGuestUser(profile) && (
-              <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
-                <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaSchool className="h-4 w-4" /> School Information
+              <div className="p-3 rounded-lg bg-muted/30 border border-border">
+                <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <FaSchool className="h-3.5 w-3.5" /> School Information
                 </h3>
-                <div className="grid grid-cols-2 gap-2 sm:gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-1.5 gap-y-1 text-xs">
                   <div className="text-muted-foreground">School</div><div className="text-foreground truncate">{studentData.schoolName || '—'}</div>
                   <div className="text-muted-foreground">Location</div><div className="text-foreground truncate">{[studentData.city, studentData.state].filter(Boolean).join(', ') || '—'}</div>
                   <div className="text-muted-foreground">Language</div><div className="text-foreground capitalize">{studentData.languagePreference}</div>
@@ -998,9 +998,9 @@ const Onboarding = () => {
               </div>
               )}
 
-              <div className="p-4 sm:p-5 rounded-xl bg-muted/30 border border-border">
-                <h3 className="text-sm font-semibold text-primary uppercase tracking-wide mb-3 flex items-center gap-2">
-                  <FaHeart className="h-4 w-4" /> Learning Style
+              <div className="p-3 rounded-lg bg-muted/30 border border-border">
+                <h3 className="text-xs font-semibold text-primary uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <FaHeart className="h-3.5 w-3.5" /> Learning Style
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {studentData.learningPreferences.map(pref => {
@@ -1026,15 +1026,15 @@ const Onboarding = () => {
     switch (step) {
       case 1:
         return (
-          <motion.div key="t1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-primary/10 flex items-center justify-center">
+          <motion.div key="t1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 max-h-[15vh]">
                 <FaBuilding className="text-xl text-primary" />
               </div>
               <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-1">School Information</h2>
               <p className="text-muted-foreground text-sm">Associate with your school using the code provided</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="space-y-2">
                 <Label className="text-foreground">School code *</Label>
                 <p className="text-xs text-muted-foreground">Enter the code from your school admin</p>
@@ -1108,15 +1108,15 @@ const Onboarding = () => {
         );
       case 2:
         return (
-          <motion.div key="t2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+          <motion.div key="t2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaBook className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Teaching Details</h2>
               <p className="text-white/50 text-sm">What subjects and classes do you teach?</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Subjects Taught * (select all that apply)</label>
                 <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-white/[0.02] rounded-xl border border-white/10">
@@ -1156,15 +1156,15 @@ const Onboarding = () => {
         );
       case 3:
         return (
-          <motion.div key="t3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg">
+          <motion.div key="t3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaBriefcase className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Experience & Qualifications</h2>
               <p className="text-white/50 text-sm">Tell us about your teaching background</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Teaching Experience *</label>
                 <div className="grid grid-cols-3 gap-3">
@@ -1194,15 +1194,15 @@ const Onboarding = () => {
         );
       case 4:
         return (
-          <motion.div key="t4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg">
+          <motion.div key="t4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaPhone className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Contact Information</h2>
               <p className="text-white/50 text-sm">How can we reach you?</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Phone Number *</label>
                 <input type="tel" value={teacherData.phoneNumber} onChange={(e) => setTeacherData(prev => ({ ...prev, phoneNumber: e.target.value }))}
@@ -1230,15 +1230,15 @@ const Onboarding = () => {
     switch (step) {
       case 1:
         return (
-          <motion.div key="sc1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg">
+          <motion.div key="sc1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaSchool className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">School Details</h2>
               <p className="text-white/50 text-sm">Basic information about your school</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">School Name *</label>
                 <input type="text" value={schoolData.schoolName} onChange={(e) => setSchoolData(prev => ({ ...prev, schoolName: e.target.value }))}
@@ -1273,15 +1273,15 @@ const Onboarding = () => {
         );
       case 2:
         return (
-          <motion.div key="sc2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shadow-lg">
+          <motion.div key="sc2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaMapMarkerAlt className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Location</h2>
               <p className="text-white/50 text-sm">Where is your school located?</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Address *</label>
                 <textarea value={schoolData.address} onChange={(e) => setSchoolData(prev => ({ ...prev, address: e.target.value }))}
@@ -1319,15 +1319,15 @@ const Onboarding = () => {
         );
       case 3:
         return (
-          <motion.div key="sc3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg">
+          <motion.div key="sc3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaPhone className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">Contact Details</h2>
               <p className="text-white/50 text-sm">Primary contact for your school</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Contact Person Name *</label>
                 <input type="text" value={schoolData.contactPerson} onChange={(e) => setSchoolData(prev => ({ ...prev, contactPerson: e.target.value }))}
@@ -1344,15 +1344,15 @@ const Onboarding = () => {
         );
       case 4:
         return (
-          <motion.div key="sc4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg">
+          <motion.div key="sc4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-3">
+            <div className="text-center mb-3">
+              <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shrink-0 max-h-[15vh]">
                 <FaUsers className="text-2xl text-white" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2">School Stats</h2>
               <p className="text-white/50 text-sm">Additional information about your school</p>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Board/Affiliation *</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1408,48 +1408,48 @@ const Onboarding = () => {
   const RoleIcon = getRoleIcon();
 
   return (
-    <FuturisticBackground className="h-screen w-full flex flex-col">
+    <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
       <button
         type="button"
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-4 right-4 z-[100] flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
+        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
         aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       >
-        {theme === 'dark' ? <FaSun className="h-5 w-5" /> : <FaMoon className="h-5 w-5" />}
+        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
       </button>
-      <div className="relative z-10 flex flex-1 min-h-0 flex-col items-center px-4 py-4 sm:px-6 sm:py-5 overflow-hidden">
-        <div className="w-full max-w-2xl mx-auto h-full flex flex-col space-y-3 sm:space-y-4 min-h-0">
+      <div className="relative z-10 flex flex-1 min-h-0 flex-col items-center px-3 py-2 sm:px-6 sm:py-2 overflow-hidden">
+        <div className="w-full max-w-2xl mx-auto h-full flex flex-col gap-1.5 sm:gap-2 min-h-0">
           {/* Header - glass pill */}
           <div className="text-center shrink-0">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <RoleIcon className="text-primary h-4 w-4" />
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <RoleIcon className="text-primary h-3.5 w-3.5" />
               </div>
-              <span className="text-base sm:text-lg font-semibold tracking-tight capitalize text-foreground">{profile?.role} Onboarding</span>
+              <span className="text-sm sm:text-base font-semibold tracking-tight capitalize text-foreground">{profile?.role} Onboarding</span>
             </div>
-            <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-card/80 backdrop-blur-md border border-border text-xs text-muted-foreground">
-              <FaRocket className="text-primary mr-1.5 h-3 w-3 shrink-0" />
-              <span className="truncate max-w-[180px] sm:max-w-none">Welcome, {profile?.name || user?.email?.split('@')[0]}</span>
+            <div className="inline-flex items-center px-2 py-0.5 rounded-full bg-card/80 backdrop-blur-md border border-border text-[11px] text-muted-foreground">
+              <FaRocket className="text-primary mr-1 h-2.5 w-2.5 shrink-0" />
+              <span className="truncate max-w-[160px] sm:max-w-none">Welcome, {profile?.name || user?.email?.split('@')[0]}</span>
             </div>
           </div>
 
           {/* Progress - glass bar container */}
-          <div className="w-full min-w-0 rounded-xl bg-card/80 backdrop-blur-xl border border-border p-2 sm:p-3 shrink-0">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs sm:text-sm text-muted-foreground">Step {step} of {totalSteps}</span>
+          <div className="w-full min-w-0 rounded-lg bg-card/80 backdrop-blur-xl border border-border p-1.5 sm:p-2 shrink-0">
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[11px] sm:text-xs text-muted-foreground">Step {step} of {totalSteps}</span>
             </div>
-            <Progress value={(step / totalSteps) * 100} className="h-1.5" />
+            <Progress value={(step / totalSteps) * 100} className="h-1" />
           </div>
 
           {/* Form Card - glass panel */}
-          <Card className="w-full flex-1 min-h-0 flex flex-col bg-card/80 backdrop-blur-2xl border border-border shadow-xl rounded-3xl overflow-hidden">
-          <CardContent className="pt-4 pb-4 px-4 sm:px-5 flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="flex-1 min-h-0 overflow-y-auto">
+          <Card className="w-full flex-1 min-h-0 flex flex-col bg-card/80 backdrop-blur-2xl border border-border shadow-xl rounded-2xl sm:rounded-3xl overflow-hidden">
+          <CardContent className="pt-2 pb-2 px-3 sm:px-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <AnimatePresence mode="wait">{renderStepContent()}</AnimatePresence>
             </div>
 
-            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-4 pt-4 border-t border-border shrink-0">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-1.5 mt-2 pt-2 border-t border-border shrink-0">
               <Button
                 type="button"
                 variant="outline"

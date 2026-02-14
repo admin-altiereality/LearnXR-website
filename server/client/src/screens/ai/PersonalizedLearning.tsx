@@ -77,7 +77,7 @@ const PersonalizedLearning = () => {
     }
     if (isGuest) {
       setData(DEMO_RECOMMENDATION);
-      setAnalytics({ subjectsLearned: [], totalMcqsAnswered: 0, assessmentAttemptsCount: 0 });
+      setAnalytics({ subjectsLearned: [], totalMcqsAnswered: 0 });
       setLearningSummary({
         subjectsWithLowScores: [],
         subjectsWithHighScores: [],
@@ -357,7 +357,7 @@ const PersonalizedLearning = () => {
                 <TrendingUp className="w-5 h-5 text-primary" />
                 Student analytics
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-lg border border-border bg-muted/30 p-4">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Subjects learned</p>
                   {analytics.subjectsLearned.length > 0 ? (
@@ -379,12 +379,7 @@ const PersonalizedLearning = () => {
                     <ClipboardList className="w-5 h-5 text-primary" />
                     {analytics.totalMcqsAnswered}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">total questions across all assessments</p>
-                </div>
-                <div className="rounded-lg border border-border bg-muted/30 p-4">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Assessments taken</p>
-                  <p className="text-xl font-bold text-foreground">{analytics.assessmentAttemptsCount}</p>
-                  <p className="text-xs text-muted-foreground mt-1">quiz/assessment attempts</p>
+                  <p className="text-xs text-muted-foreground mt-1">total questions answered</p>
                 </div>
               </div>
             </CardContent>

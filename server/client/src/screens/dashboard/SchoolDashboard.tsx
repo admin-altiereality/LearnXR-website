@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { StudentScore, LessonLaunch, Class } from '../../types/lms';
 import { Link } from 'react-router-dom';
@@ -96,6 +96,7 @@ const SchoolDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [selectedCurriculumFilter, setSelectedCurriculumFilter] = useState<string>('all');
+  const [schoolCode, setSchoolCode] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalClasses: 0,
     totalTeachers: 0,
@@ -222,6 +223,17 @@ const SchoolDashboard = () => {
       unsubscribePendingTeachers();
     };
   }, [user?.uid, profile]);
+
+  // Fetch school code for display
+  useEffect(() => {
+    const schoolId = profile?.school_id || profile?.managed_school_id;
+    if (!schoolId) return;
+    getDoc(doc(db, 'schools', schoolId))
+      .then((snap) => {
+        if (snap.exists()) setSchoolCode(snap.data()?.schoolCode || null);
+      })
+      .catch(() => {});
+  }, [profile?.school_id, profile?.managed_school_id]);
 
   useEffect(() => {
     if (!user?.uid || !profile || profile.role !== 'school') return;
@@ -663,7 +675,15 @@ const SchoolDashboard = () => {
                   <TrademarkSymbol />
                 </h1>
                 <h2 className="text-xl font-semibold text-foreground">School Administrator Dashboard</h2>
-                <p className="text-muted-foreground text-sm mt-0.5">Monitor lesson launches, quiz scores, and curriculum completion</p>
+                <div className="flex items-center gap-3 mt-1 flex-wrap">
+                  <p className="text-muted-foreground text-sm">Monitor lesson launches, quiz scores, and curriculum completion</p>
+                  {schoolCode && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">School Code</span>
+                      <span className="font-mono font-bold text-primary text-base tracking-wider">{schoolCode}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

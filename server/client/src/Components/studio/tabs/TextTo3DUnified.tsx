@@ -178,48 +178,86 @@ export const TextTo3DUnified = ({
       return;
     }
 
+    const asset = source === 'text_to_3d' 
+      ? textTo3dAssets.find(a => a.id === assetId)
+      : scriptTo3dAssets.find(a => a.id === assetId);
+    
+    if (!asset) {
+      toast.error('Asset not found');
+      return;
+    }
+
     setUpdatingApproval(assetId);
 
     try {
-      const collectionName = source === 'text_to_3d' ? 'text_to_3d_assets' : 'avatar_to_3d_assets';
-      const assetRef = doc(db, collectionName, assetId);
-      const asset = source === 'text_to_3d' 
-        ? textTo3dAssets.find(a => a.id === assetId)
-        : scriptTo3dAssets.find(a => a.id === assetId);
-      
-      if (!asset) throw new Error('Asset not found');
+      if (source === 'avatar_to_3d' && approve && !asset.meshy_asset_id && asset.prompt) {
+        // Use same strategy as "Add manually" for avatar_to_3d (avoids "Invalid input provided")
+        try {
+          await avatarTo3dService.deleteAsset(assetId);
+        } catch {
+          // Fallback for associate (no delete): use updateApprovalStatus
+          await avatarTo3dService.updateApprovalStatus(assetId, true, user.uid);
+          const updated = await avatarTo3dService.getAssetsForTopic(chapterId, topicId, language);
+          setScriptTo3dAssets(updated.map(a => ({ ...a, source: 'avatar_to_3d' })));
+          toast.success('Asset approved');
+          if (approve && !asset.meshy_asset_id && asset.prompt) {
+            await handleGenerate3DAsset(assetId, asset, source);
+          }
+          return;
+        }
 
-      // Optimistically update UI
-      if (source === 'text_to_3d') {
-        setTextTo3dAssets(prev => prev.map(a => 
-          a.id === assetId ? { ...a, approval_status: approve, status: approve && !a.meshy_asset_id ? 'generating' : a.status } : a
-        ));
-      } else {
+        const newAssetId = await avatarTo3dService.createManualAsset(
+          chapterId,
+          topicId,
+          language,
+          asset.prompt.trim(),
+          (asset as any).source_script || undefined,
+          user.uid
+        );
+
+        const updated = await avatarTo3dService.getAssetsForTopic(chapterId, topicId, language);
+        setScriptTo3dAssets(updated.map(a => ({ ...a, source: 'avatar_to_3d' })));
+        const newAsset = updated.find(a => a.id === newAssetId);
+        if (newAsset) {
+          setSelectedScriptTo3d({ ...newAsset, source: 'avatar_to_3d' });
+        }
+        toast.success('Asset approved');
+        await handleGenerate3DAsset(newAssetId, newAsset as TextTo3dAsset, source);
+      } else if (source === 'avatar_to_3d') {
+        // avatar_to_3d: already has meshy_asset_id (approve toggle) or unapprove
+        await avatarTo3dService.updateApprovalStatus(assetId, approve, user.uid);
         setScriptTo3dAssets(prev => prev.map(a => 
           a.id === assetId ? { ...a, approval_status: approve, status: approve && !a.meshy_asset_id ? 'generating' : a.status } : a
         ));
-      }
+        toast.success(`Asset ${approve ? 'approved' : 'unapproved'}`);
+        if (approve && !asset.meshy_asset_id && asset.prompt) {
+          await handleGenerate3DAsset(assetId, asset, source);
+        }
+      } else {
+        // text_to_3d: use direct updateDoc
+        const assetRef = doc(db, 'text_to_3d_assets', assetId);
+        setTextTo3dAssets(prev => prev.map(a => 
+          a.id === assetId ? { ...a, approval_status: approve, status: approve && !a.meshy_asset_id ? 'generating' : a.status } : a
+        ));
 
-      // Perform update with retry - Firestore rules handle permissions
-      await retryOperation(
-        async () => {
-          await updateDoc(assetRef, {
-            approval_status: approve,
-            approved_at: approve ? serverTimestamp() : null,
-            approved_by: approve ? user.email : null,
-            updated_at: serverTimestamp(),
-            ...(approve && !asset.meshy_asset_id ? { status: 'generating' } : {}),
-          });
-          return asset;
-        },
-        { maxAttempts: 3 }
-      );
+        await retryOperation(
+          async () => {
+            await updateDoc(assetRef, {
+              approval_status: approve,
+              approved_at: approve ? serverTimestamp() : null,
+              approved_by: approve ? (user.email || user.uid) : null,
+              updated_at: serverTimestamp(),
+              ...(approve && !asset.meshy_asset_id ? { status: 'generating' } : {}),
+            });
+            return asset;
+          },
+          { maxAttempts: 3 }
+        );
 
-      toast.success(`Asset ${approve ? 'approved' : 'unapproved'}`);
-
-      // Auto-generate if approving
-      if (approve && !asset.meshy_asset_id && asset.prompt) {
-        await handleGenerate3DAsset(assetId, asset, source);
+        toast.success(`Asset ${approve ? 'approved' : 'unapproved'}`);
+        if (approve && !asset.meshy_asset_id && asset.prompt) {
+          await handleGenerate3DAsset(assetId, asset, source);
+        }
       }
     } catch (error: any) {
       logError(error, 'TextTo3DUnified.handleApproveAsset');

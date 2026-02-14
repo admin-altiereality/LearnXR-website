@@ -12,6 +12,7 @@ import lmsRoutes from './lms';
 import aiEducationRoutes from './aiEducation';
 import assessmentRoutes from './assessment';
 import authRoutes from './auth';
+import classSessionRoutes from './classSessions';
 
 const router = express.Router();
 
@@ -113,6 +114,11 @@ console.log('API key routes mounted at /dev/api-keys');
 console.log('Mounting LMS routes...');
 router.use('/lms', lmsRoutes);
 console.log('LMS routes mounted at /lms');
+
+// Mount Class Session routes
+console.log('Mounting Class Session routes...');
+router.use('/class-sessions', classSessionRoutes);
+console.log('Class Session routes mounted at /class-sessions');
 
 // Mount AI Education routes (personalized learning, teacher support)
 console.log('Mounting AI Education routes...');
