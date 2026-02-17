@@ -515,6 +515,34 @@ All generated skyboxes and 3D assets now include `remix_id` fields that allow yo
 
 **See:** [Skybox Style and Remix ID Guide](./N8N_SKYBOX_STYLE_AND_REMIX_GUIDE.md) for usage instructions.
 
+### PDF to photo extraction
+
+The Firebase API supports **extracting images from a PDF** (one PNG per page) for use in n8n or the curriculum save flow.
+
+**Endpoint:** `POST /pdf/extract-images`  
+**Auth:** `X-In3d-Key` header (Full Access API key).
+
+**Request body (one of):**
+
+| Field           | Description |
+|----------------|-------------|
+| `pdf_id`       | Firestore `pdfs` document ID – returns existing images if already processed. |
+| `pdf_url`      | Public URL of a PDF – downloads the PDF, extracts each page as PNG, uploads to Storage, saves to Firestore, returns `id` and `images`. |
+| `storage_path` | Firebase Storage path (e.g. `chapter_pdf/CBSE_7_Science_ch1.pdf`) – same extraction and storage as `pdf_url`. |
+
+**Example (n8n HTTP Request node):**
+
+- **Method:** POST  
+- **URL:** `https://us-central1-YOUR_PROJECT.cloudfunctions.net/api/pdf/extract-images`  
+- **Headers:** `X-In3d-Key`: your API key, `Content-Type`: application/json  
+- **Body (JSON):**  
+  - From URL: `{ "pdf_url": "https://example.com/doc.pdf" }`  
+  - From Storage: `{ "storage_path": "chapter_pdf/CBSE_7_Science_ch1.pdf" }`  
+
+**Response:** `{ "success": true, "data": { "id": "...", "status": "completed", "images": [{ "url": "https://storage.googleapis.com/...", "index": 0 }, ...], "image_count": 5 } }`  
+
+Use the returned `id` as `pdf_id` / `pdf_hash` and `data.images` as `pdf_images` when calling the curriculum save endpoint.
+
 ## Related Documentation
 
 - [Skybox Style and Remix ID Guide](./N8N_SKYBOX_STYLE_AND_REMIX_GUIDE.md) - Configure skybox styles and use remix IDs

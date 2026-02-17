@@ -23,8 +23,11 @@ import {
   getSchoolClasses,
   setClassTeacher,
 } from '../../services/classManagementService';
-import type { Class } from '../../types/lms';
-import { FaPlus, FaUsers, FaChalkboardTeacher, FaTrash, FaCheck } from 'react-icons/fa';
+import { getSchoolById, getAllSchools } from '../../services/schoolManagementService';
+import { getAvailableSubjects, getAvailableCurriculums } from '../../lib/firebase/queries/curriculumChapters';
+import { createCurriculumChangeRequest } from '../../services/curriculumChangeRequestService';
+import type { Class, School } from '../../types/lms';
+import { FaPlus, FaUsers, FaChalkboardTeacher, FaTrash, FaCheck, FaSchool } from 'react-icons/fa';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '../../Components/ui/button';
@@ -55,27 +58,39 @@ const ClassManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedClass, setSelectedClass] = useState<Class | null>(null);
+  const [school, setSchool] = useState<{ boardAffiliation?: string } | null>(null);
+  const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
+  const [loadingSubjects, setLoadingSubjects] = useState(false);
+  const [showCurriculumRequestModal, setShowCurriculumRequestModal] = useState(false);
+  const [curriculumRequestData, setCurriculumRequestData] = useState({ requestedCurriculum: '', reason: '' });
+  const [availableCurriculums, setAvailableCurriculums] = useState<string[]>([]);
+  const [submittingCurriculumRequest, setSubmittingCurriculumRequest] = useState(false);
+  const [allSchools, setAllSchools] = useState<School[]>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
   const [newClassData, setNewClassData] = useState({
     class_name: '',
+    class_number: 0 as number | 0, // 1-12 for dropdown
     curriculum: 'CBSE',
     subject: '',
     academic_year: new Date().getFullYear().toString(),
     class_teacher_id: '', // Primary class teacher
   });
 
+  // Get school_id for display/checking and effects - must be declared before any useEffect that uses it
+  // For admin/superadmin without a profile school, use selected school from dropdown
+  const profileSchoolId = profile?.role === 'principal'
+    ? profile.managed_school_id
+    : (profile?.school_id || profile?.managed_school_id);
+  const isAdminOrSuperadmin = profile?.role === 'admin' || profile?.role === 'superadmin';
+  const schoolId = profileSchoolId ?? (isAdminOrSuperadmin ? selectedSchoolId : null);
+
   useEffect(() => {
     if (!profile) return;
 
-    // Get school_id based on role
-    // Principals use managed_school_id, others use school_id
-    let schoolId = profile.role === 'principal' 
-      ? profile.managed_school_id 
-      : (profile.school_id || profile.managed_school_id);
-
-    // For school administrators: if they have managed_school_id but no school_id, auto-assign it
-    if (!schoolId && profile.role === 'school' && profile.managed_school_id && profile.uid) {
-      schoolId = profile.managed_school_id;
-      // Auto-assign school_id from managed_school_id for consistency
+    // Use effective schoolId (from profile or admin/superadmin selection); for school role, allow auto-assign from managed_school_id
+    let effectiveSchoolId = schoolId;
+    if (!effectiveSchoolId && profile.role === 'school' && profile.managed_school_id && profile.uid) {
+      effectiveSchoolId = profile.managed_school_id;
       updateDoc(doc(db, 'users', profile.uid), {
         school_id: profile.managed_school_id,
         updatedAt: new Date().toISOString(),
@@ -84,20 +99,25 @@ const ClassManagement = () => {
       });
     }
 
-    if (!schoolId) {
-      console.warn('⚠️ ClassManagement: Missing school_id', {
-        role: profile.role,
-        school_id: profile.school_id,
-        managed_school_id: profile.managed_school_id,
-        uid: profile.uid,
-      });
+    if (!effectiveSchoolId) {
+      // Only warn for roles that are expected to have a school; admin/superadmin select a school via UI
+      const roleExpectsSchool = ['teacher', 'school', 'principal'].includes(profile.role);
+      if (roleExpectsSchool) {
+        console.warn('⚠️ ClassManagement: Missing school_id', {
+          role: profile.role,
+          school_id: profile.school_id,
+          managed_school_id: profile.managed_school_id,
+          uid: profile.uid,
+        });
+      }
       setLoading(false);
       return;
     }
 
+    setLoading(true);
     // Load classes
     const loadClasses = async () => {
-      const classesData = await getSchoolClasses(profile, schoolId);
+      const classesData = await getSchoolClasses(profile, effectiveSchoolId);
       setClasses(classesData);
     };
 
@@ -107,7 +127,7 @@ const ClassManagement = () => {
     const studentsQuery = query(
       collection(db, 'users'),
       where('role', '==', 'student'),
-      where('school_id', '==', schoolId)
+      where('school_id', '==', effectiveSchoolId)
     );
 
     const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
@@ -119,13 +139,10 @@ const ClassManagement = () => {
     });
 
     // Load teachers in school - query all teachers, we'll filter by approvalStatus in UI
-    // Note: We don't filter by approvalStatus in the query because:
-    // 1. Some teachers might not have approvalStatus set (backward compatibility)
-    // 2. We want to show all teachers but indicate their status
     const teachersQuery = query(
       collection(db, 'users'),
       where('role', '==', 'teacher'),
-      where('school_id', '==', schoolId)
+      where('school_id', '==', effectiveSchoolId)
     );
 
     const unsubscribeTeachers = onSnapshot(teachersQuery, (snapshot) => {
@@ -133,15 +150,12 @@ const ClassManagement = () => {
         uid: doc.id,
         ...doc.data(),
       }));
-      
-      // Log detailed information about loaded teachers
       const approvedTeachers = teachersData.filter(t => t.approvalStatus === 'approved');
       const pendingTeachers = teachersData.filter(t => t.approvalStatus === 'pending');
       const noStatusTeachers = teachersData.filter(t => !t.approvalStatus);
-      
       console.log('🔍 ClassManagement: Loaded teachers', {
         total: teachersData.length,
-        schoolId,
+        schoolId: effectiveSchoolId,
         approved: approvedTeachers.length,
         pending: pendingTeachers.length,
         noStatus: noStatusTeachers.length,
@@ -152,17 +166,14 @@ const ClassManagement = () => {
           school_id: t.school_id,
         })),
       });
-      
-      // Show warning if no approved teachers found
       if (teachersData.length > 0 && approvedTeachers.length === 0) {
         console.warn('⚠️ ClassManagement: No approved teachers found', {
           total: teachersData.length,
           pending: pendingTeachers.length,
           noStatus: noStatusTeachers.length,
-          schoolId,
+          schoolId: effectiveSchoolId,
         });
       }
-      
       setTeachers(teachersData);
       setLoading(false);
     }, (error) => {
@@ -170,7 +181,7 @@ const ClassManagement = () => {
         error,
         errorCode: error.code,
         errorMessage: error.message,
-        schoolId,
+        schoolId: effectiveSchoolId,
         role: profile.role,
       });
       toast.error(`Failed to load teachers: ${error.message || 'Unknown error'}`);
@@ -181,37 +192,65 @@ const ClassManagement = () => {
       unsubscribeStudents();
       unsubscribeTeachers();
     };
-  }, [profile]);
+  }, [profile, schoolId]);
+
+  // Load all schools for admin/superadmin school selector
+  useEffect(() => {
+    if (!profile || !isAdminOrSuperadmin) return;
+    getAllSchools(profile).then(setAllSchools);
+  }, [profile, isAdminOrSuperadmin]);
+
+  // Load school for boardAffiliation (curriculum)
+  useEffect(() => {
+    if (!schoolId) return;
+    getSchoolById(schoolId).then(setSchool);
+  }, [schoolId]);
+
+  // Load subjects when curriculum and class_number change
+  useEffect(() => {
+    if (!newClassData.class_number || !newClassData.curriculum) {
+      setAvailableSubjects([]);
+      return;
+    }
+    setLoadingSubjects(true);
+    getAvailableSubjects(newClassData.curriculum, newClassData.class_number)
+      .then(setAvailableSubjects)
+      .catch(() => setAvailableSubjects([]))
+      .finally(() => setLoadingSubjects(false));
+  }, [newClassData.curriculum, newClassData.class_number]);
+
+  // Load available curriculums when curriculum request modal opens
+  useEffect(() => {
+    if (showCurriculumRequestModal) {
+      getAvailableCurriculums().then(setAvailableCurriculums);
+    }
+  }, [showCurriculumRequestModal]);
 
   const handleCreateClass = async () => {
     if (!profile) return;
 
     // Get school_id based on role
-    // Principals use managed_school_id, others use school_id
     const schoolId = profile.role === 'principal' 
       ? profile.managed_school_id 
       : (profile.school_id || profile.managed_school_id);
 
     if (!schoolId) {
       toast.error('Unable to determine your school. Please ensure you have a school assigned. Contact your administrator if this issue persists.');
-      console.warn('⚠️ ClassManagement: Missing school_id when creating class', {
-        role: profile.role,
-        school_id: profile.school_id,
-        managed_school_id: profile.managed_school_id,
-        uid: profile.uid,
-      });
       return;
     }
     
-    if (!newClassData.class_name.trim()) {
-      toast.error('Please enter a class name.');
+    if (!newClassData.class_number || newClassData.class_number < 1 || newClassData.class_number > 12) {
+      toast.error('Please select a class (Class 1 to Class 12).');
       return;
     }
 
+    const class_name = `Class ${newClassData.class_number}`;
+    const curriculum = school?.boardAffiliation || newClassData.curriculum || 'CBSE';
+
     const classId = await createClass(profile, {
       school_id: schoolId,
-      class_name: newClassData.class_name.trim(),
-      curriculum: newClassData.curriculum,
+      class_name,
+      curriculum,
       subject: newClassData.subject || undefined,
       academic_year: newClassData.academic_year || undefined,
       class_teacher_id: newClassData.class_teacher_id || undefined,
@@ -221,7 +260,8 @@ const ClassManagement = () => {
       setShowCreateModal(false);
       setNewClassData({
         class_name: '',
-        curriculum: 'CBSE',
+        class_number: 0,
+        curriculum: school?.boardAffiliation || 'CBSE',
         subject: '',
         academic_year: new Date().getFullYear().toString(),
         class_teacher_id: '',
@@ -244,10 +284,30 @@ const ClassManagement = () => {
     await setClassTeacher(profile, classId, teacherId);
   };
 
-  // Get school_id for display/checking
-  const schoolId = profile?.role === 'principal' 
-    ? profile.managed_school_id 
-    : (profile?.school_id || profile?.managed_school_id);
+  const handleSubmitCurriculumRequest = async () => {
+    if (!profile || !schoolId) return;
+    if (!curriculumRequestData.requestedCurriculum.trim()) {
+      toast.error('Please select a curriculum');
+      return;
+    }
+    setSubmittingCurriculumRequest(true);
+    try {
+      const id = await createCurriculumChangeRequest(
+        profile,
+        schoolId,
+        curriculumRequestData.requestedCurriculum,
+        curriculumRequestData.reason
+      );
+      if (id) {
+        setShowCurriculumRequestModal(false);
+        setCurriculumRequestData({ requestedCurriculum: '', reason: '' });
+        const updated = await getSchoolById(schoolId);
+        if (updated) setSchool(updated);
+      }
+    } finally {
+      setSubmittingCurriculumRequest(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -260,11 +320,53 @@ const ClassManagement = () => {
     );
   }
 
+  // Admin/superadmin without a profile school must select a school first
+  if (!schoolId && isAdminOrSuperadmin) {
+    return (
+      <div className="min-h-screen bg-background pt-24 pb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <Card className="border-border rounded-2xl">
+            <CardContent className="p-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                  <FaSchool className="text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">Select a school</h2>
+                  <p className="text-muted-foreground text-sm">Choose a school to manage classes, students, and teachers.</p>
+                </div>
+              </div>
+              <Select
+                value={selectedSchoolId ?? ''}
+                onValueChange={(v) => setSelectedSchoolId(v || null)}
+              >
+                <SelectTrigger className="w-full max-w-md">
+                  <SelectValue placeholder="Select school..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {allSchools.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                      {s.city ? ` — ${s.city}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {allSchools.length === 0 && (
+                <p className="text-muted-foreground text-sm mt-2">No schools found. Create schools from School Management first.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground flex items-center gap-3 mb-2">
               <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center">
@@ -274,10 +376,17 @@ const ClassManagement = () => {
             </h1>
             <p className="text-muted-foreground">Create and manage classes, assign students and teachers</p>
           </div>
-          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-            <FaPlus className="w-4 h-4" />
-            Create Class
-          </Button>
+          <div className="flex gap-2">
+            {(profile?.role === 'school' || profile?.role === 'principal') && (
+              <Button variant="outline" onClick={() => setShowCurriculumRequestModal(true)}>
+                Request Curriculum Change
+              </Button>
+            )}
+            <Button onClick={() => setShowCreateModal(true)} className="gap-2">
+              <FaPlus className="w-4 h-4" />
+              Create Class
+            </Button>
+          </div>
         </div>
 
         {/* Classes List */}
@@ -382,45 +491,81 @@ const ClassManagement = () => {
         </div>
 
         {/* Create Class Modal */}
-        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+        <Dialog open={showCreateModal} onOpenChange={(open) => {
+          setShowCreateModal(open);
+          if (open) {
+            setNewClassData(prev => ({
+              ...prev,
+              curriculum: school?.boardAffiliation || prev.curriculum || 'CBSE',
+              class_number: prev.class_number || 0,
+            }));
+          }
+        }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="text-foreground">Create New Class</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-foreground">Class Name *</Label>
-                <Input
-                  value={newClassData.class_name}
-                  onChange={(e) => setNewClassData({ ...newClassData, class_name: e.target.value })}
-                  placeholder="e.g., Class 8A, Section B"
-                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-foreground">Curriculum *</Label>
+                <Label className="text-foreground">Class *</Label>
                 <Select
-                  value={newClassData.curriculum}
-                  onValueChange={(v) => setNewClassData({ ...newClassData, curriculum: v })}
+                  value={newClassData.class_number ? String(newClassData.class_number) : ''}
+                  onValueChange={(v) => setNewClassData({ ...newClassData, class_number: parseInt(v, 10) || 0 })}
                 >
                   <SelectTrigger className="bg-background border-border text-foreground">
-                    <SelectValue />
+                    <SelectValue placeholder="Select class (1-12)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CBSE">CBSE</SelectItem>
-                    <SelectItem value="RBSE">RBSE</SelectItem>
-                    <SelectItem value="ICSE">ICSE</SelectItem>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        Class {n}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Subject (Optional)</Label>
+                <Label className="text-foreground">Curriculum</Label>
                 <Input
-                  value={newClassData.subject}
-                  onChange={(e) => setNewClassData({ ...newClassData, subject: e.target.value })}
-                  placeholder="e.g., Science, Mathematics"
-                  className="bg-background border-border text-foreground placeholder:text-muted-foreground"
+                  value={school?.boardAffiliation || newClassData.curriculum || 'CBSE'}
+                  readOnly
+                  className="bg-muted/50 border-border text-foreground cursor-not-allowed"
                 />
+                <p className="text-muted-foreground text-xs flex items-center gap-2">
+                  Curriculum is fixed per school.
+                  {(profile?.role === 'school' || profile?.role === 'principal') && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCurriculumRequestModal(true)}
+                      className="text-primary hover:underline"
+                    >
+                      Request curriculum change
+                    </button>
+                  )}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Subject (Optional)</Label>
+                <Select
+                  value={newClassData.subject || 'none'}
+                  onValueChange={(v) => setNewClassData({ ...newClassData, subject: v === 'none' ? '' : v })}
+                  disabled={!newClassData.class_number || loadingSubjects}
+                >
+                  <SelectTrigger className="bg-background border-border text-foreground">
+                    <SelectValue placeholder={loadingSubjects ? 'Loading subjects...' : 'Select subject'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None / All subjects</SelectItem>
+                    {availableSubjects.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">
+                  Subjects from available curriculum content
+                </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-foreground">Academic Year</Label>
@@ -626,6 +771,55 @@ const ClassManagement = () => {
             >
               Close
             </Button>
+          </DialogContent>
+        </Dialog>
+
+        {/* Curriculum Change Request Modal */}
+        <Dialog open={showCurriculumRequestModal} onOpenChange={setShowCurriculumRequestModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Request Curriculum Change</DialogTitle>
+            </DialogHeader>
+            <p className="text-muted-foreground text-sm mb-4">
+              Submit a request to change your school&apos;s curriculum. Super Admin will review and approve.
+            </p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-foreground">Requested Curriculum</Label>
+                <Select
+                  value={curriculumRequestData.requestedCurriculum}
+                  onValueChange={(v) => setCurriculumRequestData(prev => ({ ...prev, requestedCurriculum: v }))}
+                >
+                  <SelectTrigger className="bg-background border-border text-foreground">
+                    <SelectValue placeholder="Select curriculum" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCurriculums
+                      .filter(c => c.toUpperCase() !== (school?.boardAffiliation || 'CBSE').toUpperCase())
+                      .map(c => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Reason (Optional)</Label>
+                <Input
+                  value={curriculumRequestData.reason}
+                  onChange={(e) => setCurriculumRequestData(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Why do you need this change?"
+                  className="bg-background border-border text-foreground"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCurriculumRequestModal(false)} disabled={submittingCurriculumRequest}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleSubmitCurriculumRequest} disabled={submittingCurriculumRequest}>
+                {submittingCurriculumRequest ? <Loader2 className="animate-spin h-4 w-4" /> : 'Submit Request'}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
