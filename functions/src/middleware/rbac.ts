@@ -312,3 +312,76 @@ export function requireStudentAccess() {
     }
   };
 }
+
+/**
+ * Middleware to require class access (teacher for their classes, principal for school, admin/superadmin all).
+ * Expects classId in req.params (e.g. /classes/:classId/evaluation).
+ */
+export function requireClassAccess() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user?.uid) {
+        return res.status(401).json({
+          success: false,
+          error: 'Unauthorized',
+          message: 'Authentication required',
+        });
+      }
+
+      const classId = req.params.classId || (req.query.classId as string | undefined);
+      if (!classId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'classId is required',
+        });
+      }
+
+      const profile = await getUserProfile(req.user.uid);
+      if (!profile) {
+        return res.status(404).json({
+          success: false,
+          error: 'Not Found',
+          message: 'User profile not found',
+        });
+      }
+
+      const db = admin.firestore();
+      const classDoc = await db.collection('classes').doc(classId).get();
+      if (!classDoc.exists) {
+        return res.status(404).json({
+          success: false,
+          error: 'Not Found',
+          message: 'Class not found',
+        });
+      }
+
+      const classSchoolId = classDoc.data()?.school_id;
+      if (!classSchoolId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Class does not have a school_id',
+        });
+      }
+
+      if (!canAccessClass(profile, classId, classSchoolId)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: 'Access denied to this class',
+        });
+      }
+
+      req.userProfile = profile;
+      return next();
+    } catch (error: any) {
+      console.error('Class access check error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal Server Error',
+        message: 'Failed to verify class access',
+      });
+    }
+  };
+}

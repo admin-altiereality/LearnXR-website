@@ -63,6 +63,22 @@ import {
   APPROVAL_STATUS_DISPLAY
 } from '../../utils/rbac';
 import { toast } from 'react-toastify';
+import { getSchoolClasses, assignTeacherToClass } from '../../services/classManagementService';
+import {
+  getPendingCurriculumChangeRequests,
+  approveCurriculumChangeRequest,
+  rejectCurriculumChangeRequest,
+  type CurriculumChangeRequest,
+} from '../../services/curriculumChangeRequestService';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '../../Components/ui/dialog';
+import { Button } from '../../Components/ui/button';
+import { Label } from '../../Components/ui/label';
+import type { Class } from '../../types/lms';
 
 // All onboarding data is now stored directly in users collection
 interface PendingUser extends UserProfile {
@@ -106,6 +122,15 @@ const Approvals = () => {
   const [filterRole, setFilterRole] = useState<'all' | 'teacher' | 'school' | 'student' | 'principal' | 'associate' | 'admin' | 'superadmin'>('all');
   const [activeTab, setActiveTab] = useState<'pending' | 'approved'>('pending');
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [assignClassModal, setAssignClassModal] = useState<{
+    open: boolean;
+    teacher: PendingUser | null;
+    schoolClasses: Class[];
+    selectedClassId: string;
+    assigning: boolean;
+  }>({ open: false, teacher: null, schoolClasses: [], selectedClassId: '', assigning: false });
+  const [curriculumRequests, setCurriculumRequests] = useState<CurriculumChangeRequest[]>([]);
+  const [processingCurriculumRequestId, setProcessingCurriculumRequestId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     pending: 0,
     approved: 0,
@@ -153,8 +178,8 @@ const Approvals = () => {
           email: data.email
         });
         
-        // Include teachers and schools only after they've completed onboarding (approval happens after onboarding)
-        if ((role === 'teacher' || role === 'school') && data.onboardingCompleted === true) {
+        // Include teachers and schools; prefer those who completed onboarding (normal flow) but show any pending so none are hidden
+        if (role === 'teacher' || role === 'school') {
           users.push({
             id: docSnapshot.id,
             uid: docSnapshot.id,
@@ -217,11 +242,14 @@ const Approvals = () => {
       const users: PendingUser[] = [];
       snapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data();
+        const role = (data.role || '').toLowerCase();
+        // User Management dashboard is for teachers, schools, and staff only – exclude students
+        if (role === 'student' || role === 'guest') return;
         users.push({
           id: docSnapshot.id,
           uid: docSnapshot.id,
           ...data,
-          role: (data.role || '').toLowerCase() as any
+          role: role as any
         } as PendingUser);
       });
       
@@ -359,10 +387,22 @@ const Approvals = () => {
     fetchStats();
   }, [profile, pendingUsers, approvedUsers]);
 
+  // Fetch curriculum change requests (Super Admin only)
+  useEffect(() => {
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'superadmin')) return;
+    getPendingCurriculumChangeRequests(profile).then(setCurriculumRequests);
+    const interval = setInterval(() => {
+      getPendingCurriculumChangeRequests(profile).then(setCurriculumRequests);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [profile]);
+
   const handleApprove = async (userId: string) => {
+    const user = pendingUsers.find(u => u.id === userId);
+    if (!user) return;
+
     setProcessingId(userId);
     try {
-      const user = pendingUsers.find(u => u.id === userId);
       const now = new Date().toISOString();
       
       // Update users collection (single source of truth)
@@ -375,18 +415,74 @@ const Approvals = () => {
       });
       console.log(`✅ Approved user:`, userId);
       
-      // Send approval email notification
-      // Note: In production, this would be handled by a Firebase Cloud Function
-      console.log(`📧 Approval email would be sent to: ${user?.email}`);
-      console.log(`Subject: Your ${user?.role} account has been approved!`);
-      console.log(`From: admin@altiereality.com`);
-      
-      toast.success(`User approved! An approval email will be sent to ${user?.email}`);
+      // For teachers: show optional class assignment modal
+      if (user.role === 'teacher' && (user.school_id || user.managed_school_id)) {
+        const schoolId = user.school_id || user.managed_school_id;
+        const schoolClasses = await getSchoolClasses(profile, schoolId);
+        setAssignClassModal({
+          open: true,
+          teacher: user,
+          schoolClasses,
+          selectedClassId: schoolClasses.length > 0 ? schoolClasses[0].id : '',
+          assigning: false,
+        });
+      } else {
+        toast.success(`User approved! An approval email will be sent to ${user?.email}`);
+      }
     } catch (error) {
       console.error('Error approving user:', error);
       toast.error('Failed to approve user');
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleAssignClassConfirm = async () => {
+    const { teacher, schoolClasses, selectedClassId } = assignClassModal;
+    if (!teacher || !profile) return;
+
+    if (selectedClassId) {
+      setAssignClassModal(prev => ({ ...prev, assigning: true }));
+      try {
+        const success = await assignTeacherToClass(profile, teacher.id, selectedClassId);
+        if (success) {
+          toast.success(`Teacher assigned to ${schoolClasses.find(c => c.id === selectedClassId)?.class_name || 'class'}`);
+        }
+      } catch (err) {
+        console.error('Error assigning teacher to class:', err);
+      } finally {
+        setAssignClassModal(prev => ({ ...prev, assigning: false }));
+      }
+    }
+    setAssignClassModal({ open: false, teacher: null, schoolClasses: [], selectedClassId: '', assigning: false });
+    toast.success(`User approved! An approval email will be sent to ${teacher?.email}`);
+  };
+
+  const handleAssignClassSkip = () => {
+    const { teacher } = assignClassModal;
+    setAssignClassModal({ open: false, teacher: null, schoolClasses: [], selectedClassId: '', assigning: false });
+    if (teacher) {
+      toast.success(`User approved! An approval email will be sent to ${teacher?.email}`);
+    }
+  };
+
+  const handleApproveCurriculumRequest = async (requestId: string) => {
+    setProcessingCurriculumRequestId(requestId);
+    try {
+      const ok = await approveCurriculumChangeRequest(profile, requestId);
+      if (ok) setCurriculumRequests(prev => prev.filter(r => r.id !== requestId));
+    } finally {
+      setProcessingCurriculumRequestId(null);
+    }
+  };
+
+  const handleRejectCurriculumRequest = async (requestId: string) => {
+    setProcessingCurriculumRequestId(requestId);
+    try {
+      const ok = await rejectCurriculumChangeRequest(profile, requestId);
+      if (ok) setCurriculumRequests(prev => prev.filter(r => r.id !== requestId));
+    } finally {
+      setProcessingCurriculumRequestId(null);
     }
   };
 
@@ -561,6 +657,15 @@ const Approvals = () => {
     return matchesSearch && matchesRole;
   });
 
+  // Displayed pending count = what we actually show on the Pending tab (so count matches list)
+  const displayedPendingCount =
+    pendingUsers.length +
+    pendingSchools.length +
+    ((profile?.role === 'admin' || profile?.role === 'superadmin') ? curriculumRequests.length : 0);
+
+  // Displayed approved count = approved users we show (excludes students), so tab count matches list
+  const displayedApprovedCount = approvedUsers.length;
+
   const fadeUpVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: (i: number) => ({
@@ -620,11 +725,11 @@ const Approvals = () => {
             {/* Stats */}
             <div className="flex gap-3">
               <div className="px-4 py-2 rounded-xl bg-amber-100 dark:bg-yellow-500/10 border border-amber-300 dark:border-yellow-500/20">
-                <span className="text-amber-800 dark:text-yellow-400 font-bold text-lg">{stats.pending}</span>
+                <span className="text-amber-800 dark:text-yellow-400 font-bold text-lg">{displayedPendingCount}</span>
                 <span className="text-amber-700 dark:text-yellow-400/70 text-sm ml-2">Pending</span>
               </div>
               <div className="px-4 py-2 rounded-xl bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/20">
-                <span className="text-emerald-800 dark:text-emerald-400 font-bold text-lg">{stats.approved}</span>
+                <span className="text-emerald-800 dark:text-emerald-400 font-bold text-lg">{displayedApprovedCount}</span>
                 <span className="text-emerald-700 dark:text-emerald-400/70 text-sm ml-2">Approved</span>
               </div>
             </div>
@@ -647,7 +752,7 @@ const Approvals = () => {
                 : 'text-muted-foreground border-transparent hover:text-foreground'
             }`}
           >
-            Pending Approvals ({stats.pending})
+            Pending Approvals ({displayedPendingCount})
           </button>
           <button
             onClick={() => setActiveTab('approved')}
@@ -657,9 +762,60 @@ const Approvals = () => {
                 : 'text-muted-foreground border-transparent hover:text-foreground'
             }`}
           >
-            Approved Users ({stats.approved})
+            Approved Users ({displayedApprovedCount})
           </button>
         </motion.div>
+
+        {/* Assign Class Modal (after teacher approval) */}
+        <Dialog open={assignClassModal.open} onOpenChange={(open) => !open && handleAssignClassSkip()}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Assign Teacher to Class (Optional)</DialogTitle>
+            </DialogHeader>
+            <p className="text-muted-foreground text-sm mb-4">
+              Optionally assign {assignClassModal.teacher?.name || assignClassModal.teacher?.email} to a class. You can skip and assign later from Class Management.
+            </p>
+            {assignClassModal.schoolClasses.length === 0 ? (
+              <p className="text-amber-600 dark:text-amber-400 text-sm mb-4">
+                No classes exist for this school yet. Create classes in Class Management, then assign this teacher.
+              </p>
+            ) : (
+              <div className="space-y-2 mb-4">
+                <Label className="text-foreground">Select Class</Label>
+                <select
+                  value={assignClassModal.selectedClassId}
+                  onChange={(e) => setAssignClassModal(prev => ({ ...prev, selectedClassId: e.target.value }))}
+                  className="w-full px-4 py-3 rounded-xl bg-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary"
+                >
+                  {assignClassModal.schoolClasses.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.class_name} {c.subject ? `(${c.subject})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={handleAssignClassSkip} disabled={assignClassModal.assigning}>
+                Skip
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleAssignClassConfirm}
+                disabled={assignClassModal.assigning || assignClassModal.schoolClasses.length === 0}
+              >
+                {assignClassModal.assigning ? (
+                  <>
+                    <FaSpinner className="animate-spin mr-2" />
+                    Assigning...
+                  </>
+                ) : (
+                  'Assign & Done'
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Filters */}
         <motion.div
@@ -825,6 +981,56 @@ const Approvals = () => {
                       Generate code
                     </button>
                   )}
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Curriculum Change Requests (Super Admin only) */}
+        {(profile?.role === 'admin' || profile?.role === 'superadmin') && curriculumRequests.length > 0 && (
+          <motion.div
+            custom={2.7}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="mb-6"
+          >
+            <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+              <FaBook className="text-primary" />
+              Curriculum Change Requests ({curriculumRequests.length})
+            </h2>
+            <div className="space-y-3">
+              {curriculumRequests.map((req) => (
+                <motion.div
+                  key={req.id}
+                  className="rounded-xl border border-border bg-muted/30 p-4 flex items-center justify-between flex-wrap gap-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-foreground font-medium">{req.school_name || req.school_id}</h3>
+                    <p className="text-muted-foreground text-sm">
+                      Requested: <span className="text-primary font-medium">{req.requested_curriculum}</span>
+                      {req.reason && ` • ${req.reason}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleRejectCurriculumRequest(req.id)}
+                      disabled={processingCurriculumRequestId === req.id}
+                      className="px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {processingCurriculumRequestId === req.id ? <FaSpinner className="animate-spin" /> : <FaTimes />}
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => handleApproveCurriculumRequest(req.id)}
+                      disabled={processingCurriculumRequestId === req.id}
+                      className="px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {processingCurriculumRequestId === req.id ? <FaSpinner className="animate-spin" /> : <FaCheck />}
+                      Approve
+                    </button>
+                  </div>
                 </motion.div>
               ))}
             </div>

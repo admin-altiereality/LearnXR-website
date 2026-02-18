@@ -232,52 +232,69 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
       return;
     }
 
+    const asset = assets.find(a => a.id === assetId);
+    if (!asset) {
+      toast.error('Asset not found');
+      return;
+    }
+
     setUpdatingApproval(assetId);
     try {
-      const assetRef = doc(db, 'avatar_to_3d_assets', assetId);
-      const asset = assets.find(a => a.id === assetId);
-      
-      if (!asset) {
-        throw new Error('Asset not found');
-      }
-
-      // Update approval status
-      await updateDoc(assetRef, {
-        approval_status: approve,
-        approved_at: approve ? serverTimestamp() : null,
-        approved_by: approve ? user.email : null,
-        updated_at: serverTimestamp(),
-        ...(approve && !asset.meshy_asset_id ? { status: 'generating' } : {}),
-      });
-
-      // Update local state
-      setAssets(prev =>
-        prev.map(a =>
-          a.id === assetId
-            ? { 
-                ...a, 
-                approval_status: approve, 
-                approved_at: approve ? new Date().toISOString() : null, 
-                approved_by: approve ? user.email : null,
-                ...(approve && !a.meshy_asset_id ? { status: 'generating' } : {})
-              }
-            : a
-        )
-      );
-
-      if (selectedAsset?.id === assetId) {
-        setSelectedAsset(prev => prev ? { 
-          ...prev, 
-          approval_status: approve,
-          ...(approve && !prev.meshy_asset_id ? { status: 'generating' } : {})
-        } : null);
-      }
-
-      toast.success(`Asset ${approve ? 'approved' : 'unapproved'} successfully`);
-
-      // If approving and no meshy_asset_id exists, trigger generation
       if (approve && !asset.meshy_asset_id && asset.prompt) {
-        await handleGenerate3DAsset(assetId, asset);
+        // Use same strategy as "Add manually": create new asset with auto-approval, then generate
+        // This avoids "Invalid input provided" from updateDoc on detected assets (Firestore validation)
+        let newAssetId: string;
+        try {
+          await avatarTo3dService.deleteAsset(assetId);
+          newAssetId = await avatarTo3dService.createManualAsset(
+            chapterId,
+            topicId,
+            language,
+            asset.prompt.trim(),
+            asset.source_script || undefined,
+            user.uid
+          );
+        } catch (deleteErr) {
+          // Associate may not have delete permission - fall back to updateApprovalStatus
+          await avatarTo3dService.updateApprovalStatus(assetId, true, user.uid);
+          newAssetId = assetId;
+          setAssets(prev =>
+            prev.map(a =>
+              a.id === assetId
+                ? { ...a, approval_status: true, status: 'generating' as const }
+                : a
+            )
+          );
+          if (selectedAsset?.id === assetId) {
+            setSelectedAsset(prev => prev ? { ...prev, approval_status: true, status: 'generating' } : null);
+          }
+        }
+
+        const updatedAssets = await avatarTo3dService.getAssetsForTopic(chapterId, topicId, language);
+        setAssets(updatedAssets);
+
+        const newAsset = updatedAssets.find(a => a.id === newAssetId);
+        if (newAsset) {
+          setSelectedAsset(newAsset);
+          setNewlyDetectedAssets(prev => prev.filter(a => a.id !== assetId));
+          toast.success('Asset approved. Starting 3D generation...');
+          await handleGenerate3DAsset(newAssetId, newAsset);
+        } else {
+          toast.success('Asset approved and generation started');
+        }
+      } else if (!approve) {
+        await avatarTo3dService.updateApprovalStatus(assetId, false, user.uid);
+        setAssets(prev =>
+          prev.map(a =>
+            a.id === assetId ? { ...a, approval_status: false, approved_at: null, approved_by: null } : a
+          )
+        );
+        if (selectedAsset?.id === assetId) {
+          setSelectedAsset(prev => prev ? { ...prev, approval_status: false } : null);
+        }
+        toast.success('Asset unapproved');
+      } else {
+        toast.success('Asset already has generated 3D model');
       }
     } catch (error) {
       console.error('Error updating approval status:', error);

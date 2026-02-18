@@ -136,13 +136,30 @@ router.get('/styles', validateReadAccess, async (req: Request, res: Response) =>
 // Generate Skybox - Full access required (API key FULL scope or Firebase Auth)
 router.post('/generate', validateFullAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
-  const { prompt, style_id, negative_prompt, userId, export_wireframe, mesh_density, depth_scale } = req.body;
-  
+  const {
+    prompt: promptBody,
+    in3d_prompt,
+    style_id: styleIdBody,
+    negative_prompt,
+    userId,
+    export_wireframe,
+    mesh_density,
+    depth_scale
+  } = req.body;
+
+  // Accept both 'prompt' and 'in3d_prompt' (n8n workflow uses in3d_prompt from topic data)
+  const prompt = typeof promptBody === 'string' && promptBody.trim()
+    ? promptBody.trim()
+    : (typeof in3d_prompt === 'string' && in3d_prompt.trim() ? in3d_prompt.trim() : '');
+  const style_id = styleIdBody != null && styleIdBody !== ''
+    ? (typeof styleIdBody === 'string' ? parseInt(styleIdBody, 10) : styleIdBody)
+    : 3;
+
   try {
-    console.log(`[${requestId}] Skybox generation requested:`, { prompt, style_id, userId });
-    
+    console.log(`[${requestId}] Skybox generation requested:`, { prompt: prompt?.substring(0, 50), style_id, userId });
+
     initializeServices();
-    
+
     if (!BLOCKADE_API_KEY) {
       const { statusCode, response } = errorResponse(
         'Service configuration error',
@@ -153,11 +170,11 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
       );
       return res.status(statusCode).json(response);
     }
-    
-    if (!prompt || !style_id) {
+
+    if (!prompt) {
       const { statusCode, response } = errorResponse(
         'Validation error',
-        'Missing required fields: prompt and style_id are required',
+        'Missing required field: prompt (or in3d_prompt) is required and must be non-empty',
         ErrorCode.MISSING_REQUIRED_FIELD,
         HTTP_STATUS.BAD_REQUEST,
         { requestId }
@@ -166,8 +183,8 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
     }
     
     // Construct webhook URL for completion notifications
-    // Dynamically determine the webhook URL based on the request origin
-    const projectId = process.env.GCLOUD_PROJECT || 'in3devoneuralai';
+    // GCLOUD_PROJECT is set by Firebase Cloud Functions; fallback for local/emulator
+    const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'learnxr-evoneuralai';
     const region = process.env.FUNCTION_REGION || 'us-central1';
     const webhookUrl = `https://${region}-${projectId}.cloudfunctions.net/api/skybox/webhook`;
     console.log(`[${requestId}] Using webhook URL: ${webhookUrl}`);

@@ -36,7 +36,7 @@ import {
 } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from 'react-toastify';
+import { toast } from "react-toastify";
 import { LanguageToggle } from '../Components/LanguageSelector';
 import { Button } from '../Components/ui/button';
 import { Card, CardContent } from '../Components/ui/card';
@@ -46,13 +46,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson } from '../contexts/LessonContext';
+import { useClassSession } from '../contexts/ClassSessionContext';
 import {
     getChapterNameByLanguage,
     getLearningObjectiveByLanguage,
     getSubjectNameByLanguage,
     getTopicNameByLanguage
 } from '../lib/firebase/utils/languageAvailability';
-import { updateTopicApproval } from '../lib/firestore/updateHelpers';
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
 
@@ -87,39 +87,16 @@ const ContentBadges = memo(({ chapter }) => (
 ));
 
 // GRID VIEW - Lesson Card (Topic-based) - Memoized to prevent flickering
-const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin, onApprovalChange }) => {
-  const { profile } = useAuth();
-  const [updatingApproval, setUpdatingApproval] = useState(false);
+// Approval status is read-only (no approve/unapprove from this page - use Approvals page)
+const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const thumbnail = topic.skybox_url || chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
   
-  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  // Read-only approval status from topic or chapter (curriculum chapter collection)
   const approval = topic.approval || {};
-  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
-  
-  const handleApprovalToggle = async (e) => {
-    e.stopPropagation();
-    if (!canApprove || !profile || !onApprovalChange) return;
-    const newApproved = !isApproved;
-    setUpdatingApproval(true);
-    try {
-      await updateTopicApproval({
-        chapterId: chapter.id,
-        topicId: topic.topic_id,
-        approved: newApproved,
-        userId: profile.uid,
-      });
-      onApprovalChange(chapter.id, topic.topic_id, newApproved);
-      toast.success(`Topic ${newApproved ? 'approved' : 'unapproved'} successfully`);
-    } catch (error) {
-      console.error('Error updating topic approval:', error);
-      toast.error('Failed to update approval status');
-    } finally {
-      setUpdatingApproval(false);
-    }
-  };
+  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true || chapter.approved === true;
   
   // Get language-specific topic name (primary) and chapter name (secondary)
   const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || 'Untitled Topic';
@@ -222,17 +199,16 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
         <div className="flex items-center justify-between mt-auto pt-1 gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-[10px] text-muted-foreground">Topic {topic.topic_priority ?? '?'}</span>
-            {canApprove && (
-              <Button
-                variant={isApproved ? 'destructive' : 'default'}
-                size="sm"
-                className="h-6 px-2 gap-0.5 text-[10px]"
-                onClick={(e) => { e.stopPropagation(); handleApprovalToggle(e); }}
-                disabled={updatingApproval}
-                title={isApproved ? 'Unapprove' : 'Approve'}
-              >
-                {updatingApproval ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : isApproved ? <XCircle className="w-2.5 h-2.5" /> : <CheckCircle2 className="w-2.5 h-2.5" />}
-              </Button>
+            {isApproved ? (
+              <span className="flex items-center gap-0.5 text-[10px] text-primary" title="Approved">
+                <CheckCircle2 className="w-3 h-3" />
+                Approved
+              </span>
+            ) : (
+              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground" title="Not approved">
+                <XCircle className="w-3 h-3" />
+                Not approved
+              </span>
             )}
           </div>
           <ContentBadges chapter={chapter} />
@@ -244,10 +220,8 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
 });
 
 // LIST VIEW - Topic Row - Memoized
-const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 'en', onApprovalChange }) => {
-  const { profile } = useAuth();
-  const [updatingApproval, setUpdatingApproval] = useState(false);
-  
+// Approval status is read-only (no approve/unapprove from this page - use Approvals page)
+const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 'en' }) => {
   const hasSkybox = !!topic.skybox_url || !!topic.skybox_id;
   const hasScript = !!(topic.topic_avatar_intro || topic.topic_avatar_explanation);
   
@@ -255,12 +229,9 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
   const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || `Topic ${index + 1}`;
   const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective;
   
-  // Check if user can approve (admin or superadmin)
-  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
-  
-  // Get approval status (support approval.approved and top-level topic.approved from Firestore)
+  // Read-only approval status from topic or chapter (curriculum chapter collection)
   const approval = topic.approval || {};
-  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
+  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true || chapter.approved === true;
   const approvedAt = approval.approvedAt;
   
   // Format approvedAt timestamp
@@ -277,35 +248,6 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
       });
     } catch (e) {
       return null;
-    }
-  };
-  
-  const handleApprovalToggle = async (e) => {
-    e.stopPropagation();
-    if (!canApprove || !profile) return;
-    
-    const newApproved = !isApproved;
-    setUpdatingApproval(true);
-    
-    try {
-      await updateTopicApproval({
-        chapterId: chapter.id,
-        topicId: topic.topic_id,
-        approved: newApproved,
-        userId: profile.uid,
-      });
-      
-      // Optimistic update - call parent callback to refresh
-      if (onApprovalChange) {
-        onApprovalChange(chapter.id, topic.topic_id, newApproved);
-      }
-      
-      toast.success(`Topic ${newApproved ? 'approved' : 'unapproved'} successfully`);
-    } catch (error) {
-      console.error('Error updating topic approval:', error);
-      toast.error('Failed to update approval status');
-    } finally {
-      setUpdatingApproval(false);
     }
   };
 
@@ -354,32 +296,6 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
       </div>
       
       <div className="flex items-center gap-2">
-        {/* Approval Controls (Admin/Superadmin only) */}
-        {canApprove && (
-          <Button
-            variant={isApproved ? 'destructive' : 'default'}
-            size="sm"
-            onClick={handleApprovalToggle}
-            disabled={updatingApproval}
-            className="h-8"
-            title={isApproved ? 'Unapprove topic' : 'Approve topic'}
-          >
-            {updatingApproval ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : isApproved ? (
-              <>
-                <XCircle className="w-3 h-3" />
-                Unapprove
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-3 h-3" />
-                Approve
-              </>
-            )}
-          </Button>
-        )}
-        
         <Button
           variant="secondary"
           size="sm"
@@ -398,38 +314,15 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
 });
 
 // LIST VIEW - Lesson Item (Topic-based) - Memoized
-const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', onApprovalChange, isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
-  const { profile } = useAuth();
-  const [updatingApproval, setUpdatingApproval] = useState(false);
+// Approval status is read-only (no approve/unapprove from this page - use Approvals page)
+const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
   
-  const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
+  // Read-only approval status from topic or chapter (curriculum chapter collection)
   const approval = topic.approval || {};
-  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
-  
-  const handleApprovalToggle = async (e) => {
-    e.stopPropagation();
-    if (!canApprove || !profile || !onApprovalChange) return;
-    const newApproved = !isApproved;
-    setUpdatingApproval(true);
-    try {
-      await updateTopicApproval({
-        chapterId: chapter.id,
-        topicId: topic.topic_id,
-        approved: newApproved,
-        userId: profile.uid,
-      });
-      onApprovalChange(chapter.id, topic.topic_id, newApproved);
-      toast.success(`Topic ${newApproved ? 'approved' : 'unapproved'} successfully`);
-    } catch (error) {
-      console.error('Error updating topic approval:', error);
-      toast.error('Failed to update approval status');
-    } finally {
-      setUpdatingApproval(false);
-    }
-  };
+  const isApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true || chapter.approved === true;
   
   // Get language-specific topic name (primary) and chapter name (secondary)
   const topicName = getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || 'Untitled Topic';
@@ -488,18 +381,16 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
           </div>
           <div className="flex items-center gap-2 mb-1">
             <h3 className="text-base font-semibold truncate text-foreground">{topicName}</h3>
-            {canApprove && (
-              isApproved ? (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/20 text-primary border border-primary/30 shrink-0">
-                  <CheckCircle2 className="w-3 h-3" />
-                  Approved
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-muted text-muted-foreground border border-border shrink-0">
-                  <XCircle className="w-3 h-3" />
-                  Not Approved
-                </span>
-              )
+            {isApproved ? (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/20 text-primary border border-primary/30 shrink-0">
+                <CheckCircle2 className="w-3 h-3" />
+                Approved
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-muted text-muted-foreground border border-border shrink-0">
+                <XCircle className="w-3 h-3" />
+                Not Approved
+              </span>
             )}
           </div>
           <p className="text-xs text-muted-foreground truncate mb-1">{chapterName}</p>
@@ -511,30 +402,6 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
         <ContentBadges chapter={chapter} />
         
         <div className="flex items-center gap-2">
-          {canApprove && (
-            <Button
-              variant={isApproved ? 'destructive' : 'default'}
-              size="sm"
-              onClick={handleApprovalToggle}
-              disabled={updatingApproval}
-              className="h-8 gap-1"
-              title={isApproved ? 'Unapprove topic' : 'Approve topic'}
-            >
-              {updatingApproval ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : isApproved ? (
-                <>
-                  <XCircle className="w-3 h-3" />
-                  Unapprove
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3 h-3" />
-                  Approve
-                </>
-              )}
-            </Button>
-          )}
           <Button
             size="sm"
             className="gap-2 shadow-lg"
@@ -593,6 +460,18 @@ const Lessons = ({ setBackgroundSkybox }) => {
   
   // Get current user for tracking completed lessons
   const { user, profile, logout } = useAuth();
+  const {
+    joinedSessionId,
+    joinedSession,
+    joinSession,
+    leaveSessionAsStudent,
+    sessionLoading: sessionJoinLoading,
+    sessionError: sessionJoinError,
+    clearSessionError,
+  } = useClassSession();
+  const [sessionCodeInput, setSessionCodeInput] = useState('');
+  const launchedLessonHandledRef = React.useRef(null);
+  const launchedSceneHandledRef = React.useRef(null);
   
   // Student class data
   const [studentClasses, setStudentClasses] = useState([]);
@@ -1212,33 +1091,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
   }, []);
 
-  // Handle topic approval change - optimistic update
-  const handleApprovalChange = useCallback((chapterId, topicId, approved) => {
-    setChapters(prevChapters => {
-      return prevChapters.map(chapter => {
-        if (chapter.id === chapterId) {
-          const updatedTopics = chapter.topics?.map(topic => {
-            if (topic.topic_id === topicId) {
-              return {
-                ...topic,
-                approval: {
-                  approved: approved,
-                  approvedAt: approved ? new Date().toISOString() : null,
-                },
-              };
-            }
-            return topic;
-          });
-          return {
-            ...chapter,
-            topics: updatedTopics,
-          };
-        }
-        return chapter;
-      });
-    });
-  }, []);
-
   // Close lesson modal
   const closeLessonModal = useCallback(() => {
     // Clear countdown timer
@@ -1458,6 +1310,135 @@ const Lessons = ({ setBackgroundSkybox }) => {
       setDataReady(false);
     }
   }, [selectedLanguage, profile?.role, user?.uid]);
+
+  // When teacher launches a lesson to the class, fetch bundle and open XR player
+  React.useEffect(() => {
+    const launched = joinedSession?.launched_lesson;
+    if (!launched || !joinedSessionId || !user?.uid) return;
+    const key = `${launched.chapter_id}_${launched.topic_id}`;
+    if (launchedLessonHandledRef.current === key) return;
+    launchedLessonHandledRef.current = key;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getLessonBundle } = await import('../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId: launched.chapter_id,
+          lang: selectedLanguage,
+          topicId: launched.topic_id,
+        });
+        if (cancelled) return;
+        const fullData = bundle.chapter;
+        const topic = fullData.topics?.find((t) => t.topic_id === launched.topic_id) || fullData.topics?.[0];
+        if (!topic) return;
+        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+        let assetUrls = topic.asset_urls || [];
+        const assetIds = topic.asset_ids || [];
+        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+        safeAssets3d.forEach((asset) => {
+          if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
+            assetUrls.push(asset.glb_url);
+            assetIds.push(asset.id || `asset_${assetUrls.length}`);
+          }
+        });
+        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+        const mcqs = safeMcqs.map((m) => ({
+          id: m.id || `mcq_${Math.random()}`,
+          question: m.question || m.question_text || '',
+          options: Array.isArray(m.options) ? m.options : [],
+          correct_option_index: m.correct_option_index ?? 0,
+          explanation: m.explanation || '',
+        }));
+        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+        const ttsAudio = safeTts
+          .map((tts) => ({
+            id: tts.id || '',
+            script_type: tts.script_type || tts.section || 'full',
+            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+            language: tts.language || tts.lang || selectedLanguage,
+          }))
+          .filter((tts) => (tts.language || 'en').toLowerCase() === selectedLanguage.toLowerCase());
+        const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+        const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
+
+        const cleanChapter = {
+          chapter_id: String(launched.chapter_id),
+          chapter_name: fullData.chapter_name || 'Untitled Chapter',
+          chapter_number: Number(fullData.chapter_number) || 1,
+          curriculum: String(launched.curriculum || fullData.curriculum || ''),
+          class_name: String((launched.class_name || fullData.class_name) ?? ''),
+          subject: String((launched.subject || fullData.subject) ?? ''),
+        };
+        const cleanTopic = {
+          topic_id: String(topic.topic_id ?? launched.topic_id),
+          topic_name: topic.topic_name || 'Untitled Topic',
+          topic_priority: Number(topic.topic_priority) || 1,
+          learning_objective: topic.learning_objective || '',
+          skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
+          skybox_remix_id: topic.skybox_remix_id ?? null,
+          skybox_url: skyboxUrl,
+          skybox_glb_url: skyboxGlb,
+          avatar_intro: scripts.intro || '',
+          avatar_explanation: scripts.explanation || '',
+          avatar_outro: scripts.outro || '',
+          asset_urls: assetUrls,
+          asset_ids: assetIds,
+          mcq_ids: topic.mcq_ids || [],
+          mcqs,
+          tts_ids: topic.tts_ids || [],
+          tts_audio_url: topic.tts_audio_url || '',
+          ttsAudio,
+          language: selectedLanguage,
+        };
+        const fullLessonData = {
+          chapter: cleanChapter,
+          topic: cleanTopic,
+          image3dasset: fullData.image3dasset ?? null,
+          meshy_asset_ids: fullData.meshy_asset_ids ?? [],
+          assets3d: safeAssets3d,
+          startedAt: new Date().toISOString(),
+          _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
+          language: selectedLanguage,
+          ttsAudio,
+        };
+        sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+        sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+        if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
+        // Short delay so third-party iframes (e.g. Firebase Auth) can finish and avoid "message port closed" errors
+        setTimeout(() => navigate('/xrlessonplayer'), 200);
+      } catch (err) {
+        console.error('Failed to open launched lesson:', err);
+        launchedLessonHandledRef.current = null;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [joinedSession?.launched_lesson, joinedSessionId, user?.uid, selectedLanguage, navigate, contextStartLesson]);
+
+  // When teacher sends a scene to the class, open class-scene viewer
+  React.useEffect(() => {
+    const scene = joinedSession?.launched_scene;
+    if (!scene || scene.type !== 'create_scene' || !joinedSessionId || !user?.uid) return;
+    const key = `scene_${joinedSessionId}_${scene.skybox_image_url || scene.skybox_id || 'default'}`;
+    if (launchedSceneHandledRef.current === key) return;
+    launchedSceneHandledRef.current = key;
+    try {
+      sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
+      sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+      setTimeout(() => navigate('/class-scene'), 200);
+    } catch (e) {
+      console.error('Failed to open launched scene:', e);
+      launchedSceneHandledRef.current = null;
+    }
+  }, [joinedSession?.launched_scene, joinedSessionId, user?.uid, navigate]);
+
+  // Show session join error
+  React.useEffect(() => {
+    if (sessionJoinError) {
+      toast.error(sessionJoinError);
+      clearSessionError();
+    }
+  }, [sessionJoinError, clearSessionError]);
 
   // Open lesson detail modal and start fetching data
   const openLessonModal = useCallback((chapter, topicInput) => {
@@ -2130,6 +2111,44 @@ const Lessons = ({ setBackgroundSkybox }) => {
           </div>
         </div>
 
+        {/* Join class session - students only */}
+        {isStudent && (
+          <Card className="mb-6 rounded-xl border-primary/30 border bg-card">
+            <CardContent className="p-4">
+              {!joinedSessionId ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Join class session (enter code from your teacher):</span>
+                  <Input
+                    type="text"
+                    value={sessionCodeInput}
+                    onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. ABC123"
+                    className="w-28 font-mono uppercase tracking-wider bg-background border-border"
+                    maxLength={8}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      const ok = await joinSession(sessionCodeInput.trim());
+                      if (ok) setSessionCodeInput('');
+                    }}
+                    disabled={sessionJoinLoading || !sessionCodeInput.trim()}
+                  >
+                    {sessionJoinLoading ? 'Joining…' : 'Join'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm text-primary font-medium">Joined. Waiting for teacher to launch a lesson or scene…</span>
+                  <Button size="sm" variant="outline" onClick={leaveSessionAsStudent}>
+                    Leave session
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Filters */}
         <Card className="mb-6 rounded-xl border-border">
           <CardContent className="p-3">
@@ -2325,7 +2344,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
                           isLockedForGuest={isLockedForGuest}
                           onGuestSignup={handleGuestSignup}
                           onGuestLogin={handleGuestLogin}
-                          onApprovalChange={handleApprovalChange}
                         />
                       </div>
                     );})}
@@ -2372,7 +2390,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
                       completedLessons={completedLessons}
                       onOpenModal={openLessonModal}
                       selectedLanguage={selectedLanguage}
-                      onApprovalChange={handleApprovalChange}
                       isLockedForGuest={isLockedForGuest}
                       onGuestSignup={handleGuestSignup}
                       onGuestLogin={handleGuestLogin}

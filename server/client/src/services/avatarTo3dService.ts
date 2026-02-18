@@ -193,13 +193,23 @@ export class AvatarTo3dService {
           continue;
         }
 
-        // Create new asset
-        const docRef = await addDoc(collection(db, 'avatar_to_3d_assets'), {
-          ...asset,
+        // Create new asset - exclude id and any undefined to avoid Firestore invalid-argument
+        const { id: _id, ...assetData } = asset as AvatarTo3dAsset;
+        const cleanData: Record<string, unknown> = {
+          chapter_id: assetData.chapter_id,
+          topic_id: assetData.topic_id,
+          language: assetData.language,
+          prompt: assetData.prompt,
+          source_script: assetData.source_script || '',
+          source_script_type: assetData.source_script_type || 'explanation',
+          approval_status: false,
+          status: 'pending',
+          confidence: assetData.confidence ?? 0.8,
           created_at: serverTimestamp(),
           updated_at: serverTimestamp(),
           detected_at: serverTimestamp(),
-        });
+        };
+        const docRef = await addDoc(collection(db, 'avatar_to_3d_assets'), cleanData);
 
         assetIds.push(docRef.id);
         console.log(`✅ Saved detected asset: ${docRef.id} - ${asset.prompt.substring(0, 50)}...`);

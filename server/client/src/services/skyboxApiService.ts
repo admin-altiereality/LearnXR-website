@@ -117,6 +117,29 @@ export const skyboxApiService = {
       const response = await api.post('/skybox/generate', requestPayload);
       
       console.log('✅ Skybox generation response:', response.data);
+
+      // Axios validateStatus allows 4xx - check for error responses
+      if (response.status >= 400 || !response.data?.success) {
+        const data = response.data || {};
+        const errorCode = data.code;
+        const errorMsg = data.error || data.message;
+
+        if (response.status === 403 || errorCode === 'QUOTA_EXCEEDED') {
+          throw new Error(
+            errorMsg?.includes('quota') || errorCode === 'QUOTA_EXCEEDED'
+              ? (errorMsg || 'API quota has been exhausted. Please add credits at blockadelabs.com or contact support.')
+              : (errorMsg || 'Skybox generation is not available. Please contact support.')
+          );
+        }
+        if (response.status === 400 || errorCode === 'INVALID_REQUEST' || errorCode === 'MISSING_REQUIRED_FIELD') {
+          throw new Error(errorMsg || 'Invalid request. Please check your prompt and style selection.');
+        }
+        if (response.status === 401 || errorCode === 'UNAUTHORIZED' || errorCode === 'AUTH_REQUIRED') {
+          throw new Error(errorMsg || 'Authentication required. Please sign in and try again.');
+        }
+        throw new Error(errorMsg || `Skybox generation failed (${response.status}). Please try again.`);
+      }
+
       return response.data;
     } catch (error: any) {
       console.error('Skybox generation failed:', error);

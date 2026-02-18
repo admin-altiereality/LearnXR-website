@@ -45,7 +45,17 @@ import api from '../config/axios';
 import LessonMCQPanel from './LessonMCQPanel';
 import { LessonModeOverlay } from './LessonModeOverlay';
 import { useLesson } from '../contexts/LessonContext';
+import { useClassSession } from '../contexts/ClassSessionContext';
 import { AITeacherSupportPanel } from './AITeacherSupportPanel';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
+import { Button } from './ui/button';
 
 const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   console.log('MainSection component rendered');
@@ -100,6 +110,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const skyboxProgress = generationState?.skyboxProgress || 0;
   const assetGenerationProgress = generationState?.assetGenerationProgress || null;
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
+  const [showSendToClassModal, setShowSendToClassModal] = useState(false);
   const [generatedImageId, setGeneratedImageId] = useState(null);
   const [generatedVariations, setGeneratedVariations] = useState([]);
   const [currentVariationIndex, setCurrentVariationIndex] = useState(0);
@@ -109,8 +120,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     return generationState?.numVariations || 1;
   });
   const { user } = useAuth();
-  // Subscription removed
   const navigate = useNavigate();
+  const { activeSessionId, activeSession, launchScene, sessionError: classSessionError, clearSessionError } = useClassSession();
   
   // Lesson mode - for lessons launched from Content Studio
   const { activeLesson, lessonPhase, isLessonActive } = useLesson();
@@ -1817,6 +1828,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   // Skybox generation (entry point for Generate button)
   // -------------------------
   const generateSkybox = async () => {
+    // Require login - generation needs auth for API access and history
+    if (!user?.uid) {
+      setError("Please sign in to generate environments. Skybox generation requires authentication.");
+      return;
+    }
 
     if (!prompt || !prompt.trim()) {
       setError("Please provide a prompt for your In3D.Ai environment");
@@ -2009,7 +2025,11 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           setProgress(Math.min(currentProgress, 90));
         } else {
           console.error('❌ Invalid generation response:', variationResponse);
-          throw new Error('Failed to create skybox generation. Please try again.');
+          const apiError = variationResponse?.error || variationResponse?.message;
+          const apiCode = variationResponse?.code;
+          const quotaMsg = 'API quota has been exhausted. Please add credits at blockadelabs.com or contact support.';
+          const fallbackMsg = apiCode === 'QUOTA_EXCEEDED' ? quotaMsg : (apiError || 'Failed to create skybox generation. Please try again.');
+          throw new Error(fallbackMsg);
         }
       }
 
@@ -2716,19 +2736,24 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       let errorMessage = "Failed to generate In3D.Ai environment";
       
       if (error.response && error.response.data) {
-        const { error: apiError, code } = error.response.data;
+        const { error: apiError, message: apiMsg, code } = error.response.data;
         
         if (code === 'QUOTA_EXCEEDED') {
-          errorMessage = apiError || "API quota has been exhausted. Please contact support or try again later.";
+          errorMessage = apiError || apiMsg || "API quota has been exhausted. Please add credits at blockadelabs.com or contact support.";
         } else if (code === 'INVALID_REQUEST') {
-          errorMessage = apiError || "Invalid request parameters. Please check your input.";
+          errorMessage = apiError || apiMsg || "Invalid request parameters. Please check your input.";
         } else if (code === 'AUTH_ERROR') {
           errorMessage = "Authentication error. Please refresh the page and try again.";
-        } else if (apiError) {
-          errorMessage = apiError;
+        } else if (apiError || apiMsg) {
+          errorMessage = apiError || apiMsg;
         }
       } else if (error.message) {
-        errorMessage += ": " + error.message;
+        // Use thrown message directly when it's a clear API error (quota, auth, etc.)
+        if (error.message.includes('quota') || error.message.includes('credits') || error.message.includes('exhausted')) {
+          errorMessage = error.message;
+        } else {
+          errorMessage = errorMessage + ": " + error.message;
+        }
       }
       
       setError(errorMessage);
@@ -3895,6 +3920,26 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           </svg>
                           <span>Download</span>
                         </button>
+                        {/* Send to class - launch current scene to joined students */}
+                        <button
+                          className={`
+                            w-full py-0.5 text-[10px] font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-1.5
+                            transition-all duration-300 shadow-lg border rounded-md mt-0.5
+                            ${
+                              !currentImageForDownload
+                                ? 'bg-muted/60 text-muted-foreground cursor-not-allowed border-border shadow-none'
+                                : 'bg-primary/20 hover:bg-primary/30 text-primary border-primary/40 hover:-translate-y-0.5 active:translate-y-0'
+                            }
+                          `}
+                          onClick={() => setShowSendToClassModal(true)}
+                          disabled={!currentImageForDownload}
+                          title="Send current scene to students in your class session"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                          </svg>
+                          <span>Send to class</span>
+                        </button>
                       </div>
 
                     {/* Show enhancement status when enhancing */}
@@ -4083,7 +4128,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             }
                           `}
                           onClick={generateSkybox}
-                          disabled={isGenerating || isGenerating3DAsset}
+                          disabled={isGenerating || isGenerating3DAsset || !user?.uid || !prompt?.trim() || !selectedSkybox}
                         >
                           {isGenerating || isGenerating3DAsset ? (
                             <>
@@ -4583,7 +4628,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           {/* Start Button - Right Side */}
                           <button
                             onClick={generateSkybox}
-                            disabled={isGenerating || isGenerating3DAsset || !prompt?.trim() || !selectedSkybox}
+                            disabled={isGenerating || isGenerating3DAsset || !user?.uid || !prompt?.trim() || !selectedSkybox}
                             className={`
                               flex-1 py-1 text-[10px] font-bold uppercase tracking-[0.15em]
                               flex items-center justify-center gap-1.5
@@ -4591,7 +4636,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                               ${
                                 isGenerating || isGenerating3DAsset
                                   ? 'bg-blue-600 text-white cursor-not-allowed shadow-none'
-                                  : !prompt?.trim() || !selectedSkybox
+                                  : !user?.uid || !prompt?.trim() || !selectedSkybox
                                   ? 'bg-gray-800/60 text-gray-500 cursor-not-allowed border border-gray-700/30'
                                   : 'bg-blue-600 hover:bg-blue-500 text-white hover:shadow-[0_0_24px_rgba(37,99,235,0.5)] hover:-translate-y-0.5 active:translate-y-0'
                               }
@@ -4599,6 +4644,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                             title={
                               isGenerating || isGenerating3DAsset
                                 ? 'Generation in progress'
+                                : !user?.uid
+                                ? 'Please sign in to generate'
                                 : !prompt?.trim()
                                 ? 'Please enter a prompt'
                                 : !selectedSkybox
@@ -4660,6 +4707,52 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         </div>
 
       </div>
+
+      {/* Send to class modal */}
+      <Dialog open={showSendToClassModal} onOpenChange={(open) => { setShowSendToClassModal(open); if (!open) clearSessionError?.(); }} aria-describedby={undefined}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Send scene to class</DialogTitle>
+            <DialogDescription id="send-to-class-desc">
+              {activeSessionId
+                ? 'Send your current scene to all students who joined your class session. They will see it in 360°.'
+                : 'Start a class session from the Teacher Dashboard first, then return here to send your scene.'}
+            </DialogDescription>
+          </DialogHeader>
+          {classSessionError && (
+            <p className="text-sm text-destructive">{classSessionError}</p>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            {activeSessionId ? (
+              <>
+                <Button variant="outline" onClick={() => setShowSendToClassModal(false)}>Cancel</Button>
+                <Button
+                  onClick={async () => {
+                    if (!activeSessionId || !user?.uid || !currentImageForDownload) return;
+                    const imageUrl = currentImageForDownload.image || currentImageForDownload.image_jpg;
+                    if (!imageUrl) return;
+                    const payload = {
+                      type: 'create_scene',
+                      skybox_id: currentImageForDownload.id != null ? String(currentImageForDownload.id) : null,
+                      skybox_glb_url: currentImageForDownload.file_url || undefined,
+                      skybox_image_url: imageUrl,
+                      name: selectedSkybox?.name || prompt || 'Teacher\'s scene',
+                    };
+                    const ok = await launchScene(payload);
+                    if (ok) setShowSendToClassModal(false);
+                  }}
+                >
+                  Send scene
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => { setShowSendToClassModal(false); navigate('/dashboard'); }}>
+                Go to Dashboard
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Download Popup */}
       <DownloadPopup
