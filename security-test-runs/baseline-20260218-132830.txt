@@ -1,0 +1,13 @@
+﻿=== LearnXR baseline security check ===
+Target: http://localhost:5002 (localhost only)
+Date: 2026-02-18T13:28:30.4961055+05:30
+
+[FAIL/SKIP] GET /health -> Unable to connect to the remote server
+
+[INFO] GET /api/payment -> N/A or error (expected without auth)
+[INFO] GET /api/user -> N/A or error (expected without auth)
+[INFO] GET /api/assistant -> N/A or error (expected without auth)
+[INFO] GET /api/auth -> N/A or error (expected without auth)
+
+
+=== End baseline check ===

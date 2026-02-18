@@ -49,6 +49,7 @@ import {
   FaMagic
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { motion } from 'framer-motion';
 
 interface SubjectPerformance {
   subject: string;
@@ -74,6 +75,39 @@ interface ClassInsight {
   isShared: boolean; // Whether this class is shared with the teacher
   isOwner: boolean; // Whether this teacher owns/manages the class
 }
+
+const CircularProgress = ({
+  value,
+  label,
+  accent,
+}: {
+  value: number;
+  label: string;
+  accent?: string;
+}) => {
+  const clamped = Math.max(0, Math.min(100, Math.round(value || 0)));
+  const color =
+    accent ||
+    (clamped >= 80 ? 'var(--primary)' : clamped >= 60 ? '#f59e0b' : 'var(--destructive)');
+  const angle = `${clamped * 3.6}deg`;
+
+  return (
+    <div className="relative h-28 w-28">
+      <div className="absolute inset-0 rounded-full bg-gradient-to-b from-muted/60 via-card to-background" />
+      <motion.div
+        className="absolute inset-0 rounded-full"
+        style={{ background: `conic-gradient(${color} ${angle}, var(--border) ${angle})` }}
+        animate={{ rotate: 360 }}
+        transition={{ duration: 14, ease: 'linear', repeat: Infinity }}
+      />
+      <div className="absolute inset-2 rounded-full bg-card border border-border shadow-sm" />
+      <div className="absolute inset-[18%] rounded-full bg-card flex flex-col items-center justify-center text-center px-2">
+        <span className="text-xl font-semibold text-foreground">{clamped}%</span>
+        <span className="text-[11px] text-muted-foreground leading-tight">{label}</span>
+      </div>
+    </div>
+  );
+};
 
 const TeacherDashboard = () => {
   const { user, profile } = useAuth();
@@ -123,7 +157,7 @@ const TeacherDashboard = () => {
       }));
       setAllTeachers(teachersData.filter(t => t.uid !== user.uid)); // Exclude self
     }, (error) => {
-      console.error('❌ TeacherDashboard: Error fetching teachers', error);
+      console.error('TeacherDashboard: Error fetching teachers', error);
     });
 
     return () => unsubscribeTeachers();
@@ -147,7 +181,7 @@ const TeacherDashboard = () => {
       }));
       setPendingStudents(pendingData);
     }, (error) => {
-      console.error('❌ TeacherDashboard: Error fetching pending students', error);
+      console.error('TeacherDashboard: Error fetching pending students', error);
     });
 
     return () => unsubscribePending();
@@ -194,7 +228,7 @@ const TeacherDashboard = () => {
               updatedAt: new Date().toISOString(),
             });
           } catch (error: any) {
-            console.error('❌ TeacherDashboard: Error auto-assigning school_id', error);
+            console.error('TeacherDashboard: Error auto-assigning school_id', error);
           }
         }
       }
@@ -259,7 +293,7 @@ const TeacherDashboard = () => {
       }));
       setStudents(studentsData);
     }, (error) => {
-      console.error('❌ TeacherDashboard: Error fetching students', error);
+      console.error('TeacherDashboard: Error fetching students', error);
     });
 
     // Fetch scores
@@ -277,7 +311,7 @@ const TeacherDashboard = () => {
       })) as StudentScore[];
       setScores(scoresData);
     }, (error) => {
-      console.error('❌ TeacherDashboard: Error fetching scores', error);
+      console.error('TeacherDashboard: Error fetching scores', error);
     });
 
     // Fetch launches
@@ -296,7 +330,7 @@ const TeacherDashboard = () => {
       setLaunches(launchesData);
       setLoading(false);
     }, (error) => {
-      console.error('❌ TeacherDashboard: Error fetching launches', error);
+      console.error('TeacherDashboard: Error fetching launches', error);
       setLoading(false);
     });
 
@@ -458,6 +492,18 @@ const TeacherDashboard = () => {
     }
   };
 
+  const filteredClassInsights = selectedSubjectFilter === 'all'
+    ? classInsights
+    : classInsights.filter(ci => ci.subject === selectedSubjectFilter || (!ci.subject && selectedSubjectFilter === 'All Subjects'));
+
+  const topProgressClasses = useMemo(() => {
+    return [...filteredClassInsights]
+      .sort((a, b) => b.completionRate - a.completionRate || b.averageScore - a.averageScore)
+      .slice(0, 3);
+  }, [filteredClassInsights]);
+
+  const chartColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -469,30 +515,33 @@ const TeacherDashboard = () => {
     );
   }
 
-  const filteredClassInsights = selectedSubjectFilter === 'all'
-    ? classInsights
-    : classInsights.filter(ci => ci.subject === selectedSubjectFilter || (!ci.subject && selectedSubjectFilter === 'All Subjects'));
-
-  const chartColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
-
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         {/* Header */}
-        <div className="mb-8 pb-6 border-b border-border">
-          <div className="flex items-start justify-between gap-6">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
-                <FaChalkboardTeacher className="text-primary text-xl" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold mb-1 font-display" style={learnXRFontStyle}>
-                  <span className="text-foreground">Learn</span>
-                  <span className="text-primary">XR</span>
-                  <TrademarkSymbol />
-                </h1>
-                <h2 className="text-xl font-semibold text-foreground">Teacher Dashboard</h2>
-                <p className="text-muted-foreground text-sm mt-0.5">Comprehensive insights for your assigned classes</p>
+        <div className="mb-8">
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-card/90 backdrop-blur">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.15),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.12),transparent_30%)]" />
+            <div className="p-6 sm:p-8 relative">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center shadow-inner">
+                    <FaChalkboardTeacher className="text-primary text-xl" />
+                  </div>
+                  <div>
+                    <h1 className="text-3xl font-bold mb-1 font-display" style={learnXRFontStyle}>
+                      <span className="text-foreground">Learn</span>
+                      <span className="text-primary">XR</span>
+                      <TrademarkSymbol />
+                    </h1>
+                    <p className="text-muted-foreground text-sm">Precision insights for every class you lead.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="text-xs">Realtime data</Badge>
+                  <Badge variant="secondary" className="text-xs">Collaboration ready</Badge>
+                  <Badge variant="secondary" className="text-xs">AI assisted</Badge>
+                </div>
               </div>
             </div>
           </div>
@@ -508,13 +557,13 @@ const TeacherDashboard = () => {
             <Card className="border border-border bg-card hover:bg-accent/20 hover:border-primary/40 transition-all cursor-pointer group max-w-2xl">
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-xl bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center shrink-0 group-hover:bg-cyan-500/30 transition-colors">
-                    <FaFlask className="text-cyan-400 text-2xl" />
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                    <FaFlask className="text-primary text-2xl" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-semibold text-foreground mb-1">Create</h3>
                     <p className="text-muted-foreground text-sm mb-4">
-                      Generate 360° skybox environments and 3D assets. Use AI Teacher Support in the top-right for lesson plans, content ideas, and grading rubrics.
+                      Generate 360-degree skybox environments and 3D assets. Use AI Teacher Support in the top-right for lesson plans, content ideas, and grading rubrics.
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="secondary" className="text-xs">Skybox</Badge>
@@ -602,7 +651,7 @@ const TeacherDashboard = () => {
                   <div className="flex gap-2 mt-1">
                     <span className="text-xs text-primary">{stats.approvedStudents} approved</span>
                     {stats.pendingStudents > 0 && (
-                      <span className="text-xs text-amber-400">{stats.pendingStudents} pending</span>
+                      <span className="text-xs text-amber-500">{stats.pendingStudents} pending</span>
                     )}
                   </div>
                 </div>
@@ -639,6 +688,43 @@ const TeacherDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Progress Snapshot (circular meters) */}
+        {topProgressClasses.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+                <FaChartLine className="text-primary" />
+                Progress Snapshot
+              </h2>
+              <p className="text-muted-foreground text-sm">Top classes by completion rate</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {topProgressClasses.map((insight) => (
+                <Card key={insight.classId} className="border-border bg-card/90 hover:border-primary/40 transition-colors">
+                  <CardContent className="p-5 flex items-center gap-4">
+                    <CircularProgress value={insight.completionRate} label="Completion" />
+                    <div className="space-y-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-foreground font-semibold">{insight.className}</h3>
+                        {insight.isShared && <Badge variant="secondary">Shared</Badge>}
+                      </div>
+                      <p className="text-muted-foreground text-sm">
+                        {insight.curriculum} - {insight.subject || 'All subjects'}
+                      </p>
+                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                        <span>{insight.studentCount} students</span>
+                        <span className={insight.averageScore >= 70 ? 'text-primary' : insight.averageScore >= 50 ? 'text-amber-500' : 'text-destructive'}>
+                          {insight.averageScore}% avg score
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Subject performance bar chart */}
         {subjectPerformance.length > 0 && (
@@ -765,7 +851,7 @@ const TeacherDashboard = () => {
                       <h3 className="text-foreground font-semibold text-lg">{subject.subject}</h3>
                       <span className={`text-2xl font-bold ${
                         subject.averageScore >= 70 ? 'text-primary' :
-                        subject.averageScore >= 50 ? 'text-amber-400' : 'text-destructive'
+                        subject.averageScore >= 50 ? 'text-amber-500' : 'text-destructive'
                       }`}>
                         {subject.averageScore}%
                       </span>
@@ -892,7 +978,7 @@ const TeacherDashboard = () => {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-muted-foreground">Avg Score</span>
-                          <span className={`font-medium ${insight.averageScore >= 70 ? 'text-primary' : insight.averageScore >= 50 ? 'text-amber-400' : 'text-destructive'}`}>
+                          <span className={`font-medium ${insight.averageScore >= 70 ? 'text-primary' : insight.averageScore >= 50 ? 'text-amber-500' : 'text-destructive'}`}>
                             {insight.averageScore}%
                           </span>
                         </div>
@@ -947,7 +1033,7 @@ const TeacherDashboard = () => {
                           </p>
                         </div>
                         <div className="ml-4 text-right">
-                          <div className={`text-2xl font-bold ${score.score.percentage >= 70 ? 'text-primary' : score.score.percentage >= 50 ? 'text-amber-400' : 'text-destructive'}`}>
+                          <div className={`text-2xl font-bold ${score.score.percentage >= 70 ? 'text-primary' : score.score.percentage >= 50 ? 'text-amber-500' : 'text-destructive'}`}>
                             {score.score.percentage}%
                           </div>
                           <p className="text-muted-foreground text-sm">{score.score.correct}/{score.score.total}</p>

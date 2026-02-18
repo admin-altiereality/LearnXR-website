@@ -100,16 +100,17 @@ export const extractAssets = async (req: Request, res: Response) => {
       });
     }
 
-    // Use simplified AI extraction
+    // Use script-aware AI extraction (returns 2-4 Meshy-optimized prompts)
     const result = await aiPromptDetectionService.extractAssetsOnly(prompt.trim());
+    const assets = result.assets.slice(0, 4); // Enforce max 4
 
     console.log(`[${requestId}] Asset extraction completed:`, {
-      count: result.assets.length,
-      assets: result.assets
+      count: assets.length,
+      assets: assets
     });
 
     return res.status(200).json({
-      assets: result.assets,
+      assets,
       success: true,
       method: 'ai',
       requestId
@@ -139,45 +140,53 @@ export const extractAssets = async (req: Request, res: Response) => {
 };
 
 /**
- * Fallback keyword-based asset extraction
+ * Fallback keyword-based asset extraction for explanation scripts.
+ * Returns 2-4 Meshy-style prompts when possible.
  */
 function extractAssetsFallback(prompt: string): string[] {
-  const assets: string[] = [];
+  const rawPhrases: string[] = [];
   const lowerPrompt = prompt.toLowerCase();
-  
-  // Common 3D object keywords
+
+  // Educational and general 3D object keywords (script-friendly), including animals
   const objectKeywords = [
-    'globe', 'map', 'ruler', 'compass', 'telescope', 'microscope',
-    'table', 'chair', 'desk', 'sofa', 'bed', 'cabinet', 'shelf', 'lamp', 'vase', 'mirror', 'clock',
-    'car', 'bike', 'motorcycle', 'plane', 'ship', 'boat', 'truck', 'bus', 'train', 'helicopter', 'drone', 'spaceship',
-    'sword', 'gun', 'shield', 'armor', 'helmet', 'axe', 'hammer', 'wrench', 'screwdriver',
-    'statue', 'sculpture', 'bust', 'monument', 'totem',
-    'plant', 'flower', 'crystal', 'gem', 'rock', 'stone', 'boulder', 'log', 'branch',
-    'artwork', 'painting', 'trophy', 'award', 'chandelier',
+    'globe', 'map', 'ruler', 'compass', 'telescope', 'microscope', 'model', 'models',
+    'table', 'chair', 'desk', 'sofa', 'cabinet', 'shelf', 'lamp', 'vase', 'mirror', 'clock',
+    'car', 'bike', 'plane', 'ship', 'boat', 'train', 'helicopter', 'drone', 'spaceship',
+    'sword', 'shield', 'armor', 'helmet', 'hammer', 'wrench', 'screwdriver',
+    'statue', 'sculpture', 'bust', 'monument', 'totem', 'artifact',
+    'plant', 'flower', 'crystal', 'gem', 'rock', 'stone', 'fossil',
+    'beaker', 'flask', 'test tube', 'periodic table', 'atom', 'solar system', 'planets',
+    'chandelier', 'trophy', 'painting', 'cube', 'sphere', 'pyramid', 'cylinder', 'cone',
     'phone', 'computer', 'laptop', 'tablet', 'camera', 'speaker',
-    'box', 'crate', 'barrel', 'bottle', 'jar', 'can'
+    'box', 'crate', 'barrel', 'bottle', 'jar', 'book', 'scroll',
+    'frog', 'hen', 'duck', 'sheep', 'cow', 'dog', 'cat', 'bird', 'horse', 'pig', 'animal'
   ];
-  
-  // Find objects in prompt
+
   for (const keyword of objectKeywords) {
     if (lowerPrompt.includes(keyword)) {
-      // Extract the phrase containing the keyword
       const words = prompt.split(/\s+/);
       const keywordIndex = words.findIndex(w => w.toLowerCase().includes(keyword));
-      
       if (keywordIndex >= 0) {
-        // Extract 2-3 words around the keyword for context
         const start = Math.max(0, keywordIndex - 1);
         const end = Math.min(words.length, keywordIndex + 2);
         const phrase = words.slice(start, end).join(' ').trim();
-        
-        if (phrase && !assets.includes(phrase)) {
-          assets.push(phrase);
+        if (phrase && !rawPhrases.some(p => p.toLowerCase() === phrase.toLowerCase())) {
+          rawPhrases.push(phrase);
         }
       }
     }
   }
-  
+
+  // Convert to simple Meshy-style prompts (2-4 items)
+  const meshyStyle = (phrase: string): string => {
+    const p = phrase.trim();
+    if (p.length < 4) return `3D model of a ${p}`;
+    return `Detailed 3D model of ${p}, realistic, clean topology`;
+  };
+  const assets = rawPhrases
+    .slice(0, 4)
+    .map(meshyStyle);
+
   return assets;
 };
 

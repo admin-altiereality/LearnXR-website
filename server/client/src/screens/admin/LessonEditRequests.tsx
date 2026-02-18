@@ -1,6 +1,6 @@
 /**
  * Lesson Edit Requests - Admin/Super Admin approve or reject Associate's lesson changes.
- * Lists pending chapter_edit_requests; Approve or Reject.
+ * Lists pending chapter_edit_requests; Preview (launch lesson with associate's draft), Approve, or Reject.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -15,8 +15,10 @@ import {
   FileEdit,
   Clock,
   User,
+  Play,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useLesson } from '../../contexts/LessonContext';
 import { canApproveLessonEdits } from '../../utils/rbac';
 import {
   fetchPendingEditRequests,
@@ -24,15 +26,19 @@ import {
   rejectEditRequest,
   type ChapterEditRequest,
 } from '../../services/chapterEditRequestService';
+import { getLessonBundle } from '../../services/firestore/getLessonBundle';
+import { buildLessonPayloadFromBundle } from '../../services/launchLessonFromBundle';
 import { Button } from '../../Components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 
 const LessonEditRequests = () => {
   const navigate = useNavigate();
   const { profile } = useAuth();
+  const { startLesson } = useLesson();
   const [requests, setRequests] = useState<ChapterEditRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [previewLaunchingId, setPreviewLaunchingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!profile || !canApproveLessonEdits(profile)) return;
@@ -90,6 +96,77 @@ const LessonEditRequests = () => {
   const handleOpenChapter = (chapterId: string) => {
     navigate(`/studio/content/${chapterId}`);
   };
+
+  /** Launch lesson player with the Associate's draft so Super Admin can preview changes before approving. */
+  const handlePreviewInLesson = useCallback(
+    async (req: ChapterEditRequest) => {
+      setPreviewLaunchingId(req.id);
+      try {
+        const bundle = await getLessonBundle({
+          chapterId: req.chapterId,
+          lang: 'en',
+          userId: req.requestedBy,
+          userRole: 'associate',
+        });
+        
+        // Log bundle state before building payload
+        const firstTopic = bundle.chapter?.topics?.[0];
+        console.log('[Preview] Bundle state:', {
+          has_chapter: !!bundle.chapter,
+          topics_count: bundle.chapter?.topics?.length || 0,
+          first_topic_id: firstTopic?.topic_id,
+          first_topic_skybox_url: firstTopic?.skybox_url,
+          first_topic_skybox_id: firstTopic?.skybox_id,
+          bundle_skybox: bundle.skybox ? {
+            id: bundle.skybox.id,
+            imageUrl: bundle.skybox.imageUrl,
+            file_url: bundle.skybox.file_url,
+            skybox_url: bundle.skybox.skybox_url,
+          } : null,
+        });
+        
+        const { chapter, topic } = buildLessonPayloadFromBundle(bundle);
+        
+        // Log final payload skybox info
+        console.log('[Preview] Final payload skybox:', {
+          skybox_url: topic.skybox_url,
+          skybox_id: topic.skybox_id,
+        });
+        
+        // Check if there's any viewable content (skybox URL or ID, scripts, or MCQs)
+        const hasContent =
+          topic.skybox_url || 
+          topic.skybox_id || 
+          topic.avatar_intro || 
+          topic.avatar_explanation || 
+          (topic.mcqs && topic.mcqs.length > 0);
+        if (!hasContent) {
+          toast.warning('This draft has no viewable content yet (no skybox or scripts).');
+          return;
+        }
+        
+        // Warn if skybox_id exists but no URL (player will fetch it)
+        if (topic.skybox_id && !topic.skybox_url) {
+          console.log('[Preview] Skybox ID found but no URL - player will fetch from Firestore');
+        }
+        startLesson(chapter, topic);
+        const fullLessonData = {
+          chapter,
+          topic,
+          startedAt: new Date().toISOString(),
+        };
+        sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+        toast.success('Opening lesson preview. You can approve or reject after viewing.');
+        navigate('/vrlessonplayer');
+      } catch (error) {
+        console.error('Preview launch error:', error);
+        toast.error('Failed to open lesson preview. The chapter or draft may be missing.');
+      } finally {
+        setPreviewLaunchingId(null);
+      }
+    },
+    [startLesson, navigate]
+  );
 
   if (!profile) return null;
 
@@ -164,7 +241,21 @@ const LessonEditRequests = () => {
                           </span>
                         </CardDescription>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => handlePreviewInLesson(req)}
+                          disabled={isProcessing || previewLaunchingId === req.id}
+                          title="Preview the lesson with the Associate's changes before approving"
+                        >
+                          {previewLaunchingId === req.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                          ) : (
+                            <Play className="w-4 h-4 mr-1" />
+                          )}
+                          Preview in lesson
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"

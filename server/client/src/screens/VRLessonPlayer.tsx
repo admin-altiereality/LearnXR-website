@@ -963,6 +963,17 @@ const VRLessonPlayerInner = () => {
   }, [fetchedMCQs, activeLesson]);
   
   const currentMcq = mcqs[currentMcqIndex];
+
+  // All content ready: skybox (or no skybox), 3D assets (or none), and TTS fetch complete.
+  // Start Lesson is only enabled when this is true so TTS doesn't play before the scene is ready.
+  const allReady = useMemo(() => {
+    const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
+    const envReady =
+      (skyboxUrl ? sceneReady : !skyboxLoading) &&
+      (assetUrl ? !assetLoading : true);
+    const ttsReady = ttsStatus !== 'loading';
+    return envReady && ttsReady;
+  }, [skyboxData, skyboxLoading, sceneReady, assetUrl, assetLoading, ttsStatus]);
   
   // Debug log for MCQs
   useEffect(() => {
@@ -1138,6 +1149,14 @@ const VRLessonPlayerInner = () => {
     
     loadSkybox();
   }, [effectiveLesson]);
+
+  // When there is no skybox to load, mark scene ready so we don't block Start Lesson
+  useEffect(() => {
+    const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
+    if (!skyboxLoading && !skyboxUrl) {
+      setSceneReady(true);
+    }
+  }, [skyboxLoading, skyboxData]);
 
   // ============================================================================
   // Fetch 3D Asset (Platform-aware: FBX for Android, USDZ for iOS, GLB for Web)
@@ -2417,20 +2436,29 @@ const VRLessonPlayerInner = () => {
                 )}
               </div>
 
-              {/* Start Button */}
+              {/* Start Button - enabled only when skybox, 3D assets, and TTS are ready */}
               <motion.button
                 onClick={handleStartLesson}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="w-full flex items-center justify-center gap-3 px-8 py-4 
-                         bg-gradient-to-r from-cyan-500 to-blue-600 
-                         hover:from-cyan-400 hover:to-blue-500
-                         text-white text-lg font-bold rounded-xl
-                         shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50
-                         transition-all duration-300"
+                disabled={!allReady}
+                whileHover={allReady ? { scale: 1.02 } : undefined}
+                whileTap={allReady ? { scale: 0.98 } : undefined}
+                className={`w-full flex items-center justify-center gap-3 px-8 py-4 
+                         text-lg font-bold rounded-xl transition-all duration-300
+                         ${allReady
+                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer'
+                  : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}
               >
-                <Play className="w-6 h-6" />
-                Start Lesson
+                {allReady ? (
+                  <>
+                    <Play className="w-6 h-6" />
+                    Start Lesson
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    Loading...
+                  </>
+                )}
               </motion.button>
 
               {/* Back button */}
