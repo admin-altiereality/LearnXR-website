@@ -69,15 +69,22 @@ export interface ApiResponse<T> {
 }
 
 class SkyboxService {
-  private sdk: BlockadeLabsSdk;
+  private sdk: BlockadeLabsSdk | null = null;
   private stylesCache: CacheEntry<SkyboxStyle[]> | null = null;
   private readonly CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
   constructor() {
-    if (!env.API_KEY) {
-      throw new Error('BlockadeLabs API key is required');
+    if (env.API_KEY && env.API_KEY.trim() !== '') {
+      this.sdk = new BlockadeLabsSdk({ api_key: env.API_KEY });
     }
-    this.sdk = new BlockadeLabsSdk({ api_key: env.API_KEY });
+  }
+
+  /** Throws if BlockadeLabs API key was not configured (allows server to start without it for local/testing). */
+  private getSdk(): BlockadeLabsSdk {
+    if (!this.sdk) {
+      throw new Error('BlockadeLabs API key is required. Set API_KEY in server/.env to use skybox features.');
+    }
+    return this.sdk;
   }
 
   /**
@@ -132,7 +139,7 @@ class SkyboxService {
       }
 
       console.log('Fetching fresh skybox styles from BlockadeLabs API');
-      const styles = await this.sdk.getSkyboxStyles();
+      const styles = await this.getSdk().getSkyboxStyles();
       
       // Cache the results
       this.stylesCache = {
@@ -175,7 +182,7 @@ class SkyboxService {
         has_webhook: !!request.webhook_url
       });
 
-      const generation = await this.sdk.generateSkybox({
+      const generation = await this.getSdk().generateSkybox({
         prompt: request.prompt.trim(),
         skybox_style_id: request.skybox_style_id,
         remix_id: request.remix_imagine_id ? parseInt(request.remix_imagine_id) : undefined,
@@ -201,7 +208,7 @@ class SkyboxService {
       }
 
       console.log('Checking generation status for:', generationId);
-      const status = await this.sdk.getImagineById({ id: generationId });
+      const status = await this.getSdk().getImagineById({ id: generationId });
       
       console.log('Generation status:', {
         id: generationId,
@@ -269,7 +276,7 @@ class SkyboxService {
       const cacheStatus = this.getCacheStatus();
       
       // Test API connection by fetching a small number of styles
-      const testStyles = await this.sdk.getSkyboxStyles();
+      const testStyles = await this.getSdk().getSkyboxStyles();
       
       return {
         status: 'healthy',

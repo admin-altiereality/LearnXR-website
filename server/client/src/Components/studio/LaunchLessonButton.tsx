@@ -110,11 +110,19 @@ export const LaunchLessonButton = ({
         toast.error('Cannot launch: Missing topic ID');
         return;
       }
-      
+
+      // Prefer editor props so associate sees their changes when launching from studio
+      let finalChapterName = chapterName?.trim() || '';
+      let finalTopicName = topicName?.trim() || '';
+      let finalLearningObjective = learningObjective?.trim() || '';
+      let finalAvatarIntro = avatarIntro?.trim() || '';
+      let finalAvatarExplanation = avatarExplanation?.trim() || '';
+      let finalAvatarOutro = avatarOutro?.trim() || '';
+
       // Build chapter data (use language-specific name)
       const chapter: LessonChapter = {
         chapter_id: chapterId,
-        chapter_name: finalChapterName,
+        chapter_name: finalChapterName || chapterName,
         chapter_number: chapterNumber,
         curriculum,
         class_name: className,
@@ -162,35 +170,31 @@ export const LaunchLessonButton = ({
         }
       }
       
-      // Fetch chapter data to get language-specific names and scripts
-      let finalChapterName = chapterName;
-      let finalTopicName = topicName;
-      let finalLearningObjective = learningObjective;
-      let finalAvatarIntro = avatarIntro;
-      let finalAvatarExplanation = avatarExplanation;
-      let finalAvatarOutro = avatarOutro;
-      
+      // Fill from Firestore only when editor props are empty (so associate sees their changes on launch)
       if (chapterId && topicId) {
-        console.log(`🔍 [LaunchLesson] Fetching ${language} chapter data...`);
+        console.log(`🔍 [LaunchLesson] Fetching ${language} chapter data (for fallbacks)...`);
         try {
           const chapterRef = doc(db, 'curriculum_chapters', chapterId);
           const chapterSnap = await getDoc(chapterRef);
-          
+
           if (chapterSnap.exists()) {
             const chapterData = chapterSnap.data() as CurriculumChapter;
             const firebaseTopic = chapterData.topics?.find(t => t.topic_id === topicId);
-            
+
             if (firebaseTopic) {
-              // Get language-specific names
-              finalChapterName = getChapterNameByLanguage(chapterData, language) || chapterName;
-              finalTopicName = getTopicNameByLanguage(firebaseTopic, language) || topicName;
-              finalLearningObjective = getLearningObjectiveByLanguage(firebaseTopic, language) || learningObjective;
-              
-              // Get language-specific avatar scripts
+              const fromFirestore = {
+                chapterName: getChapterNameByLanguage(chapterData, language) || chapterName,
+                topicName: getTopicNameByLanguage(firebaseTopic, language) || topicName,
+                learningObjective: getLearningObjectiveByLanguage(firebaseTopic, language) || learningObjective,
+              };
               const scripts = extractTopicScriptsForLanguage(firebaseTopic, language);
-              finalAvatarIntro = scripts.intro || finalAvatarIntro || '';
-              finalAvatarExplanation = scripts.explanation || finalAvatarExplanation || '';
-              finalAvatarOutro = scripts.outro || finalAvatarOutro || '';
+              // Prefer editor props so associate sees their changes when launching from studio
+              if (!finalChapterName) finalChapterName = fromFirestore.chapterName || chapterName || '';
+              if (!finalTopicName) finalTopicName = fromFirestore.topicName || topicName || '';
+              if (!finalLearningObjective) finalLearningObjective = fromFirestore.learningObjective || learningObjective || '';
+              if (!finalAvatarIntro) finalAvatarIntro = scripts.intro || '';
+              if (!finalAvatarExplanation) finalAvatarExplanation = scripts.explanation || '';
+              if (!finalAvatarOutro) finalAvatarOutro = scripts.outro || '';
               console.log(`✅ [LaunchLesson] Got ${language} chapter data and scripts`);
             }
           }
@@ -256,8 +260,8 @@ export const LaunchLessonButton = ({
         avatar_outro: topic.avatar_outro?.substring(0, 50),
       });
       
-      // Validate we have minimum required data
-      if (!finalSkyboxUrl && !avatarIntro && !avatarExplanation) {
+      // Validate we have minimum required data (use resolved final* values)
+      if (!finalSkyboxUrl && !finalAvatarIntro && !finalAvatarExplanation) {
         console.warn('⚠️ [LaunchLesson] No content available');
         toast.warning('This topic has no content yet. Generate a skybox or add scripts first.');
         setLoading(false);
@@ -271,7 +275,7 @@ export const LaunchLessonButton = ({
       
       console.log('✅ [LaunchLesson] startLesson called successfully');
       
-      toast.success(`Launching lesson: ${topicName}`);
+      toast.success(`Launching lesson: ${finalTopicName || topicName}`);
       
       console.log('🧭 [LaunchLesson] Navigating to /vrlessonplayer...');
       

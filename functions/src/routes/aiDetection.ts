@@ -412,77 +412,46 @@ router.post('/extract-assets', validateReadAccess, async (req: Request, res: Res
 
     console.log(`[${requestId}] Asset extraction requested for prompt:`, prompt.substring(0, 50) + '...');
 
-    const systemPrompt = `You are an expert at extracting EDUCATIONAL 3D object names from educational content prompts for In3D.ai, an educational VR/AR platform.
+    const systemPrompt = `You are an expert at analyzing AVATAR EXPLANATION SCRIPTS (educational lesson narratives) and producing prompts for Meshy.ai text-to-3D API.
 
-YOUR TASK: Extract ONLY the exact phrases from the prompt that describe EDUCATIONAL 3D objects/assets that are educationally valuable and can be created as standalone 3D models for learning. Focus on objects that help students understand concepts, visualize abstract ideas, or explore subjects interactively. NEVER extract environment/skybox words.
+INPUT: The user will provide an explanation script: one or more paragraphs of educational narrative (e.g. what a teacher says in a lesson). Objects may be mentioned indirectly ("imagine a globe", "we have a telescope", "a model of the solar system").
 
-=== EDUCATIONAL 3D OBJECTS TO EXTRACT (prioritize these) ===
-- Educational Tools & Instruments: globe, map, compass, telescope, microscope, ruler, protractor, calculator, abacus, periodic table model, molecular model, atom model, DNA model
-- Scientific Models: planet models, solar system models, cell models, organ models, skeleton models, plant models, animal models, fossil models, crystal structures, geometric shapes
-- Historical & Cultural Artifacts: ancient artifacts, historical monuments, sculptures, statues, coins, pottery, tools, weapons, armor, manuscripts, scrolls
-- Mathematical Objects: geometric shapes (cube, sphere, pyramid, cylinder, cone), 3D graphs, mathematical models, fractals, polyhedra
-- Biological Specimens: plant specimens, animal models, insect models, bird models, fish models, reptile models, mammal models, human anatomy models
-- Physics & Chemistry: lab equipment (beaker, flask, test tube, Bunsen burner), circuit components, magnets, gears, pulleys, levers, simple machines
-- Geography & Earth Science: landform models, volcano models, mountain models, rock samples, mineral samples, fossil models, weather instruments
-- Technology & Engineering: simple machines, gears, pulleys, levers, wheel and axle, inclined plane, wedge, screw, bridge models, building models
-- Art & Design: sculptures, art pieces, architectural models, design objects, craft items
-- General Educational Objects: furniture (table, chair, desk, cabinet, shelf), containers (box, crate, barrel, bottle, jar), tools (hammer, wrench, screwdriver), decorative items (vase, mirror, clock, lamp)
+YOUR TASK:
+1. Identify 3D objects that are mentioned or clearly implied in the script. Prefer objects that are educational (tools, models, instruments, artifacts, specimens).
+2. Return between 2 and 4 objects when the script supports it. Minimum 2, maximum 4. If the script clearly has only one relevant object, return 1; if none, return [].
+3. For EACH object, output a MESHY-OPTIMIZED prompt: one short sentence (under 100 chars) that will produce a high-quality 3D model when sent to Meshy. Do NOT output raw phrases like "globe" or "telescope"—output full descriptive prompts.
 
-=== NEVER EXTRACT (these are environments/skyboxes, NOT 3D objects) ===
-- Locations: beach, desert, forest, jungle, ocean, mountain, valley, cave, canyon, meadow, field
-- Urban: city, cityscape, street, alley, park, plaza, downtown, neighborhood
-- Indoor: room, bedroom, kitchen, bathroom, living room, office, studio, library, museum, gallery, ballroom
-- Architectural: house, building, tower, castle, palace, temple, church, cathedral, ruins
-- Atmospheric: space, planet, nebula, sky, clouds, sunset, sunrise, night, day, dawn, dusk
-- Weather: snow, rain, storm, fog, mist, wind, blizzard
-- Water: river, lake, pond, waterfall, stream, harbor, port, dock
-- Roads: road, street, path, highway, bridge
-- Background elements: background, horizon, landscape, scenery
+MESHY BEST PRACTICES (follow these for each asset string):
+- Start with the subject: "High-quality 3D model of a ..." or "Detailed 3D model of ..."
+- Add one or two descriptive details (material, style, or key feature).
+- Use "educational", "realistic", or "clean topology" when appropriate.
+- One object per prompt; no environments (no "in a room", "on a table").
+- Keep each prompt under 100 characters when possible.
 
-=== CRITICAL RULES FOR EDUCATIONAL CONTENT ===
-1. PRIORITIZE educational value - extract objects that help students learn, visualize, or understand concepts
-2. Extract EXACT phrases from the original prompt - preserve original wording
-3. NEVER include environment/skybox words (see list above)
-4. NEVER include location prepositions (in, on, at, with) unless they're part of the object name
-5. Extract complete object names, not partial phrases
-6. If multiple objects exist, extract EACH one separately as a separate array item
-7. Objects IN an environment = extract the objects, NOT the environment
-8. Objects that ARE the environment = do NOT extract (e.g., "cityscape with vehicles" = no extraction)
-9. Focus on objects that are educationally relevant - skip purely decorative or non-educational items
-10. When in doubt, prefer extracting objects that can be used for interactive learning or visualization
+OBJECTS TO DETECT (infer from script context): globe, map, compass, telescope, microscope, ruler, models (solar system, cell, organ, atom, DNA), artifacts, sculptures, statues, lab equipment (beaker, flask, test tube), geometric shapes, furniture (table, chair, desk), tools, specimens, fossils, and ANIMALS (frog, hen, duck, sheep, cow, dog, cat, bird, horse, pig, etc.—when the script is about animal sounds, behavior, or identification, extract 2–4 of the animals mentioned).
 
-=== EXAMPLES ===
-Prompt: "A vintage red convertible car, a wooden chair, and a crystal vase in a modern living room"
-→ Extract: ["vintage red convertible car", "wooden chair", "crystal vase"]
-→ Do NOT extract: "modern living room" (environment)
+NEVER EXTRACT: environments (classroom, lab, pond, forest), people (teacher, student, children), or abstract concepts without a physical object.
 
-Prompt: "A medieval sword and shield on a beach at sunset"
-→ Extract: ["medieval sword", "shield"]
-→ Do NOT extract: "beach" or "sunset" (environment)
+=== EXAMPLES (script → assets as Meshy prompts) ===
+Script: "Today we'll learn about the solar system. Imagine a model of the sun and planets. In the classroom we have a globe and a telescope."
+→ assets: ["High-quality 3D model of a classroom globe with latitude and longitude lines, educational style", "Detailed 3D model of a brass telescope, realistic, clean topology"]
 
-Prompt: "jupiter with alien ship and the cricket bat"
-→ Extract: ["alien ship", "cricket bat"]
-→ Do NOT extract: "jupiter" (environment/planet)
+Script: "We will look at a microscope and some test tubes. There is also a periodic table on the wall."
+→ assets: ["Detailed 3D model of a laboratory microscope, realistic educational style", "3D model of glass test tubes in a rack, clean and realistic"]
 
-Prompt: "A detailed wooden table and ornate crystal chandelier in a grand ballroom"
-→ Extract: ["detailed wooden table", "ornate crystal chandelier"]
-→ Do NOT extract: "grand ballroom" (environment)
+Script: "A medieval sword and shield are displayed. The room has a wooden table."
+→ assets: ["High-quality 3D model of a medieval sword with detailed hilt, realistic", "3D model of a medieval shield, realistic style", "Detailed 3D model of a wooden table, educational"]
 
-Prompt: "A futuristic cityscape with flying vehicles"
-→ Extract: [] (vehicles are part of environment description, not standalone objects)
+Script: "The goal is to recognize animal sounds like croaking of a frog, cackling of a hen, quack of a duck, and bleating of a sheep. Listening helps improve your skills. A duck quacking near a pond."
+→ assets: ["Detailed 3D model of a frog, realistic, educational style", "3D model of a hen, realistic clean topology", "High-quality 3D model of a duck, realistic", "Detailed 3D model of a sheep, educational style"]
 
-Prompt: "A vintage red convertible car parked on a desert road at sunset"
-→ Extract: ["vintage red convertible car"] or ["car"]
-→ Do NOT extract: "desert road" or "sunset" (environment)
-
-Respond with JSON:
+Respond with JSON only:
 {
-  "assets": ["array of exact phrases from prompt that are 3D objects"]
+  "assets": ["Meshy prompt 1", "Meshy prompt 2", ...]
 }
+Use 2-4 items when the script describes or implies that many objects. If no 3D objects found, return: {"assets": []}`;
 
-If no 3D objects found, return empty array: {"assets": []}`;
-
-    const userPrompt = `Extract 3D object phrases from this prompt: "${prompt.trim()}"`;
+    const userPrompt = `Analyze this avatar explanation script and output 2-4 Meshy-optimized 3D asset prompts (min 2, max 4 when possible):\n\n${prompt.trim()}`;
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -491,8 +460,8 @@ If no 3D objects found, return empty array: {"assets": []}`;
         { role: 'user', content: userPrompt }
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.2,
-      max_tokens: 300
+      temperature: 0.25,
+      max_tokens: 600
     });
 
     const responseContent = completion.choices[0]?.message?.content;
@@ -505,9 +474,12 @@ If no 3D objects found, return empty array: {"assets": []}`;
     }
 
     const aiResult = JSON.parse(responseContent);
-    const assets = Array.isArray(aiResult.assets) 
+    let assets = Array.isArray(aiResult.assets)
       ? aiResult.assets.filter((asset: any) => typeof asset === 'string' && asset.trim().length > 0)
       : [];
+    if (assets.length > 4) {
+      assets = assets.slice(0, 4);
+    }
 
     console.log(`[${requestId}] Asset extraction completed:`, {
       count: assets.length,

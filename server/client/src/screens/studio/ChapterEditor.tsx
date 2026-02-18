@@ -919,7 +919,7 @@ const ChapterEditor = () => {
                   className={navState?.classId || chapter.class_id || '8'}
                   subject={navState?.subjectId || chapter.subject_id || 'Science'}
                   topicId={selectedTopic.id}
-                  topicName={selectedTopic.topic_name}
+                  topicName={(topicFormState.topic_name ?? selectedTopic.topic_name) ?? ''}
                   topicPriority={selectedTopic.topic_priority}
                   learningObjective={sceneFormState.learning_objective as string}
                   in3dPrompt={sceneFormState.in3d_prompt as string}

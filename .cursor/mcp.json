@@ -2,10 +2,18 @@
   "mcpServers": {
     "shadcn": {
       "command": "npx",
+      "args": ["shadcn@latest", "mcp"]
+    },
+    "hexstrike-ai": {
+      "command": "D:\\hexstrike-ai\\hexstrike-env\\Scripts\\python.exe",
       "args": [
-        "shadcn@latest",
-        "mcp"
-      ]
+        "D:\\hexstrike-ai\\hexstrike_mcp.py",
+        "--server",
+        "http://localhost:8888"
+      ],
+      "description": "HexStrike AI - Security testing (local only)",
+      "timeout": 300,
+      "disabled": false
     }
   }
 }
