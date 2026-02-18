@@ -50,7 +50,7 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
       return res.status(statusCode).json(response);
     }
 
-    const { prompt, negative_prompt, art_style, seed, ai_model, topology, target_polycount, should_remesh, symmetry_mode, moderation } = req.body;
+    const { prompt, negative_prompt, art_style, ai_model, topology, target_polycount, should_remesh, symmetry_mode, moderation } = req.body;
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       const { statusCode, response } = errorResponse(
@@ -63,25 +63,35 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
       return res.status(statusCode).json(response);
     }
 
+    // Meshy v2 accepts only: latest, meshy-6, meshy-5 (meshy-4 is not valid and causes "invalid format")
+    const model = ai_model === 'meshy-6' || ai_model === 'meshy-5' ? ai_model : 'latest';
+    // art_style is deprecated for Meshy-6/latest; only send for meshy-5 to avoid API errors
+    const includeArtStyle = model === 'meshy-5';
+
     console.log(`[${requestId}] Meshy generation requested:`, {
       prompt: prompt.substring(0, 50) + '...',
-      art_style,
-      ai_model
+      ai_model: model,
+      include_art_style: includeArtStyle
     });
 
-    const payload = {
+    // should_remesh: default false for latest/meshy-6, true for meshy-5 (per Meshy v2 docs)
+    const defaultShouldRemesh = model === 'meshy-5';
+    const payload: Record<string, unknown> = {
       mode: 'preview',
       prompt: prompt.trim(),
-      art_style: art_style || 'realistic',
-      seed: seed || Math.floor(Math.random() * 1000000),
-      ai_model: ai_model || 'meshy-4',
+      ai_model: model,
       topology: topology || 'triangle',
-      target_polycount: target_polycount || 30000,
-      should_remesh: should_remesh !== false,
+      target_polycount: target_polycount ?? 30000,
+      should_remesh: should_remesh !== undefined ? should_remesh : defaultShouldRemesh,
       symmetry_mode: symmetry_mode || 'auto',
       moderation: moderation || false,
-      ...(negative_prompt && { negative_prompt })
     };
+    if (includeArtStyle) {
+      payload.art_style = art_style || 'realistic';
+    }
+    if (negative_prompt && typeof negative_prompt === 'string' && negative_prompt.trim()) {
+      payload.negative_prompt = negative_prompt.trim();
+    }
 
     const response = await axios.post(`${MESHY_API_BASE_URL}/text-to-3d`, payload, {
       headers: {

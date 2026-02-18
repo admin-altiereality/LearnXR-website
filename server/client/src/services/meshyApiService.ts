@@ -800,8 +800,8 @@ export class MeshyApiService {
       errors.push('Art style must be either "realistic" or "sculpture"');
     }
 
-    if (request.ai_model && !['meshy-4', 'meshy-5'].includes(request.ai_model)) {
-      errors.push('AI model must be either "meshy-4" or "meshy-5"');
+    if (request.ai_model && !['meshy-4', 'meshy-5', 'meshy-6', 'latest'].includes(request.ai_model)) {
+      errors.push('AI model must be one of "meshy-4", "meshy-5", "meshy-6", or "latest"');
     }
 
     if (request.topology && !['quad', 'triangle'].includes(request.topology)) {
