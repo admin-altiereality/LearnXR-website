@@ -54,6 +54,13 @@ service firebase.storage {
       allow write: if isAuthenticated(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces superadmin-only check
     }
+
+    // Chapter PDFs (source documents for lessons)
+    match /chapter_pdf/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow delete: if isAuthenticated();
+    }
     
     // General user uploads (non-lesson content)
     match /uploads/{userId}/{allPaths=**} {

@@ -15,7 +15,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract topics array from webhook body\nconst body = $input.item.json.body || $input.item.json;\nconst topics = Array.isArray(body) ? body : (body.topics || []);\n\n// Return array of items, one per topic\nreturn topics.map((topic, index) => ({\n  json: {\n    topic_index: index,\n    topic_id: topic.topic_id,\n    topic_name: topic.topic_name,\n    in3d_prompt: topic.in3d_prompt,\n    asset_list: topic.asset_list || [],\n    full_topic: topic,\n    curriculum: topic.curriculum,\n    class: topic.class,\n    subject: topic.subject,\n    chapter_number: topic.chapter_number,\n    chapter_name: topic.chapter_name\n  }\n}));"
+        "jsCode": "// Extract topics array from webhook body\nconst body = $input.item.json.body || $input.item.json;\nconst topics = Array.isArray(body) ? body : (body.topics || []);\n\n// Return array of items, one per topic\nreturn topics.map((topic, index) => {\n  const in3d = topic.in3d_prompt && String(topic.in3d_prompt).trim();\n  const fallback = topic.topic_name ? `Educational environment for ${topic.topic_name}` : 'Immersive educational classroom environment';\n  return {\n    json: {\n      topic_index: index,\n      topic_id: topic.topic_id,\n      topic_name: topic.topic_name,\n      in3d_prompt: in3d || fallback,\n      prompt: in3d || fallback,\n      asset_list: topic.asset_list || [],\n      full_topic: topic,\n      curriculum: topic.curriculum,\n      class: topic.class,\n      subject: topic.subject,\n      chapter_number: topic.chapter_number,\n      chapter_name: topic.chapter_name\n    }\n  };\n});"
       },
       "id": "split-topics",
       "name": "Split Topics (Code)",
@@ -47,7 +47,7 @@
           "parameters": [
             {
               "name": "prompt",
-              "value": "={{ $json.in3d_prompt }}"
+              "value": "={{ $json.prompt || $json.in3d_prompt || 'Immersive educational classroom environment' }}"
             },
             {
               "name": "style_id",

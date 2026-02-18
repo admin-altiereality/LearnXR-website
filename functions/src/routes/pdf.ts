@@ -34,7 +34,6 @@ async function extractImagesFromPdfBuffer(pdfBuffer: Buffer): Promise<Buffer[]> 
   }
   return images;
 }
-
 /**
  * Check PDF processing status
  * GET /pdf/check-status/:id

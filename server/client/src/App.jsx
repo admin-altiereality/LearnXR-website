@@ -21,6 +21,7 @@ import { LoadingProvider, useLoading } from './contexts/LoadingContext';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
 import { LessonProvider } from './contexts/LessonContext';
+import { ClassSessionProvider } from './contexts/ClassSessionContext';
 // Subscription removed
 import BackgroundLoadingIndicator from './Components/BackgroundLoadingIndicator';
 import Explore from './screens/Explore';
@@ -31,6 +32,7 @@ import Individual from './screens/Individual';
 import School from './screens/School';
 import Profile from './screens/Profile';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
+import ClassSceneViewer from './screens/ClassSceneViewer';
 import Careers from './screens/Careers';
 import Blog from './screens/Blog';
 // Pricing removed
@@ -73,17 +75,6 @@ import LessonEditRequests from './screens/admin/LessonEditRequests';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import PersonalizedLearning from './screens/ai/PersonalizedLearning';
-import TeacherAssessments from './screens/assessments/TeacherAssessments';
-import StudentAssessments from './screens/assessments/StudentAssessments';
-import TakeAssessment from './screens/assessments/TakeAssessment';
-
-// Assessments: student sees list + take; teacher/principal/etc see create + list + attempts
-const AssessmentsPage = () => {
-  const { profile } = useAuth();
-  if (profile?.role === 'student') return <StudentAssessments />;
-  return <TeacherAssessments />;
-};
-
 // Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
@@ -430,6 +421,7 @@ function App() {
         <AuthProvider>
           <ThemeProvider>
           <LessonProvider>
+          <ClassSessionProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
               <LoadingProvider>
@@ -580,6 +572,11 @@ function App() {
                               className="w-full h-full"
                             />
                           </TeacherGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/class-scene" element={
+                        <ProtectedRoute>
+                          <ClassSceneViewer />
                         </ProtectedRoute>
                       } />
                       <Route path="/history" element={
@@ -760,6 +757,7 @@ function App() {
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
+          </ClassSessionProvider>
           </LessonProvider>
           </ThemeProvider>
         {/* Subscription removed */}
@@ -772,6 +770,7 @@ function App() {
         <AuthProvider>
           <ThemeProvider>
           <LessonProvider>
+          <ClassSessionProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
               <LoadingProvider>
@@ -925,6 +924,11 @@ function App() {
                           </TeacherGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/class-scene" element={
+                        <ProtectedRoute>
+                          <ClassSceneViewer />
+                        </ProtectedRoute>
+                      } />
                       <Route path="/history" element={
                         <ProtectedRoute>
                           <TeacherGuard>
@@ -1005,22 +1009,6 @@ function App() {
                       
                       {/* AI Teacher Support - Merged into Create page (/main), redirect for backward compatibility */}
                       <Route path="/teacher-support" element={<Navigate to="/main" replace />} />
-                      
-                      {/* Automated Assessments - Students (take/list) and teachers+ (create/list/grade) */}
-                      <Route path="/assessments" element={
-                        <ProtectedRoute>
-                          <RoleGuard allowedRoles={['student', 'teacher', 'school', 'principal', 'admin', 'superadmin']}>
-                            <AssessmentsPage />
-                          </RoleGuard>
-                        </ProtectedRoute>
-                      } />
-                      <Route path="/assessments/take/:id" element={
-                        <ProtectedRoute>
-                          <RoleGuard allowedRoles={['student', 'superadmin']}>
-                            <TakeAssessment />
-                          </RoleGuard>
-                        </ProtectedRoute>
-                      } />
                       
                       {/* Class Management - Teachers, School Administrator, Principal, Admin */}
                       <Route path="/admin/classes" element={
@@ -1224,6 +1212,7 @@ function App() {
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
+          </ClassSessionProvider>
           </LessonProvider>
           </ThemeProvider>
         {/* Subscription removed */}

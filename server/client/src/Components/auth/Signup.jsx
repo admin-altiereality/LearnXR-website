@@ -172,49 +172,49 @@ export const Signup = () => {
   }, []);
 
   return (
-    <FuturisticBackground className="h-screen w-full flex flex-col">
+    <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
       <button
         type="button"
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-4 right-4 z-[100] flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
+        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
         aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       >
-        {theme === 'dark' ? <FaSun className="h-5 w-5" /> : <FaMoon className="h-5 w-5" />}
+        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
       </button>
-      <div className="relative z-10 flex flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-        <div className="flex flex-col items-center justify-center min-h-full w-full px-4 py-5 sm:px-6 sm:py-6">
-      <div className="w-full max-w-lg flex flex-col gap-4 sm:gap-5 shrink-0">
+      <div className="relative z-10 flex flex-1 min-h-0 w-full overflow-hidden py-2 sm:py-3">
+        <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full px-3 sm:px-6">
+      <div className="w-full max-w-lg flex flex-col flex-1 min-h-0 gap-1.5 sm:gap-2 justify-center max-h-[96dvh]">
         <motion.div
             custom={0}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="text-center shrink-0 mb-0.5"
+            className="text-center shrink-0"
           >
-            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1 font-display">
+            <h1 className="text-lg sm:text-xl font-bold text-foreground mb-0.5 font-display">
               Join{' '}
-              <span style={learnXRFontStyle} className="text-xl sm:text-2xl tracking-[0.12rem]">
+              <span style={learnXRFontStyle} className="text-lg sm:text-xl tracking-[0.12rem]">
                 <span className="text-foreground">Learn</span>
                 <span className="text-primary">XR</span>
                 <TrademarkSymbol className="ml-1" />
               </span>
             </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">Start your immersive learning journey</p>
+            <p className="text-xs text-muted-foreground">Start your immersive learning journey</p>
           </motion.div>
 
           <AnimatePresence mode="wait">
             {step === 'role-select' ? (
-              <motion.div key="role-select" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0">
-                <Card className="w-full mx-auto relative rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden">
+              <motion.div key="role-select" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 flex-1 min-h-0 flex flex-col">
+                <Card className="w-full mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col flex-1 min-h-0">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-                  <div className="relative z-10 p-4 sm:p-5 pb-4">
-                    <CardHeader className="p-0 pb-3">
-                      <CardTitle className="text-lg sm:text-xl text-center text-foreground">Choose Your Role</CardTitle>
-                      <CardDescription className="text-center mt-1 text-sm text-muted-foreground">Select how you'll be using LearnXR</CardDescription>
+                  <div className="relative z-10 p-2.5 sm:p-3 pb-1.5 flex-1 min-h-0 flex flex-col">
+                    <CardHeader className="p-0 pb-1.5 shrink-0">
+                      <CardTitle className="text-base sm:text-lg text-center text-foreground">Choose Your Role</CardTitle>
+                      <CardDescription className="text-center text-xs text-muted-foreground">Select how you'll be using LearnXR</CardDescription>
                     </CardHeader>
-                    <div className="space-y-3 sm:space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-2 flex-1 min-h-0">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {roleOptions.map((role, index) => (
                         <motion.button
                           key={role.id}
@@ -224,30 +224,30 @@ export const Signup = () => {
                           initial="hidden"
                           animate="visible"
                           onClick={() => handleRoleSelect(role.id)}
-                          className="group relative p-4 pr-10 rounded-2xl border-2 border-border bg-card/50 text-left min-h-[8.5rem] hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex flex-col items-start w-full"
-                          whileHover={{ scale: 1.02, y: -4 }}
+                          className="group relative p-2.5 pr-8 rounded-xl border-2 border-border bg-card/50 text-left min-h-[4rem] sm:min-h-[4.5rem] hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex flex-col items-start w-full"
+                          whileHover={{ scale: 1.02, y: -2 }}
                           whileTap={{ scale: 0.98 }}
                         >
-                          <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${role.gradient} flex items-center justify-center mb-2 shrink-0 shadow-lg`}>
-                            <role.icon className="text-lg text-white" />
+                          <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br ${role.gradient} flex items-center justify-center mb-1 shrink-0 shadow-lg`}>
+                            <role.icon className="text-sm sm:text-base text-white" />
                           </div>
-                          <h3 className="text-base font-semibold text-foreground mb-0.5 pr-2 group-hover:text-primary transition-colors">{role.title}</h3>
-                          <p className="text-xs sm:text-sm text-muted-foreground leading-snug text-left w-full min-w-0 break-words">{role.description}</p>
-                          <ul className="space-y-1 w-full min-w-0 mt-1">
+                          <h3 className="text-sm font-semibold text-foreground pr-2 group-hover:text-primary transition-colors">{role.title}</h3>
+                          <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug text-left w-full min-w-0 break-words line-clamp-2">{role.description}</p>
+                          <ul className="space-y-0.5 w-full min-w-0 mt-0.5">
                             {role.features.slice(0, 2).map((feature, i) => (
-                              <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                                <FaCheck className="text-primary text-[10px] shrink-0 mt-0.5" />
-                                <span className="min-w-0 break-words">{feature}</span>
+                              <li key={i} className="flex items-start gap-1 text-[11px] text-muted-foreground">
+                                <FaCheck className="text-primary text-[9px] shrink-0 mt-0.5" />
+                                <span className="min-w-0 break-words line-clamp-1">{feature}</span>
                               </li>
                             ))}
                           </ul>
                           {role.requiresApproval && (
-                            <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-500 shrink-0">
-                              <FaExclamationCircle className="text-[10px] shrink-0" />
+                            <div className="mt-1 flex items-center gap-1 text-[11px] text-amber-500 shrink-0">
+                              <FaExclamationCircle className="text-[9px] shrink-0" />
                               <span>Requires approval</span>
                             </div>
                           )}
-                          <FaArrowRight className="absolute top-3 right-3 text-muted-foreground w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />
+                          <FaArrowRight className="absolute top-2.5 right-2.5 text-muted-foreground w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />
                         </motion.button>
                       ))}
                     </div>
@@ -255,29 +255,29 @@ export const Signup = () => {
                     <motion.button
                       type="button"
                       onClick={() => handleRoleSelect('school')}
-                      className="group w-full p-4 rounded-xl border-2 border-border bg-card/50 hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex items-center gap-4 text-left"
+                      className="group w-full p-2.5 rounded-xl border-2 border-border bg-card/50 hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex items-center gap-2.5 text-left shrink-0"
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                     >
-                      <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${secondaryOption.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
-                        <secondaryOption.icon className="text-lg text-white" />
+                      <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br ${secondaryOption.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
+                        <secondaryOption.icon className="text-sm sm:text-base text-white" />
                       </div>
-                      <div className="text-left min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-base font-semibold text-foreground group-hover:text-primary transition-colors">{secondaryOption.title}</h3>
-                          <Badge variant="secondary" className="text-[10px]">Requires approval</Badge>
+                      <div className="text-left min-w-0 flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{secondaryOption.title}</h3>
+                          <Badge variant="secondary" className="text-[9px]">Requires approval</Badge>
                         </div>
-                        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 break-words">{secondaryOption.description}</p>
+                        <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 break-words line-clamp-2">{secondaryOption.description}</p>
                       </div>
-                      <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4 group-hover:opacity-100" aria-hidden />
+                      <FaArrowRight className="text-muted-foreground shrink-0 w-3.5 h-3.5 group-hover:opacity-100" aria-hidden />
                     </motion.button>
 
                     </div>
                   </div>
-                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-3xl p-2.5 sm:p-3">
-                    <p className="text-muted-foreground text-center text-sm">
+                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
+                    <p className="text-muted-foreground text-center text-xs sm:text-sm">
                       Already have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-xs sm:text-sm" asChild>
                         <Link to="/login">Sign In</Link>
                       </Button>
                     </p>
@@ -285,28 +285,28 @@ export const Signup = () => {
                 </Card>
               </motion.div>
             ) : (
-              <motion.div key="signup-form" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0">
-                <Card className="w-full max-w-sm mx-auto relative rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden">
+              <motion.div key="signup-form" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 flex-1 min-h-0 flex flex-col">
+                <Card className="w-full max-w-sm mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col min-h-0 flex-1">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-                  <div className="relative z-10 p-4 sm:p-5 pb-4">
-                    <button type="button" onClick={handleBackToRoleSelect} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 -ml-2 text-sm">
-                      <FaArrowLeft className="h-4 w-4" />
+                  <div className="relative z-10 p-2.5 sm:p-3 pb-1.5 flex-1 min-h-0 flex flex-col">
+                    <button type="button" onClick={handleBackToRoleSelect} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors mb-2 -ml-1 text-xs shrink-0">
+                      <FaArrowLeft className="h-3.5 w-3.5" />
                       Change role
                     </button>
 
-                    <div className="mb-1 mt-2">
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/80 border border-border mb-4">
-                        <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${roleInfo.gradient || 'from-primary to-primary/80'} flex items-center justify-center shrink-0`}>
-                          <roleInfo.icon className="text-white text-xs" />
+                    <div className="mb-1 shrink-0">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/80 border border-border mb-1.5">
+                        <div className={`w-5 h-5 rounded-md bg-gradient-to-br ${roleInfo.gradient || 'from-primary to-primary/80'} flex items-center justify-center shrink-0`}>
+                          <roleInfo.icon className="text-white text-[10px]" />
                         </div>
-                        <span className="text-xs font-medium text-foreground">{roleInfo.title}</span>
+                        <span className="text-[11px] font-medium text-foreground">{roleInfo.title}</span>
                       </div>
-                      <h1 className="text-xl font-semibold text-foreground">Create your account</h1>
-                      <p className="text-sm text-muted-foreground mt-1">Welcome! Create an account to get started</p>
+                      <h1 className="text-lg font-semibold text-foreground">Create your account</h1>
+                      <p className="text-xs text-muted-foreground mt-0.5">Welcome! Create an account to get started</p>
                       {roleInfo.requiresApproval && (
-                        <p className="text-amber-500 text-xs flex items-center justify-center gap-1.5 mt-2">
-                          <FaExclamationCircle />
-                          Account requires admin approval before full access
+                        <p className="text-amber-500 text-[11px] flex items-center justify-center gap-1 mt-1.5">
+                          <FaExclamationCircle className="shrink-0 text-[10px]" />
+                          <span>Account requires admin approval before full access</span>
                         </p>
                       )}
                     </div>
@@ -315,35 +315,35 @@ export const Signup = () => {
                       <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="mt-4 rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                        className="mt-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive shrink-0"
                       >
                         {error}
                       </motion.div>
                     )}
 
-                    <div className="mt-6 grid grid-cols-1 gap-3">
+                    <div className="mt-3 grid grid-cols-1 gap-2">
                       <motion.button
                         type="button"
                         onClick={handleGoogleSignup}
                         disabled={isLoading}
-                        className="w-full flex items-center justify-center gap-3 rounded-xl py-3.5 font-medium bg-card border-2 border-border text-foreground hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center justify-center gap-2 rounded-xl py-3 font-medium text-sm bg-card border-2 border-border text-foreground hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                       >
-                        <FaGoogle className="h-5 w-5" />
+                        <FaGoogle className="h-4 w-4" />
                         <span>Continue with Google</span>
                       </motion.button>
                     </div>
 
-                    <div className="flex items-center gap-4 my-6">
+                    <div className="flex items-center gap-3 my-2">
                       <div className="h-px flex-1 bg-border" />
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider">or with email</span>
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">or with email</span>
                       <div className="h-px flex-1 bg-border" />
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-5">
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-name" className="text-sm">Full name</Label>
+                    <form onSubmit={handleSubmit} className="space-y-2 flex-1 min-h-0 flex flex-col min-h-0">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="signup-name" className="text-xs">Full name</Label>
                         <div className="relative">
                           <FaUser className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                           <Input
@@ -359,8 +359,8 @@ export const Signup = () => {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-email" className="text-sm">Email</Label>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="signup-email" className="text-xs">Email</Label>
                         <div className="relative">
                           <FaEnvelope className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                           <Input
@@ -376,8 +376,8 @@ export const Signup = () => {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-password" className="text-sm">Password</Label>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="signup-password" className="text-xs">Password</Label>
                         <div className="relative">
                           <FaLock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                           <Input
@@ -397,8 +397,8 @@ export const Signup = () => {
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="signup-confirm" className="text-sm">Confirm password</Label>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="signup-confirm" className="text-xs">Confirm password</Label>
                         <div className="relative">
                           <FaLock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                           <Input
@@ -420,18 +420,18 @@ export const Signup = () => {
                         )}
                       </div>
 
-                      <motion.button type="submit" disabled={isLoading} className="relative w-full rounded-xl py-3.5 font-semibold text-primary-foreground overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed bg-primary hover:opacity-95 transition-opacity" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                      <motion.button type="submit" disabled={isLoading} className="relative w-full rounded-xl py-3 font-semibold text-sm text-primary-foreground overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed bg-primary hover:opacity-95 transition-opacity shrink-0" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                         <span className="relative flex items-center justify-center gap-2">
-                          {isLoading ? 'Creating account...' : <><span>Continue</span><FaArrowRight className="h-4 w-4" /></>}
+                          {isLoading ? 'Creating account...' : <><span>Continue</span><FaArrowRight className="h-3.5 w-3.5" /></>}
                         </span>
                       </motion.button>
                     </form>
                   </div>
 
-                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-3xl p-2.5 sm:p-3">
-                    <p className="text-muted-foreground text-center text-sm">
+                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
+                    <p className="text-muted-foreground text-center text-xs sm:text-sm">
                       Already have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-xs sm:text-sm" asChild>
                         <Link to="/login">Sign In</Link>
                       </Button>
                     </p>

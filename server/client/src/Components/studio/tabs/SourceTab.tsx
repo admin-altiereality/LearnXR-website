@@ -4,12 +4,15 @@
  * Uses curriculum_chapters schema:
  * 1. pdf_storage_url (string) – direct URL to the PDF in Firebase Storage (e.g. chapter_pdf/CBSE_1_Science_ch2_topic1.pdf).
  * 2. Fallback: pdf_id → "pdfs" collection doc, or convention-based path chapter_pdf/{filename}.
+ *
+ * When PDF is unavailable, allows uploading a PDF to chapter_pdf/ and updates the chapter with pdf_storage_url.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { ref, getDownloadURL } from 'firebase/storage';
-import { storage } from '../../../config/firebase';
-import { FileText, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { ref, getDownloadURL, uploadBytes } from 'firebase/storage';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { storage, db } from '../../../config/firebase';
+import { FileText, ExternalLink, Loader2, AlertCircle, Upload } from 'lucide-react';
 
 interface SourceTabProps {
   /** Lesson bundle from getLessonBundle; chapter may have pdf_storage_url, pdf_id → pdfs doc */
@@ -28,6 +31,8 @@ interface SourceTabProps {
   } | null;
   chapterId: string;
   topicId: string;
+  /** Called after PDF is uploaded successfully (for parent to refetch bundle) */
+  onPdfUploaded?: () => void;
 }
 
 /**
@@ -70,16 +75,23 @@ const CHAPTER_PDF_STORAGE_PREFIX = 'chapter_pdf';
  * Subject uses underscores in filenames (e.g. Social Science → Social_Science).
  */
 function getConventionPdfPaths(
-  _chapterId: string,
+  chapterId: string,
   chapter: NonNullable<SourceTabProps['bundle']>['chapter'],
   topicId: string
 ): string[] {
-  if (!chapter) return [];
+  const paths: string[] = [];
+
+  // 1) Topic-specific doc ID as path (e.g. CBSE_6_Science_ch2_topic1)
+  if (chapterId && /_topic\d+$/.test(chapterId)) {
+    paths.push(`${CHAPTER_PDF_STORAGE_PREFIX}/${chapterId}.pdf`);
+  }
+
+  if (!chapter) return paths;
   const curriculum = (chapter.curriculum ?? '').toString().trim().replace(/\s+/g, '_');
   const classNum = chapter.class;
   const subject = (chapter.subject ?? '').toString().trim().replace(/\s+/g, '_');
   const chNum = chapter.chapter_number;
-  if (curriculum === '' || subject === '' || classNum == null || chNum == null) return [];
+  if (curriculum === '' || subject === '' || classNum == null || chNum == null) return paths;
 
   const topics = chapter.topics ?? [];
   const topicIndex = topics.findIndex((t: { topic_id?: string }) => t.topic_id === topicId);
@@ -88,10 +100,10 @@ function getConventionPdfPaths(
   const baseName = `${curriculum}_${classNum}_${subject}_ch${chNum}_topic${topicNum}.pdf`;
   const chapterOnlyName = `${curriculum}_${classNum}_${subject}_ch${chNum}.pdf`;
 
-  return [
-    `${CHAPTER_PDF_STORAGE_PREFIX}/${baseName}`,
-    `${CHAPTER_PDF_STORAGE_PREFIX}/${chapterOnlyName}`,
-  ];
+  paths.push(`${CHAPTER_PDF_STORAGE_PREFIX}/${baseName}`);
+  paths.push(`${CHAPTER_PDF_STORAGE_PREFIX}/${chapterOnlyName}`);
+
+  return paths;
 }
 
 async function tryGetDownloadUrl(storagePath: string): Promise<string | null> {
@@ -114,11 +126,70 @@ function extractPdfNameFromUrl(url: string): string | null {
   }
 }
 
-export const SourceTab = ({ bundle, chapterId, topicId }: SourceTabProps) => {
+/** Get the storage path to use when uploading a new PDF */
+function getUploadStoragePath(
+  chapterId: string,
+  chapter: NonNullable<SourceTabProps['bundle']>['chapter'],
+  topicId: string
+): string | null {
+  const paths = getConventionPdfPaths(chapterId, chapter ?? undefined, topicId);
+  return paths.length > 0 ? paths[0] : null;
+}
+
+export const SourceTab = ({ bundle, chapterId, topicId, onPdfUploaded }: SourceTabProps) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pdfName, setPdfName] = useState<string>('Source PDF');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const chapter = bundle?.chapter ?? null;
+
+  const handleUploadPdf = useCallback(
+    async (file: File) => {
+      if (!storage || !db) {
+        setUploadError('Storage or database not available');
+        return;
+      }
+      const storagePath = getUploadStoragePath(chapterId, chapter ?? undefined, topicId);
+      if (!storagePath) {
+        setUploadError('Cannot determine storage path for this chapter');
+        return;
+      }
+      if (file.type !== 'application/pdf') {
+        setUploadError('Please select a PDF file');
+        return;
+      }
+
+      setUploading(true);
+      setUploadError(null);
+
+      try {
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, file, { contentType: 'application/pdf' });
+        const downloadUrl = await getDownloadURL(storageRef);
+
+        const chapterRef = doc(db, 'curriculum_chapters', chapterId);
+        await updateDoc(chapterRef, {
+          pdf_storage_url: downloadUrl,
+          pdf_stored_at: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        setPdfUrl(downloadUrl);
+        setPdfName(chapter?.chapter_name || file.name || 'Source PDF');
+        setError(null);
+        onPdfUploaded?.();
+      } catch (err: unknown) {
+        console.error('[SourceTab] PDF upload failed:', err);
+        setUploadError(err instanceof Error ? err.message : 'Upload failed');
+      } finally {
+        setUploading(false);
+      }
+    },
+    [chapterId, topicId, chapter, onPdfUploaded]
+  );
 
   const loadPdf = useCallback(async () => {
     setLoading(true);
@@ -183,22 +254,54 @@ export const SourceTab = ({ bundle, chapterId, topicId }: SourceTabProps) => {
   }
 
   if (error) {
+    const uploadPath = getUploadStoragePath(chapterId, chapter ?? undefined, topicId);
     return (
-      <div className="p-6 max-w-lg">
+      <div className="p-6 max-w-lg space-y-4">
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
           <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div>
             <h3 className="font-medium text-foreground">Source PDF unavailable</h3>
             <p className="text-sm text-muted-foreground mt-1">{error}</p>
-            <button
-              type="button"
-              onClick={loadPdf}
-              className="mt-3 text-sm text-primary hover:text-primary"
-            >
-              Try again
-            </button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={loadPdf}
+                className="text-sm text-primary hover:text-primary"
+              >
+                Try again
+              </button>
+            </div>
           </div>
         </div>
+
+        {uploadPath && (
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <h4 className="text-sm font-medium text-foreground mb-2">Upload source PDF</h4>
+            <p className="text-xs text-muted-foreground mb-3">
+              Upload a PDF to display it here. It will be stored at chapter_pdf/
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUploadPdf(f);
+                  e.target.value = '';
+                }}
+              />
+              <span className="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+                <Upload className="w-4 h-4" />
+                {uploading ? 'Uploading...' : 'Choose PDF'}
+              </span>
+            </label>
+            {uploadError && (
+              <p className="mt-2 text-sm text-destructive">{uploadError}</p>
+            )}
+          </div>
+        )}
       </div>
     );
   }

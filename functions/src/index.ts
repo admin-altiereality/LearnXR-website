@@ -65,7 +65,7 @@ const getApp = (): express.Application => {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-In3d-Key'],
       exposedHeaders: ['Content-Type', 'Authorization'],
       maxAge: 86400, // 24 hours
       optionsSuccessStatus: 204
@@ -105,10 +105,12 @@ const getApp = (): express.Application => {
     const aiDetectionRoutes = require('./routes/aiDetection').default;
     const assistantRoutes = require('./routes/assistant').default;
     const apiKeyRoutes = require('./routes/apiKey').default;
+    const classSessionRoutes = require('./routes/classSessions').default;
     const curriculumRoutes = require('./routes/curriculum').default;
     const lmsRoutes = require('./routes/lms').default;
     const aiEducationRoutes = require('./routes/aiEducation').default;
     const assessmentRoutes = require('./routes/assessment').default;
+    const pdfRoutes = require('./routes/pdf').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -121,10 +123,14 @@ const getApp = (): express.Application => {
     app.use('/ai-detection', aiDetectionRoutes);
     app.use('/assistant', assistantRoutes);
     app.use('/dev/api-keys', apiKeyRoutes);
+    app.use('/class-sessions', classSessionRoutes);
+    // When client calls .../api/class-sessions/join, some deployments pass path with /api prefix
+    app.use('/api/class-sessions', classSessionRoutes);
     app.use('/curriculum', curriculumRoutes);
     app.use('/lms', lmsRoutes);
     app.use('/ai-education', aiEducationRoutes);
     app.use('/assessment', assessmentRoutes);
+    app.use('/pdf', pdfRoutes);
 
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {

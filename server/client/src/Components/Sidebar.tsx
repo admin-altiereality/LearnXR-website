@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import {
   FaBookOpen,
   FaFlask,
@@ -23,7 +25,6 @@ import {
   FaEdit,
   FaFileAlt,
   FaLightbulb,
-  FaClipboardList,
   FaSun,
   FaMoon
 } from 'react-icons/fa';
@@ -112,6 +113,19 @@ const Sidebar = () => {
   const isPrincipal = userRole === 'principal';
   const isSchool = userRole === 'school';
   const isAssociate = userRole === 'associate';
+  const [schoolCode, setSchoolCode] = useState<string | null>(null);
+
+  // Fetch school code for School Admin and Teacher
+  useEffect(() => {
+    if (!profile || (userRole !== 'school' && userRole !== 'teacher')) return;
+    const schoolId = profile.school_id || profile.managed_school_id;
+    if (!schoolId) return;
+    getDoc(doc(db, 'schools', schoolId))
+      .then((snap) => {
+        if (snap.exists()) setSchoolCode(snap.data()?.schoolCode || null);
+      })
+      .catch(() => {});
+  }, [profile, userRole]);
   const isAdmin = userRole === 'admin';
   const isSuperadmin = userRole === 'superadmin';
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;
@@ -157,11 +171,6 @@ const Sidebar = () => {
     }
 
     // AI Teacher Support merged into Create page (top-right panel) - no separate nav item
-
-    // Automated Assessments - students (take/list) and teachers+ (create/list/grade)
-    if (isStudent || isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
-      items.push({ path: '/assessments', label: 'Assessments', icon: FaClipboardList });
-    }
 
     // Creator tools - teachers, schools, admin, superadmin (includes AI Teacher Support panel in top-right)
     if (canCreate) {
@@ -296,6 +305,17 @@ const Sidebar = () => {
             )}
           </Link>
         </div>
+        {(isSchool || isTeacher) && schoolCode && (
+          <div className={`shrink-0 border-b border-sidebar-border px-2 py-2 ${!expanded ? 'flex justify-center' : ''}`}>
+            <div
+              className={`rounded-md bg-sidebar-primary/15 border border-sidebar-primary/30 ${!expanded ? 'px-1.5 py-1 flex flex-col items-center' : 'px-2 py-1.5'}`}
+              title="School Code – share with teachers/students to join"
+            >
+              {expanded && <span className="text-[10px] text-muted-foreground uppercase tracking-wider">School Code</span>}
+              <span className="font-mono font-bold text-sidebar-primary text-sm tracking-wider">{schoolCode}</span>
+            </div>
+          </div>
+        )}
         <nav className="flex-1 overflow-y-auto py-2 px-2">
           <ul className="space-y-0.5">
             {navItems.map((item) => {

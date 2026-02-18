@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import { Badge } from '../Components/ui/badge';
 import { Button } from '../Components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../Components/ui/card';
+import FuturisticBackground from '../Components/FuturisticBackground';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -98,23 +99,24 @@ const ApprovalPending = () => {
   }, []);
 
   return (
-    <div className="h-screen bg-background flex items-center justify-center px-4 py-6 overflow-y-auto overflow-x-hidden">
-      <div className="w-full max-w-lg space-y-5 max-h-full overflow-y-auto">
+    <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
+      <div className="relative z-10 flex flex-1 min-h-0 w-full flex-col px-3 py-2">
+      <div className="w-full max-w-lg mx-auto flex flex-col flex-1 min-h-0 gap-1.5 justify-center">
         {/* Header */}
-        <div className="text-center">
-          <div className="flex justify-center mb-6">
-            <div className={`w-16 h-16 rounded-xl flex items-center justify-center ${isRejected ? 'bg-destructive/10 border border-destructive/20' : 'bg-muted border border-border'}`}>
+        <div className="text-center shrink-0">
+          <div className="flex justify-center mb-2">
+            <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${isRejected ? 'bg-destructive/10 border border-destructive/20' : 'bg-muted border border-border'}`}>
               {isRejected ? (
-                <FaExclamationTriangle className="text-destructive text-2xl" />
+                <FaExclamationTriangle className="text-destructive text-xl" />
               ) : (
-                <FaClock className="text-muted-foreground text-2xl" />
+                <FaClock className="text-muted-foreground text-xl" />
               )}
             </div>
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight mb-2">
+          <h1 className="text-lg font-semibold tracking-tight mb-1">
             {isRejected ? 'Application Rejected' : 'Pending Approval'}
           </h1>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-muted-foreground text-xs">
             {isRejected
               ? 'Unfortunately, your application was not approved'
               : profile?.role === 'student'
@@ -126,25 +128,25 @@ const ApprovalPending = () => {
         </div>
 
         {/* Main Card */}
-        <Card className="shadow-lg">
-          <CardContent className="pt-6 space-y-6">
-            <div className="flex justify-center">
-              <Badge variant={isRejected ? 'destructive' : 'secondary'}>
-                {isRejected ? <FaExclamationTriangle className="mr-1.5 h-3 w-3" /> : <FaClock className="mr-1.5 h-3 w-3" />}
+        <Card className="shadow-lg flex-1 min-h-0 flex flex-col overflow-hidden">
+          <CardContent className="pt-3 pb-3 space-y-2.5 flex-1 min-h-0 flex flex-col">
+            <div className="flex justify-center shrink-0">
+              <Badge variant={isRejected ? 'destructive' : 'secondary'} className="text-xs">
+                {isRejected ? <FaExclamationTriangle className="mr-1 h-2.5 w-2.5" /> : <FaClock className="mr-1 h-2.5 w-2.5" />}
                 {isRejected ? 'Application Rejected' : 'Awaiting Review'}
               </Badge>
             </div>
 
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-start gap-4">
-                  <div className={`w-12 h-12 rounded-lg border flex items-center justify-center shrink-0 ${roleColors.bg} ${roleColors.border}`}>
-                    <RoleIcon className={`text-lg ${roleColors.text}`} />
+            <Card className="shrink-0">
+              <CardContent className="py-3 px-3">
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-lg border flex items-center justify-center shrink-0 ${roleColors.bg} ${roleColors.border}`}>
+                    <RoleIcon className={`text-base ${roleColors.text}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{profile?.name || profile?.displayName || 'User'}</h3>
-                    <p className="text-muted-foreground text-sm truncate">{profile?.email}</p>
-                    <Badge variant="secondary" className="mt-2">
+                    <h3 className="font-medium text-sm truncate">{profile?.name || profile?.displayName || 'User'}</h3>
+                    <p className="text-muted-foreground text-xs truncate">{profile?.email}</p>
+                    <Badge variant="secondary" className="mt-1 text-[10px]">
                       {profile?.role ? ROLE_DISPLAY_NAMES[profile.role] : 'User'}
                     </Badge>
                   </div>
@@ -152,15 +154,15 @@ const ApprovalPending = () => {
               </CardContent>
             </Card>
 
-            <div className="flex items-start gap-3 rounded-lg border bg-card p-4">
-              <FaCalendarAlt className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <p className="text-sm font-medium">Account Created</p>
-                <p className="text-muted-foreground text-xs">
+            <div className="flex items-start gap-2 rounded-lg border bg-card p-2.5 shrink-0">
+              <FaCalendarAlt className="text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium">Account Created</p>
+                <p className="text-muted-foreground text-[11px]">
                   {profile?.createdAt
                     ? new Date(profile.createdAt).toLocaleDateString('en-US', {
                         year: 'numeric',
-                        month: 'long',
+                        month: 'short',
                         day: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit',
@@ -171,30 +173,30 @@ const ApprovalPending = () => {
             </div>
 
             {!isRejected && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <FaEnvelope className="h-4 w-4 text-primary" />
+              <Card className="shrink-0">
+                <CardHeader className="py-2 px-3 pb-0">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
+                    <FaEnvelope className="h-3.5 w-3.5 text-primary" />
                     What happens next?
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="pt-0 space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                      <FaCheck className="text-primary text-xs" />
+                <CardContent className="pt-1.5 px-3 pb-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <FaCheck className="text-primary text-[10px]" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">Application Submitted</p>
-                      <p className="text-muted-foreground text-xs">Your registration is complete</p>
+                      <p className="text-xs font-medium">Application Submitted</p>
+                      <p className="text-muted-foreground text-[11px]">Your registration is complete</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 rounded-full bg-muted border flex items-center justify-center shrink-0 mt-0.5">
-                      <FaClock className="text-muted-foreground text-xs" />
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 rounded-full bg-muted border flex items-center justify-center shrink-0 mt-0.5">
+                      <FaClock className="text-muted-foreground text-[10px]" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium">Under Review</p>
-                      <p className="text-muted-foreground text-xs">
+                      <p className="text-xs font-medium">Under Review</p>
+                      <p className="text-muted-foreground text-[11px]">
                         {profile?.role === 'student'
                           ? 'Your teacher is reviewing your profile'
                           : profile?.role === 'teacher'
@@ -203,13 +205,13 @@ const ApprovalPending = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 rounded-full bg-muted border flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-muted-foreground text-xs">3</span>
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 rounded-full bg-muted border flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-muted-foreground text-[10px]">3</span>
                     </div>
                     <div>
-                      <p className="text-muted-foreground text-sm">Approval & Access</p>
-                      <p className="text-muted-foreground text-xs">Once approved, you'll have full access</p>
+                      <p className="text-muted-foreground text-xs">Approval & Access</p>
+                      <p className="text-muted-foreground text-[11px]">Once approved, you'll have full access</p>
                     </div>
                   </div>
                 </CardContent>
@@ -217,19 +219,19 @@ const ApprovalPending = () => {
             )}
 
             {isRejected && (
-              <Card className="border-destructive/20">
-                <CardContent className="pt-6">
-                  <h3 className="text-sm font-semibold mb-2">Why was my application rejected?</h3>
-                  <p className="text-muted-foreground text-sm mb-3">
+              <Card className="border-destructive/20 shrink-0">
+                <CardContent className="py-3 px-3">
+                  <h3 className="text-xs font-semibold mb-1.5">Why was my application rejected?</h3>
+                  <p className="text-muted-foreground text-[11px] mb-2">
                     Your application may have been rejected for various reasons. Common reasons include:
                   </p>
-                  <ul className="space-y-1 text-sm text-muted-foreground list-disc list-inside">
+                  <ul className="space-y-0.5 text-[11px] text-muted-foreground list-disc list-inside">
                     <li>Incomplete or invalid information</li>
                     <li>Unable to verify credentials</li>
                     <li>Duplicate account detected</li>
                   </ul>
-                  <p className="text-muted-foreground text-sm mt-4">
-                    If you believe this was a mistake, contact support at{' '}
+                  <p className="text-muted-foreground text-[11px] mt-2">
+                    If you believe this was a mistake, contact{' '}
                     <a href="mailto:admin@altiereality.com" className="text-primary hover:underline">
                       admin@altiereality.com
                     </a>
@@ -241,23 +243,23 @@ const ApprovalPending = () => {
             {profile?.approvalStatus === 'pending' &&
               profile?.role !== 'student' &&
               (profile?.role === 'teacher' || profile?.role === 'school') && (
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                        <FaUserGraduate className="text-primary" />
+                <Card className="shrink-0">
+                  <CardContent className="py-3 px-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <FaUserGraduate className="text-primary text-sm" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold mb-1">Want to start learning now?</h3>
-                        <p className="text-muted-foreground text-sm mb-3">
+                        <h3 className="text-xs font-semibold mb-0.5">Want to start learning now?</h3>
+                        <p className="text-muted-foreground text-[11px] mb-2">
                           While waiting for approval, you can switch to a student account and start accessing lessons.
                         </p>
-                        <Button variant="outline" size="sm" onClick={handleSwitchToStudent} disabled={switching}>
+                        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleSwitchToStudent} disabled={switching}>
                           {switching ? (
                             <>Switching...</>
                           ) : (
                             <>
-                              <FaExchangeAlt className="mr-2 h-3.5 w-3.5" />
+                              <FaExchangeAlt className="mr-1.5 h-3 w-3" />
                               Switch to Student
                             </>
                           )}
@@ -268,25 +270,26 @@ const ApprovalPending = () => {
                 </Card>
               )}
 
-            <p className="text-center text-muted-foreground text-xs">
+            <p className="text-center text-muted-foreground text-[11px] shrink-0">
               Questions? Contact{' '}
               <a href="mailto:admin@altiereality.com" className="text-primary hover:underline">
                 admin@altiereality.com
               </a>
             </p>
 
-            <Button variant="outline" className="w-full" onClick={handleLogout}>
-              <FaSignOutAlt className="mr-2 h-4 w-4" />
+            <Button variant="outline" size="sm" className="w-full shrink-0 h-9 text-xs" onClick={handleLogout}>
+              <FaSignOutAlt className="mr-1.5 h-3.5 w-3.5" />
               Sign Out
             </Button>
           </CardContent>
         </Card>
 
-        <p className="text-center text-muted-foreground text-xs">
+        <p className="text-center text-muted-foreground text-[11px] shrink-0">
           This page will update when your status changes.
         </p>
       </div>
-    </div>
+      </div>
+    </FuturisticBackground>
   );
 };
 

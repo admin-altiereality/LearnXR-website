@@ -288,6 +288,11 @@ api.interceptors.response.use(
     const url = error.config?.url || 'unknown';
     const status = error.response?.status;
 
+    // Skip noisy logging for 404 on optional endpoints (e.g. evaluation not deployed)
+    if (status === 404 && url?.includes('/evaluation')) {
+      return Promise.reject(error);
+    }
+
     // Enhanced console logging for API errors
     console.groupCollapsed(
       `%c❌ API Error: ${method} ${url}${status ? ` [${status}]` : ''}${duration ? ` (${duration}ms)` : ''}`,
@@ -307,18 +312,19 @@ api.interceptors.response.use(
     }
     console.groupEnd();
 
-    // Log failed API call to production logger
-    const apiError = error.response 
-      ? new Error(`API Error: ${error.response.status} ${error.response.statusText}`)
-      : error;
-    
-    productionLogger.logApiCall(
-      url,
-      method,
-      status,
-      duration,
-      apiError
-    );
+    // Log failed API call to production logger (skip for 404 evaluation)
+    if (!(status === 404 && url?.includes('/evaluation'))) {
+      const apiError = error.response 
+        ? new Error(`API Error: ${error.response.status} ${error.response.statusText}`)
+        : error;
+      productionLogger.logApiCall(
+        url,
+        method,
+        status,
+        duration,
+        apiError
+      );
+    }
 
     return Promise.reject(error);
   }

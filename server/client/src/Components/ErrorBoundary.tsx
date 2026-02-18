@@ -18,6 +18,20 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  isBenignError?: boolean;
+}
+
+/** Errors from browser extensions / third-party iframes (Firebase Auth, Razorpay, etc.) when message port closes. Not app bugs. */
+function isBenignExtensionOrIframeError(error: Error | null): boolean {
+  if (!error?.message) return false;
+  const msg = error.message.toLowerCase();
+  return (
+    msg.includes('message port closed') ||
+    msg.includes('message channel closed') ||
+    msg.includes('before a response was received') ||
+    msg.includes('runtime.lasterror') ||
+    msg.includes('extension context invalidated')
+  );
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -31,21 +45,30 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
+    const isBenignError = isBenignExtensionOrIframeError(error);
     return {
       hasError: true,
       error,
+      isBenignError,
     };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-    
+    const isBenignError = isBenignExtensionOrIframeError(error);
     this.setState({
       error,
       errorInfo,
+      isBenignError,
     });
 
-    // Log to production logger
+    if (isBenignError) {
+      console.warn('ErrorBoundary: benign extension/iframe error (ignoring for user):', error.message);
+      return;
+    }
+
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Log to production logger (skip for benign errors)
     productionLogger.critical(
       `ErrorBoundary: ${error.message}`,
       'error-boundary',
@@ -75,22 +98,28 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
+      const benign = this.state.isBenignError === true;
+
       return (
         <div className="min-h-screen flex items-center justify-center bg-[#0a0f1a] p-4">
           <div className="max-w-md w-full bg-slate-900 rounded-2xl border border-slate-700/50 shadow-2xl p-8">
-            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 mx-auto mb-6">
-              <AlertTriangle className="w-8 h-8 text-red-400" />
-            </div>
+            {!benign && (
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-red-500/10 mx-auto mb-6">
+                <AlertTriangle className="w-8 h-8 text-red-400" />
+              </div>
+            )}
             
             <h2 className="text-2xl font-bold text-white text-center mb-2">
-              Something went wrong
+              {benign ? 'Connection hiccup' : 'Something went wrong'}
             </h2>
             
             <p className="text-slate-400 text-center mb-6">
-              An unexpected error occurred. Please try refreshing the page.
+              {benign
+                ? 'A brief connection issue occurred (common when joining a class). Click Try Again to continue.'
+                : 'An unexpected error occurred. Please try refreshing the page.'}
             </p>
 
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {process.env.NODE_ENV === 'development' && this.state.error && !benign && (
               <div className="mb-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
                 <p className="text-xs text-red-400 font-mono mb-2">
                   {this.state.error.name}: {this.state.error.message}
@@ -121,16 +150,18 @@ export class ErrorBoundary extends Component<Props, State> {
                 Try Again
               </button>
               
-              <button
-                onClick={() => window.location.href = '/'}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3
-                         text-sm font-medium text-slate-300
-                         bg-slate-800 hover:bg-slate-700
-                         rounded-lg transition-all"
-              >
-                <Home className="w-4 h-4" />
-                Go Home
-              </button>
+              {!benign && (
+                <button
+                  onClick={() => window.location.href = '/'}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3
+                           text-sm font-medium text-slate-300
+                           bg-slate-800 hover:bg-slate-700
+                           rounded-lg transition-all"
+                >
+                  <Home className="w-4 h-4" />
+                  Go Home
+                </button>
+              )}
             </div>
           </div>
         </div>

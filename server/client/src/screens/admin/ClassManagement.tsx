@@ -226,6 +226,32 @@ const ClassManagement = () => {
     }
   }, [showCurriculumRequestModal]);
 
+  // Load school for boardAffiliation (curriculum)
+  useEffect(() => {
+    if (!schoolId) return;
+    getSchoolById(schoolId).then(setSchool);
+  }, [schoolId]);
+
+  // Load subjects when curriculum and class_number change
+  useEffect(() => {
+    if (!newClassData.class_number || !newClassData.curriculum) {
+      setAvailableSubjects([]);
+      return;
+    }
+    setLoadingSubjects(true);
+    getAvailableSubjects(newClassData.curriculum, newClassData.class_number)
+      .then(setAvailableSubjects)
+      .catch(() => setAvailableSubjects([]))
+      .finally(() => setLoadingSubjects(false));
+  }, [newClassData.curriculum, newClassData.class_number]);
+
+  // Load available curriculums when curriculum request modal opens
+  useEffect(() => {
+    if (showCurriculumRequestModal) {
+      getAvailableCurriculums().then(setAvailableCurriculums);
+    }
+  }, [showCurriculumRequestModal]);
+
   const handleCreateClass = async () => {
     if (!profile) return;
 

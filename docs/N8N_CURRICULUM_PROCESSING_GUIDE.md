@@ -259,30 +259,80 @@ This section explains what happens **after** your code node outputs the schema a
 From your automation (n8n code node or external system), send a POST request to the webhook URL:
 
 **Request Format:**
+
+The webhook accepts either an array of topics or an object with `topics` array. Each topic must include:
+
+**Required for TTS (avatar narration):** Use one of these formats:
+- `topic_avatar_intro`, `topic_avatar_explanation`, `topic_avatar_outro` (flat)
+- `avatar_scripts_by_language.en.intro`, `.explanation`, `.outro`
+- `topic_avatar_scripts.en.intro`, `.explanation`, `.outro`
+
+**Required for MCQs:** Use one of these formats:
+- `mcq1_question`, `mcq1_option1`, `mcq1_option2`, ... `mcq1_correct_option_index`, etc. (flat, up to mcq5)
+- `mcqs` array: `[{ question, options: [{text, correct?}], correct_index?, explanation? }]`
+
 ```json
-[
-  {
-    "curriculum": "CBSE",
-    "class": 7,
-    "subject": "Science",
-    "chapter_number": 1,
-    "chapter_name": "The Ever-Evolving World of Science",
-    "topic_id": "introduction_to_science_and_curiosity",
-    "topic_name": "Introduction to Science and Curiosity",
-    "topic_priority": 1,
-    "learning_objective": "...",
-    "topic_avatar_intro": "...",
-    "topic_avatar_explanation": "...",
-    "topic_avatar_outro": "...",
-    "scene_type": "mixed",
-    "in3d_prompt": "A teacher standing in a classroom with a globe, microscope, and butterfly models...",
-    "asset_list": ["globe", "microscope", "butterfly_model"],
-    "camera_guidance": "...",
-    "mcq1_question": "...",
-    // ... other fields
-  },
-  // ... more topics
-]
+{
+  "curriculum": "CBSE",
+  "class": 1,
+  "subject": "Science",
+  "chapter_number": 1,
+  "chapter_name": "Life Around Us",
+  "topics": [
+    {
+      "topic_id": "introduction_to_animals_and_birds",
+      "topic_name": "Introduction to Animals and Birds",
+      "topic_priority": 1,
+      "learning_objective": "To identify common animals and birds...",
+      "topic_avatar_intro": "Today we will learn about animals and birds.",
+      "topic_avatar_explanation": "Animals and birds live around us...",
+      "topic_avatar_outro": "Now you know about animals and birds.",
+      "scene_type": "mixed",
+      "in3d_prompt": "A vibrant classroom scene showing animals...",
+      "asset_list": ["monkey_3d_model"],
+      "camera_guidance": "slow orbit 45° around the monkey...",
+      "mcq1_question": "Which animal lives in trees?",
+      "mcq1_option1": "Fish",
+      "mcq1_option2": "Monkey",
+      "mcq1_option3": "Dog",
+      "mcq1_option4": "Cat",
+      "mcq1_correct_option_index": 1,
+      "mcq1_question_id": "q1_which_animal_lives_in_trees"
+    }
+  ]
+}
+```
+
+**Alternative: avatar_scripts_by_language**
+```json
+{
+  "avatar_scripts_by_language": {
+    "en": {
+      "intro": "Today we will learn...",
+      "explanation": "Animals and birds live...",
+      "outro": "Now you know..."
+    }
+  }
+}
+```
+
+**Alternative: mcqs array**
+```json
+{
+  "mcqs": [
+    {
+      "question": "Which animal lives in trees?",
+      "options": [
+        { "text": "Fish" },
+        { "text": "Monkey", "correct": true },
+        { "text": "Dog" },
+        { "text": "Cat" }
+      ],
+      "correct_index": 1,
+      "explanation": "Monkeys live in trees."
+    }
+  ]
+}
 ```
 
 ### 7.2 Workflow Execution Flow
@@ -376,6 +426,33 @@ The document should contain:
 - ✅ `skybox_id` and `skybox_url` for each topic
 - ✅ `asset_ids` and `asset_urls` arrays for each topic
 - ✅ `status: "generated"` for topics with assets
+
+### 8.3 Output Schema (Matches Previous Save-Lesson Flow)
+
+The curriculum/save route produces a schema aligned with the previous save-lesson flow:
+
+**Chapter-level:**
+- `approved`, `approvedAt`, `approvedBy`
+- `chapter_name_by_language` (en, hi)
+- `supported_languages`, `moi`
+- `mcq_ids_by_language`, `tts_ids_by_language`
+- `sharedAssets` (image_ids, meshy_asset_ids, skybox_glb_urls, meshy_glb_urls)
+- `skybox_glb_urls`, `meshy_glb_urls`
+- `pdf_images_approved`, `pdf_images_generated`, `pdf_images_pending_approval`, `pdf_images_rejected`
+- `text_to_3d_asset_ids`, `texture_request_ids` (placeholder arrays)
+
+**Topic-level:**
+- `topic_name_by_language`, `learning_objective_by_language`
+- `avatar_scripts_by_language`
+- `mcq_ids_by_language`, `tts_ids_by_language`
+- `skybox_stored_glb_url`, `negative_text`, `negative_text_short`
+- `sharedAssets` (asset_ids, meshy_asset_ids)
+
+**TTS ID format:** `{topicId}_{intro|explanation|outro}_{lang}_female_professional`
+
+**MCQ support:** `mcqs_by_language` (en/hi arrays) or flat `mcq1_question`... or `mcqs` array
+
+**Multi-language:** Pass `avatar_scripts_by_language.en` and `avatar_scripts_by_language.hi` for TTS in both languages.
 
 ---
 

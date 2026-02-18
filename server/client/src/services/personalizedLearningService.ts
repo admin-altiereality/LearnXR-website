@@ -18,7 +18,7 @@ export interface LearningRecommendation {
 export interface StudentAnalytics {
   subjectsLearned: string[];
   totalMcqsAnswered: number;
-  assessmentAttemptsCount: number;
+  assessmentAttemptsCount?: number; // Deprecated - assessment feature removed
 }
 
 export interface SubjectScoreSummary {
