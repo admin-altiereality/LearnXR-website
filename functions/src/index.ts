@@ -131,6 +131,7 @@ const getApp = (): express.Application => {
     app.use('/ai-education', aiEducationRoutes);
     app.use('/assessment', assessmentRoutes);
     app.use('/pdf', pdfRoutes);
+    app.use('/api/pdf', pdfRoutes);
 
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
