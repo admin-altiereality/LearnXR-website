@@ -39,7 +39,7 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState('role-select');
-  const { login, loginWithGoogle, loginAsGuestStudent, user, profile, selectedRole, setSelectedRole } = useAuth();
+  const { login, loginWithGoogle, user, profile, selectedRole, setSelectedRole } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
 
@@ -92,18 +92,6 @@ export const Login = () => {
   const handleBackToRoleSelect = () => {
     setStep('role-select');
     setError('');
-  };
-
-  const handleGuestLogin = async () => {
-    setIsLoading(true);
-    setError('');
-    try {
-      await loginAsGuestStudent();
-    } catch (err) {
-      setError(err?.message || 'Could not start guest session. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleSubmit = async (e) => {
@@ -251,29 +239,6 @@ export const Login = () => {
                       </div>
                       <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4 group-hover:opacity-100" aria-hidden />
                     </motion.button>
-
-                    <Separator className="my-0.5 bg-border" />
-                    <motion.button
-                      type="button"
-                      onClick={handleGuestLogin}
-                      disabled={isLoading}
-                      className="group w-full p-2.5 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 transition-all duration-300 flex items-center gap-2.5 text-left disabled:opacity-70 shrink-0"
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.99 }}
-                    >
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shrink-0 shadow-lg">
-                        <FaRocket className="text-sm sm:text-base text-primary-foreground" />
-                      </div>
-                      <div className="text-left min-w-0 flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-foreground">Explore as guest</h3>
-                        <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-2">Try one lesson — no account or school code needed</p>
-                      </div>
-                      {isLoading ? (
-                        <span className="animate-pulse text-sm text-muted-foreground shrink-0">Starting...</span>
-                      ) : (
-                        <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4" aria-hidden />
-                      )}
-                    </motion.button>
                     </div>
                   </div>
                   <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
@@ -360,7 +325,7 @@ export const Login = () => {
                             placeholder="you@example.com"
                             required
                             disabled={isLoading}
-                            className="pl-10 pr-4 rounded-xl border-border bg-card/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/30 focus-visible:border-primary/50"
+                            className="pl-10 pr-4 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary"
                           />
                         </div>
                       </div>
@@ -377,7 +342,7 @@ export const Login = () => {
                             placeholder="Enter your password"
                             required
                             disabled={isLoading}
-                            className="pl-10 pr-12 rounded-xl border-border bg-card/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/30 focus-visible:border-primary/50"
+                            className="pl-10 pr-12 rounded-xl border border-input bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary"
                           />
                           <Button
                             type="button"

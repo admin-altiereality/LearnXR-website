@@ -33,6 +33,7 @@ import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home, P
 import { useAuth } from '../contexts/AuthContext';
 import { reportSessionProgress, type ReportSessionQuizPayload } from '../services/classSessionService';
 import type { SessionLessonPhase } from '../types/lms';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 // WebXR Utilities
 import {
@@ -2413,9 +2414,14 @@ const XRLessonPlayerV3: React.FC = () => {
             url: asset.glbUrl?.substring(0, 80)
           });
           // Check file type from URL
-          const assetUrl = asset.glbUrl || '';
-          const isGLB = assetUrl.toLowerCase().includes('.glb');
-          const isGLTF = assetUrl.toLowerCase().includes('.gltf');
+          const rawUrl = asset.glbUrl || '';
+          // Use proxy for Meshy/external URLs to avoid CORS "Failed to fetch" on Meta Quest WebXR
+          const needsProxy = rawUrl.includes('meshy.ai') || rawUrl.includes('api.meshy');
+          const assetUrl = needsProxy
+            ? `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(rawUrl)}`
+            : rawUrl;
+          const isGLB = rawUrl.toLowerCase().includes('.glb');
+          const isGLTF = rawUrl.toLowerCase().includes('.gltf');
           
           console.log(`[XRLessonPlayerV3] Loading asset ${i + 1}/${meshyAssets.length}:`, {
             name: asset.name || asset.id,

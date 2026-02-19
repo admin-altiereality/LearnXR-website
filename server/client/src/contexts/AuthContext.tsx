@@ -4,7 +4,6 @@ import {
     GoogleAuthProvider,
     onAuthStateChanged,
     sendPasswordResetEmail,
-    signInAnonymously,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut
@@ -44,7 +43,6 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string, role?: UserRole) => Promise<any>;
   login: (email: string, password: string) => Promise<any>;
   loginWithGoogle: (role?: UserRole) => Promise<any>;
-  loginAsGuestStudent: () => Promise<any>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -411,48 +409,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const loginAsGuestStudent = async () => {
-    if (!auth || !db) {
-      throw new Error('Authentication service is not available');
-    }
-    try {
-      const { user: guestUser } = await signInAnonymously(auth);
-      const userDocRef = doc(db, 'users', guestUser.uid);
-      const userDoc = await getDoc(userDocRef);
-      const now = new Date().toISOString();
-      if (!userDoc.exists()) {
-        const userData = {
-          email: guestUser.email || '',
-          displayName: 'Guest Explorer',
-          name: 'Guest Explorer',
-          role: 'student' as UserRole,
-          approvalStatus: null as ApprovalStatus,
-          onboardingCompleted: false,
-          isGuest: true,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await setDoc(userDocRef, userData);
-        const profileData: UserProfile = {
-          uid: guestUser.uid,
-          ...userData,
-          createdAt: userData.createdAt,
-        };
-        setProfile(profileData);
-      } else {
-        const profileData = await fetchProfile(guestUser.uid);
-        setProfile(profileData);
-      }
-      setSelectedRole(null);
-      toast.success('Exploring as guest! Complete the quick setup to continue.');
-      return guestUser;
-    } catch (error: any) {
-      console.error('Guest login error:', error);
-      toast.error(error?.message || 'Could not start guest session');
-      throw error;
-    }
-  };
-
   const login = async (email: string, password: string) => {
     if (!auth) {
       throw new Error('Authentication service is not available');
@@ -514,7 +470,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       signup,
       login,
       loginWithGoogle,
-      loginAsGuestStudent,
       logout,
       resetPassword,
       updateProfile,

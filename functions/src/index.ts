@@ -24,6 +24,10 @@ const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
+const emailjsServiceId = defineSecret("EMAILJS_SERVICE_ID");
+const emailjsTemplateId = defineSecret("EMAILJS_TEMPLATE_ID");
+const emailjsPublicKey = defineSecret("EMAILJS_PUBLIC_KEY");
+const emailjsPrivateKey = defineSecret("EMAILJS_PRIVATE_KEY");
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
@@ -84,10 +88,12 @@ const getApp = (): express.Application => {
     // Import routes only when app is created, not at module load time
     const linkedinRoutes = require('./routes/linkedin').default;
     const authRoutes = require('./routes/auth').default;
+    const notificationsRoutes = require('./routes/notifications').default;
 
     // Mount public routes FIRST (before authentication)
     app.use('/linkedin', linkedinRoutes);
     app.use('/auth', authRoutes);
+    app.use('/notifications', notificationsRoutes);
 
     // Apply authentication middleware
     app.use(authenticateUser);
@@ -158,7 +164,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN]
+    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, emailjsServiceId, emailjsTemplateId, emailjsPublicKey, emailjsPrivateKey]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -224,6 +230,16 @@ export const api = onRequest(
       }
     } catch (err: any) {
       console.warn('⚠️ LINKEDIN_COMPANY_URN not found:', err?.message || err);
+    }
+
+    // EmailJS for transactional emails (approval, welcome)
+    try {
+      process.env.EMAILJS_SERVICE_ID = emailjsServiceId.value()?.trim() || '';
+      process.env.EMAILJS_TEMPLATE_ID = emailjsTemplateId.value()?.trim() || '';
+      process.env.EMAILJS_PUBLIC_KEY = emailjsPublicKey.value()?.trim() || '';
+      process.env.EMAILJS_PRIVATE_KEY = emailjsPrivateKey.value()?.trim() || '';
+    } catch (err: any) {
+      console.warn('⚠️ EmailJS secrets not found - email notifications disabled:', err?.message || err);
     }
 
     // Set in process.env for routes that use getSecret()
