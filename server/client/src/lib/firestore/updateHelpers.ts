@@ -33,6 +33,7 @@ import {
 } from '../../types/curriculum';
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
 import { extractFlattenedMCQs } from './queries';
+import { invalidateLessonBundleCache } from '../../services/firestore/getLessonBundle';
 
 const COLLECTION_NAME = 'curriculum_chapters';
 
@@ -152,8 +153,56 @@ export const updateTopicApproval = async (options: UpdateTopicApprovalOptions): 
     topics: updatedTopics,
     updatedAt: serverTimestamp(),
   });
-  
+  invalidateLessonBundleCache(chapterId);
   console.log('✅ Topic approval updated successfully');
+};
+
+// ============================================
+// TOPIC DEMO FLAG (admin/superadmin only)
+// ============================================
+
+export interface UpdateTopicDemoFlagOptions {
+  chapterId: string;
+  topicId: string;
+  isDemo: boolean;
+  userId: string;
+}
+
+/**
+ * Update topic demo flag (admin/superadmin only).
+ * When isDemo is true, the lesson appears for guest students on the Lessons page.
+ */
+export const updateTopicDemoFlag = async (options: UpdateTopicDemoFlagOptions): Promise<void> => {
+  const { chapterId, topicId, isDemo, userId } = options;
+
+  console.log('📝 Updating topic demo flag:', { chapterId, topicId, isDemo, userId });
+
+  const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+  const chapterSnap = await getDoc(chapterRef);
+
+  if (!chapterSnap.exists()) {
+    throw new Error('Chapter not found');
+  }
+
+  const chapter = chapterSnap.data() as CurriculumChapter;
+  const topicIndex = chapter.topics?.findIndex((t) => t.topic_id === topicId);
+
+  if (topicIndex === undefined || topicIndex === -1) {
+    throw new Error('Topic not found');
+  }
+
+  const updatedTopics = [...chapter.topics];
+  updatedTopics[topicIndex] = {
+    ...updatedTopics[topicIndex],
+    isDemo: !!isDemo,
+  };
+
+  await updateDoc(chapterRef, {
+    topics: updatedTopics,
+    updatedAt: serverTimestamp(),
+  });
+  invalidateLessonBundleCache(chapterId);
+  console.log('✅ Topic demo flag updated successfully');
 };
 
 // ============================================
@@ -208,7 +257,7 @@ export const updateTopic = async (options: UpdateTopicOptions): Promise<void> =>
     topics: updatedTopics,
     updatedAt: serverTimestamp(),
   });
-  
+  invalidateLessonBundleCache(chapterId);
   // Add to history
   await addHistoryEntry(chapterId, userId, `Updated topic: ${updatedTopics[topicIndex].topic_name}`);
 };
@@ -315,7 +364,7 @@ export const updateScene = async (options: UpdateSceneOptions): Promise<void> =>
     topics: updatedTopics,
     updatedAt: serverTimestamp(),
   });
-  
+  invalidateLessonBundleCache(chapterId);
   // Generate change summary if not provided
   const autoSummary = changeSummary || generateChangeSummary(changes);
   await addHistoryEntry(chapterId, userId, autoSummary);
@@ -380,7 +429,7 @@ export const publishScene = async (options: {
       topics: updatedTopics,
       updatedAt: serverTimestamp(),
     });
-    
+    invalidateLessonBundleCache(chapterId);
     await addHistoryEntry(chapterId, userId, 'Scene published');
     
     return { success: true };
@@ -600,7 +649,7 @@ export const updateSkybox = async (options: {
     topics: updatedTopics,
     updatedAt: serverTimestamp(),
   });
-  
+  invalidateLessonBundleCache(chapterId);
   const summary = skyboxRemixId ? 'Skybox remixed' : 'Skybox updated';
   await addHistoryEntry(chapterId, userId, summary);
 };
@@ -910,7 +959,7 @@ export const addImageIdToChapterSharedAssets = async (
         image_ids: updatedImageIds,
         updatedAt: serverTimestamp(),
       });
-      
+      invalidateLessonBundleCache(chapterId);
       console.log(`✅ Added image ${imageId} to chapter ${chapterId} sharedAssets`);
     }
   } catch (error) {
@@ -1087,7 +1136,7 @@ export const linkMeshyAssetsToTopic = async (options: {
       topics: updatedTopics,
       updatedAt: serverTimestamp(),
     });
-    
+    invalidateLessonBundleCache(chapterId);
     await addHistoryEntry(chapterId, userId, `Linked ${assetIds.length} 3D asset(s) to topic`);
     
     console.log(`✅ Linked ${assetIds.length} asset IDs to topic ${topicId}:`, assetIds);
@@ -1155,7 +1204,7 @@ export const unlinkMeshyAssetFromTopic = async (options: {
       topics: updatedTopics,
       updatedAt: serverTimestamp(),
     });
-    
+    invalidateLessonBundleCache(chapterId);
     await addHistoryEntry(chapterId, userId, `Unlinked 3D asset from topic`);
     
     console.log(`✅ Unlinked asset ID ${assetId} from topic ${topicId}`);

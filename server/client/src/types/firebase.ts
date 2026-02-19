@@ -209,4 +209,10 @@ export interface Topic {
     approved: boolean;
     approvedAt: string | null; // Firestore timestamp
   };
+
+  // ============================================
+  // DEMO LESSON (for guest/demo student login)
+  // ============================================
+  /** When true, this lesson appears for guest students on the Lessons page */
+  isDemo?: boolean;
 } 

@@ -627,6 +627,8 @@ export async function applySnapshotToMainAndApproveTopic(
     topics: updatedTopics,
     updatedAt: serverTimestamp(),
   });
+  const { invalidateLessonBundleCache } = await import('./firestore/getLessonBundle');
+  invalidateLessonBundleCache(chapterId);
 
   // Update MCQs (check which exist to avoid updateDoc on non-existent docs)
   if (Array.isArray(draft.mcqs) && draft.mcqs.length > 0) {

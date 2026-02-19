@@ -130,7 +130,7 @@ console.log('Mounting Assessment routes...');
 router.use('/assessment', assessmentRoutes);
 console.log('Assessment routes mounted at /assessment');
 
-// Mount Auth routes (e.g. reCAPTCHA verification for secret backend login)
+// Mount Auth routes
 console.log('Mounting Auth routes...');
 router.use('/auth', authRoutes);
 console.log('Auth routes mounted at /auth');

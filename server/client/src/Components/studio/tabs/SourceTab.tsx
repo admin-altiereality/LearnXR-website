@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ref, getDownloadURL, uploadBytes } from 'firebase/storage';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { storage, db } from '../../../config/firebase';
+import { invalidateLessonBundleCache } from '../../../services/firestore/getLessonBundle';
 import { FileText, ExternalLink, Loader2, AlertCircle, Upload } from 'lucide-react';
 
 interface SourceTabProps {
@@ -176,6 +177,7 @@ export const SourceTab = ({ bundle, chapterId, topicId, onPdfUploaded }: SourceT
           pdf_stored_at: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        invalidateLessonBundleCache(chapterId);
 
         setPdfUrl(downloadUrl);
         setPdfName(chapter?.chapter_name || file.name || 'Source PDF');
