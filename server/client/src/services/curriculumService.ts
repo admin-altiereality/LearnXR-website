@@ -11,6 +11,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import type { CurriculumChapter, Topic } from '../types/firebase';
+import { invalidateLessonBundleCache } from './firestore/getLessonBundle';
 import {
   generateChapterDocumentId,
   parseChapterDocumentId,
@@ -213,7 +214,7 @@ export class CurriculumService {
         topics: updatedTopics,
         updatedAt: serverTimestamp(),
       });
-
+      invalidateLessonBundleCache(documentId);
       console.log(`✅ Updated topic ${topicId} with skybox ${skyboxId}`);
     } catch (error) {
       console.error('Error updating topic skybox:', error);
@@ -259,7 +260,7 @@ export class CurriculumService {
         topics: updatedTopics,
         updatedAt: serverTimestamp(),
       });
-
+      invalidateLessonBundleCache(documentId);
       console.log(`✅ Added ${skyboxIds.length} skyboxes to topic ${topicId}`);
     } catch (error) {
       console.error('Error adding topic skyboxes:', error);
@@ -304,7 +305,7 @@ export class CurriculumService {
         topics: updatedTopics,
         updatedAt: serverTimestamp(),
       });
-
+      invalidateLessonBundleCache(documentId);
       console.log(`✅ Updated topic ${topicId} with ${assetIds.length} assets`);
     } catch (error) {
       console.error('Error updating topic assets:', error);

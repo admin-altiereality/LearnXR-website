@@ -22,9 +22,10 @@ import {
   Calendar,
   XCircle,
   Loader2,
+  Presentation,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { updateTopicApproval } from '../../lib/firestore/updateHelpers';
+import { updateTopicApproval, updateTopicDemoFlag } from '../../lib/firestore/updateHelpers';
 import { approveChapter, unapproveChapter } from '../../lib/firebase/queries/curriculumChapters';
 import { isAdminOnly, isSuperadmin } from '../../utils/rbac';
 import { toast } from 'react-hot-toast';
@@ -61,6 +62,7 @@ export const ChapterTable = ({
   const { profile } = useAuth();
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [updatingChapterApproval, setUpdatingChapterApproval] = useState<string | null>(null);
+  const [updatingDemoFlag, setUpdatingDemoFlag] = useState<string | null>(null);
   
   // Debug: Log approval permissions
   useEffect(() => {
@@ -230,7 +232,36 @@ export const ChapterTable = ({
       setUpdatingApproval(null);
     }
   };
-  
+
+  const handleDemoToggle = async (chapterId: string, topicId: string, currentIsDemo: boolean) => {
+    if (!canApprove || !profile) return;
+
+    const demoKey = `${chapterId}_${topicId}`;
+    setUpdatingDemoFlag(demoKey);
+
+    try {
+      await updateTopicDemoFlag({
+        chapterId,
+        topicId,
+        isDemo: !currentIsDemo,
+        userId: profile.uid,
+      });
+
+      toast.success(`Topic ${!currentIsDemo ? 'marked as demo' : 'removed from demo'} successfully`);
+
+      if (onApprovalChange) {
+        onApprovalChange();
+      } else {
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error updating topic demo flag:', error);
+      toast.error('Failed to update demo status');
+    } finally {
+      setUpdatingDemoFlag(null);
+    }
+  };
+
   // Format approvedAt timestamp
   const formatApprovedAt = (timestamp: any) => {
     if (!timestamp) return null;
@@ -421,7 +452,7 @@ export const ChapterTable = ({
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           {isApproved ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-primary bg-primary/10 rounded-md border border-primary/20">
                               <CheckCircle2 className="w-3 h-3 shrink-0" />
@@ -431,6 +462,12 @@ export const ChapterTable = ({
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-600 bg-amber-500/10 rounded-md border border-amber-500/30 dark:text-amber-400">
                               <AlertCircle className="w-3 h-3 shrink-0" />
                               Not Approved
+                            </span>
+                          )}
+                          {(topic as { isDemo?: boolean }).isDemo === true && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-cyan-600 bg-cyan-500/10 rounded-md border border-cyan-500/30 dark:text-cyan-400" title="Shown to guest students on login">
+                              <Presentation className="w-3 h-3 shrink-0" />
+                              Demo
                             </span>
                           )}
                         </div>
@@ -461,20 +498,43 @@ export const ChapterTable = ({
                             return (
                               <>
                                 {canApprove && topic?.topic_id && (
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant={isApprovedInner ? 'destructive' : 'default'}
-                                    className="gap-1.5 text-xs h-8"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleApprovalToggle(chapter.id, topic.topic_id, isApprovedInner);
-                                    }}
-                                    disabled={isUpdating}
-                                    title={isApprovedInner ? 'Unapprove topic' : 'Approve topic'}
-                                  >
-                                    {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isApprovedInner ? <><XCircle className="w-3.5 h-3.5" />Unapprove</> : <><CheckCircle2 className="w-3.5 h-3.5" />Approve</>}
-                                  </Button>
+                                  <>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={isApprovedInner ? 'destructive' : 'default'}
+                                      className="gap-1.5 text-xs h-8"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleApprovalToggle(chapter.id, topic.topic_id, isApprovedInner);
+                                      }}
+                                      disabled={isUpdating}
+                                      title={isApprovedInner ? 'Unapprove topic' : 'Approve topic'}
+                                    >
+                                      {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isApprovedInner ? <><XCircle className="w-3.5 h-3.5" />Unapprove</> : <><CheckCircle2 className="w-3.5 h-3.5" />Approve</>}
+                                    </Button>
+                                    {(() => {
+                                      const isDemo = (topic as { isDemo?: boolean }).isDemo === true;
+                                      const demoKey = `${chapter.id}_${topic?.topic_id ?? ''}`;
+                                      const isUpdatingDemo = updatingDemoFlag === demoKey;
+                                      return (
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant={isDemo ? 'default' : 'outline'}
+                                          className="gap-1.5 text-xs h-8"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDemoToggle(chapter.id, topic.topic_id, isDemo);
+                                          }}
+                                          disabled={isUpdatingDemo}
+                                          title={isDemo ? 'Remove from demo (guest students)' : 'Mark as demo lesson'}
+                                        >
+                                          {isUpdatingDemo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Presentation className="w-3.5 h-3.5" />{isDemo ? 'Demo' : 'Mark demo'}</>}
+                                        </Button>
+                                      );
+                                    })()}
+                                  </>
                                 )}
                               </>
                             );

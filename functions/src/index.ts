@@ -24,8 +24,6 @@ const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
-const recaptchaSecretKey = defineSecret("RECAPTCHA_SECRET_KEY");
-
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
@@ -160,7 +158,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, recaptchaSecretKey] // recaptchaSecretKey for Secret Backend Login
+    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -228,14 +226,6 @@ export const api = onRequest(
       console.warn('⚠️ LINKEDIN_COMPANY_URN not found:', err?.message || err);
     }
 
-    let recaptchaSecret: string | undefined;
-    try {
-      recaptchaSecret = recaptchaSecretKey.value();
-      if (recaptchaSecret) recaptchaSecret = recaptchaSecret.trim();
-    } catch (err: any) {
-      console.warn('⚠️ RECAPTCHA_SECRET_KEY not set - Secret Backend Login reCAPTCHA verification disabled');
-    }
-
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (meshyKey) {
@@ -267,11 +257,6 @@ export const api = onRequest(
       console.log('🔑 LinkedIn Company URN set:', linkedinURN);
     } else {
       console.warn('⚠️ LINKEDIN_COMPANY_URN not set - LinkedIn API will not work');
-    }
-
-    if (recaptchaSecret) {
-      process.env.RECAPTCHA_SECRET_KEY = recaptchaSecret;
-      console.log('🔑 reCAPTCHA secret set for Secret Backend Login');
     }
 
     console.log('Secrets loaded:', {

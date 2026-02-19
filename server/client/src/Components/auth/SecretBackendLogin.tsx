@@ -2,15 +2,12 @@
  * Secret backend login - Staff only (Admin, Super Admin, Associate).
  * Not linked from the main app. Only these roles can use this entry point.
  * URL: /secretbackend
- * Protected by reCAPTCHA v3 (invisible, score-based) when VITE_RECAPTCHA_SITE_KEY is set.
  */
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaEnvelope, FaEye, FaEyeSlash, FaLock, FaRedo, FaShieldAlt } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
-import { useRecaptcha } from '../../hooks/useRecaptcha';
-import { verifyRecaptchaToken } from '../../services/recaptchaService';
 import { getDefaultPage } from '../../utils/rbac';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -18,64 +15,6 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 
 const STAFF_ROLES = ['admin', 'superadmin', 'associate'] as const;
-
-const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY as string | undefined;
-
-/** Domain error troubleshooting UI with copy button */
-const DomainRecaptchaError = ({ onRetry }: { onRetry: () => void }) => {
-  const host = typeof window !== 'undefined' ? window.location.hostname : '';
-  const copyDomain = () => {
-    if (host && navigator.clipboard) {
-      navigator.clipboard.writeText(host);
-    }
-  };
-
-  return (
-    <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-4 text-sm space-y-3">
-      <p className="font-medium text-amber-600 dark:text-amber-400">
-        reCAPTCHA domain not allowed yet
-      </p>
-      <p className="text-muted-foreground">
-        Add this <strong className="text-foreground">exact</strong> domain to your reCAPTCHA key:
-      </p>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 px-3 py-2 rounded bg-muted/80 text-foreground text-xs break-all font-mono">
-          {host}
-        </code>
-        {navigator.clipboard && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={copyDomain}
-          >
-            Copy
-          </Button>
-        )}
-      </div>
-      <ul className="text-muted-foreground text-xs space-y-1 list-disc list-inside">
-        <li>Use <strong>double hyphen</strong> (<code>--</code>) for Firebase preview channels</li>
-        <li>Add it to the key matching your Site Key in .env</li>
-        <li>Domain changes can take <strong>5–10 minutes</strong> to apply</li>
-        <li>Try <strong>hard refresh</strong> (Ctrl+Shift+R) or <strong>incognito</strong> after adding</li>
-      </ul>
-      <div className="flex gap-2 pt-1">
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-          I&apos;ve added it — Retry
-        </Button>
-        <a
-          href="https://www.google.com/recaptcha/admin"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary text-xs underline hover:no-underline"
-        >
-          Open reCAPTCHA Admin →
-        </a>
-      </div>
-    </div>
-  );
-};
 
 export const SecretBackendLogin = () => {
   const [email, setEmail] = useState('');
@@ -87,9 +26,6 @@ export const SecretBackendLogin = () => {
   const [retryingProfile, setRetryingProfile] = useState(false);
   const { user, profile, login, logout, loading, profileLoading, refreshProfile } = useAuth();
   const navigate = useNavigate();
-
-  const recaptcha = useRecaptcha({ siteKey: RECAPTCHA_SITE_KEY });
-  const recaptchaRequired = Boolean(RECAPTCHA_SITE_KEY?.trim());
 
   useEffect(() => {
     if (loading || profileLoading || !user) return;
@@ -126,28 +62,6 @@ export const SecretBackendLogin = () => {
     if (!email.trim() || !password) {
       setError('Email and password are required.');
       return;
-    }
-    if (recaptchaRequired) {
-      try {
-        const token = await recaptcha.execute('login');
-        const result = await verifyRecaptchaToken(token);
-        if (!result.success) {
-          setError(result.error ?? 'Security check failed. Please try again.');
-          return;
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Security check failed. Please try again.';
-        const isDomainError =
-          msg.includes('Invalid site key') ||
-          msg.includes('not loaded in api.js') ||
-          msg.toLowerCase().includes('allowed domain');
-        if (isDomainError) {
-          setError('domain'); // Special flag to show domain troubleshooting UI
-          return;
-        }
-        setError(msg);
-        return;
-      }
     }
     setIsLoading(true);
     try {
@@ -229,13 +143,10 @@ export const SecretBackendLogin = () => {
               {error}
             </div>
           )}
-          {!accessDenied && error && error !== 'domain' && (
+          {!accessDenied && error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
-          )}
-          {!accessDenied && error === 'domain' && (
-            <DomainRecaptchaError onRetry={() => setError('')} />
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -278,45 +189,10 @@ export const SecretBackendLogin = () => {
                 </button>
               </div>
             </div>
-            {recaptchaRequired && (
-              <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                      recaptcha.isReady ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
-                    }`}
-                  >
-                    {recaptcha.isReady ? (
-                      <FaShieldAlt className="h-4 w-4" />
-                    ) : (
-                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">Protected by reCAPTCHA</p>
-                    <p className="text-xs text-muted-foreground">
-                      {recaptcha.isReady
-                        ? 'Security check ready. Your sign-in is protected against bots.'
-                        : 'Loading security check...'}
-                    </p>
-                  </div>
-                </div>
-                {recaptcha.error &&
-                  (recaptcha.error.toLowerCase().includes('allowed domain') ||
-                    recaptcha.error.includes('Invalid site key') ||
-                    recaptcha.error.includes('not loaded') ? (
-                    <div className="mt-2">
-                      <DomainRecaptchaError onRetry={() => window.location.reload()} />
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm text-destructive">{recaptcha.error}</p>
-                  ))}
-              </div>
-            )}
             <Button
               type="submit"
               className="w-full"
-              disabled={isLoading || (recaptchaRequired && !recaptcha.isReady)}
+              disabled={isLoading}
             >
               {isLoading ? (
                 <span className="flex items-center justify-center gap-2">

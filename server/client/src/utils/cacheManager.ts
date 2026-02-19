@@ -84,6 +84,17 @@ export class CacheManager {
   static getAssetKey(assetId: string): string {
     return `asset:${assetId}`;
   }
+
+  /**
+   * Get cache key for lesson bundle (getLessonBundle).
+   * Use topicId || 'first' when no specific topic.
+   */
+  static getBundleKey(chapterId: string, topicId: string | undefined, lang: string): string {
+    return `bundle:${chapterId}:${topicId || 'first'}:${lang}`;
+  }
 }
+
+/** TTL for lesson bundle cache (10 minutes) - reduces Firebase reads across lesson pages */
+export const LESSON_BUNDLE_CACHE_TTL_MS = 10 * 60 * 1000;
 
 export const cacheManager = new CacheManager();

@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
@@ -28,6 +28,8 @@ import { isGuestUser } from '../utils/rbac';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
+import { getLessonBundle } from '../services/firestore/getLessonBundle';
+import { getVRCapabilities } from '../utils/vrDetection';
 import type { ChapterTTS, MeshyAsset, ChapterMCQ } from '../types/curriculum';
 import {
   Play,
@@ -56,8 +58,14 @@ import {
   AlertTriangle,
   RefreshCcw,
   SkipForward,
+  Target,
+  Box,
+  Mic,
+  Glasses,
+  Clock,
 } from 'lucide-react';
 import { Progress } from '../Components/ui/progress';
+import { Button } from '../Components/ui/button';
 
 // ============================================================================
 // Error Boundary Component
@@ -700,11 +708,18 @@ const VRLessonPlayerInner = () => {
   
   // Initialize React Router hooks
   let navigate: ReturnType<typeof useNavigate>;
+  let location: ReturnType<typeof useLocation>;
   try {
     navigate = useNavigate();
+    location = useLocation();
   } catch (e) {
     throw new Error('Failed to initialize navigation');
   }
+
+  const locationState = location?.state as { chapter?: any; topic?: any; selectedLanguage?: string } | undefined;
+  const prepChapter = locationState?.chapter;
+  const prepTopic = locationState?.topic;
+  const prepLang = locationState?.selectedLanguage || 'en';
   
   // Initialize Auth context
   let user: any = null;
@@ -740,6 +755,15 @@ const VRLessonPlayerInner = () => {
   const [dataInitialized, setDataInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [initPhase, setInitPhase] = useState<'starting' | 'loading-storage' | 'validating' | 'ready' | 'error'>('starting');
+
+  // Preparation screen (when navigated from Lessons with state)
+  const [preparationDone, setPreparationDone] = useState(false);
+  const [prepLessonData, setPrepLessonData] = useState<any>(null);
+  const [prepCountdown, setPrepCountdown] = useState(10);
+  const [prepLoading, setPrepLoading] = useState(false);
+  const [prepError, setPrepError] = useState<string | null>(null);
+  const prepCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [prepVRCapabilities, setPrepVRCapabilities] = useState<any>(null);
 
   // Load extra lesson data from sessionStorage on mount
   useEffect(() => {
@@ -786,7 +810,133 @@ const VRLessonPlayerInner = () => {
     
     initializeData();
   }, []); // Empty dependency - run once on mount
-  
+
+  // Preparation: fetch bundle and run 10s countdown when we have state from Lessons
+  useEffect(() => {
+    if (!prepChapter?.id || !prepTopic?.topic_id) return;
+
+    setPrepLoading(true);
+    setPrepError(null);
+    setPrepLessonData(null);
+    setPrepCountdown(10);
+
+    (async () => {
+      try {
+        const [bundle, vrCap] = await Promise.all([
+          getLessonBundle({
+            chapterId: prepChapter.id,
+            lang: prepLang,
+            topicId: prepTopic.topic_id,
+            ...(profile?.role === 'associate' && user?.uid ? { userId: user.uid, userRole: 'associate' } : {}),
+          }),
+          getVRCapabilities().catch(() => null),
+        ]);
+        setPrepVRCapabilities(vrCap);
+
+        const fullData = bundle.chapter;
+        const topic = fullData.topics?.find((t: any) => t.topic_id === prepTopic.topic_id) || prepTopic;
+        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+        const skyboxUrl = topic.skybox_url || topic.skybox_glb_url || bundle.skybox?.url || '';
+        const learningObjective = typeof topic.learning_objective === 'string' ? topic.learning_objective : (topic.learning_objective?.en || topic.learning_objective?.hi || '');
+        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+        let assetUrls = topic.asset_urls || [];
+        const assetIds = topic.asset_ids || [];
+        safeAssets3d.forEach((asset: any) => {
+          if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
+            assetUrls.push(asset.glb_url);
+          }
+        });
+        if (fullData.image3dasset?.imageasset_url || fullData.image3dasset?.imagemodel_glb) {
+          const url = fullData.image3dasset.imagemodel_glb || fullData.image3dasset.imageasset_url;
+          if (url) assetUrls = [url, ...assetUrls];
+        }
+        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+        const ttsAudio = safeTts.map((tts: any) => ({
+          id: tts.id || '',
+          script_type: tts.script_type || 'full',
+          audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+          language: tts.language || tts.lang || prepLang,
+          text: tts.script_text || tts.text || '',
+        }));
+        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+        const mcqs = safeMcqs.map((m: any) => ({
+          id: m.id || `mcq_${Math.random()}`,
+          question: m.question || m.question_text || '',
+          options: Array.isArray(m.options) ? m.options : [],
+          correct_option_index: m.correct_option_index ?? 0,
+          explanation: m.explanation || '',
+        }));
+
+        const topicName = typeof topic.topic_name === 'string' ? topic.topic_name : (topic.topic_name?.en || topic.topic_name?.hi || 'Lesson');
+        const chapterName = typeof fullData.chapter_name === 'string' ? fullData.chapter_name : (fullData.chapter_name?.en || fullData.chapter_name?.hi || 'Chapter');
+
+        setPrepLessonData({
+          chapter: {
+            chapter_id: prepChapter.id,
+            chapter_name: chapterName,
+            chapter_number: fullData.chapter_number ?? prepChapter.chapter_number,
+            curriculum: fullData.curriculum ?? prepChapter.curriculum,
+            class_name: `Class ${fullData.class ?? prepChapter.class}`,
+            subject: fullData.subject ?? prepChapter.subject,
+          },
+          topic: {
+            topic_id: topic.topic_id,
+            topic_name: topicName,
+            topic_priority: topic.topic_priority ?? 1,
+            learning_objective: learningObjective,
+            in3d_prompt: topic.in3d_prompt || '',
+            scene_type: topic.scene_type || 'narrative',
+            skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
+            skybox_url: skyboxUrl,
+            avatar_intro: scripts.intro || '',
+            avatar_explanation: scripts.explanation || '',
+            avatar_outro: scripts.outro || '',
+            asset_list: topic.asset_list || [],
+            asset_urls: assetUrls,
+            asset_ids: assetIds,
+            mcqs,
+          },
+          image3dasset: fullData.image3dasset ?? null,
+          ttsAudio,
+          startedAt: new Date().toISOString(),
+          _meta: {
+            hasSkybox: !!skyboxUrl,
+            hasScript: !!(scripts.intro || scripts.explanation || scripts.outro),
+            hasAssets: assetUrls.length > 0 || !!fullData.image3dasset,
+            hasMcqs: mcqs.length > 0,
+            scriptSections: [scripts.intro, scripts.explanation, scripts.outro].filter(Boolean).length,
+            assets3d: safeAssets3d,
+          },
+        });
+      } catch (e) {
+        console.error('Prep fetch error:', e);
+        setPrepError(e instanceof Error ? e.message : 'Failed to load lesson');
+      } finally {
+        setPrepLoading(false);
+      }
+    })();
+
+    prepCountdownRef.current = setInterval(() => {
+      setPrepCountdown((prev) => {
+        if (prev <= 1) {
+          if (prepCountdownRef.current) {
+            clearInterval(prepCountdownRef.current);
+            prepCountdownRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (prepCountdownRef.current) {
+        clearInterval(prepCountdownRef.current);
+        prepCountdownRef.current = null;
+      }
+    };
+  }, [prepChapter?.id, prepTopic?.topic_id, prepLang, profile?.role, user?.uid]);
+
   // Compute if lesson data is valid
   const isLessonDataValid = useMemo(() => {
     const fromContext = !!(activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id);
@@ -964,16 +1114,17 @@ const VRLessonPlayerInner = () => {
   
   const currentMcq = mcqs[currentMcqIndex];
 
-  // All content ready: skybox (or no skybox), 3D assets (or none), and TTS fetch complete.
-  // Start Lesson is only enabled when this is true so TTS doesn't play before the scene is ready.
+  // All content ready: skybox (or no skybox), 3D assets (or none), and TTS must be ready.
+  // Start Lesson only appears when everything is loaded so the lesson starts with skybox, 3D assets, and audio ready.
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-    const envReady =
-      (skyboxUrl ? sceneReady : !skyboxLoading) &&
-      (assetUrl ? !assetLoading : true);
-    const ttsReady = ttsStatus !== 'loading';
-    return envReady && ttsReady;
-  }, [skyboxData, skyboxLoading, sceneReady, assetUrl, assetLoading, ttsStatus]);
+    const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
+    const assetReady = assetUrl ? !assetLoading : true; // if lesson has 3D asset, wait until loaded
+    const ttsReady =
+      ttsStatus !== 'loading' &&
+      (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
+    return skyboxReady && assetReady && ttsReady;
+  }, [skyboxData, skyboxLoading, sceneReady, assetUrl, assetLoading, ttsStatus, ttsData.length]);
   
   // Debug log for MCQs
   useEffect(() => {
@@ -1117,6 +1268,11 @@ const VRLessonPlayerInner = () => {
       
       setSkyboxLoading(true);
       setSkyboxError(null);
+      // When this lesson has a skybox, wait for the texture to load before showing Start Lesson
+      const hasSkybox = !!(topic.skybox_url || topic.sharedAssets?.skybox_url || topic.skybox_id || topic.sharedAssets?.skybox_id);
+      if (hasSkybox) {
+        setSceneReady(false);
+      }
       
       // Resolve skybox URL (topic-level or sharedAssets)
       const skyboxUrl = topic.skybox_url || topic.sharedAssets?.skybox_url || '';
@@ -1447,8 +1603,8 @@ const VRLessonPlayerInner = () => {
           setMeshyAssets(convertedAssets);
           const firstAssetUrl = selectPlatformAssetUrl(convertedAssets[0], platform);
           setAssetUrl(firstAssetUrl);
+          setAssetLoading(true); // wait for 3D model to load; onAssetLoad will set false
           log('✅', `Loaded ${convertedAssets.length} 3D assets from bundle, selected format for ${platform}`);
-          setAssetLoading(false);
           return;
         }
       }
@@ -1458,7 +1614,7 @@ const VRLessonPlayerInner = () => {
       if (effectiveTopic?.asset_urls && Array.isArray(effectiveTopic.asset_urls) && effectiveTopic.asset_urls.length > 0) {
         log('📦', `Using ${effectiveTopic.asset_urls.length} asset URLs from topic`);
         setAssetUrl(effectiveTopic.asset_urls[0]);
-        setAssetLoading(false);
+        setAssetLoading(true); // wait for 3D model to load; onAssetLoad will set false
         return;
       }
       
@@ -1478,7 +1634,7 @@ const VRLessonPlayerInner = () => {
         if (selectedUrl) {
           log('✅', `Using image3dasset for ${platform}:`, selectedUrl.substring(0, 60));
           setAssetUrl(selectedUrl);
-          setAssetLoading(false);
+          setAssetLoading(true); // wait for 3D model to load; onAssetLoad will set false
           return;
         }
       }
@@ -1502,14 +1658,15 @@ const VRLessonPlayerInner = () => {
           setMeshyAssets(assets);
           const firstAssetUrl = selectPlatformAssetUrl(assets[0], platform);
           setAssetUrl(firstAssetUrl);
+          setAssetLoading(true); // wait for 3D model to load; onAssetLoad will set false
           log('✅', `Loaded ${assets.length} 3D assets from Firestore, selected format for ${platform}`);
         } else {
           log('⚠️', 'No 3D assets found in Firestore');
+          setAssetLoading(false);
         }
       } catch (error) {
         console.error('Failed to fetch 3D assets:', error);
         log('❌', 'Error fetching 3D assets from Firestore');
-      } finally {
         setAssetLoading(false);
       }
     };
@@ -2067,6 +2224,241 @@ const VRLessonPlayerInner = () => {
     log('✅', 'Avatar is ready');
     setAvatarReady(true);
   }, []);
+
+  // ============================================================================
+  // Preparation Screen (when navigated from Lessons with state)
+  // ============================================================================
+
+  const handleLaunchFromPrep = useCallback(() => {
+    if (!prepLessonData || !lessonContext?.startLesson) return;
+    const d = prepLessonData;
+    const cleanChapter = {
+      chapter_id: String(d.chapter?.chapter_id ?? ''),
+      chapter_name: String(d.chapter?.chapter_name ?? 'Untitled Chapter'),
+      chapter_number: Number(d.chapter?.chapter_number) || 1,
+      curriculum: String(d.chapter?.curriculum ?? 'Unknown'),
+      class_name: String(d.chapter?.class_name ?? 'Unknown'),
+      subject: String(d.chapter?.subject ?? 'Unknown'),
+    };
+    const cleanTopic = {
+      topic_id: String(d.topic?.topic_id ?? ''),
+      topic_name: String(d.topic?.topic_name ?? 'Untitled Topic'),
+      topic_priority: Number(d.topic?.topic_priority) || 1,
+      learning_objective: String(d.topic?.learning_objective ?? ''),
+      in3d_prompt: String(d.topic?.in3d_prompt ?? ''),
+      skybox_id: d.topic?.skybox_id ?? null,
+      skybox_url: String(d.topic?.skybox_url ?? ''),
+      avatar_intro: String(d.topic?.avatar_intro ?? ''),
+      avatar_explanation: String(d.topic?.avatar_explanation ?? ''),
+      avatar_outro: String(d.topic?.avatar_outro ?? ''),
+      asset_list: Array.isArray(d.topic?.asset_list) ? [...d.topic.asset_list] : [],
+      asset_urls: Array.isArray(d.topic?.asset_urls) ? [...d.topic.asset_urls] : [],
+      asset_ids: Array.isArray(d.topic?.asset_ids) ? [...d.topic.asset_ids] : [],
+      mcq_ids: Array.isArray(d.topic?.mcq_ids) ? [...d.topic.mcq_ids] : [],
+      tts_ids: Array.isArray(d.topic?.tts_ids) ? [...d.topic.tts_ids] : [],
+      mcqs: Array.isArray(d.topic?.mcqs) ? [...d.topic.mcqs] : [],
+      language: prepLang,
+      ttsAudio: Array.isArray(d.ttsAudio) ? [...d.ttsAudio] : [],
+    };
+    const fullLessonData = {
+      chapter: cleanChapter,
+      topic: cleanTopic,
+      image3dasset: d.image3dasset ?? null,
+      startedAt: d.startedAt ?? new Date().toISOString(),
+      launchedAt: new Date().toISOString(),
+      _meta: d._meta ?? null,
+      // VR player expects these at top level for TTS/assets loading
+      ttsAudio: Array.isArray(d.ttsAudio) ? [...d.ttsAudio] : [],
+      assets3d: d._meta?.assets3d ?? null,
+    };
+    try {
+      lessonContext.startLesson(cleanChapter, cleanTopic);
+      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+      setExtraLessonData(fullLessonData);
+      setPreparationDone(true);
+    } catch (e) {
+      console.error('Launch from prep failed:', e);
+    }
+  }, [prepLessonData, prepLang, lessonContext]);
+
+  if (prepChapter && prepTopic && !preparationDone) {
+    const meta = prepLessonData?._meta;
+    const isVRAvailable = !!prepVRCapabilities;
+    const canLaunch = prepCountdown === 0 && prepLessonData && !prepError && !prepLoading;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/90 backdrop-blur-sm overflow-y-auto">
+        <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col bg-card rounded-2xl border shadow-2xl overflow-hidden border-border my-auto">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/lessons')}
+            className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-background/90 text-foreground hover:bg-muted shadow-sm"
+          >
+            <X className="w-4 h-4" />
+          </Button>
+
+          <div className="relative h-36 sm:h-44 flex-shrink-0 overflow-hidden bg-muted">
+            <div className="w-full h-full flex items-center justify-center">
+              <GraduationCap className="w-14 h-14 text-muted-foreground" />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+            <div className="absolute top-3 left-4 flex flex-wrap gap-2">
+              <span className="px-2.5 py-1 text-[11px] text-white font-semibold rounded-full bg-primary/25 border border-primary/40 backdrop-blur-sm">
+                {prepChapter.curriculum}
+              </span>
+              <span className="px-2.5 py-1 text-[11px] text-white font-semibold rounded-full bg-primary/25 border border-primary/40 backdrop-blur-sm">
+                Class {prepChapter.class}
+              </span>
+              <span className="px-2.5 py-1 text-[11px] text-white font-medium rounded-full bg-background/60 border border-white/20 backdrop-blur-sm">
+                Ch. {prepChapter.chapter_number}
+              </span>
+            </div>
+            <div className="absolute bottom-4 left-4 right-4">
+              <p className="text-xs font-medium text-primary uppercase tracking-wider mb-1">
+                {prepChapter.subject}
+              </p>
+              <h2 className="text-xl sm:text-2xl font-bold text-foreground leading-tight drop-shadow-sm">
+                {prepTopic.topic_name || 'Lesson'}
+              </h2>
+            </div>
+          </div>
+
+          <div className="px-5 sm:px-6 pt-4 pb-4 space-y-4 flex-1 min-h-0 overflow-y-auto">
+            {prepLessonData?.topic?.learning_objective && (
+              <div className="flex gap-3 p-4 rounded-xl bg-muted/40 border border-border">
+                <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center">
+                  <Target className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Learning objective</p>
+                  <p className="text-sm text-foreground leading-snug">{prepLessonData.topic.learning_objective}</p>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 px-0.5">Content</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {[
+                  { key: 'skybox', has: meta?.hasSkybox, Icon: Sparkles, label: '360° View' },
+                  { key: 'script', has: meta?.hasScript, Icon: Mic, label: 'Narration', sub: meta?.scriptSections ? `${meta.scriptSections} sections` : null },
+                  { key: 'assets', has: meta?.hasAssets, Icon: Box, label: '3D Assets' },
+                  { key: 'mcqs', has: meta?.hasMcqs, Icon: HelpCircle, label: 'Quiz' },
+                ].map(({ key, has, Icon, label, sub }) => (
+                  <div
+                    key={key}
+                    className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${has ? 'bg-primary/5 border-primary/25' : 'bg-muted/30 border-border'}`}
+                  >
+                    <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${has ? 'bg-primary/15' : 'bg-muted'}`}>
+                      <Icon className={`w-4 h-4 ${has ? 'text-primary' : 'text-muted-foreground'}`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-foreground truncate">{label}</p>
+                      <p className={`text-[11px] font-semibold truncate ${has ? 'text-primary' : 'text-muted-foreground'}`}>{sub || (has ? 'Available' : '—')}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {prepError && (
+              <div className="flex gap-3 p-4 rounded-xl bg-destructive/10 border border-destructive/25">
+                <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Unable to load lesson</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{prepError}</p>
+                </div>
+              </div>
+            )}
+
+            <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border ${isVRAvailable ? 'bg-primary/5 border-primary/25' : 'bg-muted/30 border-border'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isVRAvailable ? 'bg-primary/15' : 'bg-muted'}`}>
+                  <Glasses className={`w-5 h-5 ${isVRAvailable ? 'text-primary' : 'text-muted-foreground'}`} />
+                </div>
+                <div>
+                  <p className={`text-sm font-semibold ${isVRAvailable ? 'text-primary' : 'text-foreground'}`}>
+                    {isVRAvailable ? 'VR ready' : 'No VR detected'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {isVRAvailable ? (prepVRCapabilities?.deviceType?.replace('-', ' ') || 'VR') : 'Connect a headset for immersive mode'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {prepCountdown > 0 && (
+              <div className="p-4 rounded-xl bg-primary/5 border border-primary/25">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-primary">Preparing lesson</span>
+                  <span className="text-sm font-bold tabular-nums text-primary">{prepCountdown}s</span>
+                </div>
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary rounded-full transition-[width] duration-500 ease-out"
+                    style={{ width: `${((10 - prepCountdown) / 10) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Skybox, assets & content</p>
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
+              <Button variant="outline" className="sm:flex-1 border-border h-11" onClick={() => navigate('/lessons')}>
+                Cancel
+              </Button>
+              <Button
+                className="sm:flex-1 h-11 gap-2 font-semibold"
+                onClick={handleLaunchFromPrep}
+                disabled={!canLaunch}
+              >
+                {prepCountdown > 0 ? (
+                  <>
+                    <Clock className="w-4 h-4" />
+                    Ready in {prepCountdown}s…
+                  </>
+                ) : prepLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Preparing…
+                  </>
+                ) : prepError ? (
+                  <>
+                    <AlertTriangle className="w-4 h-4" />
+                    {prepError.length > 30 ? 'Unavailable' : prepError}
+                  </>
+                ) : canLaunch ? (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Launch lesson
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Finalizing…
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {prepLoading && !prepCountdown && (
+              <p className="text-center text-[11px] text-muted-foreground flex items-center justify-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                Fetching content…
+              </p>
+            )}
+            {prepLessonData && !prepError && !prepLoading && prepCountdown === 0 && (
+              <p className="text-center text-xs text-primary font-medium flex items-center justify-center gap-2">
+                <CheckCircle className="w-3.5 h-3.5" />
+                Lesson ready to launch
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ============================================================================
   // Initialization / Loading State

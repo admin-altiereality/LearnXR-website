@@ -31,6 +31,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import type { CurriculumChapter } from '../../../types/firebase';
+import { invalidateLessonBundleCache } from '../../../services/firestore/getLessonBundle';
 import type {
   LanguageCode,
   NormalizedChapter,
@@ -324,7 +325,7 @@ export async function approveChapter(
       approvedBy,
       updatedAt: serverTimestamp(),
     });
-
+    invalidateLessonBundleCache(chapterId);
     console.log('✅ Chapter approved successfully');
     return true;
   } catch (error) {
@@ -348,7 +349,7 @@ export async function unapproveChapter(chapterId: string): Promise<boolean> {
       approvedBy: null,
       updatedAt: serverTimestamp(),
     });
-
+    invalidateLessonBundleCache(chapterId);
     console.log('✅ Chapter unapproved successfully');
     return true;
   } catch (error) {

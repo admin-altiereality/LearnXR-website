@@ -21,6 +21,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { LanguageCode } from '../../types/curriculum';
+import { cacheManager, CacheManager, LESSON_BUNDLE_CACHE_TTL_MS } from '../../utils/cacheManager';
 import { extractTopicScriptsForLanguage } from '../../lib/firestore/queries';
 import {
   getLatestUnapprovedVersionForUser,
@@ -516,6 +517,15 @@ function mergeDraftIntoBundle(
  * Get complete lesson bundle for a chapter and language.
  * When userId + userRole='associate' are passed, overlays the Associate's latest unapproved draft.
  */
+/**
+ * Invalidate cached lesson bundles for a chapter (call after chapter/topic updates).
+ * Reduces stale reads after curriculum edits.
+ */
+export function invalidateLessonBundleCache(chapterId: string): void {
+  const escaped = chapterId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  cacheManager.invalidatePattern(`^bundle:${escaped}:`);
+}
+
 export async function getLessonBundle(params: {
   chapterId: string;
   lang: LanguageCode;
@@ -524,6 +534,31 @@ export async function getLessonBundle(params: {
   userRole?: string; // Optional: must be 'associate' to overlay draft
 }): Promise<LessonBundle> {
   const { chapterId, lang, topicId, userId, userRole } = params;
+
+  const cacheKey = CacheManager.getBundleKey(chapterId, topicId, lang);
+  const cached = cacheManager.get<LessonBundle>(cacheKey);
+  if (cached) {
+    console.log(`[getLessonBundle] Cache hit for ${cacheKey}`);
+    const bundle = cached;
+    if (userRole === 'associate' && userId) {
+      const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
+      if (effectiveTopicId) {
+        try {
+          const version = await getLatestUnapprovedVersionForUser(chapterId, effectiveTopicId, userId);
+          if (version?.snapshot_ref) {
+            const draft = await getChapterSnapshot(version.snapshot_ref);
+            if (draft) {
+              mergeDraftIntoBundle(bundle, draft, effectiveTopicId);
+              console.log('[getLessonBundle] Overlaid Associate draft for topic', effectiveTopicId);
+            }
+          }
+        } catch (err) {
+          console.warn('[getLessonBundle] Associate draft overlay failed:', err);
+        }
+      }
+    }
+    return bundle;
+  }
 
   console.log(`[getLessonBundle] Fetching bundle for chapter ${chapterId}, language ${lang}`);
 
@@ -1075,6 +1110,9 @@ export async function getLessonBundle(params: {
       hasPdf: !!bundle.pdf,
       textTo3dApproved: bundle.textTo3dAssets.filter((a: any) => a.approval_status === true).length,
     });
+
+    // Cache bundle to reduce Firebase reads (invalidated on chapter/topic save)
+    cacheManager.set(cacheKey, bundle, LESSON_BUNDLE_CACHE_TTL_MS);
 
     // Associate draft overlay: when user is Associate, fetch their latest unapproved version and overlay
     if (userRole === 'associate' && userId) {

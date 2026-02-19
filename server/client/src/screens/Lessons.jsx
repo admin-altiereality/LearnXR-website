@@ -9,7 +9,7 @@
  * - Memoized components to prevent flickering
  */
 
-import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
 import {
     AlertCircle,
     BookOpen,
@@ -56,9 +56,8 @@ import {
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
 
-// Guest student: fixed demo curriculum/class; only first lesson is unlocked
-const GUEST_DEMO_CURRICULUM = 'CBSE';
-const GUEST_DEMO_CLASS = 6;
+// Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
+const GUEST_DEMO_CHAPTERS_LIMIT = 200; // Max chapters to scan for demo topics (client-side filter)
 
 // Content indicators (simple badges) - Memoized; theme tokens
 const ContentBadges = memo(({ chapter }) => (
@@ -667,10 +666,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
     
-    // Guest: use fixed demo curriculum/class; skip waiting for classes
+    // Guest: fetch a bounded set of chapters; we will filter to demo-only topics in groupedTopicsByChapter
     if (isGuest) {
-      effectiveCurriculum = GUEST_DEMO_CURRICULUM;
-      effectiveClass = String(GUEST_DEMO_CLASS);
+      effectiveCurriculum = null;
+      effectiveClass = null;
     }
     
     // Wait for classes to load if user is student/teacher (not guest) and classes are expected
@@ -723,12 +722,16 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
     
     // Note: We filter by topic-level approval in groupedTopicsByChapter
-    // Don't filter by chapter-level approval here to allow showing topics from any chapter
-    
+    // For guest: fetch bounded set of chapters (no curriculum/class filter), then filter to demo-only topics client-side
     const chaptersRef = collection(db, 'curriculum_chapters');
-    const chaptersQuery = constraints.length > 0 
-      ? query(chaptersRef, ...constraints)
-      : query(chaptersRef);
+    let chaptersQuery;
+    if (isGuest) {
+      chaptersQuery = query(chaptersRef, limit(GUEST_DEMO_CHAPTERS_LIMIT));
+    } else if (constraints.length > 0) {
+      chaptersQuery = query(chaptersRef, ...constraints);
+    } else {
+      chaptersQuery = query(chaptersRef);
+    }
     
     const unsubscribe = onSnapshot(
       chaptersQuery,
@@ -877,26 +880,22 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Extract all topics from chapters
     const allTopics = [];
     
-    // For students and teachers: get class numbers and curriculum from their classes (guest uses demo values)
+    // For students and teachers (not guest): get class numbers and curriculum from their classes
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
-    const userClassNumbers = isGuest
-      ? [GUEST_DEMO_CLASS]
-      : (isStudent || isTeacher) && userClasses.length > 0
-        ? userClasses.map(c => {
-            const match = c.class_name?.match(/\d+/);
-            return match ? parseInt(match[0]) : null;
-          }).filter(Boolean)
-        : [];
+    const userClassNumbers = !isGuest && (isStudent || isTeacher) && userClasses.length > 0
+      ? userClasses.map(c => {
+          const match = c.class_name?.match(/\d+/);
+          return match ? parseInt(match[0]) : null;
+        }).filter(Boolean)
+      : [];
     
-    const userCurricula = isGuest
-      ? [GUEST_DEMO_CURRICULUM.toUpperCase()]
-      : (isStudent || isTeacher) && userClasses.length > 0
-        ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
-        : [];
+    const userCurricula = !isGuest && (isStudent || isTeacher) && userClasses.length > 0
+      ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
+      : [];
     
     chapters.forEach(chapter => {
-      // For students and teachers: filter by their class numbers AND curriculum
-      if (isStudent || isTeacher) {
+      // For students and teachers (not guest): filter by their class numbers AND curriculum
+      if (!isGuest && (isStudent || isTeacher)) {
         // If user has classes, only show chapters matching their classes
         if (userClassNumbers.length > 0) {
           if (!userClassNumbers.includes(chapter.class)) {
@@ -920,19 +919,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
         chapter.topics.forEach(topic => {
           // For /lessons page:
           // - Admins/superadmins can see ALL topics (for approval management)
-          // - Students can ONLY see APPROVED topics (teacher approval required)
-          // - Other regular users only see APPROVED topics
+          // - Guest: only topics marked as demo AND approved
+          // - Students/teachers: APPROVED topics (by class/curriculum)
           const approval = topic.approval || {};
-          // Handle both boolean true and string "true" for approval
           const isTopicApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
           const isChapterApproved = chapter.approved === true;
-          
-          // Check if topic has an approval field (not empty object)
           const hasTopicApproval = topic.approval && typeof topic.approval === 'object' && Object.keys(topic.approval).length > 0;
-          
-          // Topic visibility: individually approved topics visible to students/teachers
-          // Fallback: topic with no approval field shows when chapter is approved (legacy content)
           const shouldShowTopic = isTopicApproved || (isChapterApproved && !hasTopicApproval);
+          const isDemoTopic = topic.isDemo === true;
           
           if (canApprove) {
             // Admins/superadmins see all topics (including unapproved, to manage approval)
@@ -940,6 +934,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
               topic,
               chapter,
             });
+          } else if (isGuest) {
+            // Guest: only show topics marked as demo and approved
+            if (isDemoTopic && shouldShowTopic) {
+              allTopics.push({
+                topic,
+                chapter,
+              });
+            }
           } else if (isStudent || isTeacher) {
             // Students and teachers: approved topics OR legacy (chapter approved, no topic approval field)
             if (shouldShowTopic) {
@@ -1440,33 +1442,16 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
   }, [sessionJoinError, clearSessionError]);
 
-  // Open lesson detail modal and start fetching data
-  const openLessonModal = useCallback((chapter, topicInput) => {
-    setSelectedLesson({ chapter, topicInput });
-    setLessonData(null);
-    setDataLoading(true);
-    setDataError(null);
-    setDataReady(false);
-    
-    // Start 10-second countdown for data preparation
-    setCountdown(10);
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current);
-    }
-    countdownRef.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(countdownRef.current);
-          countdownRef.current = null;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    // Start fetching data in background
-    fetchLessonData(chapter, topicInput);
-  }, [fetchLessonData]);
+  // Navigate to VR lesson player with lesson state; preparation screen (10s countdown) is shown there
+  const handleLessonClick = useCallback((chapter, topicInput) => {
+    navigate('/vrlessonplayer', {
+      state: {
+        chapter: { ...chapter, id: chapter.id },
+        topic: topicInput,
+        selectedLanguage,
+      },
+    });
+  }, [navigate, selectedLanguage]);
 
   // Comprehensive validation function
   const validateLessonData = useCallback((data) => {
@@ -2292,8 +2277,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
           <Card className="rounded-xl border-border">
             <CardContent className="flex flex-col items-center justify-center py-20">
               <BookOpen className="w-16 h-16 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold text-foreground mb-2">No Lessons Found</h3>
-              <p className="text-sm text-muted-foreground">Try adjusting your filters</p>
+              <h3 className="text-lg font-semibold text-foreground mb-2">
+                {isGuest ? 'No Demo Lessons Available' : 'No Lessons Found'}
+              </h3>
+              <p className="text-sm text-muted-foreground text-center max-w-sm">
+                {isGuest
+                  ? 'Demo lessons are marked by your administrator. Sign up or log in with a full account to see more lessons.'
+                  : 'Try adjusting your filters'}
+              </p>
             </CardContent>
           </Card>
         ) : viewMode === 'grid' ? (
@@ -2338,7 +2329,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                         <LessonCard 
                           lessonItem={lessonItem}
                           completedLessons={completedLessons}
-                          onOpenModal={openLessonModal}
+                          onOpenModal={handleLessonClick}
                           getThumbnail={getThumbnail}
                           selectedLanguage={selectedLanguage}
                           isLockedForGuest={isLockedForGuest}
@@ -2388,7 +2379,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                       key={`${itemKey}_${index}`}
                       lessonItem={lessonItem}
                       completedLessons={completedLessons}
-                      onOpenModal={openLessonModal}
+                      onOpenModal={handleLessonClick}
                       selectedLanguage={selectedLanguage}
                       isLockedForGuest={isLockedForGuest}
                       onGuestSignup={handleGuestSignup}
