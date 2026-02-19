@@ -933,6 +933,32 @@ const ChapterEditor = () => {
                   size="md"
                 />
               )}
+              {/* Launch krpano – opens lesson in krpano 360° player */}
+              {selectedTopic && chapterId && (
+                <LaunchLessonButton
+                  chapterId={chapterId}
+                  chapterName={chapter.chapter_name}
+                  chapterNumber={chapter.chapter_number}
+                  curriculum={navState?.curriculumId || chapter.curriculum_id || 'CBSE'}
+                  className={navState?.classId || chapter.class_id || '8'}
+                  subject={navState?.subjectId || chapter.subject_id || 'Science'}
+                  topicId={selectedTopic.id}
+                  topicName={(topicFormState.topic_name ?? selectedTopic.topic_name) ?? ''}
+                  topicPriority={selectedTopic.topic_priority}
+                  learningObjective={sceneFormState.learning_objective as string}
+                  in3dPrompt={sceneFormState.in3d_prompt as string}
+                  avatarIntro={sceneFormState.avatar_intro as string}
+                  avatarExplanation={sceneFormState.avatar_explanation as string}
+                  avatarOutro={sceneFormState.avatar_outro as string}
+                  skyboxId={sceneFormState.skybox_id as string}
+                  skyboxUrl={sceneFormState.skybox_url as string}
+                  assetList={sceneFormState.asset_list as string[]}
+                  language={selectedLanguage}
+                  size="md"
+                  launchTarget="vrlessonplayer-krpano"
+                  label="Launch krpano"
+                />
+              )}
               
               {/* Delete Lesson Button (Superadmin only) */}
               {canDeleteLesson(profile) && (
