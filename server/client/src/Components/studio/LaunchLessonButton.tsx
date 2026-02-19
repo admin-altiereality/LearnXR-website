@@ -45,6 +45,10 @@ interface LaunchLessonButtonProps {
   size?: 'sm' | 'md' | 'lg';
   variant?: 'primary' | 'secondary' | 'icon';
   disabled?: boolean;
+  /** When set to 'vrlessonplayer-krpano', opens the lesson in the krpano 360° player instead of the default VR player */
+  launchTarget?: 'vrlessonplayer' | 'vrlessonplayer-krpano';
+  /** Override button label (e.g. "Launch krpano") when using launchTarget */
+  label?: string;
 }
 
 export const LaunchLessonButton = ({
@@ -71,6 +75,8 @@ export const LaunchLessonButton = ({
   size = 'md',
   variant = 'primary',
   disabled = false,
+  launchTarget = 'vrlessonplayer',
+  label,
 }: LaunchLessonButtonProps) => {
   const navigate = useNavigate();
   const { startLesson } = useLesson();
@@ -277,10 +283,10 @@ export const LaunchLessonButton = ({
       
       toast.success(`Launching lesson: ${finalTopicName || topicName}`);
       
-      console.log('🧭 [LaunchLesson] Navigating to /vrlessonplayer...');
+      const targetPath = launchTarget === 'vrlessonplayer-krpano' ? '/vrlessonplayer-krpano' : '/vrlessonplayer';
+      console.log('🧭 [LaunchLesson] Navigating to', targetPath);
       
-      // Navigate to VR Lesson Player
-      navigate('/vrlessonplayer');
+      navigate(targetPath);
       
     } catch (error: any) {
       console.error('❌ [LaunchLesson] Error launching lesson:', error);
@@ -293,7 +299,7 @@ export const LaunchLessonButton = ({
     loading, disabled, chapterId, chapterName, chapterNumber, curriculum, className, subject,
     topicId, topicName, topicPriority, learningObjective, in3dPrompt,
     avatarIntro, avatarExplanation, avatarOutro, skyboxId, skyboxUrl,
-    assetList, assetUrls, assetIds, language, startLesson, navigate
+    assetList, assetUrls, assetIds, language, startLesson, navigate, launchTarget
   ]);
   
   // Size classes
@@ -310,9 +316,19 @@ export const LaunchLessonButton = ({
     lg: 'w-5 h-5',
   };
   
-  // Variant styles
+  // Variant styles (krpano uses cyan/blue to differentiate from default green Launch Lesson)
+  const isKrpano = launchTarget === 'vrlessonplayer-krpano';
   const variantClasses = {
-    primary: `
+    primary: isKrpano
+      ? `
+      bg-gradient-to-r from-cyan-500 to-blue-600 
+      hover:from-cyan-400 hover:to-blue-500 
+      text-white font-semibold
+      shadow-lg shadow-cyan-500/25 
+      hover:shadow-cyan-500/40 hover:-translate-y-0.5 
+      active:translate-y-0
+    `
+      : `
       bg-gradient-to-r from-emerald-500 to-teal-600 
       hover:from-emerald-400 hover:to-teal-500 
       text-white font-semibold
@@ -320,12 +336,16 @@ export const LaunchLessonButton = ({
       hover:shadow-emerald-500/40 hover:-translate-y-0.5 
       active:translate-y-0
     `,
-    secondary: `
+    secondary: isKrpano
+      ? `bg-slate-800/50 hover:bg-slate-700/50 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 hover:border-cyan-500/50`
+      : `
       bg-slate-800/50 hover:bg-slate-700/50
       text-emerald-400 hover:text-emerald-300
       border border-emerald-500/30 hover:border-emerald-500/50
     `,
-    icon: `
+    icon: isKrpano
+      ? `bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300 border border-cyan-500/30 !p-2`
+      : `
       bg-emerald-500/10 hover:bg-emerald-500/20
       text-emerald-400 hover:text-emerald-300
       border border-emerald-500/30
@@ -344,7 +364,7 @@ export const LaunchLessonButton = ({
           disabled:opacity-50 disabled:cursor-not-allowed
           ${variantClasses[variant]}
         `}
-        title={`Launch lesson: ${topicName}`}
+        title={label || (launchTarget === 'vrlessonplayer-krpano' ? `Launch krpano: ${topicName}` : `Launch lesson: ${topicName}`)}
       >
         {loading ? (
           <Loader2 className={`${iconSizes[size]} animate-spin`} />
@@ -375,7 +395,7 @@ export const LaunchLessonButton = ({
       ) : (
         <>
           <Rocket className={iconSizes[size]} />
-          <span>Launch Lesson</span>
+          <span>{label ?? (launchTarget === 'vrlessonplayer-krpano' ? 'Launch krpano' : 'Launch Lesson')}</span>
         </>
       )}
     </button>

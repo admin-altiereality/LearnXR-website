@@ -62,6 +62,7 @@ import ContentLibrary from './screens/studio/ContentLibrary';
 import ChapterEditor from './screens/studio/ChapterEditor';
 import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
 import VRLessonPlayer from './screens/VRLessonPlayer';
+import VRLessonPlayerKrpano from './screens/VRLessonPlayerKrpano';
 import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 import StudentDashboard from './screens/dashboard/StudentDashboard';
 import TeacherDashboard from './screens/dashboard/TeacherDashboard';
@@ -78,7 +79,7 @@ import PersonalizedLearning from './screens/ai/PersonalizedLearning';
 // Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson', '/main'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/xrlessonplayer', '/learnxr/lesson', '/main'];
   
   // Hide footer completely on immersive experiences and main (environment studio) page
   if (hideFooterRoutes.includes(location.pathname) || 
@@ -103,7 +104,7 @@ const ConditionalSidebar = () => {
   const hideSidebarRoutes = [
     '/login', '/signup', '/forgot-password', 
     '/onboarding', '/approval-pending',
-    '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'
+    '/vrlessonplayer', '/vrlessonplayer-krpano', '/xrlessonplayer', '/learnxr/lesson'
   ];
   
   // Hide sidebar on auth pages, onboarding, and immersive experiences
@@ -665,6 +666,14 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      {/* VR Lesson Player (krpano 360°) - All authenticated users */}
+                      <Route path="/vrlessonplayer-krpano" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <VRLessonPlayerKrpano />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* XR Lesson Player (WebXR for Meta Quest) - All authenticated users */}
                       <Route path="/xrlessonplayer" element={
@@ -1113,6 +1122,14 @@ function App() {
                         <ProtectedRoute>
                           <RoleGuard>
                             <VRLessonPlayer />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      {/* VR Lesson Player (krpano 360°) - All authenticated users */}
+                      <Route path="/vrlessonplayer-krpano" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <VRLessonPlayerKrpano />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />

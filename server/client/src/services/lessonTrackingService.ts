@@ -24,8 +24,10 @@ export async function trackLessonLaunch(
   className: string,
   subject: string
 ): Promise<string | null> {
-  if (!profile || profile.role !== 'student' || !profile.school_id) {
-    console.warn('Cannot track lesson launch: invalid profile or missing school_id');
+  if (!profile) return null;
+  if (profile.role !== 'student') return null; // Only students get launch records; teachers/admins skip silently
+  if (!profile.school_id) {
+    console.warn('Cannot track lesson launch: student profile missing school_id');
     return null;
   }
   if (!canGuestWrite(profile)) {
@@ -107,8 +109,10 @@ export async function saveQuizScore(
   launchId?: string,
   topicObjective?: string
 ): Promise<string | null> {
-  if (!profile || profile.role !== 'student' || !profile.school_id) {
-    console.warn('Cannot save quiz score: invalid profile or missing school_id');
+  if (!profile) return null;
+  if (profile.role !== 'student') return null;
+  if (!profile.school_id) {
+    console.warn('Cannot save quiz score: student profile missing school_id');
     return null;
   }
   if (!canGuestWrite(profile)) {
