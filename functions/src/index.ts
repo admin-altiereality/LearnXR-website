@@ -4,14 +4,19 @@
  * All routes are in separate modules loaded lazily
  */
 
-import {onRequest} from "firebase-functions/v2/https";
-import {defineSecret} from "firebase-functions/params";
+import { onRequest } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { initializeAdmin } from './utils/services';
 import { pathNormalization } from './middleware/pathNormalization';
 import { requestLogging } from './middleware/logging';
 import { authenticateUser } from './middleware/auth';
+
+// Firestore triggers: send EmailJS when super admin approves/rejects users, schools, or edit requests
+export { onUserApprovalStatusChange } from './triggers/userApprovalTrigger';
+export { onSchoolApprovalStatusChange } from './triggers/schoolApprovalTrigger';
+export { onEditRequestStatusChange } from './triggers/editRequestTrigger';
 
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set

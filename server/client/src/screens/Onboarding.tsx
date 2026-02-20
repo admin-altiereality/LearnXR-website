@@ -345,6 +345,11 @@ const Onboarding = () => {
     return () => unsubscribe();
   }, [isTeacherRole, retrySchoolsKey]);
 
+  // Onboarding: dark mode only (must be before any conditional return to satisfy Rules of Hooks)
+  useEffect(() => {
+    setTheme('dark');
+  }, [setTheme]);
+
   // Verify teacher's school code and associate with school
   // Prefer client-side match from loaded list; fallback to direct query if list empty (e.g. load failed)
   const handleVerifySchoolCode = async () => {
@@ -1412,11 +1417,6 @@ const Onboarding = () => {
   };
 
   const RoleIcon = getRoleIcon();
-
-  // Onboarding: dark mode only, no toggle
-  useEffect(() => {
-    setTheme('dark');
-  }, [setTheme]);
 
   const compact = isVRDevice;
   return (

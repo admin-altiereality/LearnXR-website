@@ -1,10 +1,12 @@
 /**
  * Firestore trigger: users/{userId}
- * Sends email when approvalStatus changes to 'approved' or 'rejected'
+ * Sends email when approvalStatus changes to 'approved' or 'rejected'.
+ * After onboarding, when super admin approves the user, they receive an email at their registered address.
  */
 
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { defineSecret } from 'firebase-functions/params';
+import * as admin from 'firebase-admin';
 import { sendApprovalEmail, sendRejectionEmail } from '../services/emailService';
 import { createNotification } from '../services/notificationService';
 
@@ -28,7 +30,16 @@ export const onUserApprovalStatusChange = onDocumentUpdated(
     if (beforeStatus === afterStatus) return;
     if (afterStatus !== 'approved' && afterStatus !== 'rejected') return;
 
-    const email = after.email;
+    let email: string | undefined = after.email;
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      // Fallback: get email from Firebase Auth (e.g. if user doc was created without it)
+      try {
+        const authUser = await admin.auth().getUser(event.params.userId);
+        email = authUser.email;
+      } catch (_) {
+        // ignore
+      }
+    }
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       console.warn('onUserApprovalStatusChange: No valid email for user', event.params.userId);
       return;

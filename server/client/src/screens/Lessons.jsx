@@ -56,7 +56,7 @@ import {
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
 
-// Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
+// Guest/demo: lessons marked as demo by super admin appear (even if not approved); first demo lesson is unlocked
 const GUEST_DEMO_CHAPTERS_LIMIT = 200; // Max chapters to scan for demo topics (client-side filter)
 
 // Content indicators (simple badges) - Memoized; theme tokens
@@ -933,7 +933,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
         chapter.topics.forEach(topic => {
           // For /lessons page:
           // - Admins/superadmins can see ALL topics (for approval management)
-          // - Guest: only topics marked as demo AND approved
+          // - Guest: only topics marked as demo by super admin (appear even if not approved)
+          // - Demo user: only topics that are BOTH marked as demo AND approved (demo dashboard)
           // - Students/teachers: APPROVED topics (by class/curriculum)
           const approval = topic.approval || {};
           const isTopicApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
@@ -949,16 +950,16 @@ const Lessons = ({ setBackgroundSkybox }) => {
               chapter,
             });
           } else if (isGuest) {
-            // Guest: only show topics marked as demo and approved
-            if (isDemoTopic && shouldShowTopic) {
+            // Guest: show all topics marked as demo by super admin, even if not approved
+            if (isDemoTopic) {
               allTopics.push({
                 topic,
                 chapter,
               });
             }
           } else if (isDemoUser) {
-            // Demo user: show demo-marked topics regardless of approval; also show other approved topics (locked when rendering)
-            if (isDemoTopic || shouldShowTopic) {
+            // Demo user: only show lessons that are both approved and marked as demo
+            if (isDemoTopic && shouldShowTopic) {
               allTopics.push({
                 topic,
                 chapter,
