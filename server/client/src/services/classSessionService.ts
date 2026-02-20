@@ -131,6 +131,29 @@ export async function launchScene(
 }
 
 /**
+ * Update teacher view (hlookat, vlookat, fov) for student sync in Krpano. Only session owner can call.
+ */
+export async function updateTeacherView(
+  sessionId: string,
+  teacherUid: string,
+  view: { hlookat: number; vlookat: number; fov?: number }
+): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    const snap = await getDoc(sessionRef);
+    if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
+    await updateDoc(sessionRef, {
+      teacher_view: view,
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.updateTeacherView:', err);
+    return false;
+  }
+}
+
+/**
  * End the session. Only session owner can call.
  */
 export async function endSession(sessionId: string, teacherUid: string): Promise<boolean> {

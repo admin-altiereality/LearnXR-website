@@ -180,6 +180,8 @@ export interface ClassSession {
   launched_lesson: LaunchedLesson | null;
   /** Set when teacher sends scene from Create page */
   launched_scene: LaunchedScene | null;
+  /** Teacher-controlled view (hlookat, vlookat) for student sync in Krpano lessons */
+  teacher_view?: { hlookat: number; vlookat: number; fov?: number } | null;
   created_at: Timestamp | string;
   updated_at: Timestamp | string;
 }

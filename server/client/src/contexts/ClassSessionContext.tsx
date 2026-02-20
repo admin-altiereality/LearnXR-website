@@ -13,6 +13,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import {
   createSession,
@@ -60,6 +61,7 @@ const STORAGE_KEY_ACTIVE_SESSION = 'learnxr_class_session_id';
 const STORAGE_KEY_JOINED_SESSION = 'learnxr_joined_session_id';
 
 export function ClassSessionProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() =>
     typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY_ACTIVE_SESSION) : null
@@ -223,6 +225,13 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     const unsub = subscribeSession(joinedSessionId, setJoinedSession, handleSubscribeError);
     return () => unsub();
   }, [joinedSessionId]);
+
+  // When teacher ends the session, student sees status 'ended' → leave session and redirect to dashboard
+  useEffect(() => {
+    if (!joinedSession || joinedSession.status !== 'ended') return;
+    leaveSessionAsStudent();
+    navigate('/dashboard/student', { replace: true });
+  }, [joinedSession?.status, leaveSessionAsStudent, navigate]);
 
   // Restore session from storage on load (e.g. after refresh) – validate still exists
   useEffect(() => {

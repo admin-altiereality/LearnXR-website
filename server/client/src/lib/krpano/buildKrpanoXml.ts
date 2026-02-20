@@ -121,10 +121,14 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
+  // Teacher view sync: (1) onviewchange fires when user drags (2) action so JS can poll view via call('sync_view_to_js')
+  const onviewchangeJs = 'js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <krpano version="1.20.9" onstart="" bgcolor="0x050810">
 ${includeWebVr}
   <view hlookat="${hlookat}" vlookat="${vlookat}" fov="${fov}" fovmin="1" fovmax="179" />
+  <events onviewchange="${onviewchangeJs}" />
+  <action name="sync_view_to_js">js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );</action>
   <image>
     <sphere url="${safeSphereUrl}" />
 ${depthmapBlock}  </image>
