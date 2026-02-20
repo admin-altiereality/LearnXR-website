@@ -201,7 +201,7 @@ const StudentDashboard = () => {
         sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
         sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
         if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
-        setTimeout(() => navigate('/xrlessonplayer'), 200);
+        setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
       } catch (err) {
         console.error('Failed to open launched lesson:', err);
         launchedLessonHandledRef.current = null;

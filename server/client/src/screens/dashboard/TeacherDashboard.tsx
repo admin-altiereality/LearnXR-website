@@ -15,7 +15,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUni
 import { db } from '../../config/firebase';
 import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
@@ -123,6 +123,7 @@ const CircularProgress = ({
 };
 
 const TeacherDashboard = () => {
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const {
     activeSessionId,
@@ -620,6 +621,104 @@ const TeacherDashboard = () => {
     if (ok) toast.success('Session ended');
   }, [endSession]);
 
+  // Open the launched lesson in Krpano so the teacher can control where the class looks (drag the 360° view)
+  const [openLessonToControlLoading, setOpenLessonToControlLoading] = useState(false);
+  const openLessonToControlView = useCallback(async () => {
+    const launched = activeSession?.launched_lesson;
+    if (!launched || !activeSessionId) return;
+    setOpenLessonToControlLoading(true);
+    try {
+      const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+      const bundle = await getLessonBundle({
+        chapterId: launched.chapter_id,
+        topicId: launched.topic_id,
+        lang: 'en',
+      });
+      const fullData = bundle.chapter;
+      const topic = fullData.topics?.find((t: any) => t.topic_id === launched.topic_id) || fullData.topics?.[0];
+      if (!topic) {
+        toast.error('Lesson data not found');
+        return;
+      }
+      const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+      let assetUrls = topic.asset_urls || [];
+      const assetIds = topic.asset_ids || [];
+      const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+      safeAssets3d.forEach((asset: any) => {
+        if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
+          assetUrls.push(asset.glb_url);
+          assetIds.push(asset.id || `asset_${assetUrls.length}`);
+        }
+      });
+      const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+      const mcqs = safeMcqs.map((m: any) => ({
+        id: m.id || `mcq_${Math.random()}`,
+        question: m.question || m.question_text || '',
+        options: Array.isArray(m.options) ? m.options : [],
+        correct_option_index: m.correct_option_index ?? 0,
+        explanation: m.explanation || '',
+      }));
+      const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+      const ttsAudio = safeTts
+        .map((tts: any) => ({
+          id: tts.id || '',
+          script_type: tts.script_type || tts.section || 'full',
+          audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+          language: tts.language || tts.lang || 'en',
+        }))
+        .filter((tts: any) => (tts.language || 'en').toLowerCase() === 'en');
+      const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+      const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
+      const cleanChapter = {
+        chapter_id: String(launched.chapter_id),
+        chapter_name: fullData.chapter_name || 'Untitled Chapter',
+        chapter_number: Number(fullData.chapter_number) || 1,
+        curriculum: String(launched.curriculum || fullData.curriculum || ''),
+        class_name: String((launched.class_name || fullData.class_name) ?? ''),
+        subject: String((launched.subject || fullData.subject) ?? ''),
+      };
+      const cleanTopic = {
+        topic_id: String(topic.topic_id ?? launched.topic_id),
+        topic_name: topic.topic_name || 'Untitled Topic',
+        topic_priority: Number(topic.topic_priority) || 1,
+        learning_objective: topic.learning_objective || '',
+        skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
+        skybox_remix_id: topic.skybox_remix_id ?? null,
+        skybox_url: skyboxUrl,
+        skybox_glb_url: skyboxGlb,
+        avatar_intro: scripts.intro || '',
+        avatar_explanation: scripts.explanation || '',
+        avatar_outro: scripts.outro || '',
+        asset_urls: assetUrls,
+        asset_ids: assetIds,
+        mcq_ids: topic.mcq_ids || [],
+        mcqs,
+        tts_ids: topic.tts_ids || [],
+        tts_audio_url: topic.tts_audio_url || '',
+        ttsAudio,
+        language: 'en',
+      };
+      const fullLessonData = {
+        chapter: cleanChapter,
+        topic: cleanTopic,
+        image3dasset: fullData.image3dasset ?? null,
+        meshy_asset_ids: fullData.meshy_asset_ids ?? [],
+        assets3d: safeAssets3d,
+        startedAt: new Date().toISOString(),
+        _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
+        language: 'en',
+        ttsAudio,
+      };
+      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+      navigate('/vrlessonplayer-krpano');
+    } catch (err) {
+      console.error('Failed to open lesson for view control:', err);
+      toast.error('Could not open lesson. Try again.');
+    } finally {
+      setOpenLessonToControlLoading(false);
+    }
+  }, [activeSession?.launched_lesson, activeSessionId, navigate]);
+
   // Update stats
   useEffect(() => {
     const totalClasses = allClasses.length;
@@ -789,11 +888,32 @@ const TeacherDashboard = () => {
                     <FaCopy className="text-muted-foreground shrink-0" />
                     <span className="text-xs text-muted-foreground">Click to copy</span>
                   </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    To control where students look: open the lesson in the 360° player and drag the view — students will follow your view in real time.
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={() => setLaunchLessonModalOpen(true)} className="gap-2">
                       <FaVideo className="w-4 h-4" />
                       Launch lesson to class
                     </Button>
+                    {activeSession?.launched_lesson && (
+                      <Button
+                        variant="outline"
+                        className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
+                        onClick={openLessonToControlView}
+                        disabled={openLessonToControlLoading}
+                        title="Open the launched lesson so you can direct the class view by dragging the 360° scene"
+                      >
+                        {openLessonToControlLoading ? (
+                          <>Loading…</>
+                        ) : (
+                          <>
+                            <FaArrowRight className="w-4 h-4" />
+                            Open lesson to control class view
+                          </>
+                        )}
+                      </Button>
+                    )}
                     <Button variant="destructive" onClick={handleEndSession} disabled={sessionContextLoading} className="gap-2">
                       <FaStopCircle className="w-4 h-4" />
                       End session

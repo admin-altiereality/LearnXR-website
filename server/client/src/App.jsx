@@ -422,11 +422,11 @@ function App() {
         <AuthProvider>
           <ThemeProvider>
           <LessonProvider>
-          <ClassSessionProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
               <LoadingProvider>
                   <Router>
+                  <ClassSessionProvider>
               <SmoothScroll>
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer with Sidebar */}
@@ -762,11 +762,11 @@ function App() {
             {/* Global Background Loading Indicator */}
             <GlobalLoadingIndicator />
           </SmoothScroll>
+          </ClassSessionProvider>
           </Router>
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
-          </ClassSessionProvider>
           </LessonProvider>
           </ThemeProvider>
         {/* Subscription removed */}
@@ -779,11 +779,11 @@ function App() {
         <AuthProvider>
           <ThemeProvider>
           <LessonProvider>
-          <ClassSessionProvider>
           <AssetGenerationProvider>
             <CreateGenerationProvider>
               <LoadingProvider>
                   <Router>
+                  <ClassSessionProvider>
               <SmoothScroll>
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer - Only shows on /main and /history pages */}
@@ -1225,11 +1225,11 @@ function App() {
             {/* Global Background Loading Indicator */}
             <GlobalLoadingIndicator />
           </SmoothScroll>
+          </ClassSessionProvider>
           </Router>
         </LoadingProvider>
             </CreateGenerationProvider>
           </AssetGenerationProvider>
-          </ClassSessionProvider>
           </LessonProvider>
           </ThemeProvider>
         {/* Subscription removed */}

@@ -11,7 +11,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -19,6 +19,9 @@ import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '..
 import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
+import { useClassSession } from '../contexts/ClassSessionContext';
+import { reportSessionProgress, updateTeacherView } from '../services/classSessionService';
+import type { SessionLessonPhase, SessionQuizAnswer } from '../types/lms';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
@@ -463,6 +466,28 @@ function AssetModelInScene({
   );
 }
 
+/** Convert camera position (orbit around origin) to hlookat/vlookat degrees for sync */
+function cameraToHlookatVlookat(position: THREE.Vector3): { h: number; v: number } {
+  const x = position.x, y = position.y, z = position.z;
+  const theta = Math.atan2(x, z) * (180 / Math.PI);
+  const r = Math.sqrt(x * x + y * y + z * z) || 1;
+  const phi = Math.asin(Math.max(-1, Math.min(1, y / r))) * (180 / Math.PI);
+  return { h: theta, v: phi };
+}
+
+/** Apply teacher view (hlookat, vlookat) to camera position at given radius */
+function applyTeacherViewToCamera(camera: THREE.PerspectiveCamera, h: number, v: number, radius: number): void {
+  const theta = (h * Math.PI) / 180;
+  const phi = (v * Math.PI) / 180;
+  const x = radius * Math.cos(phi) * Math.sin(theta);
+  const y = radius * Math.sin(phi);
+  const z = radius * Math.cos(phi) * Math.cos(theta);
+  camera.position.set(x, y, z);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+}
+
 function LessonSceneIntegrated({
   skyboxUrl,
   assetUrl,
@@ -470,6 +495,8 @@ function LessonSceneIntegrated({
   onSkyboxError,
   onAssetLoad,
   onAssetError,
+  onViewChange,
+  teacherView,
 }: {
   skyboxUrl: string;
   assetUrl: string | null;
@@ -477,7 +504,46 @@ function LessonSceneIntegrated({
   onSkyboxError?: (err: any) => void;
   onAssetLoad?: () => void;
   onAssetError?: (err: any) => void;
+  onViewChange?: (h: number, v: number, fov: number) => void;
+  teacherView?: { hlookat: number; vlookat: number; fov?: number } | null;
 }) {
+  const { camera } = useThree();
+  const lastSentRef = useRef(0);
+  const lastAppliedRef = useRef<{ h: number; v: number; fov: number } | null>(null);
+  const lastLogRef = useRef(0);
+
+  useFrame(() => {
+    const persp = camera as THREE.PerspectiveCamera;
+    if (persp.fov === undefined) return; // orthographic or unsupported
+    if (onViewChange) {
+      const now = Date.now();
+      if (now - lastSentRef.current < 300) return;
+      lastSentRef.current = now;
+      const { h, v } = cameraToHlookatVlookat(camera.position);
+      const fov = persp.fov ?? 75;
+      onViewChange(h, v, fov);
+    }
+    if (teacherView) {
+      const h = Number(teacherView.hlookat);
+      const v = Number(teacherView.vlookat);
+      const fov = Number(teacherView.fov ?? 75);
+      if (Number.isNaN(h) || Number.isNaN(v)) return;
+      const prev = lastAppliedRef.current;
+      if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
+      lastAppliedRef.current = { h, v, fov };
+      const radius = Math.max(0.1, camera.position.length());
+      applyTeacherViewToCamera(persp, h, v, radius);
+      if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && Date.now() - lastLogRef.current > 2000) {
+        lastLogRef.current = Date.now();
+        console.debug('[ViewSync] Student applying teacher view', { h, v, fov, radius });
+      }
+      if (persp.fov !== fov) {
+        persp.fov = fov;
+        persp.updateProjectionMatrix();
+      }
+    }
+  }, 1);
+
   return (
     <>
       <SkyboxSphereIntegrated imageUrl={skyboxUrl} onLoad={onSkyboxLoad} onError={onSkyboxError} />
@@ -485,6 +551,7 @@ function LessonSceneIntegrated({
         <AssetModelInScene url={assetUrl} onLoad={onAssetLoad} onError={onAssetError} />
       )}
       <OrbitControls
+        enabled={!teacherView}
         enableZoom={true}
         enablePan={false}
         enableDamping
@@ -711,6 +778,18 @@ const VRLessonPlayerInner = () => {
     // Will use sessionStorage fallback
   }
 
+  // Class session (teacher view sync + student progress reporting)
+  let classSession: ReturnType<typeof useClassSession> | null = null;
+  try {
+    classSession = useClassSession();
+  } catch (e) {
+    // Not inside ClassSessionProvider
+  }
+  const joinedSessionId = classSession?.joinedSessionId ?? null;
+  const activeSessionId = classSession?.activeSessionId ?? null;
+  const activeSession = classSession?.activeSession ?? null;
+  const joinedSession = classSession?.joinedSession ?? null;
+
   // Extract from context with safety - use stable defaults
   const activeLesson = lessonContext?.activeLesson ?? null;
   const lessonPhase = lessonContext?.lessonPhase ?? 'idle';
@@ -934,8 +1013,10 @@ const VRLessonPlayerInner = () => {
   const avatarRef = useRef<{ sendMessage: (text: string) => Promise<void> } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const krpanoContainerRef = useRef<HTMLDivElement>(null);
-  const krpanoViewerRef = useRef<{ call?: (action: string) => void } | null>(null);
+  const krpanoViewerRef = useRef<{ call?: (action: string) => void; get?: (name: string) => string } | null>(null);
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
+  const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
+  const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
   const [isQuestDevice, setIsQuestDevice] = useState(false);
   const [showEnterVROverlay, setShowEnterVROverlay] = useState(true);
@@ -996,13 +1077,13 @@ const VRLessonPlayerInner = () => {
   const [currentLaunchId, setCurrentLaunchId] = useState<string | null>(null);
   const [lessonStartTime, setLessonStartTime] = useState<number | null>(null);
 
-  // Derived State
-  const lessonId = activeLesson ? `${activeLesson.chapter?.chapter_id || 'unknown'}_${activeLesson.topic?.topic_id || 'unknown'}` : '';
-  const scripts = activeLesson?.topic
+  // Derived State - use effectiveLesson so dashboard-open (sessionStorage only) works
+  const lessonId = effectiveLesson ? `${effectiveLesson.chapter?.chapter_id || 'unknown'}_${effectiveLesson.topic?.topic_id || 'unknown'}` : '';
+  const scripts = effectiveLesson?.topic
     ? [
-        activeLesson.topic.avatar_intro,
-        activeLesson.topic.avatar_explanation,
-        activeLesson.topic.avatar_outro,
+        effectiveLesson.topic.avatar_intro,
+        effectiveLesson.topic.avatar_explanation,
+        effectiveLesson.topic.avatar_outro,
       ].filter(Boolean) as string[]
     : [];
   const currentScript = scripts[currentScriptIndex] || '';
@@ -1396,6 +1477,45 @@ const VRLessonPlayerInner = () => {
     return () => clearTimeout(t);
   }, [lastHotspotClicked]);
 
+  // Report phase to class session for teacher dashboard (when student joined from class)
+  const sessionIdForReport = joinedSessionId ?? (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null);
+  useEffect(() => {
+    if (!sessionIdForReport || !user?.uid) return;
+    const phaseMap: Record<string, SessionLessonPhase> = {
+      intro: 'intro',
+      explanation: 'explanation',
+      outro: 'outro',
+      quiz: 'quiz',
+      completed: 'completed',
+      idle: 'idle',
+      loading: 'loading',
+    };
+    const phase = phaseMap[lessonPhase as string] ?? 'idle';
+    if (phase === 'completed' && pendingQuizReportRef.current) {
+      const quiz = pendingQuizReportRef.current;
+      pendingQuizReportRef.current = null;
+      reportSessionProgress(
+        sessionIdForReport,
+        user.uid,
+        profile?.displayName ?? (profile as any)?.name ?? undefined,
+        'completed',
+        undefined,
+        { score: quiz.score, total: quiz.total, answers: quiz.answers },
+        (profile as any)?.email ?? user?.email ?? undefined
+      ).catch(() => {});
+    } else {
+      reportSessionProgress(
+        sessionIdForReport,
+        user.uid,
+        profile?.displayName ?? (profile as any)?.name ?? undefined,
+        phase,
+        undefined,
+        undefined,
+        (profile as any)?.email ?? user?.email ?? undefined
+      ).catch(() => {});
+    }
+  }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
+
   // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
   const useKrpanoView = !assetUrl || !isGlbOrGltfUrl(assetUrl);
   useEffect(() => {
@@ -1414,6 +1534,55 @@ const VRLessonPlayerInner = () => {
     krpanoViewerRef.current.call(action);
     log('👁️', `Guided lookto [${phase}]`, { h, v, fov });
   }, [lessonPhase, useKrpanoView, extraLessonData?.topic?.lookatByPhase]);
+
+  // Teacher: broadcast view to session so students follow (krpano: poll action; integrated: onViewChange from Three.js)
+  const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
+  const useIntegratedSceneEarly = !!((skyboxData?.imageUrl ?? skyboxData?.file_url) && assetUrl && isGlbOrGltfUrl(assetUrl));
+  useEffect(() => {
+    if (!isTeacherInSession || (!useKrpanoView && !useIntegratedSceneEarly) || !activeSessionId || !user?.uid) return;
+    let lastSent = 0;
+    const throttleMs = 300;
+    const sendView = (h: number, v: number, fov: number) => {
+      const now = Date.now();
+      if (now - lastSent < throttleMs) return;
+      lastSent = now;
+      updateTeacherView(activeSessionId, user!.uid, { hlookat: h, vlookat: v, fov }).catch((err) => {
+        console.warn('[ViewSync] Teacher updateTeacherView failed:', err);
+      });
+    };
+    viewSyncSendRef.current = sendView;
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && useIntegratedSceneEarly && !useKrpanoView) {
+      console.debug('[ViewSync] Teacher integrated-scene callback registered; drag will send view to students.');
+    }
+    if (useKrpanoView) {
+      (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = sendView;
+      const interval = setInterval(() => {
+        const viewer = krpanoViewerRef.current;
+        if (viewer?.call) viewer.call('sync_view_to_js');
+      }, throttleMs);
+      return () => {
+        (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
+        viewSyncSendRef.current = () => {};
+        clearInterval(interval);
+      };
+    }
+    return () => { viewSyncSendRef.current = () => {}; };
+  }, [isTeacherInSession, useKrpanoView, useIntegratedSceneEarly, activeSessionId, user?.uid]);
+
+  // Student: follow teacher view when in joined session (teacher_view from Firestore)
+  const teacherView = joinedSession?.teacher_view;
+  const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
+  const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number } | null>(null);
+  useEffect(() => {
+    if (!isStudentInSession || !useKrpanoView || !teacherView || !krpanoViewerRef.current?.call) return;
+    const { hlookat: h, vlookat: v, fov = 90 } = teacherView;
+    const prev = lastTeacherViewRef.current;
+    if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
+    lastTeacherViewRef.current = { h, v, fov };
+    const action = `tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=1.0)`;
+    krpanoViewerRef.current.call(action);
+    log('👁️', 'Following teacher view', { h, v, fov });
+  }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov]);
 
   // ============================================================================
   // Fetch 3D Asset (Platform-aware: FBX for Android, USDZ for iOS, GLB for Web)
@@ -2296,29 +2465,42 @@ const VRLessonPlayerInner = () => {
     if (currentMcqIndex < mcqs.length - 1) {
       setCurrentMcqIndex(prev => prev + 1);
     } else {
-      // Calculate final score
+      // Calculate final score and build answers for session progress
       let correct = 0;
       const finalAnswers = { ...mcqAnswers };
-      
+      const sessionAnswers: SessionQuizAnswer[] = [];
+
       mcqs.forEach((mcq, idx) => {
         const answer = idx === currentMcqIndex ? selectedAnswer : mcqAnswers[mcq.id];
         if (idx === currentMcqIndex && selectedAnswer !== null) {
           finalAnswers[mcq.id] = selectedAnswer;
         }
+        const selectedIdx = idx === currentMcqIndex ? selectedAnswer : mcqAnswers[mcq.id];
+        if (selectedIdx !== undefined && selectedIdx !== null) {
+          sessionAnswers.push({
+            question_index: idx,
+            correct: selectedIdx === mcq.correctAnswer,
+            selected_option_index: selectedIdx,
+          });
+        }
         if (answer === mcq.correctAnswer) correct++;
       });
-      
+
+      pendingQuizReportRef.current = { score: correct, total: mcqs.length, answers: sessionAnswers };
+
       // Submit results
       submitQuizResults(correct, mcqs.length);
-      
+
       // Save to local storage
       saveProgress(lessonId, {
         completedAt: new Date().toISOString(),
         score: { correct, total: mcqs.length },
       });
-      
+
       // Save to Firestore
       saveQuizResultsToFirestore(correct, mcqs.length, finalAnswers);
+
+      setPhase('completed');
     }
   };
 
@@ -2728,6 +2910,8 @@ const VRLessonPlayerInner = () => {
                 }}
                 onAssetLoad={() => setAssetLoading(false)}
                 onAssetError={() => setAssetLoading(false)}
+                onViewChange={isTeacherInSession && useIntegratedScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
+                teacherView={isStudentInSession && useIntegratedScene ? teacherView : undefined}
               />
             </Suspense>
           </Canvas>
@@ -2807,9 +2991,26 @@ const VRLessonPlayerInner = () => {
         )}
       </div>
 
-      {/* Drag Hint */}
+      {/* Teacher: you control where the class looks */}
       <AnimatePresence>
-        {showDragHint && sceneReady && skyboxImageUrl && (
+        {isTeacherInSession && (useKrpanoView || useIntegratedScene) && sceneReady && !showWelcomeScreen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="absolute top-20 left-4 z-30 pointer-events-none"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 bg-primary/20 border border-primary/50 rounded-xl text-primary text-sm font-medium shadow-lg">
+              <Target className="w-4 h-4 flex-shrink-0" />
+              <span>You control where the class looks — drag the view to direct students.</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Drag Hint (student or when not in class session) */}
+      <AnimatePresence>
+        {showDragHint && sceneReady && skyboxImageUrl && !(isTeacherInSession && (useKrpanoView || useIntegratedScene)) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -2835,17 +3036,17 @@ const VRLessonPlayerInner = () => {
         <span className="font-medium">Exit</span>
       </button>
 
-      {/* Top Bar */}
+      {/* Top Bar - use effectiveLesson (from context or sessionStorage) so dashboard-open works */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
         <div className="flex items-center gap-4 px-6 py-3 bg-card/90 backdrop-blur-xl rounded-2xl border border-border">
           <div className="flex items-center gap-3">
             <GraduationCap className="w-5 h-5 text-primary" />
             <div>
               <h1 className="text-sm font-semibold text-foreground truncate max-w-[200px]">
-                {activeLesson.topic?.topic_name || 'Unknown Topic'}
+                {effectiveLesson?.topic?.topic_name || 'Unknown Topic'}
               </h1>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{activeLesson.chapter?.subject || 'Unknown'}</span>
+                <span className="text-xs text-muted-foreground">{effectiveLesson?.chapter?.subject || 'Unknown'}</span>
                 <span className="text-xs text-primary">• {getPhaseLabel()}</span>
               </div>
             </div>
@@ -2905,9 +3106,9 @@ const VRLessonPlayerInner = () => {
               ref={avatarRef}
               className="w-full h-full"
               avatarModelUrl="/models/avatar3.glb"
-              curriculum={activeLesson.chapter?.curriculum}
-              class={activeLesson.chapter?.class_name}
-              subject={activeLesson.chapter?.subject}
+              curriculum={effectiveLesson?.chapter?.curriculum}
+              class={effectiveLesson?.chapter?.class_name}
+              subject={effectiveLesson?.chapter?.subject}
               useAvatarKey={true}
               externalThreadId={threadId}
               onReady={handleAvatarReady}
@@ -2950,21 +3151,21 @@ const VRLessonPlayerInner = () => {
                 <GraduationCap className="w-10 h-10 text-cyan-400" />
               </div>
 
-              {/* Lesson Info */}
+              {/* Lesson Info - use effectiveLesson so dashboard-open works */}
               <div className="mb-6">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                    {activeLesson.chapter?.curriculum}
+                    {effectiveLesson?.chapter?.curriculum}
                   </span>
                   <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    {activeLesson.chapter?.class_name}
+                    {effectiveLesson?.chapter?.class_name}
                   </span>
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">
-                  {activeLesson.topic?.topic_name || 'Lesson'}
+                  {effectiveLesson?.topic?.topic_name || 'Lesson'}
                 </h2>
                 <p className="text-sm text-slate-400">
-                  {activeLesson.chapter?.subject} • Chapter {activeLesson.chapter?.chapter_number}
+                  {effectiveLesson?.chapter?.subject} • Chapter {effectiveLesson?.chapter?.chapter_number}
                 </p>
               </div>
 
@@ -2975,8 +3176,8 @@ const VRLessonPlayerInner = () => {
                   What you'll learn
                 </h3>
                 <p className="text-xs text-slate-400 line-clamp-3">
-                  {activeLesson.topic?.learning_objective || 
-                   activeLesson.topic?.avatar_intro?.substring(0, 150) + '...' ||
+                  {effectiveLesson?.topic?.learning_objective ||
+                   effectiveLesson?.topic?.avatar_intro?.substring(0, 150) + '...' ||
                    'Explore this interactive VR lesson with your AI teacher.'}
                 </p>
               </div>

@@ -638,10 +638,14 @@ service cloud.firestore {
         studentSameSchool(resource.data.school_id) ||
         isAdminOrSuperadmin()
       );
+      // Teacher (session owner) may update: status, launched_lesson, launched_scene, teacher_view, updated_at only.
+      // Explicitly allow teacher_view + updated_at for view sync; other keys for launch/end.
       allow update: if isAuthenticated() && (
+        isAdminOrSuperadmin() ||
         (resource.data.teacher_uid == request.auth.uid &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'updated_at'])) ||
-        isAdminOrSuperadmin()
+         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher_view', 'updated_at']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'updated_at']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'teacher_view', 'updated_at'])))
       );
       allow delete: if isAuthenticated() && (
         resource.data.teacher_uid == request.auth.uid ||

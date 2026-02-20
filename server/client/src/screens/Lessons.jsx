@@ -1408,7 +1408,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
         sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
         if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
         // Short delay so third-party iframes (e.g. Firebase Auth) can finish and avoid "message port closed" errors
-        setTimeout(() => navigate('/xrlessonplayer'), 200);
+        setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
       } catch (err) {
         console.error('Failed to open launched lesson:', err);
         launchedLessonHandledRef.current = null;
@@ -1491,8 +1491,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
     };
   }, []);
 
-  // Launch the lesson (after data is ready) - with comprehensive checks
-  const launchLesson = useCallback(async () => {
+  // Launch the lesson (after data is ready) - with comprehensive checks. Default: Krpano; optional targetPath for other players.
+  const launchLesson = useCallback(async (targetPath = '/vrlessonplayer-krpano') => {
     console.log('═══════════════════════════════════════════════════════');
     console.log('🚀 [Lessons] LAUNCH LESSON INITIATED');
     console.log('═══════════════════════════════════════════════════════');
@@ -1583,7 +1583,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Close modal and navigate
     closeLessonModal();
     setTimeout(() => {
-      navigate('/vrlessonplayer');
+      navigate(targetPath);
     }, 200);
     
   }, [lessonData, navigate, closeLessonModal, contextStartLesson, validateLessonData]);
@@ -2003,7 +2003,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
               </Button>
               <Button
                 className="sm:flex-1 h-11 gap-2 font-semibold"
-                onClick={launchLesson}
+                onClick={() => launchLesson()}
                 disabled={!canLaunchLesson}
               >
                 {countdown > 0 ? (
