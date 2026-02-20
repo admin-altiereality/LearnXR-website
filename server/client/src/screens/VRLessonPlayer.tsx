@@ -66,6 +66,7 @@ import {
 } from 'lucide-react';
 import { Progress } from '../Components/ui/progress';
 import { Button } from '../Components/ui/button';
+import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 
 // ============================================================================
 // Error Boundary Component
@@ -2495,21 +2496,27 @@ const VRLessonPlayerInner = () => {
   // Initialization / Loading State
   // ============================================================================
 
-  // Show loading while data initializes
+  // Show loading while data initializes (same cubic animation as elsewhere)
   if (!dataInitialized) {
+    const loadingStatuses =
+      initPhase === 'starting'
+        ? ['Initializing', 'Starting', 'Preparing']
+        : initPhase === 'loading-storage'
+          ? ['Loading saved data', 'Fetching', 'Syncing']
+          : initPhase === 'validating'
+            ? ['Validating content', 'Checking', 'Finalizing']
+            : ['Loading lesson', 'Preparing', 'Please wait'];
     return (
       <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center">
-            <Loader2 className="w-10 h-10 text-primary animate-spin" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground mb-3">Loading Lesson...</h1>
-          <p className="text-muted-foreground mb-2">Please wait while we prepare your lesson.</p>
-          <p className="text-xs text-muted-foreground font-mono">
-            {initPhase === 'starting' && 'Initializing...'}
-            {initPhase === 'loading-storage' && 'Loading saved data...'}
-            {initPhase === 'validating' && 'Validating content...'}
-          </p>
+          <PrismFluxLoader
+            size={48}
+            speed={4}
+            textSize={12}
+            statuses={loadingStatuses}
+          />
+          <h1 className="text-xl font-bold text-foreground mt-2 mb-1">Loading Lesson</h1>
+          <p className="text-sm text-muted-foreground">Please wait while we prepare your lesson.</p>
         </div>
       </div>
     );

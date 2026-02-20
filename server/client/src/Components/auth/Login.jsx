@@ -9,10 +9,8 @@ import {
     FaEyeSlash,
     FaGoogle,
     FaLock,
-    FaMoon,
     FaRocket,
     FaSchool,
-    FaSun,
     FaUserGraduate
 } from 'react-icons/fa';
 import { Link, useNavigate } from 'react-router-dom';
@@ -24,6 +22,7 @@ import {
     isGuestUser,
     requiresApproval
 } from '../../utils/rbac';
+import { isMetaQuestBrowser } from '../../utils/vrDetection';
 import { learnXRFontStyle, TrademarkSymbol } from '../LearnXRTypography';
 import { Button } from '../ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -39,9 +38,14 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState('role-select');
+  const [isVRDevice, setIsVRDevice] = useState(false);
   const { login, loginWithGoogle, user, profile, selectedRole, setSelectedRole } = useAuth();
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
+
+  useEffect(() => {
+    setIsVRDevice(isMetaQuestBrowser());
+  }, []);
 
   const roleOptions = [
     {
@@ -79,7 +83,7 @@ export const Login = () => {
         navigate('/approval-pending');
         return;
       }
-      navigate(getDefaultPage(profile.role));
+      navigate(getDefaultPage(profile.role, profile));
     };
     handleRedirect();
   }, [user, profile, navigate]);
@@ -144,38 +148,36 @@ export const Login = () => {
     return () => document.body.classList.remove('overflow-hidden');
   }, []);
 
+  // Login and onboarding: dark mode only, no toggle
+  useEffect(() => {
+    setTheme('dark');
+  }, [setTheme]);
+
+  const compact = isVRDevice;
   return (
-    <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
-      <button
-        type="button"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
-        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      >
-        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
-      </button>
-      <div className="relative z-10 flex flex-1 min-h-0 w-full overflow-hidden py-2 sm:py-3">
-        <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full px-3 sm:px-6">
-      <div className="w-full max-w-lg flex flex-col flex-1 min-h-0 gap-1.5 sm:gap-2 justify-center max-h-[96dvh]">
-        <motion.div
+    <FuturisticBackground className="min-h-[100dvh] w-screen flex flex-col overflow-x-hidden">
+      <div className={`relative z-10 flex flex-1 w-full min-h-0 ${compact ? 'py-2' : 'py-4 sm:py-6 md:py-8'}`}>
+        <div className={`flex flex-col md:flex-row md:items-center md:justify-center flex-1 min-h-0 w-full gap-6 md:gap-10 lg:gap-14 ${compact ? 'px-3' : 'px-4 sm:px-6 md:px-8'}`}>
+          {/* Welcome / branding: top on mobile, left column on desktop */}
+          <motion.div
             custom={0}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="text-center shrink-0"
+            className={`shrink-0 text-center md:text-left ${compact ? 'mb-0' : 'mb-2 md:mb-0'}`}
           >
-            <h1 className="text-lg sm:text-xl font-bold text-foreground mb-0.5 font-display">
+            <h1 className={`font-bold text-foreground font-display ${compact ? 'text-base' : 'text-xl sm:text-2xl md:text-3xl mb-1'}`}>
               Welcome to{' '}
-              <span style={learnXRFontStyle} className="text-lg sm:text-xl tracking-[0.12rem]">
+              <span style={learnXRFontStyle} className={compact ? 'text-base' : 'text-xl sm:text-2xl md:text-3xl tracking-[0.12rem]'}>
                 <span className="text-foreground">Learn</span>
                 <span className="text-primary">XR</span>
                 <TrademarkSymbol className="ml-1" />
               </span>
             </h1>
-            <p className="text-xs text-muted-foreground">Immersive Education Platform</p>
+            <p className={compact ? 'text-[10px] text-muted-foreground' : 'text-sm text-muted-foreground'}>Immersive Education Platform</p>
           </motion.div>
 
+          <div className={`w-full flex flex-col flex-1 min-h-0 justify-center ${compact ? 'max-w-md' : 'max-w-md sm:max-w-lg md:max-w-xl'} mx-auto md:mx-0`}>
           <AnimatePresence mode="wait">
             {step === 'role-select' ? (
               <motion.div
@@ -187,19 +189,19 @@ export const Login = () => {
                 exit="exit"
                 className="w-full min-w-0"
               >
-                <Card className="w-full mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col flex-1 min-h-0">
+                <Card className={`w-full relative border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col ${compact ? 'rounded-xl' : 'rounded-2xl sm:rounded-3xl'}`}>
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-                  <div className="relative z-10 p-2.5 sm:p-3 pb-1.5 flex-1 min-h-0 flex flex-col">
-                    <CardHeader className="p-0 pb-1.5 shrink-0">
-                      <CardTitle className="text-base sm:text-lg text-center text-foreground">
+                  <div className={`relative z-10 flex flex-col ${compact ? 'p-2.5 pb-1' : 'p-4 sm:p-5 md:p-6 pb-2'}`}>
+                    <CardHeader className="p-0 pb-3 sm:pb-4 shrink-0">
+                      <CardTitle className={`text-foreground ${compact ? 'text-sm' : 'text-lg sm:text-xl'}`}>
                         How would you like to sign in?
                       </CardTitle>
-                      <CardDescription className="text-center text-xs text-muted-foreground">
+                      <CardDescription className={`text-muted-foreground mt-1 ${compact ? 'text-[10px]' : 'text-sm'}`}>
                         Select your role to continue
                       </CardDescription>
                     </CardHeader>
-                    <div className="space-y-2 flex-1 min-h-0">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-stretch">
+                    <div className={compact ? 'space-y-1.5' : 'space-y-3 sm:space-y-4'}>
+                    <div className={`grid grid-cols-1 items-stretch ${compact ? 'gap-1.5 sm:grid-cols-2' : 'sm:grid-cols-2 gap-3 sm:gap-4'}`}>
                       {roleOptions.map((role, index) => (
                         <motion.button
                           key={role.id}
@@ -209,15 +211,15 @@ export const Login = () => {
                           initial="hidden"
                           animate="visible"
                           onClick={() => handleRoleSelect(role.id)}
-                          className="group relative p-2.5 pr-8 rounded-xl border-2 border-border bg-card/50 text-left min-h-[4rem] sm:min-h-[4.5rem] hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex flex-col items-start h-full"
+                          className={`group relative rounded-xl border-2 border-border bg-card/50 text-left hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex flex-col items-start h-full ${compact ? 'p-2.5 pr-7 min-h-[3.5rem]' : 'p-3 sm:p-4 pr-9 min-h-[4.5rem] sm:min-h-[5rem]'}`}
                           whileHover={{ scale: 1.02, y: -4 }}
                           whileTap={{ scale: 0.98 }}
                         >
-                          <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br ${role.gradient} flex items-center justify-center mb-1 shrink-0 shadow-lg`}>
-                            <role.icon className="text-sm sm:text-base text-white" />
+                          <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-lg bg-gradient-to-br ${role.gradient} flex items-center justify-center mb-1.5 shrink-0 shadow-lg`}>
+                            <role.icon className="text-base text-white" />
                           </div>
                           <h3 className="text-sm font-semibold text-foreground pr-2 group-hover:text-primary transition-colors">{role.title}</h3>
-                          <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug text-left w-full min-w-0 break-words line-clamp-2">{role.description}</p>
+                          <p className="text-xs text-muted-foreground leading-snug text-left w-full min-w-0 break-words line-clamp-2">{role.description}</p>
                           <FaArrowRight className="absolute top-3 right-3 text-muted-foreground w-4 h-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden />
                         </motion.button>
                       ))}
@@ -226,25 +228,25 @@ export const Login = () => {
                     <motion.button
                       type="button"
                       onClick={() => handleRoleSelect('school')}
-                      className="group w-full p-2.5 rounded-xl border-2 border-border bg-card/50 hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex items-center gap-2.5 text-left shrink-0"
+                      className={`group w-full rounded-xl border-2 border-border bg-card/50 hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 flex items-center gap-3 text-left shrink-0 ${compact ? 'p-2.5' : 'p-3 sm:p-4'}`}
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                     >
-                      <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br ${secondaryOption.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
-                        <secondaryOption.icon className="text-sm sm:text-base text-white" />
+                      <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-lg bg-gradient-to-br ${secondaryOption.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
+                        <secondaryOption.icon className="text-base text-white" />
                       </div>
-                      <div className="text-left min-w-0 flex-1 min-w-0">
+                      <div className="text-left min-w-0 flex-1">
                         <h3 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">{secondaryOption.title}</h3>
-                        <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 break-words line-clamp-2">{secondaryOption.description}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 break-words line-clamp-2">{secondaryOption.description}</p>
                       </div>
                       <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4 group-hover:opacity-100" aria-hidden />
                     </motion.button>
                     </div>
                   </div>
-                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
-                    <p className="text-muted-foreground text-center text-xs sm:text-sm">
+                  <div className={`relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl shrink-0 ${compact ? 'p-2' : 'p-3 sm:p-4'}`}>
+                    <p className="text-muted-foreground text-center text-sm">
                       Don't have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-xs sm:text-sm" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-sm" asChild>
                         <Link to="/signup">Create Account</Link>
                       </Button>
                     </p>
@@ -261,9 +263,9 @@ export const Login = () => {
                 exit="exit"
                 className="w-full min-w-0 flex-1 min-h-0 flex flex-col"
               >
-                <Card className="w-full max-w-sm mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col min-h-0 flex-1">
+                <Card className="w-full mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-                  <div className="relative z-10 p-2.5 sm:p-3 pb-1.5 flex-1 min-h-0 flex flex-col">
+                  <div className={`relative z-10 flex flex-col ${compact ? 'p-2.5 pb-1.5' : 'p-4 sm:p-5 md:p-6 pb-2'}`}>
                     <button
                       type="button"
                       onClick={handleBackToRoleSelect}
@@ -387,10 +389,10 @@ export const Login = () => {
                     </form>
                   </div>
 
-                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
-                    <p className="text-muted-foreground text-center text-xs sm:text-sm">
+                  <div className={`relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl shrink-0 ${compact ? 'p-2' : 'p-3 sm:p-4'}`}>
+                    <p className="text-muted-foreground text-center text-sm">
                       Don't have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-xs sm:text-sm" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-sm" asChild>
                         <Link to="/signup">Create Account</Link>
                       </Button>
                     </p>
@@ -399,7 +401,7 @@ export const Login = () => {
               </motion.div>
             )}
           </AnimatePresence>
-      </div>
+          </div>
         </div>
       </div>
     </FuturisticBackground>

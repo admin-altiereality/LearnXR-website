@@ -49,6 +49,9 @@ export interface UserProfile {
 
   // Guest student (exploratory) - no school code, no approval, one lesson only
   isGuest?: boolean;
+
+  // Demo user (from /demopage) - sees all lessons, only Superadmin-marked demo topics playable
+  isDemoUser?: boolean;
 }
 
 // Route categories for permission checking
@@ -189,6 +192,8 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   
   // Secret backend login - no category (public route, role check after login)
   '/secretbackend': 'public',
+  // Demo page - public, predefined credentials → demo user (only demo lessons playable)
+  '/demopage': 'public',
 };
 
 // ============================================================================
@@ -343,6 +348,13 @@ export function isGuestUser(profile: UserProfile | null): boolean {
 }
 
 /**
+ * Demo user (signed in via /demopage) - sees all lessons, only demo-marked topics playable
+ */
+export function isDemoUser(profile: UserProfile | null): boolean {
+  return !!(profile?.isDemoUser === true);
+}
+
+/**
  * Guest users are read-only: no write, delete, or destructive changes to Firebase.
  * Use this to guard any Firestore write/update/delete from guest.
  */
@@ -394,6 +406,11 @@ export function hasCompletedStudentOnboarding(profile: UserProfile | null): bool
   
   // Guest students: no school code required; complete when onboarding is done
   if (profile.isGuest === true) {
+    return profile.onboardingCompleted === true;
+  }
+
+  // Demo users: backend sets onboardingCompleted true; no school/class/curriculum required
+  if (profile.isDemoUser === true) {
     return profile.onboardingCompleted === true;
   }
   
@@ -582,6 +599,11 @@ export function checkAccess(
       reason: 'Pending approval'
     };
   }
+
+  // Allow student to access create routes (Create, Explore, History) when demo user or approved
+  if (category === 'create' && role === 'student' && profile && (isDemoUser(profile) || isApproved(profile))) {
+    return { allowed: true };
+  }
   
   // Check role permissions for the route
   if (!canRoleAccessCategory(role, category)) {
@@ -640,9 +662,10 @@ export function hasMinimumRole(profile: UserProfile | null, minimumRole: UserRol
 }
 
 /**
- * Get the default landing page for a role
+ * Get the default landing page for a role (and optional profile for demo user)
  */
-export function getDefaultPage(role: UserRole): string {
+export function getDefaultPage(role: UserRole, profile?: UserProfile | null): string {
+  if (profile && isDemoUser(profile)) return '/lessons';
   switch (role) {
     case 'student':
       return '/dashboard/student';

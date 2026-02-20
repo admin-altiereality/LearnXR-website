@@ -23,8 +23,18 @@ import { Button } from '../../Components/ui/button';
 import { Input } from '../../Components/ui/input';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { isDemoUser } from '../../utils/rbac';
 
 const GUEST_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=LearnXRGuest';
+
+// Demo user: sample data for dashboard (no real Firestore reads)
+const DEMO_FAKE_STATS = { totalLessons: 3, completedLessons: 1, averageScore: 85, totalAttempts: 2 };
+const DEMO_FAKE_LAUNCHES: LessonLaunch[] = [
+  { id: 'demo1', chapter_id: 'demo-ch', chapter_name: 'Sample Chapter', topic_id: 't1', topic_name: 'Introduction', launched_at: new Date().toISOString(), student_id: 'demo' } as LessonLaunch,
+];
+const DEMO_FAKE_SCORES: StudentScore[] = [
+  { id: 'demo1', chapter_id: 'demo-ch', score: 85, percentage: 85, completed_at: new Date().toISOString(), student_id: 'demo' } as StudentScore,
+];
 
 const StudentDashboard = () => {
   const { user, profile } = useAuth();
@@ -40,6 +50,7 @@ const StudentDashboard = () => {
     clearSessionError,
   } = useClassSession();
   const isGuest = profile?.isGuest === true && profile?.role === 'student';
+  const isDemo = isDemoUser(profile);
   const [lessonLaunches, setLessonLaunches] = useState<LessonLaunch[]>([]);
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +70,15 @@ const StudentDashboard = () => {
 
   useEffect(() => {
     if (!user?.uid || !profile) return;
+
+    if (isDemo) {
+      setLessonLaunches(DEMO_FAKE_LAUNCHES);
+      setScores(DEMO_FAKE_SCORES);
+      setStats(DEMO_FAKE_STATS);
+      setClasses([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
@@ -105,7 +125,7 @@ const StudentDashboard = () => {
       unsubscribeLaunches();
       unsubscribeScores();
     };
-  }, [user?.uid, profile]);
+  }, [user?.uid, profile, isDemo]);
 
   // When teacher launches a lesson to the class, fetch bundle and open XR player
   useEffect(() => {
@@ -237,7 +257,7 @@ const StudentDashboard = () => {
 
   // Fetch student's classes and their teachers (skip for guest)
   useEffect(() => {
-    if (!profile?.uid || profile?.isGuest || !profile?.class_ids || profile.class_ids.length === 0) {
+    if (!profile?.uid || profile?.isGuest || profile?.isDemoUser || !profile?.class_ids || profile.class_ids.length === 0) {
       setClasses([]);
       setClassTeachers(new Map());
       return;
@@ -370,12 +390,18 @@ const StudentDashboard = () => {
                 </h1>
                 <h2 className="text-xl font-semibold text-foreground">My Dashboard</h2>
                 <p className="text-muted-foreground text-sm mt-0.5">
-                  {isGuest ? 'Exploring as guest — try one lesson, then sign up to unlock more' : 'Track your learning progress and performance'}
+                  {isDemo ? 'Demo mode – sample data. Only lessons marked as demo are playable.' : isGuest ? 'Exploring as guest — try one lesson, then sign up to unlock more' : 'Track your learning progress and performance'}
                 </p>
               </div>
             </div>
           </div>
         </div>
+
+        {isDemo && (
+          <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground">
+            <strong>Demo mode.</strong> This dashboard shows sample data. Go to <Link to="/lessons" className="text-primary underline hover:no-underline">Lessons</Link> to play lessons marked as demo by your administrator.
+          </div>
+        )}
 
         {/* AI Personalized Avatar - prominent for guest */}
         <Card className="mb-8 border border-border bg-card overflow-hidden">
@@ -410,7 +436,7 @@ const StudentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Join class session - students only */}
+        {/* Join class session - students only (demo can try with a code) */}
         {!isGuest && (
           <Card className="mb-8 rounded-xl border-primary/30 border bg-card">
             <CardContent className="p-4">

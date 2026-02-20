@@ -87,7 +87,7 @@ const ContentBadges = memo(({ chapter }) => (
 
 // GRID VIEW - Lesson Card (Topic-based) - Memoized to prevent flickering
 // Approval status is read-only (no approve/unapprove from this page - use Approvals page)
-const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
+const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, isLockedForDemo = false, onGuestSignup, onGuestLogin }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const thumbnail = topic.skybox_url || chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
   const isCompleted = completedLessons[chapter.id];
@@ -105,27 +105,33 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
     <div
       className={`h-full flex flex-col bg-card rounded-2xl border overflow-hidden border-border relative
                  transition-all duration-300 group
-                 ${isLockedForGuest ? 'cursor-default' : 'cursor-pointer hover:shadow-lg hover:border-primary/50 hover:shadow-primary/10'}`}
-      onClick={() => !isLockedForGuest && onOpenModal(chapter, topic)}
+                 ${(isLockedForGuest || isLockedForDemo) ? 'cursor-default' : 'cursor-pointer hover:shadow-lg hover:border-primary/50 hover:shadow-primary/10'}`}
+      onClick={() => !isLockedForGuest && !isLockedForDemo && onOpenModal(chapter, topic)}
     >
-      {isLockedForGuest && (
+      {(isLockedForGuest || isLockedForDemo) && (
         <div
           className="absolute inset-0 z-10 flex flex-col items-center justify-center rounded-2xl bg-background/80 backdrop-blur-md p-4 pointer-events-auto text-center space-y-3"
           onClick={(e) => e.stopPropagation()}
         >
-            <p className="text-sm font-medium text-foreground">Sign up to unlock this lesson</p>
-            <Button size="sm" className="shadow-lg" onClick={onGuestSignup}>
-              Create free account
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Already have an account?{' '}
-              <button type="button" onClick={onGuestLogin} className="text-primary underline hover:no-underline font-medium">
-                Log in
-              </button>
-            </p>
+            {isLockedForDemo ? (
+              <p className="text-sm font-medium text-foreground">Demo mode – only lessons marked as demo are playable</p>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-foreground">Sign up to unlock this lesson</p>
+                <Button size="sm" className="shadow-lg" onClick={onGuestSignup}>
+                  Create free account
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Already have an account?{' '}
+                  <button type="button" onClick={onGuestLogin} className="text-primary underline hover:no-underline font-medium">
+                    Log in
+                  </button>
+                </p>
+              </>
+            )}
         </div>
       )}
-      <div className={isLockedForGuest ? 'pointer-events-none select-none blur-sm' : ''}>
+      <div className={(isLockedForGuest || isLockedForDemo) ? 'pointer-events-none select-none blur-sm' : ''}>
       {/* Thumbnail - fixed aspect so card height is consistent */}
       <div className="relative aspect-video w-full flex-shrink-0 overflow-hidden bg-muted">
         {thumbnail ? (
@@ -314,7 +320,7 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
 
 // LIST VIEW - Lesson Item (Topic-based) - Memoized
 // Approval status is read-only (no approve/unapprove from this page - use Approvals page)
-const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
+const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', isLockedForGuest = false, isLockedForDemo = false, onGuestSignup, onGuestLogin }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
@@ -329,27 +335,33 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
   const learningObjective = getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective;
 
   return (
-    <Card className={`rounded-xl overflow-hidden border-border relative ${isCompleted ? 'border-primary/40' : ''} ${isLockedForGuest ? 'blur-sm' : ''}`}>
-      {isLockedForGuest && (
+    <Card className={`rounded-xl overflow-hidden border-border relative ${isCompleted ? 'border-primary/40' : ''} ${(isLockedForGuest || isLockedForDemo) ? 'blur-sm' : ''}`}>
+      {(isLockedForGuest || isLockedForDemo) && (
         <div
           className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md p-4 pointer-events-auto text-center space-y-3 rounded-xl"
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="text-sm font-medium text-foreground">Sign up to unlock this lesson</p>
-          <Button size="sm" className="shadow-lg" onClick={onGuestSignup}>
-            Create free account
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Already have an account?{' '}
-            <button type="button" onClick={onGuestLogin} className="text-primary underline hover:no-underline font-medium">
-              Log in
-            </button>
-          </p>
+          {isLockedForDemo ? (
+            <p className="text-sm font-medium text-foreground">Demo mode – only lessons marked as demo are playable</p>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-foreground">Sign up to unlock this lesson</p>
+              <Button size="sm" className="shadow-lg" onClick={onGuestSignup}>
+                Create free account
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Already have an account?{' '}
+                <button type="button" onClick={onGuestLogin} className="text-primary underline hover:no-underline font-medium">
+                  Log in
+                </button>
+              </p>
+            </>
+          )}
         </div>
       )}
       <div 
-        className={`flex items-center gap-4 p-4 transition-colors ${isLockedForGuest ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
-        onClick={() => !isLockedForGuest && onOpenModal(chapter, topic)}
+        className={`flex items-center gap-4 p-4 transition-colors ${(isLockedForGuest || isLockedForDemo) ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
+        onClick={() => !isLockedForGuest && !isLockedForDemo && onOpenModal(chapter, topic)}
       >
         <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-primary/10 border border-border">
           {isCompleted ? (
@@ -478,6 +490,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const isStudent = profile?.role === 'student';
   const isTeacher = profile?.role === 'teacher';
   const isGuest = !!(profile?.isGuest === true && profile?.role === 'student');
+  const isDemoUser = !!(profile?.isDemoUser === true);
 
   // Guest: logout then navigate so user can sign up or log in with a full account
   const handleGuestSignup = useCallback(async () => {
@@ -666,13 +679,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
     
-    // Guest: fetch a bounded set of chapters; we will filter to demo-only topics in groupedTopicsByChapter
-    if (isGuest) {
+    // Guest or demo user: fetch a bounded set of chapters (demo: show all topics, only demo playable)
+    if (isGuest || isDemoUser) {
       effectiveCurriculum = null;
       effectiveClass = null;
     }
     
-    // Wait for classes to load if user is student/teacher (not guest) and classes are expected
+    // Wait for classes to load if user is student/teacher (not guest/demo) and classes are expected
     if ((isStudent || isTeacher) && !isGuest && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
       console.log('⏳ Lessons: Waiting for student classes to load', { role: 'student', profileClassIds: profile?.class_ids?.length });
       return;
@@ -682,7 +695,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       return;
     }
     
-    if ((isStudent || isTeacher) && !isGuest && userClasses.length > 0) {
+    if ((isStudent || isTeacher) && !isGuest && !isDemoUser && userClasses.length > 0) {
       // Use the first class's curriculum and class number
       const firstClass = userClasses[0];
       if (!effectiveCurriculum && firstClass.curriculum) {
@@ -707,8 +720,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
-    // For students and teachers (not guest): require both curriculum and class to be set
-    if ((isStudent || isTeacher) && !isGuest && (!effectiveCurriculum || !effectiveClass)) {
+    // For students and teachers (not guest/demo): require both curriculum and class to be set
+    if ((isStudent || isTeacher) && !isGuest && !isDemoUser && (!effectiveCurriculum || !effectiveClass)) {
       console.log(`⚠️ ${isStudent ? 'Student' : 'Teacher'} lessons: Missing curriculum or class filter`, {
         effectiveCurriculum,
         effectiveClass,
@@ -725,7 +738,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // For guest: fetch bounded set of chapters (no curriculum/class filter), then filter to demo-only topics client-side
     const chaptersRef = collection(db, 'curriculum_chapters');
     let chaptersQuery;
-    if (isGuest) {
+    if (isGuest || isDemoUser) {
       chaptersQuery = query(chaptersRef, limit(GUEST_DEMO_CHAPTERS_LIMIT));
     } else if (constraints.length > 0) {
       chaptersQuery = query(chaptersRef, ...constraints);
@@ -791,7 +804,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isGuest, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isGuest, isDemoUser, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -894,8 +907,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
       : [];
     
     chapters.forEach(chapter => {
-      // For students and teachers (not guest): filter by their class numbers AND curriculum
-      if (!isGuest && (isStudent || isTeacher)) {
+      // For students and teachers (not guest, not demo): filter by their class numbers AND curriculum
+      // Demo users see demo-marked topics from all chapters, so skip class/curriculum filter for them
+      if (!isGuest && !isDemoUser && (isStudent || isTeacher)) {
         // If user has classes, only show chapters matching their classes
         if (userClassNumbers.length > 0) {
           if (!userClassNumbers.includes(chapter.class)) {
@@ -942,6 +956,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 chapter,
               });
             }
+          } else if (isDemoUser) {
+            // Demo user: show demo-marked topics regardless of approval; also show other approved topics (locked when rendering)
+            if (isDemoTopic || shouldShowTopic) {
+              allTopics.push({
+                topic,
+                chapter,
+              });
+            }
           } else if (isStudent || isTeacher) {
             // Students and teachers: approved topics OR legacy (chapter approved, no topic approval field)
             if (shouldShowTopic) {
@@ -961,14 +983,17 @@ const Lessons = ({ setBackgroundSkybox }) => {
       }
     });
     
+    const demoTopicCount = allTopics.filter(({ topic }) => topic.isDemo === true).length;
     console.log('📚 Grouped topics:', {
       totalChapters: chapters.length,
       totalTopics: allTopics.length,
       canApprove,
+      ...(isDemoUser && { demoUser: true, demoTopicCount, totalChaptersScanned: chapters.length }),
       sampleTopic: allTopics[0] ? {
         topicId: allTopics[0].topic.topic_id,
         topicName: allTopics[0].topic.topic_name,
         approved: allTopics[0].topic.approval?.approved,
+        isDemo: allTopics[0].topic.isDemo,
       } : null,
     });
     
@@ -1021,7 +1046,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     return sortedGroups;
-  }, [chapters, canApprove, isStudent, isTeacher, isGuest, studentClasses, teacherClasses]);
+  }, [chapters, canApprove, isStudent, isTeacher, isGuest, isDemoUser, studentClasses, teacherClasses]);
   
   // Flatten grouped topics into lesson items for display
   const lessonItems = useMemo(() => {
@@ -1442,16 +1467,20 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
   }, [sessionJoinError, clearSessionError]);
 
-  // Navigate to VR lesson player with lesson state; preparation screen (10s countdown) is shown there
+  // Open lesson modal on same page; user can then choose "Launch lesson" or "Launch in VR"
   const handleLessonClick = useCallback((chapter, topicInput) => {
-    navigate('/vrlessonplayer', {
-      state: {
-        chapter: { ...chapter, id: chapter.id },
-        topic: topicInput,
-        selectedLanguage,
-      },
-    });
-  }, [navigate, selectedLanguage]);
+    setSelectedLesson({ chapter, topicInput });
+  }, []);
+
+  // When a lesson is selected for the modal, fetch its data (countdown + Launch buttons)
+  React.useEffect(() => {
+    if (!selectedLesson) return;
+    const { chapter, topicInput } = selectedLesson;
+    setDataError(null);
+    setDataReady(false);
+    setDataLoading(true);
+    fetchLessonData(chapter, topicInput);
+  }, [selectedLesson, fetchLessonData]);
 
   // Comprehensive validation function
   const validateLessonData = useCallback((data) => {
@@ -2320,6 +2349,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     {groupItems.map((lessonItem, index) => {
                       const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
                       const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                      const isLockedForDemo = isDemoUser && lessonItem.topic.isDemo !== true;
                       return (
                       <div
                         key={`${itemKey}_${index}`}
@@ -2333,6 +2363,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                           getThumbnail={getThumbnail}
                           selectedLanguage={selectedLanguage}
                           isLockedForGuest={isLockedForGuest}
+                          isLockedForDemo={isLockedForDemo}
                           onGuestSignup={handleGuestSignup}
                           onGuestLogin={handleGuestLogin}
                         />
@@ -2374,6 +2405,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   {groupItems.map((lessonItem, index) => {
                     const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
                     const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                    const isLockedForDemo = isDemoUser && lessonItem.topic.isDemo !== true;
                     return (
                     <LessonListItem
                       key={`${itemKey}_${index}`}
@@ -2382,6 +2414,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                       onOpenModal={handleLessonClick}
                       selectedLanguage={selectedLanguage}
                       isLockedForGuest={isLockedForGuest}
+                      isLockedForDemo={isLockedForDemo}
                       onGuestSignup={handleGuestSignup}
                       onGuestLogin={handleGuestLogin}
                     />

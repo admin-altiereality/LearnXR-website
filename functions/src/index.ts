@@ -28,6 +28,7 @@ const emailjsServiceId = defineSecret("EMAILJS_SERVICE_ID");
 const emailjsTemplateId = defineSecret("EMAILJS_TEMPLATE_ID");
 const emailjsPublicKey = defineSecret("EMAILJS_PUBLIC_KEY");
 const emailjsPrivateKey = defineSecret("EMAILJS_PRIVATE_KEY");
+const demoPassword = defineSecret("DEMO_PASSWORD");
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
@@ -164,7 +165,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, emailjsServiceId, emailjsTemplateId, emailjsPublicKey, emailjsPrivateKey]
+    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, emailjsServiceId, emailjsTemplateId, emailjsPublicKey, emailjsPrivateKey, demoPassword]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -240,6 +241,12 @@ export const api = onRequest(
       process.env.EMAILJS_PRIVATE_KEY = emailjsPrivateKey.value()?.trim() || '';
     } catch (err: any) {
       console.warn('⚠️ EmailJS secrets not found - email notifications disabled:', err?.message || err);
+    }
+
+    try {
+      process.env.DEMO_PASSWORD = demoPassword.value()?.trim() || '';
+    } catch (err: any) {
+      console.warn('⚠️ DEMO_PASSWORD not found - demo page login disabled:', err?.message || err);
     }
 
     // Set in process.env for routes that use getSecret()

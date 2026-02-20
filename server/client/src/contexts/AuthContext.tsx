@@ -4,6 +4,7 @@ import {
     GoogleAuthProvider,
     onAuthStateChanged,
     sendPasswordResetEmail,
+    signInWithCustomToken,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut
@@ -43,6 +44,7 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string, role?: UserRole) => Promise<any>;
   login: (email: string, password: string) => Promise<any>;
   loginWithGoogle: (role?: UserRole) => Promise<any>;
+  loginWithDemoToken: (customToken: string) => Promise<any>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<void>;
@@ -110,6 +112,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           managed_class_ids: data.managed_class_ids,
           managed_school_id: data.managed_school_id,
           isGuest: data.isGuest || false,
+          isDemoUser: data.isDemoUser || false,
         };
       }
       return null;
@@ -204,6 +207,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 managed_class_ids: data.managed_class_ids,
                 managed_school_id: data.managed_school_id,
                 isGuest: data.isGuest || false,
+                isDemoUser: data.isDemoUser || false,
               };
               setProfile(profileData);
             } else {
@@ -267,6 +271,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           managed_class_ids: data.managed_class_ids,
           managed_school_id: data.managed_school_id,
           isGuest: data.isGuest || false,
+          isDemoUser: data.isDemoUser || false,
         };
         setProfile(profileData);
       }
@@ -424,6 +429,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  const loginWithDemoToken = async (customToken: string) => {
+    if (!auth) {
+      throw new Error('Authentication service is not available');
+    }
+    try {
+      const result = await signInWithCustomToken(auth, customToken);
+      toast.success('Demo mode – enjoy exploring!');
+      return result;
+    } catch (error: any) {
+      console.error('Demo token login error:', error);
+      toast.error(error.message || 'Demo login failed');
+      throw error;
+    }
+  };
+
   const logout = async () => {
     if (!auth) {
       throw new Error('Authentication service is not available');
@@ -470,6 +490,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       signup,
       login,
       loginWithGoogle,
+      loginWithDemoToken,
       logout,
       resetPassword,
       updateProfile,

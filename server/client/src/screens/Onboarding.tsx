@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     FaArrowLeft,
     FaArrowRight,
@@ -16,11 +16,9 @@ import {
     FaGraduationCap,
     FaHeart,
     FaMapMarkerAlt,
-    FaMoon,
     FaPhone,
     FaRocket,
     FaSchool,
-    FaSun,
     FaUserGraduate,
     FaUsers
 } from 'react-icons/fa';
@@ -42,6 +40,7 @@ import {
 import { db } from '../config/firebase';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
+import { isMetaQuestBrowser } from '../utils/vrDetection';
 import type { Class } from '../types/lms';
 import {
     getDefaultPage,
@@ -262,15 +261,20 @@ const Onboarding = () => {
   const isStudentRole = profile?.role === 'student';
   const isTeacherRole = profile?.role === 'teacher';
   const isSchoolRole = profile?.role === 'school';
-  
+  const hasRedirectedRef = useRef(false);
+
   // Total steps based on role - Students have 5 steps; guest students have 4 (no school step)
   const totalSteps = isStudentRole ? (isGuestUser(profile) ? 4 : 5) : isTeacherRole ? 4 : isSchoolRole ? 4 : 1;
 
   // Theme and body overflow - must run before any conditional return (Rules of Hooks)
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
+  const [isVRDevice, setIsVRDevice] = useState(false);
   useEffect(() => {
     document.body.classList.add('overflow-hidden');
     return () => document.body.classList.remove('overflow-hidden');
+  }, []);
+  useEffect(() => {
+    setIsVRDevice(isMetaQuestBrowser());
   }, []);
 
   useEffect(() => {
@@ -283,11 +287,13 @@ const Onboarding = () => {
       try {
         // Check if onboarding is already completed (using general check that works for all roles)
         if (profile.onboardingCompleted === true) {
+          if (hasRedirectedRef.current) return;
+          hasRedirectedRef.current = true;
           // If onboarding is complete, check where to redirect
           if (!isGuestUser(profile) && requiresApproval(profile.role) && profile.approvalStatus !== 'approved') {
             navigate('/approval-pending');
           } else {
-            navigate(getDefaultPage(profile.role));
+            navigate(getDefaultPage(profile.role, profile));
           }
           return;
         }
@@ -655,7 +661,7 @@ const Onboarding = () => {
       const userRole = profile?.role || 'student';
       const isGuestStudent = isGuestUser(profile);
       if (isGuestStudent || !requiresApproval(userRole)) {
-        navigate(getDefaultPage(userRole));
+        navigate(getDefaultPage(userRole, profile));
       } else {
         navigate('/approval-pending');
       }
@@ -1119,7 +1125,7 @@ const Onboarding = () => {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-white/70 mb-2">Subjects Taught * (select all that apply)</label>
-                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 bg-white/[0.02] rounded-xl border border-white/10">
+                <div className="grid grid-cols-3 gap-2 max-h-[min(12rem,22dvh)] overflow-hidden p-2 bg-white/[0.02] rounded-xl border border-white/10">
                   {subjectOptions.map(subject => (
                     <button key={subject} type="button"
                       onClick={() => setTeacherData(prev => ({
@@ -1407,19 +1413,16 @@ const Onboarding = () => {
 
   const RoleIcon = getRoleIcon();
 
+  // Onboarding: dark mode only, no toggle
+  useEffect(() => {
+    setTheme('dark');
+  }, [setTheme]);
+
+  const compact = isVRDevice;
   return (
     <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
-      <button
-        type="button"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
-        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      >
-        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
-      </button>
-      <div className="relative z-10 flex flex-1 min-h-0 flex-col items-center px-3 py-2 sm:px-6 sm:py-2 overflow-hidden">
-        <div className="w-full max-w-2xl mx-auto h-full flex flex-col gap-1.5 sm:gap-2 min-h-0">
+      <div className={`relative z-10 flex flex-1 min-h-0 flex-col items-center overflow-hidden ${compact ? 'px-2 py-1' : 'px-3 py-2 sm:px-6 sm:py-2'}`}>
+        <div className={`w-full mx-auto h-full flex flex-col min-h-0 ${compact ? 'max-w-lg gap-1' : 'max-w-2xl gap-1.5 sm:gap-2'}`}>
           {/* Header - glass pill */}
           <div className="text-center shrink-0">
             <div className="flex items-center justify-center gap-1.5 mb-1">

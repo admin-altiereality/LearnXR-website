@@ -34,7 +34,7 @@ export const SecretBackendLogin = () => {
     const role = profile.role?.toLowerCase();
     if (STAFF_ROLES.includes(role as any)) {
       setAccessDenied(false);
-      navigate(getDefaultPage(profile.role), { replace: true });
+      navigate(getDefaultPage(profile.role, profile), { replace: true });
     } else {
       setAccessDenied(true);
       setError('Access denied. This login is for staff only (Admin, Super Admin, Associate).');

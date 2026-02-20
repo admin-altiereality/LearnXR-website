@@ -21,11 +21,10 @@ if (typeof window !== 'undefined') {
   if (!RAZORPAY_ENTERPRISE_MONTHLY) missingPlans.push('Enterprise Monthly');
   if (!RAZORPAY_ENTERPRISE_YEARLY) missingPlans.push('Enterprise Yearly');
   
-  if (missingPlans.length > 0) {
+  const hasAny = [RAZORPAY_PRO_MONTHLY, RAZORPAY_PRO_YEARLY, RAZORPAY_TEAM_MONTHLY, RAZORPAY_TEAM_YEARLY, RAZORPAY_ENTERPRISE_MONTHLY, RAZORPAY_ENTERPRISE_YEARLY].some(Boolean);
+  if (missingPlans.length > 0 && hasAny) {
     console.warn('⚠️ Missing Razorpay Plan IDs:', missingPlans.join(', '));
     console.warn('Please ensure all VITE_RAZORPAY_*_PLAN_ID environment variables are set in .env file');
-  } else {
-    console.log('✅ All Razorpay plan IDs loaded successfully');
   }
 }
 

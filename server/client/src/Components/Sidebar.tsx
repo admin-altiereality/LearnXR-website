@@ -30,7 +30,7 @@ import {
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
-import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
+import { UserRole, ROLE_DISPLAY_NAMES, isDemoUser, isApproved } from '../utils/rbac';
 import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 import { Sheet, SheetContent } from './ui/sheet';
 import { Badge } from './ui/badge';
@@ -65,6 +65,7 @@ const normalizeRole = (role: string | undefined): UserRole => {
 const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(true); // Start collapsed for minimal design
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [schoolCode, setSchoolCode] = useState<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, logout } = useAuth();
@@ -85,6 +86,18 @@ const Sidebar = () => {
     }
   }, []);
 
+  // Fetch school code for School Admin and Teacher (must run before any conditional return)
+  useEffect(() => {
+    if (!profile || (userRole !== 'school' && userRole !== 'teacher')) return;
+    const schoolId = profile.school_id || profile.managed_school_id;
+    if (!schoolId) return;
+    getDoc(doc(db, 'schools', schoolId))
+      .then((snap) => {
+        if (snap.exists()) setSchoolCode(snap.data()?.schoolCode || null);
+      })
+      .catch(() => {});
+  }, [profile, userRole]);
+
   // Save collapsed state
   const toggleCollapse = () => {
     const newState = !isCollapsed;
@@ -102,7 +115,7 @@ const Sidebar = () => {
   };
 
   // Don't render sidebar on these pages
-  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
+  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/demopage', '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
   if (hiddenPages.some(page => location.pathname.startsWith(page)) || !user) {
     return null;
   }
@@ -113,24 +126,12 @@ const Sidebar = () => {
   const isPrincipal = userRole === 'principal';
   const isSchool = userRole === 'school';
   const isAssociate = userRole === 'associate';
-  const [schoolCode, setSchoolCode] = useState<string | null>(null);
-
-  // Fetch school code for School Admin and Teacher
-  useEffect(() => {
-    if (!profile || (userRole !== 'school' && userRole !== 'teacher')) return;
-    const schoolId = profile.school_id || profile.managed_school_id;
-    if (!schoolId) return;
-    getDoc(doc(db, 'schools', schoolId))
-      .then((snap) => {
-        if (snap.exists()) setSchoolCode(snap.data()?.schoolCode || null);
-      })
-      .catch(() => {});
-  }, [profile, userRole]);
   const isAdmin = userRole === 'admin';
   const isSuperadmin = userRole === 'superadmin';
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;
   // School administrators should NOT have access to Create, Explore, History
-  const canCreate = isTeacher || isAdminOrSuperadmin;
+  const studentCanCreate = isStudent && (isDemoUser(profile) || isApproved(profile));
+  const canCreate = isTeacher || isAdminOrSuperadmin || studentCanCreate;
 
   // Build navigation items based on role according to the spec:
   // Associate: Dashboard, Lessons only (refine lessons, submit for approval)
@@ -365,7 +366,12 @@ const Sidebar = () => {
                   <div className="min-w-0 flex-1 truncate text-left">
                     <p className="text-xs font-medium truncate">
                       {ROLE_DISPLAY_NAMES[userRole] || userRole}
-                      {profile?.isGuest && (
+                      {profile?.isDemoUser && (
+                        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal ml-1">
+                          Demo
+                        </Badge>
+                      )}
+                      {profile?.isGuest && !profile?.isDemoUser && (
                         <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-normal ml-1">
                           Guest
                         </Badge>

@@ -1,12 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
   checkAccess, 
   AccessCheckResult,
-  hasCompletedOnboarding,
-  requiresApproval,
-  isApproved,
   getDefaultPage,
   UserRole
 } from '../../utils/rbac';
@@ -25,20 +22,19 @@ interface RoleGuardProps {
   redirectTo?: string;
 }
 
+const ROLE_HIERARCHY: Record<UserRole, number> = {
+  student: 1,
+  teacher: 2,
+  principal: 2,
+  school: 2,
+  associate: 2,
+  admin: 3,
+  superadmin: 4,
+};
+
 /**
  * RoleGuard - Comprehensive route protection component
- * 
- * This component handles:
- * 1. Authentication check
- * 2. Profile loading
- * 3. Role-based access control
- * 4. Onboarding completion check
- * 5. Approval status check (for teacher/school)
- * 
- * Usage:
- * <RoleGuard allowedRoles={['admin', 'superadmin']}>
- *   <AdminPage />
- * </RoleGuard>
+ * Computes access synchronously to avoid multiple Navigate renders and navigation throttling.
  */
 export const RoleGuard = ({ 
   children, 
@@ -50,66 +46,35 @@ export const RoleGuard = ({
 }: RoleGuardProps) => {
   const { user, profile, loading, profileLoading } = useAuth();
   const location = useLocation();
-  const [accessResult, setAccessResult] = useState<AccessCheckResult | null>(null);
 
-  useEffect(() => {
-    // Wait for auth and profile to load
-    if (loading || profileLoading) return;
+  const accessResult = useMemo((): AccessCheckResult | null => {
+    if (loading || profileLoading) return null;
 
-    // Check access
-    const result = checkAccess(profile, location.pathname, !!user);
-    
-    // Additional role checks if specified
+    let result = checkAccess(profile, location.pathname, !!user);
+
     if (result.allowed && profile) {
-      // Check minRole
-      if (minRole) {
-        const roleHierarchy: Record<UserRole, number> = {
-          student: 1,
-          teacher: 2,
-          principal: 2,
-          school: 2,
-          associate: 2,
-          admin: 3,
-          superadmin: 4,
-        };
-        
-        if (roleHierarchy[profile.role] < roleHierarchy[minRole]) {
-          setAccessResult({
-            allowed: false,
-            redirectTo: redirectTo || getDefaultPage(profile.role),
-            reason: `Minimum role '${minRole}' required`
-          });
-          return;
-        }
-      }
-      
-      // Check allowedRoles
-      if (allowedRoles && !allowedRoles.includes(profile.role)) {
-        setAccessResult({
+      if (minRole && ROLE_HIERARCHY[profile.role] < ROLE_HIERARCHY[minRole]) {
+        return {
           allowed: false,
-          redirectTo: redirectTo || getDefaultPage(profile.role),
+          redirectTo: redirectTo || getDefaultPage(profile.role, profile),
+          reason: `Minimum role '${minRole}' required`
+        };
+      }
+      if (allowedRoles && !allowedRoles.includes(profile.role)) {
+        return {
+          allowed: false,
+          redirectTo: redirectTo || getDefaultPage(profile.role, profile),
           reason: `Role '${profile.role}' not in allowed roles`
-        });
-        return;
+        };
       }
     }
-    
-    // Override approval check if bypassed
-    if (bypassApproval && result.redirectTo === '/approval-pending') {
-      setAccessResult({ allowed: true });
-      return;
-    }
-    
-    // Override onboarding check if bypassed
-    if (bypassOnboarding && result.redirectTo === '/onboarding') {
-      setAccessResult({ allowed: true });
-      return;
-    }
-    
-    setAccessResult(result);
-  }, [user, profile, loading, profileLoading, location.pathname, minRole, allowedRoles, bypassApproval, bypassOnboarding, redirectTo]);
 
-  // Show loading state
+    if (bypassApproval && result.redirectTo === '/approval-pending') return { allowed: true };
+    if (bypassOnboarding && result.redirectTo === '/onboarding') return { allowed: true };
+
+    return result;
+  }, [loading, profileLoading, profile, location.pathname, user, minRole, allowedRoles, bypassApproval, bypassOnboarding, redirectTo]);
+
   if (loading || profileLoading || accessResult === null) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -121,13 +86,10 @@ export const RoleGuard = ({
     );
   }
 
-  // Redirect if not allowed
   if (!accessResult.allowed && accessResult.redirectTo) {
-    console.log(`[RoleGuard] Access denied to ${location.pathname}. Reason: ${accessResult.reason}. Redirecting to ${accessResult.redirectTo}`);
     return <Navigate to={accessResult.redirectTo} replace />;
   }
 
-  // Access granted
   return <>{children}</>;
 };
 

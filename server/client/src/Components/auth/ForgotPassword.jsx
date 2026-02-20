@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FaArrowLeft, FaEnvelope, FaMoon, FaSun } from 'react-icons/fa';
+import { FaArrowLeft, FaEnvelope } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../hooks/useTheme';
 import { Button } from '../ui/button';
@@ -16,7 +16,7 @@ export const ForgotPassword = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { resetPassword } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,19 +42,15 @@ export const ForgotPassword = () => {
     }),
   };
 
+  // Forgot password: dark mode only, no toggle
+  useEffect(() => {
+    setTheme('dark');
+  }, [setTheme]);
+
   return (
     <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
-      <button
-        type="button"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
-        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      >
-        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
-      </button>
       <div className="relative z-10 flex flex-1 min-h-0 flex-col items-center justify-center px-3 py-3 overflow-hidden">
-        <div className="w-full max-w-md flex flex-col gap-2 max-h-[96dvh]">
+        <div className="w-full max-w-md flex flex-col gap-2 max-h-[96dvh] overflow-hidden">
           <motion.div custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" className="shrink-0">
             <Card className="w-full max-w-sm mx-auto bg-card/80 backdrop-blur-xl border border-border shadow-xl rounded-2xl overflow-hidden shrink-0">
               <div className="p-3 sm:p-4 pb-3">

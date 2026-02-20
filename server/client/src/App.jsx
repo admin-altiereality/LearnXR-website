@@ -10,6 +10,7 @@ import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
 import { RoleGuard, TeacherGuard, AdminGuard, SuperAdminGuard, StudioGuard } from './Components/auth/RoleGuard';
 import { SecretBackendLogin } from './Components/auth/SecretBackendLogin';
+import { DemoPageLogin } from './Components/auth/DemoPageLogin';
 import { Signup } from './Components/auth/Signup';
 import { ErrorBoundary } from './Components/ErrorBoundary';
 import MinimalFooter from './Components/MinimalFooter';
@@ -444,6 +445,7 @@ function App() {
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/secretbackend" element={<SecretBackendLogin />} />
+                      <Route path="/demopage" element={<DemoPageLogin />} />
                       
                       {/* Landing page - redirects authenticated users to /lessons */}
                       <Route path="/" element={<SmartLanding />} />
@@ -491,24 +493,24 @@ function App() {
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
-                            <MainSection 
+                          <RoleGuard>
+                            <MainSection
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
                               className="w-full px-6"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       {/* Explore routes - Teachers, Schools, Admin only */}
                       <Route path="/explore" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <RoleGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/gallery" element={
@@ -582,12 +584,12 @@ function App() {
                       } />
                       <Route path="/history" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <RoleGuard>
                             <History 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -803,6 +805,7 @@ function App() {
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/secretbackend" element={<SecretBackendLogin />} />
+                      <Route path="/demopage" element={<DemoPageLogin />} />
                       
                       {/* Landing page - redirects authenticated users to /lessons */}
                       <Route path="/" element={<SmartLanding />} />
@@ -850,23 +853,23 @@ function App() {
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
-                            <MainSection 
+                          <RoleGuard>
+                            <MainSection
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
                               className="w-full absolute inset-0 min-h-screen"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <RoleGuard>
                             <Explore 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore/gallery" element={
@@ -940,12 +943,12 @@ function App() {
                       } />
                       <Route path="/history" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <RoleGuard>
                             <History 
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       

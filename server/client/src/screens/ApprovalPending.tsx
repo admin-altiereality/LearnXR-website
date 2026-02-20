@@ -41,13 +41,13 @@ const ApprovalPending = () => {
 
     // Redirect if profile doesn't require approval
     if (profile && !requiresApproval(profile.role)) {
-      navigate(getDefaultPage(profile.role));
+      navigate(getDefaultPage(profile.role, profile));
       return;
     }
 
     // Redirect if already approved
     if (profile?.approvalStatus === 'approved') {
-      navigate(getDefaultPage(profile.role));
+      navigate(getDefaultPage(profile.role, profile));
       return;
     }
   }, [user, profile, navigate]);

@@ -11,9 +11,7 @@ import {
     FaEyeSlash,
     FaGoogle,
     FaLock,
-    FaMoon,
     FaSchool,
-    FaSun,
     FaUser,
     FaUserGraduate
 } from 'react-icons/fa';
@@ -44,7 +42,7 @@ export const Signup = () => {
   const [step, setStep] = useState('role-select');
   const { signup, loginWithGoogle, user, profile, selectedRole, setSelectedRole } = useAuth();
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
 
   const roleOptions = [
     {
@@ -171,44 +169,40 @@ export const Signup = () => {
     return () => document.body.classList.remove('overflow-hidden');
   }, []);
 
+  // Signup: dark mode only, no toggle
+  useEffect(() => {
+    setTheme('dark');
+  }, [setTheme]);
+
   return (
-    <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
-      <button
-        type="button"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
-        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      >
-        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
-      </button>
-      <div className="relative z-10 flex flex-1 min-h-0 w-full overflow-hidden py-2 sm:py-3">
-        <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full px-3 sm:px-6">
-      <div className="w-full max-w-lg flex flex-col flex-1 min-h-0 gap-1.5 sm:gap-2 justify-center max-h-[96dvh]">
-        <motion.div
+    <FuturisticBackground className="min-h-[100dvh] w-screen flex flex-col overflow-x-hidden">
+      <div className="relative z-10 flex flex-1 w-full min-h-0 py-4 sm:py-6 md:py-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-center flex-1 min-h-0 w-full gap-6 md:gap-10 lg:gap-14 px-4 sm:px-6 md:px-8">
+          <motion.div
             custom={0}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
-            className="text-center shrink-0"
+            className="text-center md:text-left shrink-0 mb-2 md:mb-0"
           >
-            <h1 className="text-lg sm:text-xl font-bold text-foreground mb-0.5 font-display">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground mb-1 font-display">
               Join{' '}
-              <span style={learnXRFontStyle} className="text-lg sm:text-xl tracking-[0.12rem]">
+              <span style={learnXRFontStyle} className="text-xl sm:text-2xl md:text-3xl tracking-[0.12rem]">
                 <span className="text-foreground">Learn</span>
                 <span className="text-primary">XR</span>
                 <TrademarkSymbol className="ml-1" />
               </span>
             </h1>
-            <p className="text-xs text-muted-foreground">Start your immersive learning journey</p>
+            <p className="text-sm text-muted-foreground">Start your immersive learning journey</p>
           </motion.div>
 
+          <div className="w-full max-w-md sm:max-w-lg md:max-w-xl flex flex-col flex-1 min-h-0 justify-center mx-auto md:mx-0">
           <AnimatePresence mode="wait">
             {step === 'role-select' ? (
-              <motion.div key="role-select" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 flex-1 min-h-0 flex flex-col">
-                <Card className="w-full mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col flex-1 min-h-0">
+              <motion.div key="role-select" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 flex flex-col">
+                <Card className="w-full relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-                  <div className="relative z-10 p-2.5 sm:p-3 pb-1.5 flex-1 min-h-0 flex flex-col">
+                  <div className="relative z-10 p-4 sm:p-5 md:p-6 pb-2 flex flex-col">
                     <CardHeader className="p-0 pb-1.5 shrink-0">
                       <CardTitle className="text-base sm:text-lg text-center text-foreground">Choose Your Role</CardTitle>
                       <CardDescription className="text-center text-xs text-muted-foreground">Select how you'll be using LearnXR</CardDescription>
@@ -274,10 +268,10 @@ export const Signup = () => {
 
                     </div>
                   </div>
-                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
-                    <p className="text-muted-foreground text-center text-xs sm:text-sm">
+                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-3 sm:p-4 shrink-0">
+                    <p className="text-muted-foreground text-center text-sm">
                       Already have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-xs sm:text-sm" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-sm" asChild>
                         <Link to="/login">Sign In</Link>
                       </Button>
                     </p>
@@ -285,10 +279,10 @@ export const Signup = () => {
                 </Card>
               </motion.div>
             ) : (
-              <motion.div key="signup-form" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 flex-1 min-h-0 flex flex-col">
-                <Card className="w-full max-w-sm mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col min-h-0 flex-1">
+              <motion.div key="signup-form" custom={1} variants={fadeUpVariants} initial="hidden" animate="visible" exit="exit" className="w-full min-w-0 flex flex-col">
+                <Card className="w-full mx-auto relative rounded-2xl sm:rounded-3xl border border-border bg-card/80 backdrop-blur-2xl shadow-xl overflow-hidden flex flex-col">
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 pointer-events-none" />
-                  <div className="relative z-10 p-2.5 sm:p-3 pb-1.5 flex-1 min-h-0 flex flex-col">
+                  <div className="relative z-10 p-4 sm:p-5 md:p-6 pb-2 flex flex-col">
                     <button type="button" onClick={handleBackToRoleSelect} className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors mb-2 -ml-1 text-xs shrink-0">
                       <FaArrowLeft className="h-3.5 w-3.5" />
                       Change role
@@ -428,10 +422,10 @@ export const Signup = () => {
                     </form>
                   </div>
 
-                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
-                    <p className="text-muted-foreground text-center text-xs sm:text-sm">
+                  <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-3 sm:p-4 shrink-0">
+                    <p className="text-muted-foreground text-center text-sm">
                       Already have an account?{' '}
-                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-xs sm:text-sm" asChild>
+                      <Button variant="link" className="px-1 h-auto text-primary font-medium hover:text-primary/90 text-sm" asChild>
                         <Link to="/login">Sign In</Link>
                       </Button>
                     </p>
@@ -440,7 +434,7 @@ export const Signup = () => {
               </motion.div>
             )}
           </AnimatePresence>
-      </div>
+          </div>
         </div>
       </div>
     </FuturisticBackground>
