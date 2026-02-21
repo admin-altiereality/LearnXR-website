@@ -167,6 +167,7 @@ export function StudentScreen360Preview({
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="animate-pulse text-muted-foreground text-xs">Loading view…</div>
           </div>
+          
         ) : (
           <Canvas
             camera={{ position: [0, 0, 0], fov: 90, near: 0.1, far: 1000 }}
