@@ -5,7 +5,6 @@ import { useAuth } from '../contexts/AuthContext';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { FaStar } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
 import LinkedInActivity from '../Components/LinkedInActivity';
 
@@ -260,47 +259,51 @@ const Landing = () => {
   };
 
   return (
-    <div className="flex h-screen w-full relative" id="main2">
-      {/* 3D Earth Canvas Background */}
-      <div className="w-full fixed h-screen -z-10" id="canvasContainer">
+    <div className="flex min-h-[100dvh] h-screen w-full max-w-[100vw] relative overflow-x-hidden" id="main2">
+      {/* 3D Earth Canvas Background - fallback gradient shows if WebGL is slow or fails */}
+      <div
+        id="canvasContainer"
+        className="w-full h-[100dvh] sm:h-screen min-h-[100dvh] fixed inset-0 z-0 bg-gradient-to-b from-slate-950 via-indigo-950/40 to-slate-950"
+        aria-hidden
+      >
         <canvas ref={canvasRef}></canvas>
       </div>
 
-      {/* Custom Cursor */}
+      {/* Custom Cursor - hidden on touch/mobile */}
       <div
         ref={cursorRef}
-        className="fixed z-[100] w-20 h-20 opacity-30 bg-purple-600 rounded-full flex items-center justify-center pointer-events-none"
+        className="fixed z-[100] w-16 h-16 sm:w-20 sm:h-20 opacity-30 bg-purple-600 rounded-full hidden sm:flex items-center justify-center pointer-events-none"
         id="cursur"
         style={{ transform: 'translate(-50%, -50%)' }}
       ></div>
 
-      {/* Main Content */}
+      {/* Main Content - sits above canvas so globe shows through transparent areas */}
       <div
         ref={mainRef}
         id="main"
-        className="absolute h-screen w-full bg-transparent overflow-y-scroll"
-        style={{ scrollBehavior: 'smooth' }}
+        className="absolute inset-0 h-[100dvh] sm:h-screen w-full max-w-[100vw] bg-transparent overflow-y-auto overflow-x-hidden overscroll-y-auto z-[1]"
+        style={{ scrollBehavior: 'smooth', WebkitOverflowScrolling: 'touch' }}
       >
         {/* Page 1: Hero Section */}
-        <div id="page1" className="w-full h-screen relative">
+        <div id="page1" className="w-full max-w-full min-h-[100dvh] sm:min-h-screen relative">
           <div
             id="page1-content"
-            className="h-[100vmin] z-10 flex flex-col relative items-center justify-between"
+            className="min-h-[100dvh] sm:min-h-screen z-10 flex flex-col relative items-center justify-between py-4 sm:py-8 px-3 sm:px-4"
           >
-            <nav className="h-[100px] w-full flex items-center justify-between p-16 z-0">
-              <div className="h-15 w-20"></div>
+            <nav className="w-full max-w-full flex items-center justify-between px-3 sm:px-8 md:px-12 lg:p-16 z-10">
+              <div className="h-9 w-14 sm:h-15 sm:w-20 flex-shrink-0" aria-hidden></div>
               <button
                 onClick={handleLogin}
-                className="px-6 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-lg"
+                className="px-4 py-2 sm:px-6 sm:py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
               >
                 Login
               </button>
             </nav>
 
-            <div className="absolute overflow-hidden">
+            <div className="absolute overflow-hidden left-1/2 -translate-x-1/2 top-[18vh] sm:top-[15vh] md:top-[12vh]">
               <motion.img
                 id="vr-img"
-                className="z-[9] h-[50vh] w-[40vw] translate-y-[0vh]"
+                className="z-[9] h-[28vh] w-[75vw] max-w-[320px] sm:h-[40vh] sm:w-[55vw] sm:max-w-[400px] md:h-[50vh] md:w-[40vw] md:max-w-none object-contain translate-y-0"
                 src="/img/vr image.png"
                 alt="VR"
                 loading="lazy"
@@ -309,10 +312,10 @@ const Landing = () => {
                 transition={{ duration: 2 }}
               />
             </div>
-            <div className="absolute overflow-hidden top-[60vh] right-10">
+            <div className="absolute overflow-hidden top-[55vh] right-2 sm:right-6 md:right-10">
               <motion.img
                 id="vr-img2"
-                className="w-[12vw] translate-y-[0vh]"
+                className="w-[18vw] min-w-[60px] max-w-[100px] sm:w-[14vw] md:w-[12vw] translate-y-0"
                 src="/img/astro.png"
                 alt="Astro"
                 loading="lazy"
@@ -324,9 +327,9 @@ const Landing = () => {
 
             <div
               id="heading"
-              className="overflow-hidden flex flex-col items-center justify-center h-fit relative"
+              className="overflow-hidden flex flex-col items-center justify-center flex-1 relative px-1 sm:px-4 w-full max-w-full min-w-0"
             >
-              <h1 className="text-white text-[14rem] tracking-[0.9rem] inline-block overflow-hidden h-fit leading-none" style={learnXRFontStyle}>
+              <h1 className="text-white inline-block overflow-visible h-fit leading-none text-3xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl 2xl:text-[14rem] tracking-tight sm:tracking-wide lg:tracking-[0.5rem] xl:tracking-[0.9rem] text-center break-words max-w-full [line-height:1.15]" style={learnXRFontStyle}>
                 <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0 }}>L</motion.span>
                 <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}>e</motion.span>
                 <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>a</motion.span>
@@ -334,25 +337,21 @@ const Landing = () => {
                 <motion.span initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>n</motion.span>
                 <motion.span className="text-purple-700" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }}>X</motion.span>
                 <motion.span className="text-purple-700" initial={{ y: 100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.6 }}>R</motion.span>
-                <span id="tr" className="float-end ml-1">
+                <span id="tr" className="inline ml-0.5 sm:ml-1 align-baseline overflow-visible">
                   <TrademarkSymbol className="text-white" />
                 </span>
               </h1>
-              <div className="hover-cont flex gap-10 mt-8">
-                <div className="hover">
-                  <Link to="/individual" className="text-white text-xl hover:text-purple-400 transition-colors font-medium">
-                    LearnXR for Individuals
-                  </Link>
-                </div>
-                <div className="hover">
-                  <Link to="/school" className="text-white text-xl hover:text-purple-400 transition-colors font-medium">
-                    LearnXR Labs for Schools
-                  </Link>
-                </div>
+              <div className="flex flex-col sm:flex-row gap-4 sm:gap-10 mt-6 sm:mt-8 text-center">
+                <Link to="/individual" className="text-white text-base sm:text-xl hover:text-purple-400 transition-colors font-medium touch-manipulation">
+                  LearnXR for Individuals
+                </Link>
+                <Link to="/school" className="text-white text-base sm:text-xl hover:text-purple-400 transition-colors font-medium touch-manipulation">
+                  LearnXR Labs for Schools
+                </Link>
               </div>
             </div>
             <motion.p
-              className="text-white text-xl font-medium tracking-wide"
+              className="text-white text-base sm:text-xl font-medium tracking-wide px-2 pb-4 sm:pb-0"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.8 }}
@@ -365,32 +364,32 @@ const Landing = () => {
         {/* Page 2: Who We Are */}
         <div
           id="page2"
-          className="w-full h-[90vmin] flex justify-center relative items-center flex-col"
+          className="w-full max-w-full min-h-[85vmin] sm:min-h-[90vmin] flex justify-center relative items-center flex-col px-4 sm:px-6 md:px-8 py-12 sm:py-16 box-border"
         >
-          <div className="absolute right-[1rem] bottom-0 w-[43vw]">
+          <div className="absolute right-0 bottom-0 w-[85vw] max-w-[400px] sm:w-[55vw] md:w-[43vw] opacity-90">
             <img
               id="vr-imgg3"
-              className="w-[100%]"
+              className="w-full h-auto"
               src="/img/vr image3.jpg"
               alt="VR Experience"
               loading="lazy"
             />
           </div>
-          <div id="heading" className="overflow-hidden h-fit mb-4">
-            <h1 className="text-[2rem] text-purple-700 z-10 font-semibold tracking-wide">WHO WE ARE</h1>
+          <div id="heading" className="overflow-hidden h-fit mb-4 z-10">
+            <h1 className="text-xl sm:text-2xl md:text-[2rem] text-purple-700 z-10 font-semibold tracking-wide text-center sm:text-left">WHO WE ARE</h1>
           </div>
-          <div id="page2-para" className="">
-            <div id="elem" className="text-white text-[3rem] overflow-hidden font-medium leading-tight">
+          <div id="page2-para" className="z-10 text-center sm:text-left">
+            <div id="elem" className="text-white text-xl sm:text-2xl md:text-[3rem] overflow-hidden font-medium leading-tight">
               <h1>
                 <span style={learnXRFontStyle}>LearnXR</span> by Altie Reality is proudly funded by Meta Inc
               </h1>
             </div>
-            <div id="elem" className="text-white text-[3rem] overflow-hidden font-medium leading-tight">
+            <div id="elem" className="text-white text-xl sm:text-2xl md:text-[3rem] overflow-hidden font-medium leading-tight mt-2">
               <h1>through Meta XR Startup program</h1>
             </div>
           </div>
-          <div id="lower" className="overflow-hidden">
-            <h4 className="text-white text-2xl mt-4 font-medium">
+          <div id="lower" className="overflow-hidden z-10 mt-4">
+            <h4 className="text-white text-lg sm:text-xl md:text-2xl font-medium text-center sm:text-left">
               In association with iStart & SPTBI
             </h4>
           </div>
@@ -399,14 +398,14 @@ const Landing = () => {
         {/* Page 3: Content Slider */}
         <div
           id="page3"
-          className="w-full h-screen flex flex-col justify-center items-center"
+          className="w-full max-w-full min-h-screen flex flex-col justify-center items-center px-3 sm:px-6 py-8 sm:py-16 box-border"
         >
-          <p className="text-purple-700 text-[2rem] font-semibold tracking-wide">CONTENT</p>
-          <p className="text-white text-6xl pb-10 font-medium leading-tight">Content covered upto k-12</p>
+          <p className="text-purple-700 text-xl sm:text-2xl font-semibold tracking-wide text-center">CONTENT</p>
+          <p className="text-white text-2xl sm:text-4xl md:text-5xl lg:text-6xl pb-6 sm:pb-10 font-medium leading-tight text-center">Content covered upto k-12</p>
 
-          <div className="page3-slider-container w-full h-[100vmin] relative">
-            <div className="left-arrow cursor-pointer" onClick={prevSlide}>
-              <i className="fa fa-angle-left text-white text-2xl"></i>
+          <div className="page3-slider-container w-full max-w-full min-h-[65vmin] sm:min-h-[70vmin] md:h-[100vmin] relative box-border">
+            <div className="left-arrow cursor-pointer touch-manipulation py-4" onClick={prevSlide} aria-label="Previous slide">
+              <i className="fa fa-angle-left text-white text-2xl sm:text-3xl"></i>
             </div>
             <div className="page3-slider-content" id="slider-content">
               {contentSlides.map((slide, index) => (
@@ -424,16 +423,16 @@ const Landing = () => {
                   </div>
                   <div className="card-sections">
                     <div className="lower-section">
-                      <div className="card-caption text-[5vmin] font-semibold">{slide.title}</div>
-                      <h4 className="text-[2.2vmin] font-normal leading-relaxed">{slide.description}</h4>
-                      <div className="card-button tracking-wide font-medium">learn more</div>
+                      <div className="card-caption text-[4vmin] sm:text-[5vmin] font-semibold">{slide.title}</div>
+                      <h4 className="text-[2vmin] sm:text-[2.2vmin] font-normal leading-relaxed line-clamp-3 sm:line-clamp-none">{slide.description}</h4>
+                      <div className="card-button tracking-wide font-medium text-sm sm:text-base">learn more</div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="right-arrow cursor-pointer" onClick={nextSlide}>
-              <i className="fa fa-angle-right text-white text-2xl"></i>
+            <div className="right-arrow cursor-pointer touch-manipulation py-4" onClick={nextSlide} aria-label="Next slide">
+              <i className="fa fa-angle-right text-white text-2xl sm:text-3xl"></i>
             </div>
           </div>
         </div>
@@ -441,19 +440,19 @@ const Landing = () => {
         {/* Page 4: LinkedIn Activity */}
         <div
           id="page4"
-          className="h-fit flex justify-between px-[5vw] relative pt-[5rem]"
+          className="w-full max-w-full h-fit flex flex-col lg:flex-row justify-between gap-8 lg:gap-0 px-4 sm:px-6 md:px-[5vw] relative pt-10 sm:pt-[5rem] pb-12 box-border"
         >
-          <div id="page4-left" className="w-[45%] h-fit sticky top-[10vh] left-0">
+          <div id="page4-left" className="w-full lg:w-[45%] h-fit lg:sticky lg:top-[10vh] left-0 z-10">
             <div className="overflow-hidden">
-              <h3 className="text-purple-700 pb-6 overflow-hidden text-[2.2rem] font-semibold">COMPANY ACTIVITY</h3>
+              <h3 className="text-purple-700 pb-4 sm:pb-6 overflow-hidden text-xl sm:text-2xl md:text-[2.2rem] font-semibold">COMPANY ACTIVITY</h3>
             </div>
             <div className="overflow-hidden">
-              <h1 className="text-white overflow-hidden text-6xl font-medium leading-tight">Latest from Altie Reality</h1>
+              <h1 className="text-white overflow-hidden text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-medium leading-tight">Latest from Altie Reality</h1>
             </div>
-            <img id="vr-img4" src="/img/vr-img3.png" alt="VR" loading="lazy" />
+            <img id="vr-img4" src="/img/vr-img3.png" alt="VR" loading="lazy" className="mt-4 w-full max-w-[320px] sm:max-w-none" />
           </div>
 
-          <div id="page4-right" className="flex flex-col">
+          <div id="page4-right" className="flex flex-col w-full lg:w-[55%] min-w-0">
             <LinkedInActivity limit={6} autoRefresh={true} refreshInterval={5 * 60 * 1000} />
           </div>
         </div>
@@ -461,81 +460,83 @@ const Landing = () => {
         {/* Page 5: Partners */}
         <div
           id="page5"
-          className="w-full h-fit flex flex-col relative items-center pt-[7rem]"
+          className="w-full max-w-full h-fit flex flex-col relative items-center pt-12 sm:pt-[7rem] px-4 pb-10 box-border"
         >
-          <p className="text-white text-[3rem] mt-10 mb-10 font-semibold tracking-wide">IN ASSOCIATION WITH</p>
-          <div className="flex w-full justify-evenly pb-10">
-            <img className="w-[11%] h-[11%] object-contain" src="/img/client-1.png" alt="Partner" loading="lazy" />
-            <img className="w-[11%] h-[11%] object-contain" src="/img/client-2.png" alt="Partner" loading="lazy" />
-            <img className="w-[11%] h-[11%] object-contain" src="/img/client-3.png" alt="Partner" loading="lazy" />
-            <img className="w-[11%] h-[11%] object-contain" src="/img/client-4.png" alt="Partner" loading="lazy" />
-            <img className="w-[11%] h-[13%] object-contain" src="/img/sptbilogo.png" alt="SPTBI" loading="lazy" />
+          <p className="text-white text-xl sm:text-2xl md:text-[3rem] mt-6 sm:mt-10 mb-6 sm:mb-10 font-semibold tracking-wide text-center">IN ASSOCIATION WITH</p>
+          <div className="flex flex-wrap w-full justify-center sm:justify-evenly items-center gap-6 sm:gap-4 pb-10">
+            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-1.png" alt="Partner" loading="lazy" />
+            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-2.png" alt="Partner" loading="lazy" />
+            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-3.png" alt="Partner" loading="lazy" />
+            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-4.png" alt="Partner" loading="lazy" />
+            <img className="w-[28%] min-w-[80px] max-w-[140px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/sptbilogo.png" alt="SPTBI" loading="lazy" />
           </div>
         </div>
 
         {/* Footer */}
-        <div id="footer" className="w-full h-fit bg-black">
-          <div className="flex flex-row justify-between py-[2.5vw] px-[5.5vw] w-full h-fit">
+        <div id="footer" className="w-full max-w-full h-fit bg-black box-border">
+          <div className="flex flex-col lg:flex-row justify-between gap-8 lg:gap-0 py-8 sm:py-[2.5vw] px-4 sm:px-[5.5vw] w-full h-fit">
             <div id="footer1-left">
               <div className="overflow-hidden">
-                <h1 className="text-purple-700 text-[2.5vw] font-semibold">Contact Us</h1>
+                <h1 className="text-purple-700 text-lg sm:text-xl md:text-[2.5vw] font-semibold">Contact Us</h1>
               </div>
-              <p className="text-white mt-4 text-[1.3rem] leading-relaxed">
+              <p className="text-white mt-4 text-sm sm:text-base md:text-[1.3rem] leading-relaxed">
                 +91 8619953434<br />
                 +91 9145822691
               </p>
             </div>
-            <div id="footer-right" className="flex w-[25%] justify-center">
-              <div className="flex flex-col justify-between gap-2">
-                <a href="https://www.youtube.com/channel/UCXhsQN9jsazg4FDoIuSseBg" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Youtube</a>
-                <a href="https://www.facebook.com/altiereality" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Facebook</a>
-                <a href="https://www.instagram.com/learn__xr/" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Instagram</a>
-                <a href="https://www.linkedin.com/company/altie-reality/mycompany/" className="text-white text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+            <div id="footer-right" className="flex w-full lg:w-[25%] justify-start lg:justify-center mt-4 lg:mt-0">
+              <div className="flex flex-col gap-2">
+                <a href="https://www.youtube.com/channel/UCXhsQN9jsazg4FDoIuSseBg" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Youtube</a>
+                <a href="https://www.facebook.com/altiereality" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Facebook</a>
+                <a href="https://www.instagram.com/learn__xr/" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Instagram</a>
+                <a href="https://www.linkedin.com/company/altie-reality/mycompany/" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">LinkedIn</a>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-row justify-between py-[2.5vw] px-[5.5vw]">
+          <div className="flex flex-col lg:flex-row justify-between gap-8 lg:gap-0 py-6 sm:py-[2.5vw] px-4 sm:px-[5.5vw]">
             <div id="footer2-left">
               <div className="overflow-hidden">
-                <h3 className="text-purple-700 text-[2.5vw] font-semibold">Address</h3>
+                <h3 className="text-purple-700 text-lg sm:text-xl md:text-[2.5vw] font-semibold">Address</h3>
               </div>
-              <p className="text-white text-[1.3rem] leading-relaxed">
+              <p className="text-white text-sm sm:text-base md:text-[1.3rem] leading-relaxed mt-2">
                 41,42 Bhamashah Technohub <br />
-                , Santhan Path, Malviya Nagar , Jaipur 302007
+                Santhan Path, Malviya Nagar , Jaipur 302007
               </p>
             </div>
-            <div id="footer2-right">
+            <div id="footer2-right" className="mt-4 lg:mt-0">
               <div className="overflow-hidden">
-                <h3 className="text-[2.5vw] text-purple-700 font-semibold">Email Us</h3>
+                <h3 className="text-purple-700 text-lg sm:text-xl md:text-[2.5vw] font-semibold">Email Us</h3>
               </div>
-              <p className="text-white text-[1.3rem]">admin@altiereality.com</p>
+              <p className="text-white text-sm sm:text-base md:text-[1.3rem] mt-2">admin@altiereality.com</p>
             </div>
           </div>
-          
-          <p className="text-white flex items-center justify-center pb-4 text-2xl font-medium">Get it on</p>
-          <div className="flex w-full justify-center items-center gap-10 mb-[5rem]">
+
+          <p className="text-white flex items-center justify-center pb-4 text-lg sm:text-2xl font-medium pt-6">Get it on</p>
+          <div className="flex w-full justify-center items-center gap-6 sm:gap-10 mb-8 sm:mb-[5rem]">
             <a
               href="https://play.google.com/store/apps/details?id=com.altiereality1.lexrn&hl=en&gl=US&pli=1"
-              className="text-white text-3xl hover:text-purple-400 transition-colors"
+              className="text-white text-2xl sm:text-3xl hover:text-purple-400 transition-colors touch-manipulation"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="Google Play"
             >
               <i className="fa-brands fa-android"></i>
             </a>
             <a
               href="https://sidequestvr.com/app/17713/lexrn-app-for-students"
-              className="text-white w-[3%] hover:opacity-80 transition-opacity"
+              className="text-white w-10 sm:w-12 md:w-[3%] max-w-[48px] hover:opacity-80 transition-opacity touch-manipulation"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="SideQuest"
             >
-              <img src="/img/sidequest.png" alt="SideQuest" loading="lazy" />
+              <img src="/img/sidequest.png" alt="SideQuest" loading="lazy" className="w-full h-auto" />
             </a>
-            <a href="" className="text-white text-3xl hover:text-purple-400 transition-colors">
+            <a href="#" className="text-white text-2xl sm:text-3xl hover:text-purple-400 transition-colors touch-manipulation" aria-label="App Store">
               <i className="fa-brands fa-apple"></i>
             </a>
           </div>
-          <p className="flex items-center justify-center text-white text-lg">&copy; Altie Reality 2020-2025</p>
+          <p className="flex items-center justify-center text-white text-sm sm:text-lg pb-6">&copy; Altie Reality 2020-2025</p>
         </div>
       </div>
     </div>

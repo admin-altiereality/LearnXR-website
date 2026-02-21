@@ -62,20 +62,20 @@ const LinkedInActivity: React.FC<LinkedInActivityProps> = ({
   }
 
   return (
-    <div className="w-full">
-      <div className="flex flex-col gap-6">
+    <div className="w-full max-w-full min-w-0">
+      <div className="flex flex-col gap-4 sm:gap-6">
         {posts.map((post, index) => (
           <motion.div
             key={post.id}
-            className="rounded-lg w-[35vw] flex flex-col p-4 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 transition-all group"
+            className="rounded-xl w-full max-w-full sm:w-[35vw] flex flex-col p-4 sm:p-5 bg-white/5 backdrop-blur-sm border border-white/10 hover:bg-white/10 transition-all group box-border overflow-hidden"
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: index * 0.1 }}
           >
             {/* Post Header */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center overflow-hidden">
+            <div className="flex items-center gap-3 mb-3 sm:mb-4 min-w-0">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center overflow-hidden flex-shrink-0">
                 {post.author.imageUrl ? (
                   <img
                     src={post.author.imageUrl}
@@ -83,56 +83,57 @@ const LinkedInActivity: React.FC<LinkedInActivityProps> = ({
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <FaLinkedin className="text-white text-xl" />
+                  <FaLinkedin className="text-white text-lg sm:text-xl" />
                 )}
               </div>
-              <div className="flex-1">
-                <h4 className="text-white font-semibold">{post.author.name}</h4>
-                <p className="text-white/60 text-sm">{formatRelativeTime(post.timestamp)}</p>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-white font-semibold text-sm sm:text-base truncate">{post.author.name}</h4>
+                <p className="text-white/60 text-xs sm:text-sm">{formatRelativeTime(post.timestamp)}</p>
               </div>
               <a
                 href={post.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-white/60 hover:text-purple-400 transition-colors"
+                className="text-white/60 hover:text-purple-400 transition-colors flex-shrink-0 p-2 touch-manipulation"
                 onClick={(e) => e.stopPropagation()}
+                aria-label="Open on LinkedIn"
               >
                 <FaExternalLinkAlt className="text-sm" />
               </a>
             </div>
 
             {/* Post Content */}
-            <div className="mb-4">
-              <p className="text-white/90 text-[2vmin] leading-relaxed mb-4 line-clamp-4">
+            <div className="mb-3 sm:mb-4 min-w-0">
+              <p className="text-white/90 text-sm sm:text-[2vmin] leading-relaxed mb-3 sm:mb-4 line-clamp-4 break-words">
                 {post.text}
               </p>
 
               {/* Post Image */}
               {post.imageUrl && (
-                <div className="rounded-lg overflow-hidden mb-4">
+                <div className="rounded-lg overflow-hidden mb-3 sm:mb-4">
                   <img
                     src={post.imageUrl}
                     alt="Post content"
-                    className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="w-full h-40 sm:h-48 object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
                   />
                 </div>
               )}
             </div>
 
-            {/* Post Stats */}
-            <div className="flex items-center justify-between text-white/60 text-sm pt-3 border-t border-white/10">
-              <div className="flex items-center gap-4">
+            {/* Post Stats - stacks on mobile so "View on LinkedIn" stays inside card */}
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 pt-3 border-t border-white/10">
+              <div className="flex items-center gap-4 text-white/60 text-xs sm:text-sm">
                 <div className="flex items-center gap-1">
-                  <FaHeart className="text-red-400" />
+                  <FaHeart className="text-red-400 flex-shrink-0" />
                   <span>{post.likes}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <FaComment />
+                  <FaComment className="flex-shrink-0" />
                   <span>{post.comments}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <FaShare />
+                  <FaShare className="flex-shrink-0" />
                   <span>{post.shares}</span>
                 </div>
               </div>
@@ -140,11 +141,11 @@ const LinkedInActivity: React.FC<LinkedInActivityProps> = ({
                 href={post.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1 text-xs"
+                className="text-purple-400 hover:text-purple-300 transition-colors inline-flex items-center gap-1.5 text-xs font-medium touch-manipulation w-fit"
                 onClick={(e) => e.stopPropagation()}
               >
                 View on LinkedIn
-                <FaExternalLinkAlt className="text-xs" />
+                <FaExternalLinkAlt className="text-xs flex-shrink-0" />
               </a>
             </div>
           </motion.div>
@@ -152,18 +153,18 @@ const LinkedInActivity: React.FC<LinkedInActivityProps> = ({
       </div>
 
       {/* View More Link */}
-      <div className="mt-8 text-center">
+      <div className="mt-6 sm:mt-8 text-center px-2">
         <motion.a
           href="https://www.linkedin.com/company/altie-reality/mycompany/"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-purple-700/20 hover:bg-purple-700/30 border border-purple-700/50 text-white font-medium transition-all"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-4 sm:px-6 py-3 rounded-lg bg-purple-700/20 hover:bg-purple-700/30 border border-purple-700/50 text-white text-sm sm:text-base font-medium transition-all touch-manipulation"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          <FaLinkedin className="text-xl" />
-          View All Updates on LinkedIn
-          <FaExternalLinkAlt className="text-sm" />
+          <FaLinkedin className="text-lg sm:text-xl flex-shrink-0" />
+          <span className="truncate">View All Updates on LinkedIn</span>
+          <FaExternalLinkAlt className="text-sm flex-shrink-0" />
         </motion.a>
       </div>
     </div>

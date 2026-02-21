@@ -14,6 +14,9 @@ import { useClassSession } from '../../contexts/ClassSessionContext';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDocs, getDoc, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
+import { removeStudentFromSession } from '../../services/classSessionService';
+import { getApiBaseUrl } from '../../utils/apiConfig';
+import { StudentScreen360Preview } from '../../Components/StudentScreen360Preview';
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
 import { Link, useNavigate } from 'react-router-dom';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
@@ -37,20 +40,18 @@ import {
   FaUserCheck,
   FaArrowRight,
   FaBell,
-  FaClock,
   FaShareAlt,
   FaLock,
   FaUnlock,
   FaFilter,
   FaChartBar,
   FaTrophy,
-  FaExclamationTriangle,
-  FaRobot,
   FaFlask,
   FaMagic,
   FaVideo,
   FaCopy,
   FaStopCircle,
+  FaUserMinus,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { motion } from 'framer-motion';
@@ -169,6 +170,10 @@ const TeacherDashboard = () => {
   const [selectedLaunchChapterId, setSelectedLaunchChapterId] = useState<string>('');
   const [selectedLaunchTopicId, setSelectedLaunchTopicId] = useState<string>('');
   const [launchLessonModalLoading, setLaunchLessonModalLoading] = useState(false);
+  const [removingStudentUid, setRemovingStudentUid] = useState<string | null>(null);
+  const [studentScreensSkyboxUrl, setStudentScreensSkyboxUrl] = useState<string | null>(null);
+  const [studentScreensSkyboxLoading, setStudentScreensSkyboxLoading] = useState(false);
+  const [selectedStudentForScreen, setSelectedStudentForScreen] = useState<string | null>(null);
 
   // Get all classes (managed + shared)
   const allClasses = useMemo(() => {
@@ -621,6 +626,21 @@ const TeacherDashboard = () => {
     if (ok) toast.success('Session ended');
   }, [endSession]);
 
+  const handleRemoveStudent = useCallback(
+    async (studentUid: string) => {
+      if (!activeSessionId || !user?.uid) return;
+      setRemovingStudentUid(studentUid);
+      try {
+        const ok = await removeStudentFromSession(activeSessionId, user.uid, studentUid);
+        if (ok) toast.success('Student removed from session');
+        else toast.error('Failed to remove student');
+      } finally {
+        setRemovingStudentUid(null);
+      }
+    },
+    [activeSessionId, user?.uid]
+  );
+
   // Open the launched lesson in Krpano so the teacher can control where the class looks (drag the 360° view)
   const [openLessonToControlLoading, setOpenLessonToControlLoading] = useState(false);
   const openLessonToControlView = useCallback(async () => {
@@ -718,6 +738,42 @@ const TeacherDashboard = () => {
       setOpenLessonToControlLoading(false);
     }
   }, [activeSession?.launched_lesson, activeSessionId, navigate]);
+
+  // Fetch skybox URL for "Student screens" thumbnails when there are students (with or without view yet)
+  useEffect(() => {
+    const launched = activeSession?.launched_lesson;
+    if (!launched || progressList.length === 0) {
+      setStudentScreensSkyboxUrl(null);
+      return;
+    }
+    let cancelled = false;
+    setStudentScreensSkyboxLoading(true);
+    (async () => {
+      try {
+        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId: launched.chapter_id,
+          topicId: launched.topic_id,
+          lang: 'en',
+        });
+        if (cancelled) return;
+        const topic = bundle.chapter?.topics?.find((t: any) => t.topic_id === launched.topic_id) || bundle.chapter?.topics?.[0];
+        const url =
+          (bundle.skybox as any)?.imageUrl ||
+          (bundle.skybox as any)?.file_url ||
+          (topic as any)?.skybox_url ||
+          '';
+        setStudentScreensSkyboxUrl(url || null);
+      } catch {
+        if (!cancelled) setStudentScreensSkyboxUrl(null);
+      } finally {
+        if (!cancelled) setStudentScreensSkyboxLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSession?.launched_lesson, progressList.length]);
 
   // Update stats
   useEffect(() => {
@@ -831,23 +887,27 @@ const TeacherDashboard = () => {
         </div>
 
         {/* Class Session - Launch lesson to connected headsets */}
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
-            <FaVideo className="text-primary" />
-            Class Launch
-          </h2>
-          <Card className="border border-border bg-card max-w-2xl">
-            <CardContent className="p-6">
+        <section className="mb-8 md:mb-10" aria-labelledby="class-launch-heading">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <h2 id="class-launch-heading" className="text-xl sm:text-2xl font-semibold text-foreground flex items-center gap-2">
+              <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10 border border-primary/20">
+                <FaVideo className="text-primary w-5 h-5" />
+              </span>
+              Class Launch
+            </h2>
+          </div>
+          <Card className="border border-border bg-card shadow-sm overflow-hidden max-w-6xl w-full">
+            <CardContent className="p-4 sm:p-6 lg:p-8">
               {!activeSessionId ? (
-                <>
-                  <p className="text-muted-foreground text-sm mb-4">
+                <div className="flex flex-col gap-4 sm:gap-6">
+                  <p className="text-muted-foreground text-sm sm:text-base max-w-xl">
                     Start a session and share the code with students. When you launch a lesson, everyone in the session will receive it on their device.
                   </p>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="min-w-[200px]">
-                      <label className="text-xs font-medium text-muted-foreground block mb-1">Class</label>
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
+                    <div className="w-full sm:min-w-[220px] sm:max-w-[280px]">
+                      <label className="text-xs font-medium text-muted-foreground block mb-1.5">Class</label>
                       <Select value={sessionClassId} onValueChange={setSessionClassId}>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select class" />
                         </SelectTrigger>
                         <SelectContent>
@@ -862,140 +922,337 @@ const TeacherDashboard = () => {
                     <Button
                       onClick={handleStartSession}
                       disabled={sessionContextLoading || allClasses.length === 0}
+                      className="w-full sm:w-auto shrink-0"
                     >
                       {sessionContextLoading ? 'Starting…' : 'Start class session'}
                     </Button>
                   </div>
-                </>
+                </div>
               ) : (
                 <>
-                  <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-                    <p className="text-muted-foreground text-sm">Session active. Students can join with this code:</p>
-                    <Button variant="outline" size="sm" onClick={leaveSessionAsTeacher}>
-                      Leave session (local)
-                    </Button>
-                  </div>
-                  <div
-                    className="flex items-center gap-3 p-4 rounded-lg bg-primary/10 border border-primary/30 mb-4 cursor-pointer hover:bg-primary/15 transition-colors"
-                    onClick={copySessionCode}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => e.key === 'Enter' && copySessionCode()}
-                  >
-                    <span className="font-mono text-2xl font-bold tracking-widest text-primary">
-                      {activeSession?.session_code ?? '—'}
-                    </span>
-                    <FaCopy className="text-muted-foreground shrink-0" />
-                    <span className="text-xs text-muted-foreground">Click to copy</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    To control where students look: open the lesson in the 360° player and drag the view — students will follow your view in real time.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => setLaunchLessonModalOpen(true)} className="gap-2">
-                      <FaVideo className="w-4 h-4" />
-                      Launch lesson to class
-                    </Button>
-                    {activeSession?.launched_lesson && (
-                      <Button
-                        variant="outline"
-                        className="gap-2 border-primary/50 text-primary hover:bg-primary/10"
-                        onClick={openLessonToControlView}
-                        disabled={openLessonToControlLoading}
-                        title="Open the launched lesson so you can direct the class view by dragging the 360° scene"
-                      >
-                        {openLessonToControlLoading ? (
-                          <>Loading…</>
-                        ) : (
-                          <>
-                            <FaArrowRight className="w-4 h-4" />
-                            Open lesson to control class view
-                          </>
+                  {/* Two-column layout: Left = controls + students, Right = live preview */}
+                  <div className="grid grid-cols-1 lg:grid-cols-[1fr,minmax(340px,440px)] xl:grid-cols-[1fr,minmax(360px,480px)] gap-6 lg:gap-8">
+                    {/* ——— LEFT: Session controls & student list ——— */}
+                    <div className="flex flex-col gap-4 sm:gap-6 min-w-0 order-2 lg:order-1">
+                      {/* Session header: code + leave */}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-border">
+                        <div className="flex flex-col gap-2 min-w-0">
+                          <p className="text-muted-foreground text-xs sm:text-sm">Session active · Students join with this code</p>
+                          <div
+                            className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-primary/10 border border-primary/30 w-fit cursor-pointer hover:bg-primary/15 transition-colors active:scale-[0.99]"
+                            onClick={copySessionCode}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => e.key === 'Enter' && copySessionCode()}
+                          >
+                            <span className="font-mono text-xl sm:text-2xl font-bold tracking-widest text-primary select-all">
+                              {activeSession?.session_code ?? '—'}
+                            </span>
+                            <FaCopy className="text-muted-foreground shrink-0 w-4 h-4" aria-hidden />
+                            <span className="text-xs text-muted-foreground hidden sm:inline">Click to copy</span>
+                          </div>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={leaveSessionAsTeacher} className="shrink-0 self-start sm:self-center">
+                          Leave session (local)
+                        </Button>
+                      </div>
+
+                      {/* Actions */}
+                      <p className="text-muted-foreground text-xs sm:text-sm max-w-xl">
+                        To control where students look: open the lesson in the 360° player and drag the view — students will follow in real time.
+                      </p>
+                      <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
+                        <Button onClick={() => setLaunchLessonModalOpen(true)} className="gap-2 w-full sm:w-auto shrink-0">
+                          <FaVideo className="w-4 h-4 shrink-0" />
+                          Launch lesson to class
+                        </Button>
+                        {activeSession?.launched_lesson && (
+                          <Button
+                            variant="outline"
+                            className="gap-2 border-primary/50 text-primary hover:bg-primary/10 w-full sm:w-auto shrink-0"
+                            onClick={openLessonToControlView}
+                            disabled={openLessonToControlLoading}
+                            title="Open the launched lesson so you can direct the class view by dragging the 360° scene"
+                          >
+                            {openLessonToControlLoading ? (
+                              <>Loading…</>
+                            ) : (
+                              <>
+                                <FaArrowRight className="w-4 h-4 shrink-0" />
+                                <span className="hidden sm:inline">Open lesson to control class view</span>
+                                <span className="sm:hidden">Control class view</span>
+                              </>
+                            )}
+                          </Button>
                         )}
-                      </Button>
-                    )}
-                    <Button variant="destructive" onClick={handleEndSession} disabled={sessionContextLoading} className="gap-2">
-                      <FaStopCircle className="w-4 h-4" />
-                      End session
-                    </Button>
-                  </div>
-                  {progressList.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-border">
-                      <p className="text-sm font-medium text-foreground mb-3">Live progress ({progressList.length} student(s))</p>
-                      <div className="space-y-2">
-                        {progressList.map((p) => {
-                          const phaseLabel = (() => {
-                            const pn = String(p.phase || 'idle');
-                            if (pn === 'intro') return 'Intro';
-                            if (pn === 'explanation') return 'Explanation';
-                            if (pn === 'exploration') return 'Exploration';
-                            if (pn === 'outro') return 'Outro';
-                            if (pn === 'quiz') return 'Quiz';
-                            if (pn === 'completed') return 'Completed';
-                            if (pn === 'loading') return 'Loading…';
-                            if (pn === 'idle') return 'Waiting';
-                            return 'Waiting';
-                          })();
-                          const isComplete = p.phase === 'completed';
-                          const isQuiz = p.phase === 'quiz';
-                          const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
-                          const lastUpdated = p.last_updated ? (typeof p.last_updated === 'string' ? new Date(p.last_updated) : (p.last_updated as { toDate?: () => Date })?.toDate?.() ?? null) : null;
-                          const hasQuizData = p.quiz_score != null && p.quiz_total != null && (p.quiz_total as number) > 0;
-                          const quizAnswers = (p.quiz_answers as Array<{ question_index: number; correct: boolean; selected_option_index: number }> | undefined) ?? [];
-                          return (
-                            <Card key={p.student_uid} className={`border ${isComplete ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}>
-                              <CardContent className="p-3 space-y-2">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isComplete ? 'bg-primary' : isQuiz ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground'}`} />
-                                    <span className="font-medium text-foreground truncate" title={displayLabel}>{displayLabel}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant={isComplete ? 'default' : isQuiz ? 'secondary' : 'outline'} className="font-normal">
-                                      {phaseLabel}
-                                    </Badge>
-                                    {lastUpdated && (
-                                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                        {lastUpdated.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                {hasQuizData && (
-                                  <div className="pt-2 border-t border-border/60">
-                                    <p className="text-xs font-medium text-muted-foreground mb-1.5">
-                                      Quiz: {String(p.quiz_score)}/{String(p.quiz_total)}
-                                    </p>
-                                    {quizAnswers.length > 0 && (
-                                      <div className="flex flex-wrap gap-1">
-                                        {quizAnswers
-                                          .slice()
-                                          .sort((a, b) => a.question_index - b.question_index)
-                                          .map((a, i) => (
-                                            <span
-                                              key={i}
-                                              className={`inline-flex items-center justify-center w-6 h-5 rounded text-[10px] font-medium ${a.correct ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'}`}
-                                              title={a.correct ? `Q${a.question_index + 1} correct` : `Q${a.question_index + 1} wrong`}
-                                            >
-                                              {a.correct ? '✓' : '✗'}
-                                            </span>
-                                          ))}
+                        <Button variant="destructive" onClick={handleEndSession} disabled={sessionContextLoading} className="gap-2 w-full sm:w-auto shrink-0">
+                          <FaStopCircle className="w-4 h-4 shrink-0" />
+                          End session
+                        </Button>
+                      </div>
+
+                      {/* Student list + chips (only when we have students) */}
+                      {progressList.length > 0 && (
+                        <div className="pt-2 border-t border-border">
+                          <h3 className="text-sm sm:text-base font-semibold text-foreground mb-1">Students in session</h3>
+                          <p className="text-xs text-muted-foreground mb-3">Click “View screen” or a chip to see their 360° view in the panel on the right.</p>
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {progressList.map((p) => {
+                              const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                              const phaseLabel = (() => {
+                                const pn = String(p.phase || 'idle');
+                                if (pn === 'intro') return 'Intro';
+                                if (pn === 'explanation') return 'Explanation';
+                                if (pn === 'exploration') return 'Exploration';
+                                if (pn === 'outro') return 'Outro';
+                                if (pn === 'quiz') return 'Quiz';
+                                if (pn === 'completed') return 'Completed';
+                                if (pn === 'loading') return 'Loading…';
+                                return 'Waiting';
+                              })();
+                              const isSelected = selectedStudentForScreen === p.student_uid;
+                              const hasView = p.student_view != null;
+                              return (
+                                <button
+                                  key={p.student_uid}
+                                  type="button"
+                                  onClick={() => setSelectedStudentForScreen(isSelected ? null : p.student_uid)}
+                                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-all ${
+                                    isSelected
+                                      ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
+                                      : 'border-border bg-card hover:bg-accent/50 hover:border-primary/40'
+                                  }`}
+                                >
+                                  <FaVideo className="w-3.5 h-3.5 shrink-0 opacity-70" />
+                                  <span className="font-medium truncate max-w-[120px] sm:max-w-[140px]">{displayLabel}</span>
+                                  <Badge variant={isSelected ? 'default' : 'secondary'} className="text-[10px] shrink-0">
+                                    {phaseLabel}
+                                  </Badge>
+                                  {hasView && <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" title="View available" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="space-y-2 sm:space-y-3">
+                            {progressList.map((p) => {
+                              const phaseLabel = (() => {
+                                const pn = String(p.phase || 'idle');
+                                if (pn === 'intro') return 'Intro';
+                                if (pn === 'explanation') return 'Explanation';
+                                if (pn === 'exploration') return 'Exploration';
+                                if (pn === 'outro') return 'Outro';
+                                if (pn === 'quiz') return 'Quiz';
+                                if (pn === 'completed') return 'Completed';
+                                if (pn === 'loading') return 'Loading…';
+                                if (pn === 'idle') return 'Waiting';
+                                return 'Waiting';
+                              })();
+                              const isComplete = p.phase === 'completed';
+                              const isQuiz = p.phase === 'quiz';
+                              const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                              const lastUpdated = p.last_updated ? (typeof p.last_updated === 'string' ? new Date(p.last_updated) : (p.last_updated as { toDate?: () => Date })?.toDate?.() ?? null) : null;
+                              const hasQuizData = p.quiz_score != null && p.quiz_total != null && (p.quiz_total as number) > 0;
+                              const quizAnswers = (p.quiz_answers as Array<{ question_index: number; correct: boolean; selected_option_index: number }> | undefined) ?? [];
+                              return (
+                                <Card key={p.student_uid} className={`border transition-colors ${isComplete ? 'border-primary/50 bg-primary/5' : 'border-border bg-card hover:border-border/80'}`}>
+                                  <CardContent className="p-3 sm:p-4 space-y-2 sm:space-y-3">
+                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isComplete ? 'bg-primary' : isQuiz ? 'bg-amber-500 animate-pulse' : 'bg-muted-foreground'}`} />
+                                        <span className="font-medium text-foreground truncate text-sm sm:text-base" title={displayLabel}>{displayLabel}</span>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant={isComplete ? 'default' : isQuiz ? 'secondary' : 'outline'} className="font-normal text-xs">
+                                          {phaseLabel}
+                                        </Badge>
+                                        {lastUpdated && (
+                                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                            {lastUpdated.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                          </span>
+                                        )}
+                                        <div className="flex gap-1">
+                                          <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="shrink-0 gap-1 h-8 text-xs"
+                                            onClick={() => setSelectedStudentForScreen(selectedStudentForScreen === p.student_uid ? null : p.student_uid)}
+                                            title="View this student's screen"
+                                          >
+                                            <FaVideo className="w-3.5 h-3.5 shrink-0" />
+                                            <span className="hidden sm:inline">{selectedStudentForScreen === p.student_uid ? 'Hide' : 'View screen'}</span>
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0 h-8 w-8 p-0"
+                                            onClick={() => handleRemoveStudent(p.student_uid)}
+                                            disabled={removingStudentUid === p.student_uid}
+                                            title="Remove from session"
+                                          >
+                                            {removingStudentUid === p.student_uid ? (
+                                              <span className="animate-pulse text-xs">…</span>
+                                            ) : (
+                                              <FaUserMinus className="w-4 h-4" />
+                                            )}
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {p.student_view != null && (
+                                      <div className="pt-2 border-t border-border/60 flex items-center gap-2">
+                                        <span className="text-xs text-muted-foreground">360°:</span>
+                                        <span className="text-xs font-mono text-foreground/80">
+                                          h {Math.round(p.student_view.hlookat)}° v {Math.round(p.student_view.vlookat)}°
+                                        </span>
                                       </div>
                                     )}
-                                  </div>
-                                )}
-                              </CardContent>
-                            </Card>
-                          );
-                        })}
+                                    {hasQuizData && (
+                                      <div className="pt-2 border-t border-border/60">
+                                        <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                                          Quiz: {String(p.quiz_score)}/{String(p.quiz_total)}
+                                        </p>
+                                        {quizAnswers.length > 0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {quizAnswers
+                                              .slice()
+                                              .sort((a, b) => a.question_index - b.question_index)
+                                              .map((a, i) => (
+                                                <span
+                                                  key={i}
+                                                  className={`inline-flex items-center justify-center w-6 h-5 rounded text-[10px] font-medium ${a.correct ? 'bg-primary/20 text-primary' : 'bg-destructive/20 text-destructive'}`}
+                                                  title={a.correct ? `Q${a.question_index + 1} correct` : `Q${a.question_index + 1} wrong`}
+                                                >
+                                                  {a.correct ? '✓' : '✗'}
+                                                </span>
+                                              ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ——— RIGHT: Live preview panel (sticky on desktop) ——— */}
+                    <div className="lg:sticky lg:top-4 order-1 lg:order-2 h-fit">
+                      <div className="rounded-2xl border border-border bg-card shadow-lg overflow-hidden flex flex-col min-h-[240px] sm:min-h-[280px] ring-1 ring-black/5">
+                        {/* Preview header */}
+                        <div className="flex items-center justify-between gap-3 px-4 py-3.5 border-b border-border bg-muted/40">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 shrink-0">
+                              <FaVideo className="w-4 h-4 text-primary" />
+                            </span>
+                            <div className="min-w-0">
+                              <h3 className="text-sm font-semibold text-foreground truncate">Student screen</h3>
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                {selectedStudentForScreen
+                                  ? (studentDisplayNames[selectedStudentForScreen] ?? progressList.find((x) => x.student_uid === selectedStudentForScreen)?.display_name ?? selectedStudentForScreen.slice(0, 8))
+                                  : 'Live 360° preview'}
+                              </p>
+                            </div>
+                          </div>
+                          {selectedStudentForScreen && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSelectedStudentForScreen(null)}
+                              className="shrink-0 h-8 px-3 text-xs rounded-lg"
+                            >
+                              Close
+                            </Button>
+                          )}
+                        </div>
+                        {/* Preview viewport */}
+                        <div className="flex-1 min-h-[220px] sm:min-h-[260px] aspect-video max-h-[50vh] lg:max-h-[440px] bg-muted/5 flex items-stretch justify-center overflow-hidden">
+                          {!(studentScreensSkyboxLoading || studentScreensSkyboxUrl) ? (
+                            <div className="w-full flex flex-col items-center justify-center gap-4 p-8 bg-muted/10 border border-dashed border-border/80 rounded-lg m-3">
+                              <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center border border-border/50">
+                                <FaVideo className="w-8 h-8 text-muted-foreground/50" />
+                              </div>
+                              <div className="space-y-1 text-center">
+                                <p className="text-sm font-medium text-muted-foreground">Launch a lesson to enable live 360° preview</p>
+                                <p className="text-xs text-muted-foreground/80">Use “Launch lesson to class” on the left</p>
+                              </div>
+                            </div>
+                          ) : selectedStudentForScreen ? (() => {
+                            const p = progressList.find((x) => x.student_uid === selectedStudentForScreen);
+                            if (!p) {
+                              return (
+                                <div className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-muted/10 m-3 rounded-lg border border-border/50">
+                                  <p className="text-sm text-muted-foreground">Student not found</p>
+                                </div>
+                              );
+                            }
+                            const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                            const phaseLabel = (() => {
+                              const pn = String(p.phase || 'idle');
+                              if (pn === 'intro') return 'Intro';
+                              if (pn === 'explanation') return 'Explanation';
+                              if (pn === 'exploration') return 'Exploration';
+                              if (pn === 'outro') return 'Outro';
+                              if (pn === 'quiz') return 'Quiz';
+                              if (pn === 'completed') return 'Completed';
+                              if (pn === 'loading') return 'Loading…';
+                              return 'Waiting';
+                            })();
+                            if (studentScreensSkyboxLoading) {
+                              return (
+                                <div className="w-full h-full flex items-center justify-center bg-muted/20">
+                                  <span className="text-muted-foreground text-sm">Loading…</span>
+                                </div>
+                              );
+                            }
+                            if (studentScreensSkyboxUrl && p.student_view != null) {
+                              return (
+                                <div className="w-full h-full min-h-0 flex flex-col rounded-b-2xl overflow-hidden">
+                                  <StudentScreen360Preview
+                                    skyboxUrl={studentScreensSkyboxUrl}
+                                    view={p.student_view}
+                                    studentName={displayLabel}
+                                    phaseLabel={phaseLabel}
+                                    getApiBaseUrl={getApiBaseUrl}
+                                    className="w-full flex-1 min-h-0 rounded-none"
+                                  />
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-6 bg-muted/20 m-3 rounded-lg border border-border/50">
+                                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
+                                  <FaUsers className="text-primary/60 w-8 h-8" />
+                                </div>
+                                <div className="space-y-1 text-center">
+                                  <p className="text-sm font-medium text-foreground">{displayLabel}</p>
+                                  <p className="text-xs text-muted-foreground">Waiting for view — student will appear when they look around</p>
+                                  <p className="text-xs text-muted-foreground/80">{phaseLabel}</p>
+                                </div>
+                              </div>
+                            );
+                          })() : (
+                            <div className="w-full flex flex-col items-center justify-center gap-4 p-8 bg-muted/10 border border-dashed border-border/80 rounded-lg m-3">
+                              <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center border border-border/50">
+                                <FaVideo className="w-8 h-8 text-muted-foreground/50" />
+                              </div>
+                              <div className="space-y-1 text-center">
+                                <p className="text-sm font-medium text-muted-foreground">Select a student to view their screen</p>
+                                <p className="text-xs text-muted-foreground/80">Use the list on the left or click a student chip</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </>
               )}
             </CardContent>
           </Card>
-        </div>
+        </section>
 
         {/* Teaching & Creation Tools - Create (includes AI Teacher Support in top-right) */}
         <div className="mb-8">

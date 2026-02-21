@@ -20,7 +20,7 @@ import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
-import { reportSessionProgress, updateTeacherView } from '../services/classSessionService';
+import { reportSessionProgress, updateTeacherView, reportStudentView } from '../services/classSessionService';
 import type { SessionLessonPhase, SessionQuizAnswer } from '../types/lms';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
@@ -1478,7 +1478,24 @@ const VRLessonPlayerInner = () => {
   }, [lastHotspotClicked]);
 
   // Report phase to class session for teacher dashboard (when student joined from class)
-  const sessionIdForReport = joinedSessionId ?? (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null);
+  const sessionIdForReport =
+    joinedSessionId ??
+    (typeof sessionStorage !== 'undefined'
+      ? sessionStorage.getItem('learnxr_class_session_id') ?? sessionStorage.getItem('learnxr_joined_session_id')
+      : null);
+  // Report initial progress as soon as student is in lesson with a session (so teacher sees them in "Student views")
+  useEffect(() => {
+    if (!sessionIdForReport || !user?.uid) return;
+    reportSessionProgress(
+      sessionIdForReport,
+      user.uid,
+      profile?.displayName ?? (profile as any)?.name ?? undefined,
+      'loading',
+      undefined,
+      undefined,
+      (profile as any)?.email ?? user?.email ?? undefined
+    ).catch(() => {});
+  }, [sessionIdForReport, user?.uid]);
   useEffect(() => {
     if (!sessionIdForReport || !user?.uid) return;
     const phaseMap: Record<string, SessionLessonPhase> = {
@@ -1583,6 +1600,26 @@ const VRLessonPlayerInner = () => {
     krpanoViewerRef.current.call(action);
     log('👁️', 'Following teacher view', { h, v, fov });
   }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov]);
+
+  // Student: report current 360° view to session progress so teacher can see “what they see” (throttled)
+  const lastStudentViewRef = useRef<{ hlookat: number; vlookat: number; fov: number } | null>(null);
+  useEffect(() => {
+    if (!isStudentInSession || !joinedSessionId || !user?.uid || !useKrpanoView) return;
+    const storeView = (h: number, v: number, fov: number) => {
+      lastStudentViewRef.current = { hlookat: h, vlookat: v, fov };
+    };
+    (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = storeView;
+    krpanoViewerRef.current?.call?.('sync_view_to_js');
+    const interval = setInterval(() => {
+      krpanoViewerRef.current?.call?.('sync_view_to_js');
+      const view = lastStudentViewRef.current;
+      if (view) reportStudentView(joinedSessionId, user.uid, view).catch(() => {});
+    }, 1500);
+    return () => {
+      clearInterval(interval);
+      (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
+    };
+  }, [isStudentInSession, joinedSessionId, user?.uid, useKrpanoView, sceneReady]);
 
   // ============================================================================
   // Fetch 3D Asset (Platform-aware: FBX for Android, USDZ for iOS, GLB for Web)

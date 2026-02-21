@@ -12,7 +12,7 @@ interface LearnXRTypographyProps {
  * Ensures consistent trademark styling across the entire website
  * Font: Rejouice Headline
  * Tracking: 0.9rem (for hero), adjusted for other sizes
- * Colors: "Learn" = foreground, "XR" = primary (logo purple)
+ * Colors: White for "Learn", Purple-700 for "XR"
  */
 export const LearnXRTypography: React.FC<LearnXRTypographyProps> = ({
   children,
@@ -33,22 +33,22 @@ export const LearnXRTypography: React.FC<LearnXRTypographyProps> = ({
   };
 
   if (variant === 'full') {
-    // Split LearnXR into Learn (foreground) and XR (primary = logo purple)
+    // Split LearnXR into Learn (white) and XR (purple)
     const text = String(children);
     const learnPart = text.replace(/XR.*$/i, '');
     const xrPart = text.match(/XR.*$/i)?.[0] || '';
 
     return (
       <span className={`${sizeClasses[size]} ${className}`} style={baseStyle}>
-        <span className="text-foreground">{learnPart}</span>
-        {xrPart && <span className="text-primary">{xrPart}</span>}
+        <span className="text-white">{learnPart}</span>
+        {xrPart && <span className="text-purple-700">{xrPart}</span>}
       </span>
     );
   }
 
   if (variant === 'learn') {
     return (
-      <span className={`${sizeClasses[size]} text-foreground ${className}`} style={baseStyle}>
+      <span className={`${sizeClasses[size]} text-white ${className}`} style={baseStyle}>
         {children}
       </span>
     );
@@ -56,7 +56,7 @@ export const LearnXRTypography: React.FC<LearnXRTypographyProps> = ({
 
   if (variant === 'xr') {
     return (
-      <span className={`${sizeClasses[size]} text-primary ${className}`} style={baseStyle}>
+      <span className={`${sizeClasses[size]} text-purple-700 ${className}`} style={baseStyle}>
         {children}
       </span>
     );
@@ -88,11 +88,22 @@ export const learnXRFontStyle = {
 };
 
 /**
- * Professional trademark symbol component
- * Uses proper ™ Unicode character with proper styling
+ * Professional trademark symbol component.
+ * Rendered as superscript (raised, smaller) with enough line-height so TM is not clipped.
  */
 export const TrademarkSymbol = ({ className = '' }: { className?: string }) => (
-  <span className={`text-[0.6em] align-super leading-none ${className}`} style={{ fontFamily: 'Arial, sans-serif' }}>
-    ™
+  <span
+    className={className}
+    style={{
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '0.5em',
+      fontWeight: 600,
+      verticalAlign: 'super',
+      lineHeight: 1.3,
+      marginLeft: '0.12em',
+      display: 'inline',
+    }}
+  >
+    TM
   </span>
 );
