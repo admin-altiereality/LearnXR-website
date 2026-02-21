@@ -182,6 +182,8 @@ export interface ClassSession {
   launched_scene: LaunchedScene | null;
   /** Teacher-controlled view (hlookat, vlookat) for student sync in Krpano lessons */
   teacher_view?: { hlookat: number; vlookat: number; fov?: number } | null;
+  /** Student UIDs removed by teacher from this session (kicked out) */
+  removed_student_uids?: string[];
   created_at: Timestamp | string;
   updated_at: Timestamp | string;
 }
@@ -207,6 +209,13 @@ export interface SessionQuizAnswer {
   selected_option_index: number;
 }
 
+/** Student’s current 360° view (for teacher “see what they see” preview) */
+export interface SessionStudentView {
+  hlookat: number;
+  vlookat: number;
+  fov?: number;
+}
+
 export interface SessionStudentProgress {
   student_uid: string;
   display_name?: string;
@@ -220,4 +229,6 @@ export interface SessionStudentProgress {
   quiz_score?: number | null;
   quiz_total?: number | null;
   quiz_answers?: SessionQuizAnswer[] | null;
+  /** Student’s current view in 360° lesson (hlookat, vlookat, fov) for teacher preview */
+  student_view?: SessionStudentView | null;
 }

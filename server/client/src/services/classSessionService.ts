@@ -24,6 +24,7 @@ import type {
   LaunchedLesson,
   LaunchedScene,
   SessionStudentProgress,
+  SessionStudentView,
   SessionLessonPhase,
   SessionQuizAnswer,
 } from '../types/lms';
@@ -226,6 +227,40 @@ export async function joinSession(sessionCode: string): Promise<JoinSessionResul
 }
 
 /**
+ * Remove a student from a class session. Only the session owner (teacher) can call.
+ * Returns true if the request succeeded.
+ */
+export async function removeStudentFromSession(
+  sessionId: string,
+  _teacherUid: string,
+  studentUid: string
+): Promise<boolean> {
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) return false;
+
+    const apiBaseUrl = getApiBaseUrl().replace(/\/$/, '');
+    const response = await fetch(`${apiBaseUrl}/class-sessions/${sessionId}/remove-student`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ studentUid }),
+    });
+
+    if (!response.ok) {
+      console.error('classSessionService.removeStudentFromSession API error:', response.status);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('classSessionService.removeStudentFromSession:', err);
+    return false;
+  }
+}
+
+/**
  * Subscribe to session document. Returns unsubscribe function.
  * Optional onError is called on permission/other errors so the UI can show a message or clear state.
  */
@@ -313,6 +348,33 @@ export async function reportSessionProgress(
     return true;
   } catch (err) {
     console.error('classSessionService.reportSessionProgress:', err);
+    return false;
+  }
+}
+
+/**
+ * Report student’s current 360° view (hlookat, vlookat, fov) for teacher “see what they see” preview.
+ * Merges into progress doc so phase/quiz are not overwritten.
+ */
+export async function reportStudentView(
+  sessionId: string,
+  studentUid: string,
+  view: SessionStudentView
+): Promise<boolean> {
+  try {
+    const progressRef = doc(db, COLLECTION_SESSIONS, sessionId, SUBCOLLECTION_PROGRESS, studentUid);
+    await setDoc(
+      progressRef,
+      {
+        student_uid: studentUid,
+        student_view: view,
+        last_updated: serverTimestamp(),
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.error('classSessionService.reportStudentView:', err);
     return false;
   }
 }

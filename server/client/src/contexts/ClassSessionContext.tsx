@@ -233,6 +233,16 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     navigate('/dashboard/student', { replace: true });
   }, [joinedSession?.status, leaveSessionAsStudent, navigate]);
 
+  // When teacher removes this student, leave session and redirect
+  useEffect(() => {
+    if (!joinedSession || !user?.uid) return;
+    const removed = joinedSession.removed_student_uids?.includes(user.uid);
+    if (!removed) return;
+    setSessionError('You were removed from the class by the teacher.');
+    leaveSessionAsStudent();
+    navigate('/dashboard/student', { replace: true });
+  }, [joinedSession?.removed_student_uids, user?.uid, leaveSessionAsStudent, navigate]);
+
   // Restore session from storage on load (e.g. after refresh) – validate still exists
   useEffect(() => {
     if (!user?.uid) return;
