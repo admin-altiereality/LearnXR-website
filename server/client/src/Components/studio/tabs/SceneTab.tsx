@@ -268,6 +268,10 @@ export const SceneTab = ({
           styleName: primarySkybox.style_name,
           status: primarySkybox.status,
         });
+        const skyboxId = primarySkybox.skybox_id || primarySkybox.id;
+        const skyboxUrl = primarySkybox.glb_url || primarySkybox.preview_url || '';
+        onSceneChange('skybox_id', skyboxId);
+        onSceneChange('skybox_url', skyboxUrl);
       }
 
       // Clear file input

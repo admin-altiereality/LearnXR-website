@@ -969,6 +969,45 @@ export const addImageIdToChapterSharedAssets = async (
 };
 
 /**
+ * Remove image ID from chapter's sharedAssets.image_ids (e.g. when applying a delete request on approval)
+ */
+export const removeImageIdFromChapterSharedAssets = async (
+  chapterId: string,
+  imageId: string
+): Promise<void> => {
+  try {
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const chapterSnap = await getDoc(chapterRef);
+
+    if (!chapterSnap.exists()) {
+      console.warn(`Chapter ${chapterId} not found, skipping sharedAssets update`);
+      return;
+    }
+
+    const chapter = chapterSnap.data() as CurriculumChapter;
+    const sharedAssets = chapter.sharedAssets || {};
+    const existingImageIds = sharedAssets.image_ids || chapter.image_ids || [];
+
+    if (existingImageIds.includes(imageId)) {
+      const updatedImageIds = existingImageIds.filter((id) => id !== imageId);
+
+      await updateDoc(chapterRef, {
+        sharedAssets: {
+          ...sharedAssets,
+          image_ids: updatedImageIds,
+        },
+        image_ids: updatedImageIds,
+        updatedAt: serverTimestamp(),
+      });
+      invalidateLessonBundleCache(chapterId);
+      console.log(`✅ Removed image ${imageId} from chapter ${chapterId} sharedAssets`);
+    }
+  } catch (error) {
+    console.error('Error removing image from chapter sharedAssets:', error);
+  }
+};
+
+/**
  * Delete image from chapter_images collection
  */
 export const deleteChapterImage = async (imageId: string): Promise<{ success: boolean; error?: string }> => {

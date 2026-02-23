@@ -367,7 +367,7 @@ function SkyboxSphereIntegrated({ imageUrl, onLoad, onError }: { imageUrl: strin
         tex.mapping = THREE.EquirectangularReflectionMapping;
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.wrapS = THREE.RepeatWrapping;
-        tex.repeat.x = -1;
+        // Single flip via mesh scale only so orientation matches Krpano (no repeat.x = -1)
         textureRef.current = tex;
         setTexture(tex);
         onLoad?.();
@@ -466,18 +466,33 @@ function AssetModelInScene({
   );
 }
 
-/** Convert camera position (orbit around origin) to hlookat/vlookat degrees for sync */
+/** Normalize hlookat to [-180, 180] for consistent sync and no wrap jumps */
+function normalizeHlookat(h: number): number {
+  let n = h % 360;
+  if (n > 180) n -= 360;
+  if (n < -180) n += 360;
+  return n;
+}
+
+/** Clamp vlookat away from exact ±90 to avoid gimbal lock and tween issues at zenith/nadir */
+const VLOOKAT_MIN = -89.5;
+const VLOOKAT_MAX = 89.5;
+function clampVlookat(v: number): number {
+  return Math.max(VLOOKAT_MIN, Math.min(VLOOKAT_MAX, v));
+}
+
+/** Convert camera position (orbit around origin) to hlookat/vlookat degrees for sync. Negate theta so integrated sphere (single flip) matches Krpano. */
 function cameraToHlookatVlookat(position: THREE.Vector3): { h: number; v: number } {
   const x = position.x, y = position.y, z = position.z;
   const theta = Math.atan2(x, z) * (180 / Math.PI);
   const r = Math.sqrt(x * x + y * y + z * z) || 1;
   const phi = Math.asin(Math.max(-1, Math.min(1, y / r))) * (180 / Math.PI);
-  return { h: theta, v: phi };
+  return { h: -theta, v: phi };
 }
 
-/** Apply teacher view (hlookat, vlookat) to camera position at given radius */
+/** Apply teacher view (hlookat, vlookat) to camera position at given radius. Uses -h for theta to match Krpano orientation. */
 function applyTeacherViewToCamera(camera: THREE.PerspectiveCamera, h: number, v: number, radius: number): void {
-  const theta = (h * Math.PI) / 180;
+  const theta = (-h * Math.PI) / 180;
   const phi = (v * Math.PI) / 180;
   const x = radius * Math.cos(phi) * Math.sin(theta);
   const y = radius * Math.sin(phi);
@@ -524,8 +539,8 @@ function LessonSceneIntegrated({
       onViewChange(h, v, fov);
     }
     if (teacherView) {
-      const h = Number(teacherView.hlookat);
-      const v = Number(teacherView.vlookat);
+      const h = normalizeHlookat(Number(teacherView.hlookat));
+      const v = clampVlookat(Number(teacherView.vlookat));
       const fov = Number(teacherView.fov ?? 75);
       if (Number.isNaN(h) || Number.isNaN(v)) return;
       const prev = lastAppliedRef.current;
@@ -1174,17 +1189,17 @@ const VRLessonPlayerInner = () => {
   const currentMcq = mcqs[currentMcqIndex];
 
   // All content ready: skybox (or no skybox), 3D assets (or none), and TTS must be ready.
-  // Start Lesson only appears when everything is loaded so the lesson starts with skybox, 3D assets, and audio ready.
+  // Start Lesson is only active when all scene assets have loaded so intro/explanation/outro and scene render correctly.
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
-    // Krpano version: no 3D asset in viewer yet, so don't block on asset
-    const assetReady = true;
+    // When topic has a 3D asset, wait for it to load; otherwise allow start
+    const assetReady = assetUrl ? !assetLoading : true;
     const ttsReady =
       ttsStatus !== 'loading' &&
       (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
     return skyboxReady && assetReady && ttsReady;
-  }, [skyboxData, skyboxLoading, sceneReady, ttsStatus, ttsData.length]);
+  }, [skyboxData, skyboxLoading, sceneReady, ttsStatus, ttsData.length, assetUrl, assetLoading]);
   
   // Debug log for MCQs
   useEffect(() => {
@@ -1563,7 +1578,9 @@ const VRLessonPlayerInner = () => {
       const now = Date.now();
       if (now - lastSent < throttleMs) return;
       lastSent = now;
-      updateTeacherView(activeSessionId, user!.uid, { hlookat: h, vlookat: v, fov }).catch((err) => {
+      const hNorm = normalizeHlookat(h);
+      const vClamp = clampVlookat(v);
+      updateTeacherView(activeSessionId, user!.uid, { hlookat: hNorm, vlookat: vClamp, fov }).catch((err) => {
         console.warn('[ViewSync] Teacher updateTeacherView failed:', err);
       });
     };
@@ -1592,29 +1609,46 @@ const VRLessonPlayerInner = () => {
   const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number } | null>(null);
   useEffect(() => {
     if (!isStudentInSession || !useKrpanoView || !teacherView || !krpanoViewerRef.current?.call) return;
-    const { hlookat: h, vlookat: v, fov = 90 } = teacherView;
+    const hNorm = normalizeHlookat(Number(teacherView.hlookat));
+    const vClamp = clampVlookat(Number(teacherView.vlookat));
+    const fov = teacherView.fov ?? 90;
     const prev = lastTeacherViewRef.current;
-    if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
-    lastTeacherViewRef.current = { h, v, fov };
-    const action = `tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=1.0)`;
+    if (prev && prev.h === hNorm && prev.v === vClamp && prev.fov === fov) return;
+    lastTeacherViewRef.current = { h: hNorm, v: vClamp, fov };
+    const action = `tween(view.hlookat,${hNorm},view.vlookat,${vClamp},view.fov,${fov},time=1.0)`;
     krpanoViewerRef.current.call(action);
-    log('👁️', 'Following teacher view', { h, v, fov });
+    log('👁️', 'Following teacher view', { h: hNorm, v: vClamp, fov });
   }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov]);
 
   // Student: report current 360° view to session progress so teacher can see “what they see” (throttled)
   const lastStudentViewRef = useRef<{ hlookat: number; vlookat: number; fov: number } | null>(null);
+  const lastStudentReportTimeRef = useRef(0);
+  const STUDENT_VIEW_THROTTLE_MS = 400;
+  const STUDENT_VIEW_POLL_MS = 500;
   useEffect(() => {
     if (!isStudentInSession || !joinedSessionId || !user?.uid || !useKrpanoView) return;
-    const storeView = (h: number, v: number, fov: number) => {
-      lastStudentViewRef.current = { hlookat: h, vlookat: v, fov };
+    const doReport = (view: { hlookat: number; vlookat: number; fov: number }) => {
+      const now = Date.now();
+      if (now - lastStudentReportTimeRef.current < STUDENT_VIEW_THROTTLE_MS) return;
+      lastStudentReportTimeRef.current = now;
+      reportStudentView(joinedSessionId, user.uid, view).catch(() => {});
+    };
+    const storeView = (h: number, v: number, fovVal: number) => {
+      const view = {
+        hlookat: normalizeHlookat(h),
+        vlookat: clampVlookat(v),
+        fov: fovVal ?? 90,
+      };
+      lastStudentViewRef.current = view;
+      doReport(view);
     };
     (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = storeView;
     krpanoViewerRef.current?.call?.('sync_view_to_js');
     const interval = setInterval(() => {
       krpanoViewerRef.current?.call?.('sync_view_to_js');
       const view = lastStudentViewRef.current;
-      if (view) reportStudentView(joinedSessionId, user.uid, view).catch(() => {});
-    }, 1500);
+      if (view) doReport(view);
+    }, STUDENT_VIEW_POLL_MS);
     return () => {
       clearInterval(interval);
       (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
@@ -1862,26 +1896,30 @@ const VRLessonPlayerInner = () => {
         }
       });
       
+      const maxRetries = 2;
       for (const ttsId of languageTtsIds.slice(0, 3)) { // Max 3 for intro/explanation/outro
-        try {
-          const ttsDoc = await getDoc(doc(db, 'chapter_tts', ttsId));
-          if (ttsDoc.exists()) {
-            const data = ttsDoc.data();
-            const ttsLang = data.language || 'en';
-            
-            // Only include if language matches
-            if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
-              ttsResults.push({
-                id: ttsId,
-                section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
-                audioUrl: data.audio_url || data.audioUrl,
-                text: data.text || data.content || '',
-              });
-              log('✅', `TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const ttsDoc = await getDoc(doc(db, 'chapter_tts', ttsId));
+            if (ttsDoc.exists()) {
+              const data = ttsDoc.data();
+              const ttsLang = data.language || 'en';
+              if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
+                ttsResults.push({
+                  id: ttsId,
+                  section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
+                  audioUrl: data.audio_url || data.audioUrl,
+                  text: data.text || data.content || '',
+                });
+                log('✅', `TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
+              }
+              break;
             }
+            break;
+          } catch (err) {
+            log('❌', `TTS error for ${ttsId} (attempt ${attempt + 1}/${maxRetries + 1}):`, err);
+            if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
           }
-        } catch (err) {
-          log('❌', `TTS error for ${ttsId}: ${err}`);
         }
       }
       
@@ -2118,13 +2156,20 @@ const VRLessonPlayerInner = () => {
       setWaitingForUser(true);
     };
     
-    // Set source and play
-    audio.src = ttsEntry.audioUrl;
+    const src = ttsEntry.audioUrl;
+    audio.src = src;
     audio.play().catch(err => {
-      console.error('Failed to play audio:', err);
-      setTtsStatus('error');
-      setIsPlayingAudio(false);
-      setWaitingForUser(true);
+      console.warn('Failed to play TTS, retrying once:', err);
+      setTimeout(() => {
+        audio.load();
+        audio.src = src;
+        audio.play().catch(err2 => {
+          console.error('Failed to play audio after retry:', err2);
+          setTtsStatus('error');
+          setIsPlayingAudio(false);
+          setWaitingForUser(true);
+        });
+      }, 400);
     });
   }, [isMuted, getTTSForCurrentPhase, isPlayingAudio, lessonPhase, cleanupAudio]);
 

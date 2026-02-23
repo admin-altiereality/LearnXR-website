@@ -41,10 +41,8 @@ function CameraController({
   const lookAt = useRef(new THREE.Vector3());
 
   useFrame(() => {
-    // Student drag → Krpano view.hlookat / view.vlookat → we show same direction for teacher.
-    // Orbit (applyTeacherViewToCamera): pos=(cx,cy,cz) from theta=h*π/180, phi=v*π/180; view dir = -pos.
-    // Use view dir (-cx,-cy,-cz). Phi negated so Krpano vlookat+ (look up) = preview up.
-    const theta = (hlookat * Math.PI) / 180;
+    // Match VRLessonPlayerKrpano: theta = -h so preview matches Krpano/integrated orientation.
+    const theta = (-hlookat * Math.PI) / 180;
     const phi = (vlookat * Math.PI) / 180;
     const cx = Math.cos(phi) * Math.sin(theta);
     const cy = Math.sin(phi);
@@ -136,7 +134,7 @@ export function StudentScreen360Preview({
       tex.mapping = THREE.EquirectangularReflectionMapping;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.wrapS = THREE.RepeatWrapping;
-      tex.repeat.x = -1;
+      // Single flip via mesh scale only to match VRLessonPlayerKrpano SkyboxSphereIntegrated
       tex.needsUpdate = true;
       setTexture(tex);
       setLoading(false);
