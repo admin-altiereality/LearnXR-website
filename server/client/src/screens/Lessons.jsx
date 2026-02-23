@@ -30,6 +30,7 @@ import {
     Sparkles,
     Target,
     Trophy,
+    Users,
     Volume2,
     X,
     XCircle
@@ -467,6 +468,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
     sessionLoading: sessionJoinLoading,
     sessionError: sessionJoinError,
     clearSessionError,
+    activeSessionId,
+    activeSession,
+    startSession,
+    launchLesson: launchLessonToClass,
   } = useClassSession();
   const [sessionCodeInput, setSessionCodeInput] = useState('');
   const launchedLessonHandledRef = React.useRef(null);
@@ -1331,13 +1336,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
     if (launchedLessonHandledRef.current === key) return;
     launchedLessonHandledRef.current = key;
 
+    const effectiveLang = launched.lang ?? selectedLanguage;
     let cancelled = false;
     (async () => {
       try {
         const { getLessonBundle } = await import('../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId: launched.chapter_id,
-          lang: selectedLanguage,
+          lang: effectiveLang,
           topicId: launched.topic_id,
         });
         if (cancelled) return;
@@ -1368,9 +1374,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
             id: tts.id || '',
             script_type: tts.script_type || tts.section || 'full',
             audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
-            language: tts.language || tts.lang || selectedLanguage,
+            language: tts.language || tts.lang || effectiveLang,
           }))
-          .filter((tts) => (tts.language || 'en').toLowerCase() === selectedLanguage.toLowerCase());
+          .filter((tts) => (tts.language || 'en').toLowerCase() === effectiveLang.toLowerCase());
         const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
         const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
 
@@ -1401,7 +1407,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           tts_ids: topic.tts_ids || [],
           tts_audio_url: topic.tts_audio_url || '',
           ttsAudio,
-          language: selectedLanguage,
+          language: effectiveLang,
         };
         const fullLessonData = {
           chapter: cleanChapter,
@@ -1411,7 +1417,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           assets3d: safeAssets3d,
           startedAt: new Date().toISOString(),
           _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
-          language: selectedLanguage,
+          language: effectiveLang,
           ttsAudio,
         };
         sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
@@ -1814,6 +1820,51 @@ const Lessons = ({ setBackgroundSkybox }) => {
     return vrCapabilities?.isVRSupported === true;
   }, [vrCapabilities]);
 
+  // Resolve class id for launch: match lesson chapter to teacher class, or use first
+  const classIdForLaunch = useMemo(() => {
+    if (!teacherClasses?.length || !lessonData?.chapter) return null;
+    const curriculum = (lessonData.chapter.curriculum || '').trim();
+    const className = (lessonData.chapter.class_name || '').trim();
+    const match = teacherClasses.find(
+      (c) =>
+        (c.curriculum || '').trim().toLowerCase() === curriculum.toLowerCase() &&
+        (c.class_name || '').trim().toLowerCase() === className.toLowerCase()
+    );
+    return match ? match.id : teacherClasses[0]?.id ?? null;
+  }, [teacherClasses, lessonData?.chapter]);
+
+  // Launch current lesson to class: create session if needed, then launch and go to dashboard
+  const handleLaunchInClass = useCallback(async () => {
+    if (!isTeacher || !launchLessonToClass || !lessonData?.chapter || !lessonData?.topic) return;
+    const payload = {
+      chapter_id: String(lessonData.chapter.chapter_id ?? ''),
+      topic_id: String(lessonData.topic.topic_id ?? ''),
+      curriculum: String(lessonData.chapter.curriculum ?? ''),
+      class_name: String(lessonData.chapter.class_name ?? ''),
+      subject: String(lessonData.chapter.subject ?? ''),
+      lang: lessonData.language || selectedLanguage,
+    };
+    let sessionId = activeSessionId;
+    if (!sessionId && startSession && classIdForLaunch) {
+      const newId = await startSession(classIdForLaunch);
+      if (!newId) {
+        toast.error('Could not start class session. Check your connection.');
+        return;
+      }
+      sessionId = newId;
+    }
+    const ok = await launchLessonToClass(payload, sessionId ?? undefined);
+    if (ok) {
+      toast.success('Lesson launched to class');
+      closeLessonModal();
+      navigate('/dashboard');
+    } else {
+      toast.error('Failed to launch lesson to class');
+    }
+  }, [isTeacher, activeSessionId, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate]);
+
+  const canLaunchInClass = isTeacher && teacherClasses.length > 0 && lessonData?.chapter && lessonData?.topic && canLaunchLesson && (activeSessionId || classIdForLaunch);
+
   // Get thumbnail
   const getThumbnail = useCallback((chapter) => {
     return chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
@@ -1986,6 +2037,42 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 )}
               </div>
             </div>
+
+            {isTeacher && (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border bg-primary/5 border-primary/25">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-primary/15">
+                    <Users className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-primary">Launch in Class</p>
+                    <p className="text-xs text-muted-foreground">
+                      Send this lesson to your class (starts a session if needed)
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant={canLaunchInClass ? 'default' : 'secondary'}
+                  onClick={handleLaunchInClass}
+                  disabled={!canLaunchInClass}
+                  title={!canLaunchLesson ? 'Wait for lesson to load' : teacherClasses.length === 0 ? 'Add a class to launch lessons' : ''}
+                  className="w-full sm:w-auto"
+                >
+                  {sessionJoinLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Launching…
+                    </>
+                  ) : (
+                    <>
+                      <Users className="w-3.5 h-3.5" />
+                      Launch in Class
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
 
             {countdown > 0 && (
               <div className="p-4 rounded-xl bg-primary/5 border border-primary/25">

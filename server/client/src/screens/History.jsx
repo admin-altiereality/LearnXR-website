@@ -1373,6 +1373,7 @@ const History = ({ setBackgroundSkybox }) => {
         <DialogContent
           className="max-w-7xl max-h-[90vh] w-full h-full p-0 gap-0 overflow-hidden flex flex-col"
           onClick={(e) => e.stopPropagation()}
+          aria-describedby={undefined}
         >
           <div className="relative flex flex-col h-full bg-background">
 
