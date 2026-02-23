@@ -27,9 +27,18 @@ import {
   type ChapterEditRequest,
 } from '../../services/chapterEditRequestService';
 import { getLessonBundle } from '../../services/firestore/getLessonBundle';
+import { getTopicIdsWithUnapprovedVersionForUser } from '../../services/lessonVersionService';
 import { buildLessonPayloadFromBundle } from '../../services/launchLessonFromBundle';
 import { Button } from '../../Components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../Components/ui/dialog';
 
 const LessonEditRequests = () => {
   const navigate = useNavigate();
@@ -39,6 +48,7 @@ const LessonEditRequests = () => {
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [previewLaunchingId, setPreviewLaunchingId] = useState<string | null>(null);
+  const [rejectModal, setRejectModal] = useState<{ req: ChapterEditRequest; reason: string } | null>(null);
 
   const load = useCallback(async () => {
     if (!profile || !canApproveLessonEdits(profile)) return;
@@ -72,18 +82,25 @@ const LessonEditRequests = () => {
       toast.success('Edit approved. Changes merged, topic(s) and chapter approved for Lessons page.');
     } catch (error) {
       console.error('Approve error:', error);
-      toast.error('Failed to approve');
+      const message = error instanceof Error ? error.message : 'Failed to approve';
+      toast.error(message);
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleReject = async (req: ChapterEditRequest) => {
-    if (!profile?.uid) return;
+  const openRejectModal = (req: ChapterEditRequest) => {
+    setRejectModal({ req, reason: '' });
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!profile?.uid || !rejectModal) return;
+    const { req, reason } = rejectModal;
     setProcessingId(req.id);
     try {
-      await rejectEditRequest(req.id, profile.uid);
+      await rejectEditRequest(req.id, profile.uid, { rejectionReason: reason.trim() || null });
       setRequests((prev) => prev.filter((r) => r.id !== req.id));
+      setRejectModal(null);
       toast.success('Edit request rejected.');
     } catch (error) {
       console.error('Reject error:', error);
@@ -109,50 +126,41 @@ const LessonEditRequests = () => {
     async (req: ChapterEditRequest) => {
       setPreviewLaunchingId(req.id);
       try {
+        const topicIdsWithDraft = await getTopicIdsWithUnapprovedVersionForUser(req.chapterId, req.requestedBy);
+        const previewTopicId = topicIdsWithDraft.length > 0 ? topicIdsWithDraft[0] : null;
+        if (!previewTopicId) {
+          toast.warning('No draft found for this request. The associate may not have saved any topic.');
+          return;
+        }
         const bundle = await getLessonBundle({
           chapterId: req.chapterId,
           lang: 'en',
+          topicId: previewTopicId,
           userId: req.requestedBy,
           userRole: 'associate',
         });
-        
-        // Log bundle state before building payload
-        const firstTopic = bundle.chapter?.topics?.[0];
+        const firstTopic = bundle.chapter?.topics?.find((t: { topic_id?: string }) => t.topic_id === previewTopicId) ?? bundle.chapter?.topics?.[0];
         console.log('[Preview] Bundle state:', {
           has_chapter: !!bundle.chapter,
-          topics_count: bundle.chapter?.topics?.length || 0,
-          first_topic_id: firstTopic?.topic_id,
+          preview_topic_id: previewTopicId,
           first_topic_skybox_url: firstTopic?.skybox_url,
           first_topic_skybox_id: firstTopic?.skybox_id,
-          bundle_skybox: bundle.skybox ? {
-            id: bundle.skybox.id,
-            imageUrl: bundle.skybox.imageUrl,
-            file_url: bundle.skybox.file_url,
-            skybox_url: bundle.skybox.skybox_url,
-          } : null,
         });
-        
-        const { chapter, topic } = buildLessonPayloadFromBundle(bundle);
-        
-        // Log final payload skybox info
+        const { chapter, topic } = buildLessonPayloadFromBundle(bundle, previewTopicId);
         console.log('[Preview] Final payload skybox:', {
           skybox_url: topic.skybox_url,
           skybox_id: topic.skybox_id,
         });
-        
-        // Check if there's any viewable content (skybox URL or ID, scripts, or MCQs)
         const hasContent =
-          topic.skybox_url || 
-          topic.skybox_id || 
-          topic.avatar_intro || 
-          topic.avatar_explanation || 
+          topic.skybox_url ||
+          topic.skybox_id ||
+          topic.avatar_intro ||
+          topic.avatar_explanation ||
           (topic.mcqs && topic.mcqs.length > 0);
         if (!hasContent) {
           toast.warning('This draft has no viewable content yet (no skybox or scripts).');
           return;
         }
-        
-        // Warn if skybox_id exists but no URL (player will fetch it)
         if (topic.skybox_id && !topic.skybox_url) {
           console.log('[Preview] Skybox ID found but no URL - player will fetch from Firestore');
         }
@@ -297,7 +305,7 @@ const LessonEditRequests = () => {
                         <Button
                           size="sm"
                           variant="destructive"
-                          onClick={() => handleReject(req)}
+                          onClick={() => openRejectModal(req)}
                           disabled={isProcessing}
                         >
                           <X className="w-4 h-4 mr-1" />
@@ -312,6 +320,33 @@ const LessonEditRequests = () => {
           </ul>
         )}
       </div>
+
+      {/* Reject with reason modal */}
+      <Dialog open={!!rejectModal} onOpenChange={(open) => !open && setRejectModal(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Reject Edit Request</DialogTitle>
+            <DialogDescription>
+              Optionally add a reason for the associate. They will see it when they open this chapter.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            className="w-full min-h-[100px] px-3 py-2 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="e.g. Please fix the skybox image quality and re-submit."
+            value={rejectModal?.reason ?? ''}
+            onChange={(e) => setRejectModal((prev) => prev ? { ...prev, reason: e.target.value } : null)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectModal(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleRejectSubmit} disabled={!!processingId}>
+              {processingId ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Reject
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

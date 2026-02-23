@@ -531,6 +531,28 @@ export async function getLatestUnapprovedVersionForUser(
 }
 
 /**
+ * Get topic IDs that have an unapproved version with a snapshot for the given user.
+ * Used for topic-aware admin preview (preview the topic the associate actually edited).
+ */
+export async function getTopicIdsWithUnapprovedVersionForUser(
+  chapterId: string,
+  userId: string
+): Promise<string[]> {
+  const chapterRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId);
+  const chapterSnap = await getDoc(chapterRef);
+  if (!chapterSnap.exists()) return [];
+  const chapterData = chapterSnap.data() as { topics?: Array<{ topic_id: string }> };
+  const topics = chapterData.topics || [];
+  const topicIds: string[] = [];
+  for (const topic of topics) {
+    const topicId = topic.topic_id;
+    const version = await getLatestUnapprovedVersionForUser(chapterId, topicId, userId);
+    if (version?.snapshot_ref) topicIds.push(topicId);
+  }
+  return topicIds;
+}
+
+/**
  * Fetch a snapshot from chapter_snapshots by ref (e.g. "chapter_snapshots/xxx").
  * Returns fullLessonBundle (LessonDraftSnapshot) or null.
  */
