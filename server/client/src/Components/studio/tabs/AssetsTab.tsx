@@ -114,6 +114,7 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
   const assetsDirty = useLessonDraftStore((s) => s.dirtyTabs.assets3d === true);
   const pendingDeleteRequests = useLessonDraftStore((s) => s.pendingDeleteRequests);
   const hasDeleteRequest = useLessonDraftStore((s) => s.hasDeleteRequest);
+  const removeDeleteRequest = useLessonDraftStore((s) => s.removeDeleteRequest);
   const pendingDeletes = useMemo(
     () => pendingDeleteRequests.filter((r) => r.tab === 'assets3d'),
     [pendingDeleteRequests]
@@ -617,9 +618,18 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                       )}
                       {/* Pending delete request (Associate — awaiting admin approval) */}
                       {hasDeleteRequest(asset.id) && (
-                        <div className="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[9px] font-medium flex items-center gap-0.5">
-                          <AlertTriangle className="w-2.5 h-2.5" />
-                          Pending delete
+                        <div className="absolute top-1 right-1 flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeDeleteRequest(asset.id); toast.info('Delete request removed.'); }}
+                            className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-[9px] font-medium text-foreground"
+                          >
+                            Undo
+                          </button>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[9px] font-medium flex items-center gap-0.5">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            Pending delete
+                          </span>
                         </div>
                       )}
                       {/* Hover overlay */}
@@ -719,9 +729,18 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                     {/* Status & Actions */}
                     <div className="flex items-center gap-2">
                       {hasDeleteRequest(asset.id) && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          Pending delete
+                        <span className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeDeleteRequest(asset.id); toast.info('Delete request removed.'); }}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground"
+                          >
+                            Undo
+                          </button>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            Pending delete
+                          </span>
                         </span>
                       )}
                       <span className={`text-xs px-2 py-1 rounded-md ${asset.status === 'complete' ? 'text-emerald-400 bg-emerald-500/10' : 'text-amber-400 bg-amber-500/10'}`}>
@@ -1049,25 +1068,41 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
             </a>
           )}
           <div className="my-1 border-t border-border" />
-          <PermissionGate
-            resource="meshy_assets"
-            operation="delete"
-            assetData={contextMenu.asset}
-            showMessage={false}
-          >
+          {hasDeleteRequest(contextMenu.asset.id) ? (
             <button
-              onClick={() => openDeleteConfirm(contextMenu.asset)}
-              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+              onClick={() => {
+                removeDeleteRequest(contextMenu.asset.id);
+                setContextMenu(null);
+                toast.info('Delete request removed.');
+              }}
+              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
             >
-              <Trash2 className="w-4 h-4" />
-              Delete
+              <RefreshCw className="w-4 h-4" />
+              Undo delete request
             </button>
-          </PermissionGate>
-          {!permissions.canDelete(contextMenu.asset) && (
-            <div className="w-full flex items-center gap-2 px-4 py-2 text-sm text-amber-400">
-              <AlertTriangle className="w-4 h-4" />
-              Core Asset (Superadmin only)
-            </div>
+          ) : (
+            <>
+              <PermissionGate
+                resource="meshy_assets"
+                operation="delete"
+                assetData={contextMenu.asset}
+                showMessage={false}
+              >
+                <button
+                  onClick={() => openDeleteConfirm(contextMenu.asset)}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </button>
+              </PermissionGate>
+              {!permissions.canDelete(contextMenu.asset) && (
+                <div className="w-full flex items-center gap-2 px-4 py-2 text-sm text-amber-400">
+                  <AlertTriangle className="w-4 h-4" />
+                  Core Asset (Superadmin only)
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

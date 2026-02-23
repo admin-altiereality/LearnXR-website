@@ -63,6 +63,7 @@ import {
 import {
   createEditRequest,
   getPendingRequestForChapter,
+  getLatestEditRequestForChapter,
 } from '../../services/chapterEditRequestService';
 import {
   buildSnapshotFromBundle,
@@ -77,7 +78,7 @@ import type { LessonVersion } from '../../types/lessonVersion';
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
 import { canDeleteLesson, canDeleteContent, canSubmitLessonForApproval } from '../../utils/rbac';
 import { useLessonDraftStore, getStoredDraft } from '../../stores/lessonDraftStore';
-import { computeDiff, getChangedTabsFromChanges, buildChangeSummary } from '../../utils/diffEngine';
+import { computeDiff, getChangedTabsFromChanges, buildChangeSummary, appendTtsToChangeSummary } from '../../utils/diffEngine';
 
 const ChapterEditor = () => {
   const { chapterId } = useParams<{ chapterId: string }>();
@@ -172,6 +173,7 @@ const ChapterEditor = () => {
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [pendingEditRequest, setPendingEditRequest] = useState(false);
   const [submittingForApproval, setSubmittingForApproval] = useState(false);
+  const [lastRejectionReason, setLastRejectionReason] = useState<string | null>(null);
   
   // Content availability state
   const [currentBundle, setCurrentBundle] = useState<any>(null); // Store current bundle for passing to tabs
@@ -204,10 +206,18 @@ const ChapterEditor = () => {
                          (profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'associate');
           setIsReadOnly(!canEdit);
         }
-        // Associate: check for existing pending edit request
+        // Associate: check for existing pending edit request and latest rejected reason
         if (profile?.role === 'associate' && user?.uid && chapterId) {
-          const pending = await getPendingRequestForChapter(chapterId, user.uid);
+          const [pending, latest] = await Promise.all([
+            getPendingRequestForChapter(chapterId, user.uid),
+            getLatestEditRequestForChapter(chapterId, user.uid),
+          ]);
           setPendingEditRequest(!!pending);
+          if (latest?.status === 'rejected' && latest.rejectionReason) {
+            setLastRejectionReason(latest.rejectionReason);
+          } else {
+            setLastRejectionReason(null);
+          }
         }
       } catch (error) {
         console.error('Error loading chapter:', error);
@@ -650,7 +660,8 @@ const ChapterEditor = () => {
         const isAssociateDelete = profile?.role === 'associate';
         const changes = computeDiff(originalSnapshot, draftForDiff, { isAssociateDelete });
         const changedTabsNew = getChangedTabsFromChanges(changes);
-        const changeSummaryNew = changes.length > 0 ? buildChangeSummary(changes) : 'Saved';
+        const baseSummary = changes.length > 0 ? buildChangeSummary(changes) : 'Saved';
+        const changeSummaryNew = appendTtsToChangeSummary(baseSummary, originalSnapshot, draftForDiff);
 
         const newSnapshot = buildSnapshotFromBundle(bundle, selectedTopic.id);
         const prevVersion = await getLatestVersionFromChapter(chapterId, selectedTopic.id);
@@ -874,6 +885,18 @@ const ChapterEditor = () => {
           <span>
             <strong>Viewing Associate&apos;s draft for approval.</strong> Content below reflects their suggested changes. Use Lesson Edit Requests to Approve or Reject.
           </span>
+        </div>
+      )}
+      {lastRejectionReason && profile?.role === 'associate' && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-6 py-3 text-sm text-foreground flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-amber-800 dark:text-amber-200">Your last edit request was rejected</p>
+            <p className="mt-1 text-muted-foreground">{lastRejectionReason}</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setLastRejectionReason(null)} className="shrink-0 text-amber-700 dark:text-amber-300">
+            Dismiss
+          </Button>
         </div>
       )}
       {/* Sticky Header */}

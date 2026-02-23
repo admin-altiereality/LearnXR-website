@@ -87,6 +87,7 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
   const draftSnapshot = useLessonDraftStore((s) => s.draftSnapshot);
   const pendingDeleteRequests = useLessonDraftStore((s) => s.pendingDeleteRequests);
   const hasDeleteRequest = useLessonDraftStore((s) => s.hasDeleteRequest);
+  const removeDeleteRequest = useLessonDraftStore((s) => s.removeDeleteRequest);
   const pendingDeletes = useMemo(
     () => pendingDeleteRequests.filter((r) => r.tab === 'images'),
     [pendingDeleteRequests]
@@ -310,8 +311,8 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
         setUploadProgress((uploadedCount / totalFiles) * 100);
       }
       
-      // Update chapter.sharedAssets.image_ids with all new image IDs
-      if (newImages.length > 0) {
+      // Update chapter.sharedAssets.image_ids only for admin/superadmin (associates: link applied on approval)
+      if (newImages.length > 0 && profile?.role !== 'associate') {
         try {
           const { addImageIdToChapterSharedAssets } = await import('../../../lib/firestore/updateHelpers');
           for (const newImage of newImages) {
@@ -635,9 +636,18 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
                       )}
                       {/* Pending delete request (Associate — awaiting admin approval) */}
                       {hasDeleteRequest(image.id) && (
-                        <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-medium flex items-center gap-1">
-                          <AlertTriangle className="w-3 h-3" />
-                          Pending delete
+                        <div className="absolute top-2 right-2 flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeDeleteRequest(image.id); toast.info('Delete request removed.'); }}
+                            className="px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-[10px] font-medium text-foreground"
+                          >
+                            Undo
+                          </button>
+                          <span className="px-2 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-medium flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            Pending delete
+                          </span>
                         </div>
                       )}
                     </div>
@@ -680,9 +690,18 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
                       {/* Type & Actions */}
                       <div className="flex items-center gap-2">
                         {hasDeleteRequest(image.id) && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3" />
-                            Pending delete
+                          <span className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); removeDeleteRequest(image.id); toast.info('Delete request removed.'); }}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground"
+                            >
+                              Undo
+                            </button>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Pending delete
+                            </span>
                           </span>
                         )}
                         <span className={`text-xs px-2 py-1 rounded-md border ${typeConfig.color}`}>
@@ -806,7 +825,19 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
           {canEditLesson(profile) && (
             <>
               <div className="my-1 border-t border-border" />
-              {canDeleteAsset(profile, { isCore: (contextMenu.image as any).isCore, assetTier: (contextMenu.image as any).assetTier }) ? (
+              {hasDeleteRequest(contextMenu.image.id) ? (
+                <button
+                  onClick={() => {
+                    removeDeleteRequest(contextMenu.image.id);
+                    setContextMenu(null);
+                    toast.info('Delete request removed.');
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Undo delete request
+                </button>
+              ) : canDeleteAsset(profile, { isCore: (contextMenu.image as any).isCore, assetTier: (contextMenu.image as any).assetTier }) ? (
                 <button
                   onClick={() => openDeleteConfirm(contextMenu.image)}
                   className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"

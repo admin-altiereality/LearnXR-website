@@ -39,6 +39,8 @@ export interface ChapterEditRequest {
   reviewedAt?: Timestamp | null;
   chapterName?: string;
   chapterNumber?: number;
+  /** Set when status is 'rejected'; shown to associate */
+  rejectionReason?: string | null;
 }
 
 export interface CreateRequestInput {
@@ -93,7 +95,47 @@ export async function getPendingRequestForChapter(
     reviewedAt: data.reviewedAt ?? null,
     chapterName: data.chapterName,
     chapterNumber: data.chapterNumber,
+    rejectionReason: data.rejectionReason ?? null,
   };
+}
+
+/**
+ * Get the latest edit request (any status) for a chapter by this user. Used to show rejection reason to associate.
+ */
+export async function getLatestEditRequestForChapter(
+  chapterId: string,
+  requestedBy: string
+): Promise<ChapterEditRequest | null> {
+  const q = query(
+    collection(db, COLLECTION),
+    where('chapterId', '==', chapterId),
+    where('requestedBy', '==', requestedBy)
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  const sorted = snap.docs
+    .map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        chapterId: data.chapterId,
+        requestedBy: data.requestedBy,
+        requestedByEmail: data.requestedByEmail,
+        requestedAt: data.requestedAt ?? null,
+        status: data.status,
+        reviewedBy: data.reviewedBy,
+        reviewedAt: data.reviewedAt ?? null,
+        chapterName: data.chapterName,
+        chapterNumber: data.chapterNumber,
+        rejectionReason: data.rejectionReason ?? null,
+      } as ChapterEditRequest;
+    })
+    .sort((a, b) => {
+      const at = a.requestedAt?.toMillis?.() ?? 0;
+      const bt = b.requestedAt?.toMillis?.() ?? 0;
+      return bt - at;
+    });
+  return sorted[0] ?? null;
 }
 
 /**
@@ -118,6 +160,7 @@ export async function fetchPendingEditRequests(): Promise<ChapterEditRequest[]> 
       reviewedAt: data.reviewedAt ?? null,
       chapterName: data.chapterName,
       chapterNumber: data.chapterNumber,
+      rejectionReason: data.rejectionReason ?? null,
     };
   });
   list.sort((a, b) => {
@@ -149,45 +192,60 @@ export async function approveEditRequest(requestId: string, reviewedBy: string):
   const chapterData = chapterSnap.data() as { topics?: Array<{ topic_id: string }> };
   const topics = chapterData.topics || [];
 
-  // For each topic, get latest unapproved version by this Associate and apply it
-  for (const topic of topics) {
-    const topicId = topic.topic_id;
-    const version = await getLatestUnapprovedVersionForUser(chapterId, topicId, requestedBy);
-    if (!version?.snapshot_ref) continue;
+  try {
+    // For each topic, get latest unapproved version by this Associate and apply it
+    for (const topic of topics) {
+      const topicId = topic.topic_id;
+      const version = await getLatestUnapprovedVersionForUser(chapterId, topicId, requestedBy);
+      if (!version?.snapshot_ref) continue;
 
-    const draft = await getChapterSnapshot(version.snapshot_ref);
-    if (!draft) continue;
+      const draft = await getChapterSnapshot(version.snapshot_ref);
+      if (!draft) continue;
 
-    await applySnapshotToMainAndApproveTopic(
-      chapterId,
-      topicId,
-      draft,
-      version.id,
-      reviewedBy
-    );
+      try {
+        await applySnapshotToMainAndApproveTopic(
+          chapterId,
+          topicId,
+          draft,
+          version.id,
+          reviewedBy
+        );
+      } catch (topicErr) {
+        const msg = topicErr instanceof Error ? topicErr.message : String(topicErr);
+        throw new Error(`Approval failed at topic ${topicId}. ${msg}`);
+      }
+    }
+
+    // Approve the chapter so it shows as Approved on the Lessons page
+    await approveChapter(chapterId, reviewedBy);
+
+    // Mark edit request as approved only after all steps succeed
+    const ref = doc(db, COLLECTION, requestId);
+    await updateDoc(ref, {
+      status: 'approved',
+      reviewedBy,
+      reviewedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    // Do not mark request as approved on partial or total failure; rethrow so caller can show message
+    throw err;
   }
-
-  // Approve the chapter so it shows as Approved on the Lessons page
-  await approveChapter(chapterId, reviewedBy);
-
-  // Mark edit request as approved
-  const ref = doc(db, COLLECTION, requestId);
-  await updateDoc(ref, {
-    status: 'approved',
-    reviewedBy,
-    reviewedAt: serverTimestamp(),
-  });
 }
 
 /**
- * Reject an edit request
+ * Reject an edit request (optional reason shown to associate)
  */
-export async function rejectEditRequest(requestId: string, reviewedBy: string): Promise<void> {
+export async function rejectEditRequest(
+  requestId: string,
+  reviewedBy: string,
+  options?: { rejectionReason?: string | null }
+): Promise<void> {
   const ref = doc(db, COLLECTION, requestId);
   await updateDoc(ref, {
     status: 'rejected',
     reviewedBy,
     reviewedAt: serverTimestamp(),
+    ...(options?.rejectionReason != null && { rejectionReason: options.rejectionReason }),
   });
 }
 
@@ -210,5 +268,6 @@ export async function getEditRequest(requestId: string): Promise<ChapterEditRequ
     reviewedAt: data.reviewedAt ?? null,
     chapterName: data.chapterName,
     chapterNumber: data.chapterNumber,
+    rejectionReason: data.rejectionReason ?? null,
   };
 }

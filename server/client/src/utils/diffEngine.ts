@@ -348,3 +348,19 @@ export function buildChangeSummary(changes: ChangeRecord[]): string {
 
   return parts.join(' · ');
 }
+
+/**
+ * If TTS differs between original and draft, append "TTS: updated" to the change summary.
+ * TTS is not in EDITABLE_TAB_KEYS so it does not appear in changes[]; this adds it for display.
+ */
+export function appendTtsToChangeSummary(
+  summary: string,
+  original: LessonDraftSnapshot | null,
+  draft: LessonDraftSnapshot
+): string {
+  if (!original) return summary;
+  const origTts = original.tts ?? [];
+  const draftTts = draft.tts ?? [];
+  if (deepEqual(origTts, draftTts)) return summary;
+  return summary ? `${summary} · TTS: updated` : 'TTS: updated';
+}
