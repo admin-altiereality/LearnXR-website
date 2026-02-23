@@ -76,7 +76,7 @@ import {
 import type { LessonVersion } from '../../types/lessonVersion';
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../types/firebase';
 import { canDeleteLesson, canDeleteContent, canSubmitLessonForApproval } from '../../utils/rbac';
-import { useLessonDraftStore } from '../../stores/lessonDraftStore';
+import { useLessonDraftStore, getStoredDraft } from '../../stores/lessonDraftStore';
 import { computeDiff, getChangedTabsFromChanges, buildChangeSummary } from '../../utils/diffEngine';
 
 const ChapterEditor = () => {
@@ -89,17 +89,31 @@ const ChapterEditor = () => {
   const draftStore = useLessonDraftStore();
   const isDraftDirty = useLessonDraftStore((s) => s.isDirty());
 
-  // Warn on page leave if there are unsaved changes
+  // Persist draft before leave so Associate can return and continue (and optionally warn)
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (useLessonDraftStore.getState().isDirty()) {
+      const store = useLessonDraftStore.getState();
+      if (store.isDirty() && user?.uid && store.meta) {
+        store.persistToLocalStorage(user.uid);
+      }
+      if (store.isDirty()) {
         e.preventDefault();
-        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
+        e.returnValue = 'You have unsaved changes. Your progress is saved locally so you can continue later.';
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+  }, [user?.uid]);
+
+  // Debounced auto-persist for Associates so Launch lesson / navigation doesn't lose work
+  useEffect(() => {
+    if (profile?.role !== 'associate' || !user?.uid || !isDraftDirty) return;
+    const t = setTimeout(() => {
+      const store = useLessonDraftStore.getState();
+      if (store.isDirty() && store.meta) store.persistToLocalStorage(user.uid);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [isDraftDirty, profile?.role, user?.uid]);
   
   // Context from navigation
   const navState = location.state as {
@@ -107,7 +121,10 @@ const ChapterEditor = () => {
     classId?: string;
     subjectId?: string;
     language?: LanguageCode;
+    /** When set (e.g. from Lesson Edit Requests), load chapter with this user's draft so Super Admin can view/approve */
+    viewDraftForUserId?: string;
   } | null;
+  const viewDraftForUserId = navState?.viewDraftForUserId;
   
   // Language state
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(
@@ -292,14 +309,17 @@ const ChapterEditor = () => {
     setLoadingTopic(true);
     try {
       // Use unified bundle to fetch ALL data (MCQs, TTS, avatar scripts, images, etc.)
-      // When user is Associate, pass userId + userRole so their draft is overlayed (avatar script, etc.)
+      // When user is Associate, pass userId + userRole so their draft is overlayed.
+      // When Super Admin is viewing a request (viewDraftForUserId), overlay that associate's draft.
       const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+      const bundleUserId = viewDraftForUserId ?? (profile?.role === 'associate' ? user?.uid : undefined);
+      const bundleUserRole = viewDraftForUserId ? 'associate' : (profile?.role === 'associate' ? 'associate' : undefined);
       const bundle = await getLessonBundle({
         chapterId,
         lang: selectedLanguage,
         topicId: topic.id, // Pass specific topic ID
-        userId: profile?.role === 'associate' ? user?.uid : undefined,
-        userRole: profile?.role === 'associate' ? 'associate' : undefined,
+        userId: bundleUserId,
+        userRole: bundleUserRole,
       });
       
       console.log('📦 Loaded lesson bundle:', {
@@ -400,16 +420,57 @@ const ChapterEditor = () => {
         }));
       }
 
-      // Load the new standardized snapshot into the Zustand draft store
+      // Load the new standardized snapshot into the Zustand draft store.
+      // If Associate has a locally persisted draft for this topic, restore it so their work is preserved.
       try {
         const draftSnapshot = buildDraftSnapshotFromBundle(bundle, topic.id);
-        draftStore.loadLesson(draftSnapshot, {
+        const meta = {
           chapterId,
           topicId: topic.id,
           versionId: selectedVersionId,
           lang: selectedLanguage,
-        });
-        console.log('📦 Draft store loaded with standardized snapshot');
+        };
+        const isAssociateEditing = profile?.role === 'associate' && user?.uid && !viewDraftForUserId;
+        const stored = isAssociateEditing ? getStoredDraft(chapterId, topic.id, user.uid) : null;
+        if (stored && stored.meta.chapterId === chapterId && stored.meta.topicId === topic.id) {
+          draftStore.loadLessonFromStored(stored);
+          // Sync form state from stored snapshot so UI matches
+          const o = stored.snapshot.overview;
+          const s = stored.snapshot.scene_skybox;
+          const a = stored.snapshot.avatar_script;
+          setTopicFormState((prev) => ({
+            ...prev,
+            topic_name: o?.topic_name ?? prev?.topic_name,
+            learning_objective: o?.learning_objective ?? prev?.learning_objective,
+            topic_priority: o?.topic_priority ?? prev?.topic_priority,
+            scene_type: o?.scene_type ?? prev?.scene_type,
+          }));
+          setSceneFormState((prev) => ({
+            ...prev,
+            in3d_prompt: s?.in3d_prompt ?? prev?.in3d_prompt,
+            camera_guidance: s?.camera_guidance ?? prev?.camera_guidance,
+            skybox_id: s?.skybox_id ?? prev?.skybox_id,
+            skybox_url: s?.skybox_url ?? prev?.skybox_url,
+            avatar_intro: a?.intro ?? prev?.avatar_intro,
+            avatar_explanation: a?.explanation ?? prev?.avatar_explanation,
+            avatar_outro: a?.outro ?? prev?.avatar_outro,
+          }));
+          const restoredMcqs = (stored.snapshot.mcqs ?? []).map((m: any) => ({
+            id: m.id,
+            question: m.question ?? '',
+            options: m.options ?? [],
+            correct_option_index: m.correct_option_index ?? 0,
+            explanation: m.explanation ?? '',
+            difficulty: m.difficulty ?? 'medium',
+            order: m.order ?? 0,
+          }));
+          setMcqs(restoredMcqs);
+          setMcqFormState(restoredMcqs.map((m) => ({ ...m })));
+          console.log('📦 Draft store restored from local storage');
+        } else {
+          draftStore.loadLesson(draftSnapshot, meta);
+          console.log('📦 Draft store loaded with standardized snapshot');
+        }
       } catch (storeError) {
         console.warn('Draft store load failed (non-blocking):', storeError);
       }
@@ -419,7 +480,7 @@ const ChapterEditor = () => {
     } finally {
       setLoadingTopic(false);
     }
-  }, [chapterId, selectedVersionId, selectedLanguage, loadContentAvailability, user?.uid, profile?.role]);
+  }, [chapterId, selectedVersionId, selectedLanguage, loadContentAvailability, user?.uid, profile?.role, viewDraftForUserId]);
   
   // MCQs are now loaded via the bundle in loadTopicData - no separate function needed
   
@@ -456,16 +517,15 @@ const ChapterEditor = () => {
   }, [selectedLanguage]);
   
   const handleSelectTopic = (topic: Topic) => {
-    // Warn about unsaved changes (check both legacy dirty flags and draft store)
-    const storeIsDirty = useLessonDraftStore.getState().isDirty();
-    if (topicDirty || sceneDirty || mcqDirty || storeIsDirty) {
-      const confirm = window.confirm('You have unsaved changes. Discard them?');
-      if (!confirm) return;
+    // Persist current draft to localStorage so Associate can return to this topic and continue (no discard prompt).
+    const store = useLessonDraftStore.getState();
+    const hadDraft = store.isDirty() || topicDirty || sceneDirty || mcqDirty;
+    if (hadDraft && user?.uid && store.meta?.chapterId && store.meta?.topicId) {
+      store.persistToLocalStorage(user.uid);
+      toast.info('Your progress has been saved locally. You can continue editing when you return to this topic.');
     }
-    
-    // Reset the draft store before loading new topic
+
     draftStore.resetStore();
-    
     setSelectedTopic(topic);
     setTopicFormState({ ...topic });
     setMcqs([]);
@@ -610,7 +670,7 @@ const ChapterEditor = () => {
           createdByEmail: user.email ?? undefined,
           createdByRole: profile?.role,
           changeSummary: changeSummaryNew,
-          draftSnapshot: newDraftSnapshot,
+          draftSnapshot: draftForDiff,
           changed_tabs: changedTabsNew,
           changes,
           edited_by: { uid: user.uid, email: user.email ?? undefined, role: profile?.role },
@@ -621,7 +681,14 @@ const ChapterEditor = () => {
           diff: legacyBuild.diff,
         });
 
-        draftStore.commitDraft();
+        // Sync store to the snapshot we persisted (with pending deletes applied) so next diff is correct
+        const meta = useLessonDraftStore.getState().meta;
+        if (meta) {
+          useLessonDraftStore.getState().loadLesson(draftForDiff, meta);
+        } else {
+          draftStore.commitDraft();
+        }
+        if (user?.uid) draftStore.clearLocalDraftForCurrent(user.uid);
 
         const versions = await getVersionsFromChapter(chapterId, selectedTopic.id);
         setLessonVersions(versions);
@@ -631,7 +698,7 @@ const ChapterEditor = () => {
         return;
       }
 
-      toast.success('Draft saved to versions (v1, v2, v3…). Main lesson doc unchanged until Superadmin approves.');
+      toast.success('Draft saved. Your changes are stored and will remain for approval.');
     } catch (error) {
       console.error('Error saving changes:', error);
       toast.error('Failed to save changes');
@@ -770,7 +837,9 @@ const ChapterEditor = () => {
   };
   
   const isDirty = topicDirty || sceneDirty || mcqDirty;
-  
+  const viewOnlyDraft = !!viewDraftForUserId;
+  const effectiveReadOnly = isReadOnly || viewOnlyDraft;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -799,6 +868,14 @@ const ChapterEditor = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {viewDraftForUserId && (
+        <div className="bg-primary/15 border-b border-primary/30 px-6 py-2 text-sm text-foreground flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-primary shrink-0" />
+          <span>
+            <strong>Viewing Associate&apos;s draft for approval.</strong> Content below reflects their suggested changes. Use Lesson Edit Requests to Approve or Reject.
+          </span>
+        </div>
+      )}
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b border-border">
         <div className="max-w-[1800px] mx-auto px-6 py-3">
@@ -850,7 +927,7 @@ const ChapterEditor = () => {
                 onChange={setSelectedLanguage}
               />
               
-              {isReadOnly && (
+              {(effectiveReadOnly) && (
                 <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-lg border border-amber-500/20">
                   <EyeOff className="w-3.5 h-3.5" />
                   Read Only
@@ -870,7 +947,7 @@ const ChapterEditor = () => {
               <Button
                 variant="secondary"
                 onClick={handleSave}
-                disabled={!isDirty || saving || isReadOnly}
+                disabled={!isDirty || saving || effectiveReadOnly}
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -882,7 +959,7 @@ const ChapterEditor = () => {
               
               <Button
                 onClick={handlePublish}
-                disabled={publishing || isReadOnly || sceneFormState.status === 'published'}
+                disabled={publishing || effectiveReadOnly || sceneFormState.status === 'published'}
               >
                 {publishing ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1008,7 +1085,7 @@ const ChapterEditor = () => {
               onMcqsChange={handleMcqsChange}
               activeTab={activeTab}
               onTabChange={setActiveTab}
-              isReadOnly={isReadOnly}
+              isReadOnly={effectiveReadOnly}
               loading={loadingTopic}
               chapterId={chapterId!}
               versionId={selectedVersionId}

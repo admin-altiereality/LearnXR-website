@@ -84,22 +84,52 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
 
   // Draft store (must be before any early returns to satisfy Rules of Hooks)
   const imagesDirty = useLessonDraftStore((s) => s.dirtyTabs.images === true);
+  const draftSnapshot = useLessonDraftStore((s) => s.draftSnapshot);
   const pendingDeleteRequests = useLessonDraftStore((s) => s.pendingDeleteRequests);
   const hasDeleteRequest = useLessonDraftStore((s) => s.hasDeleteRequest);
   const pendingDeletes = useMemo(
     () => pendingDeleteRequests.filter((r) => r.tab === 'images'),
     [pendingDeleteRequests]
   );
+  const pendingDeleteIds = useMemo(() => new Set(pendingDeletes.map((r) => r.itemId)), [pendingDeletes]);
 
-  // Load images from bundle or fetch directly
+  // Load images from bundle or fetch directly. When images tab is dirty, prefer draft store so uploads persist.
   useEffect(() => {
     const loadImages = async () => {
       if (!chapterId || !topicId) return;
-      
+
+      const store = useLessonDraftStore.getState();
+      const isDraftForThisLesson =
+        store.meta?.chapterId === chapterId && store.meta?.topicId === topicId && store.draftSnapshot?.images;
+
+      if (imagesDirty && isDraftForThisLesson && store.draftSnapshot) {
+        const draftImages = (store.draftSnapshot.images || [])
+          .filter((img: { id?: string }) => !pendingDeleteIds.has(img.id || ''))
+          .map((img: any, index: number) => ({
+            id: img.id || '',
+            chapter_id: chapterId,
+            topic_id: topicId,
+            name: img.name || 'Image',
+            description: img.description,
+            image_url: img.image_url || img.url || '',
+            thumbnail_url: img.thumbnail_url,
+            type: (img.type || 'other') as ChapterImage['type'],
+            order: img.order ?? index,
+            created_at: img.created_at,
+            updated_at: img.updated_at,
+          }));
+        setImages(draftImages);
+        if (draftImages.length > 0 && !selectedImage) {
+          setSelectedImage(draftImages[0]);
+        }
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
         let imagesData: ChapterImage[] = [];
-        
+
         // Priority 1: Use bundle data if available
         if (bundle?.images && Array.isArray(bundle.images)) {
           imagesData = bundle.images.map((img: any) => ({
@@ -121,7 +151,7 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
           imagesData = await getChapterImages(chapterId, topicId);
           console.log(`✅ Loaded ${imagesData.length} images from direct fetch`);
         }
-        
+
         setImages(imagesData);
         if (imagesData.length > 0 && !selectedImage) {
           setSelectedImage(imagesData[0]);
@@ -135,7 +165,7 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
     };
 
     loadImages();
-  }, [chapterId, topicId, bundle]);
+  }, [chapterId, topicId, bundle, imagesDirty, pendingDeleteIds, draftSnapshot]);
 
   // Close context menu on click outside
   useEffect(() => {
@@ -337,17 +367,8 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
   // Delete image — Associate creates a delete request; Admin/SuperAdmin can hard delete
   const handleDeleteImage = async () => {
     if (!imageToDelete || !profile) return;
-    
-    // Check permissions (images can have isCore field too)
-    const imageAsAsset = { isCore: (imageToDelete as any).isCore, assetTier: (imageToDelete as any).assetTier };
-    if (!canDeleteAsset(profile, imageAsAsset)) {
-      toast.error('You do not have permission to delete this core image. Only superadmin can delete core images.');
-      setShowDeleteConfirm(false);
-      setImageToDelete(null);
-      return;
-    }
 
-    // Associate role: create a delete REQUEST instead of hard deleting
+    // Associate role: always allow creating a delete REQUEST (including for core images); superadmin approves later
     const isAssociate = profile.role === 'associate';
     if (isAssociate) {
       const store = useLessonDraftStore.getState();
@@ -358,6 +379,15 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
         itemName: imageToDelete.name,
       });
       toast.info('Delete request created. Save Draft to submit for admin approval.');
+      setShowDeleteConfirm(false);
+      setImageToDelete(null);
+      return;
+    }
+
+    // Admin/SuperAdmin: check permission for hard delete (only superadmin can delete core images)
+    const imageAsAsset = { isCore: (imageToDelete as any).isCore, assetTier: (imageToDelete as any).assetTier };
+    if (!canDeleteAsset(profile, imageAsAsset)) {
+      toast.error('You do not have permission to delete this core image. Only superadmin can delete core images.');
       setShowDeleteConfirm(false);
       setImageToDelete(null);
       return;

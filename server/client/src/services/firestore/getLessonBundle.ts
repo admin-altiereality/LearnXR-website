@@ -511,6 +511,14 @@ function mergeDraftIntoBundle(
       file_url: url,
     };
   }
+  // Overlay draft TTS (Associate-generated; not yet in chapter_tts until approval)
+  if (Array.isArray(draft.tts) && draft.tts.length > 0) {
+    bundle.tts = draft.tts.map((t) => ({
+      ...t,
+      audio_url: t.audio_url ?? (t as any).audioUrl,
+      url: t.audio_url ?? (t as any).url,
+    }));
+  }
 }
 
 /**

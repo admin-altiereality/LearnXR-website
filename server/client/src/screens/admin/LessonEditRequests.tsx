@@ -97,6 +97,13 @@ const LessonEditRequests = () => {
     navigate(`/studio/content/${chapterId}`);
   };
 
+  /** Open chapter editor with Associate's draft loaded so Super Admin can view the exact changes before approving. */
+  const handleViewDraft = (req: ChapterEditRequest) => {
+    navigate(`/studio/content/${req.chapterId}`, {
+      state: { viewDraftForUserId: req.requestedBy },
+    });
+  };
+
   /** Launch lesson player with the Associate's draft so Super Admin can preview changes before approving. */
   const handlePreviewInLesson = useCallback(
     async (req: ChapterEditRequest) => {
@@ -259,7 +266,16 @@ const LessonEditRequests = () => {
                         <Button
                           size="sm"
                           variant="outline"
+                          onClick={() => handleViewDraft(req)}
+                          title="Open chapter editor with Associate's draft so you can review changes before approving"
+                        >
+                          View draft
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           onClick={() => handleOpenChapter(req.chapterId)}
+                          title="Open chapter (published content)"
                         >
                           Open chapter
                         </Button>

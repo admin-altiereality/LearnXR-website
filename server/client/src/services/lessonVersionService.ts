@@ -18,7 +18,9 @@ import {
   limit,
   getDoc,
   updateDoc,
+  setDoc,
   serverTimestamp,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { LessonBundle } from './firestore/getLessonBundle';
@@ -141,6 +143,14 @@ export function buildDraftSnapshotFromBundle(
     difficulty: m.difficulty,
   }));
 
+  const tts: LessonDraftSnapshot['tts'] = (bundle.tts || []).map((t: any) => ({
+    id: t.id,
+    script_type: t.script_type,
+    audio_url: t.audio_url || t.audioUrl || t.url,
+    language: t.language || bundle.lang,
+    voice_name: t.voice_name,
+  }));
+
   return {
     lang: bundle.lang,
     overview,
@@ -149,6 +159,7 @@ export function buildDraftSnapshotFromBundle(
     images,
     avatar_script,
     mcqs,
+    tts,
   };
 }
 
@@ -556,12 +567,42 @@ export async function applySnapshotToMainAndApproveTopic(
     updateChapterMCQs,
     updateTopicApproval,
     addImageIdToChapterSharedAssets,
+    removeImageIdFromChapterSharedAssets,
+    deleteChapterImage,
     linkMeshyAssetsToTopic,
+    unlinkMeshyAssetFromTopic,
   } = await import('../lib/firestore/updateHelpers');
 
   const chapterRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId);
   const chapterSnap = await getDoc(chapterRef);
   if (!chapterSnap.exists()) throw new Error('Chapter not found');
+
+  // Apply asset delete requests from the version's changes (Associate-requested deletions)
+  const versionRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId, VERSIONS_SUBCOLLECTION, versionId);
+  const versionSnap = await getDoc(versionRef);
+  const versionData = versionSnap.exists() ? (versionSnap.data() as { changes?: ChangeRecord[] }) : null;
+  const changes = versionData?.changes ?? [];
+  for (const change of changes) {
+    if (change.type !== 'asset_delete_request') continue;
+    const parts = (change.field_path || '').split('.');
+    const itemId = parts.length >= 2 ? parts[1] : null;
+    if (!itemId) continue;
+    if (change.tab === 'images') {
+      try {
+        await deleteChapterImage(itemId);
+        await removeImageIdFromChapterSharedAssets(chapterId, itemId);
+      } catch (err) {
+        console.warn('Error applying image delete request:', itemId, err);
+      }
+    } else if (change.tab === 'assets3d') {
+      try {
+        await deleteDoc(doc(db, 'meshy_assets', itemId));
+        await unlinkMeshyAssetFromTopic({ chapterId, topicId, assetId: itemId, userId: reviewedBy });
+      } catch (err) {
+        console.warn('Error applying 3D asset delete request:', itemId, err);
+      }
+    }
+  }
 
   const chapter = chapterSnap.data() as Record<string, unknown> & { topics?: Array<Record<string, unknown>> };
   const topicIndex = chapter.topics?.findIndex((t: Record<string, unknown>) => t.topic_id === topicId);
@@ -622,6 +663,36 @@ export async function applySnapshotToMainAndApproveTopic(
     }
   }
 
+  // Apply draft TTS to chapter_tts (Associate-generated; stored in snapshot until approval)
+  const TTS_VOICE_NAME = 'female_professional';
+  if (Array.isArray(draft.tts) && draft.tts.length > 0) {
+    const ttsIds: string[] = [];
+    for (const t of draft.tts) {
+      const ttsLang = t.language || lang;
+      const ttsId = `${topicId}_${t.script_type}_${ttsLang}_${TTS_VOICE_NAME}`;
+      ttsIds.push(ttsId);
+      await setDoc(
+        doc(db, 'chapter_tts', ttsId),
+        {
+          chapter_id: chapterId,
+          topic_id: topicId,
+          script_type: t.script_type,
+          audio_url: t.audio_url || '',
+          language: ttsLang,
+          voice_name: t.voice_name || TTS_VOICE_NAME,
+          status: 'complete',
+          updated_at: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    const existingByLang = (currentTopic.tts_ids_by_language as Record<string, string[]>) || {};
+    currentTopic.tts_ids_by_language = { ...existingByLang, [lang]: ttsIds };
+    const otherLang = lang === 'en' ? 'hi' : 'en';
+    const otherIds = existingByLang[otherLang] || [];
+    currentTopic.tts_ids = [...otherIds, ...ttsIds];
+  }
+
   updatedTopics[topicIndex] = currentTopic;
   await updateDoc(chapterRef, {
     topics: updatedTopics,
@@ -676,8 +747,7 @@ export async function applySnapshotToMainAndApproveTopic(
   // Approve the topic so it's visible on Lessons page
   await updateTopicApproval({ chapterId, topicId, approved: true, userId: reviewedBy });
 
-  // Mark version as approved
-  const versionRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId, VERSIONS_SUBCOLLECTION, versionId);
+  // Mark version as approved (versionRef already defined above for loading changes)
   await updateDoc(versionRef, {
     approved: true,
     approved_by: reviewedBy,

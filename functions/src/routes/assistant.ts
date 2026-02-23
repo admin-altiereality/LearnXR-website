@@ -280,11 +280,13 @@ router.get('/tts/generate', (req: Request, res: Response): void => {
 router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
-    const { chapterId, topicId, language, scripts } = req.body as {
+    const { chapterId, topicId, language, scripts, regenerateOnly, draftOnly } = req.body as {
       chapterId?: string;
       topicId?: string;
       language?: 'en' | 'hi';
       scripts?: { intro?: string; explanation?: string; outro?: string };
+      regenerateOnly?: 'intro' | 'explanation' | 'outro';
+      draftOnly?: boolean;
     };
 
     if (!chapterId || !topicId || !language || !scripts) {
@@ -303,10 +305,12 @@ router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promis
     console.log(`[${requestId}] [tts/regenerate-topic] TTS key used: ${keySource} (OPENAI_API_KEY=${hasMain ? 'set' : 'missing'}, OPENAI_AVATAR_API_KEY=${hasAvatar ? 'set' : 'missing'})`);
     const ttsServiceInstance = getTTSServiceForAvatar();
     const scriptTypes = ['intro', 'explanation', 'outro'] as const;
+    const typesToProcess = regenerateOnly ? [regenerateOnly] : ([...scriptTypes] as const);
     const ttsIds: string[] = [];
+    const draftTtsEntries: Array<{ id: string; script_type: string; audio_url: string; language: string; voice_name: string }> = [];
     const voice = language === 'hi' ? 'nova' : 'nova';
 
-    for (const scriptType of scriptTypes) {
+    for (const scriptType of typesToProcess) {
       const text = (scripts as Record<string, string>)[scriptType];
       if (!text || typeof text !== 'string' || !text.trim()) continue;
 
@@ -322,20 +326,30 @@ router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promis
       await file.makePublic();
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 
-      const ttsRef = db.collection(COLLECTION_CHAPTER_TTS).doc(ttsId);
-      await ttsRef.set(
-        {
-          chapter_id: chapterId,
-          topic_id: topicId,
+      if (draftOnly) {
+        draftTtsEntries.push({
+          id: ttsId,
           script_type: scriptType,
           audio_url: publicUrl,
           language,
           voice_name: VOICE_NAME,
-          status: 'complete',
-          updated_at: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+        });
+      } else {
+        const ttsRef = db.collection(COLLECTION_CHAPTER_TTS).doc(ttsId);
+        await ttsRef.set(
+          {
+            chapter_id: chapterId,
+            topic_id: topicId,
+            script_type: scriptType,
+            audio_url: publicUrl,
+            language,
+            voice_name: VOICE_NAME,
+            status: 'complete',
+            updated_at: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
 
       ttsIds.push(ttsId);
     }
@@ -343,7 +357,19 @@ router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promis
     if (ttsIds.length === 0) {
       res.status(400).json({
         error: 'No script text',
-        message: 'At least one of intro, explanation, or outro must have non-empty text.',
+        message: regenerateOnly
+          ? `Script "${regenerateOnly}" must have non-empty text.`
+          : 'At least one of intro, explanation, or outro must have non-empty text.',
+      });
+      return;
+    }
+
+    if (draftOnly) {
+      res.json({
+        success: true,
+        ttsIds: draftTtsEntries.map((e) => e.id),
+        tts: draftTtsEntries,
+        message: `${language === 'en' ? 'English' : 'Hindi'} TTS generated as draft (${draftTtsEntries.length})`,
       });
       return;
     }
@@ -380,20 +406,24 @@ router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promis
 
     const topic = topics[topicIndex];
     const existingForLang = (topic.tts_ids_by_language || {})[language] || [];
+    const finalIdsForLang = regenerateOnly
+      ? scriptTypes.map((st) => (st === regenerateOnly ? ttsIds[0]! : `${topicId}_${st}_${language}_${VOICE_NAME}`))
+      : ttsIds;
     const existingSet = new Set(existingForLang);
-    const needsChapterUpdate = ttsIds.some((id) => !existingSet.has(id)) || existingForLang.length !== ttsIds.length;
+    const needsChapterUpdate =
+      finalIdsForLang.some((id) => !existingSet.has(id)) || existingForLang.length !== finalIdsForLang.length;
 
     if (needsChapterUpdate) {
       const existingTtsByLang = topic.tts_ids_by_language || {};
       const otherLang = language === 'en' ? 'hi' : 'en';
       const otherIds = existingTtsByLang[otherLang] || [];
-      const mergedLegacy = [...otherIds, ...ttsIds];
+      const mergedLegacy = [...otherIds, ...finalIdsForLang];
 
       topics[topicIndex] = {
         ...topic,
         tts_ids_by_language: {
           ...existingTtsByLang,
-          [language]: ttsIds,
+          [language]: finalIdsForLang,
         },
         tts_ids: mergedLegacy,
       };
@@ -406,8 +436,10 @@ router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promis
 
     res.json({
       success: true,
-      ttsIds,
-      message: `${language === 'en' ? 'English' : 'Hindi'} TTS audios regenerated (${ttsIds.length})`,
+      ttsIds: finalIdsForLang,
+      message: regenerateOnly
+        ? `${language === 'en' ? 'English' : 'Hindi'} TTS "${regenerateOnly}" regenerated`
+        : `${language === 'en' ? 'English' : 'Hindi'} TTS audios regenerated (${ttsIds.length})`,
       keySource, // Which Secret Manager key was used: OPENAI_API_KEY or OPENAI_AVATAR_API_KEY
     });
   } catch (error: any) {

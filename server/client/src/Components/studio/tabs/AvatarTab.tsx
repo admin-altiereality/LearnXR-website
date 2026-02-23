@@ -27,6 +27,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { getApiBaseUrl } from '../../../utils/apiConfig';
+import { useLessonDraftStore } from '../../../stores/lessonDraftStore';
 
 interface AvatarTabProps {
   sceneFormState: Partial<Scene>;
@@ -64,6 +65,7 @@ export const AvatarTab = ({
   } | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
   const [regeneratingAudios, setRegeneratingAudios] = useState(false);
+  const [regeneratingType, setRegeneratingType] = useState<'intro' | 'explanation' | 'outro' | null>(null);
   
   // Sync with parent language prop and reload data when it changes
   useEffect(() => {
@@ -228,6 +230,7 @@ export const AvatarTab = ({
     try {
       const base = getApiBaseUrl().replace(/\/$/, '');
       const url = `${base}/assistant/tts/regenerate-topic`;
+      const isAssociate = userRole === 'associate';
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,6 +239,7 @@ export const AvatarTab = ({
           topicId,
           language: selectedLanguage,
           scripts: { intro: scripts.intro, explanation: scripts.explanation, outro: scripts.outro },
+          ...(isAssociate ? { draftOnly: true } : {}),
         }),
       });
       const contentType = res.headers.get('content-type') || '';
@@ -247,8 +251,20 @@ export const AvatarTab = ({
         setRegeneratingAudios(false);
         return;
       }
+      if (isAssociate && Array.isArray(data.tts) && data.tts.length > 0) {
+        const store = useLessonDraftStore.getState();
+        const existing = store.draftSnapshot?.tts || [];
+        const byType = new Map(existing.map((e) => [e.script_type, e]));
+        for (const t of data.tts) {
+          byType.set(t.script_type, { id: t.id, script_type: t.script_type, audio_url: t.audio_url, language: t.language, voice_name: t.voice_name });
+        }
+        const merged = Array.from(byType.values());
+        store.setDraftTts(merged);
+        setTtsData(merged.map((t) => ({ id: t.id!, chapter_id: chapterId!, topic_id: topicId!, script_type: t.script_type, script_text: '', audio_url: t.audio_url, language: t.language || selectedLanguage, voice_name: t.voice_name, status: 'complete' as const })));
+      } else {
+        await handleRefreshTTS();
+      }
       toast.success(data.message ?? `${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audios regenerated`);
-      await handleRefreshTTS();
     } catch (err) {
       console.error('[AvatarTab] Regenerate audios error:', err);
       const isNetwork = err instanceof TypeError && (err.message === 'Failed to fetch' || err.message.includes('NetworkError'));
@@ -257,7 +273,69 @@ export const AvatarTab = ({
       setRegeneratingAudios(false);
     }
   };
-  
+
+  const handleRegenerateTTSForType = async (scriptType: 'intro' | 'explanation' | 'outro') => {
+    if (!chapterId || !topicId) {
+      toast.error('Missing chapter or topic. Please select a topic from the list.');
+      return;
+    }
+    const scripts = languageScripts ?? {
+      intro: (sceneFormState.avatar_intro as string) ?? '',
+      explanation: (sceneFormState.avatar_explanation as string) ?? '',
+      outro: (sceneFormState.avatar_outro as string) ?? '',
+    };
+    const text = scripts[scriptType];
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      toast.error(`Add ${scriptType} script text before generating TTS.`);
+      return;
+    }
+    setRegeneratingType(scriptType);
+    try {
+      const base = getApiBaseUrl().replace(/\/$/, '');
+      const isAssociate = userRole === 'associate';
+      const res = await fetch(`${base}/assistant/tts/regenerate-topic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chapterId,
+          topicId,
+          language: selectedLanguage,
+          scripts: { intro: scripts.intro, explanation: scripts.explanation, outro: scripts.outro },
+          regenerateOnly: scriptType,
+          ...(isAssociate ? { draftOnly: true } : {}),
+        }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? await res.json().catch(() => ({})) : {};
+      if (!res.ok) {
+        const msg = data.message || data.error || `Request failed (${res.status}).`;
+        toast.error(msg);
+        setRegeneratingType(null);
+        return;
+      }
+      if (isAssociate && Array.isArray(data.tts) && data.tts.length > 0) {
+        const store = useLessonDraftStore.getState();
+        const existing = store.draftSnapshot?.tts || [];
+        const byType = new Map(existing.map((e) => [e.script_type, e]));
+        for (const t of data.tts) {
+          byType.set(t.script_type, { id: t.id, script_type: t.script_type, audio_url: t.audio_url, language: t.language, voice_name: t.voice_name });
+        }
+        const merged = Array.from(byType.values());
+        store.setDraftTts(merged);
+        setTtsData(merged.map((t) => ({ id: t.id!, chapter_id: chapterId!, topic_id: topicId!, script_type: t.script_type, script_text: '', audio_url: t.audio_url, language: t.language || selectedLanguage, voice_name: t.voice_name, status: 'complete' as const })));
+      } else {
+        await handleRefreshTTS();
+      }
+      toast.success(data.message ?? `${scriptType} TTS regenerated`);
+    } catch (err) {
+      console.error('[AvatarTab] Regenerate TTS for type error:', err);
+      toast.error(`Failed to regenerate ${scriptType} TTS`);
+    } finally {
+      setRegeneratingType(null);
+    }
+  };
+
   const handlePlayAudio = (audioUrl: string, scriptType: string) => {
     if (playingAudio === scriptType) {
       audioRef?.pause();
@@ -469,6 +547,8 @@ export const AvatarTab = ({
           const wordCount = countWords(value);
           const readTime = estimateReadTime(value);
           
+          const scriptType = section.id === 'avatar_intro' ? 'intro' : section.id === 'avatar_explanation' ? 'explanation' : 'outro';
+          const isRegeneratingThis = regeneratingType === scriptType;
           return (
             <div key={section.id} className="space-y-3">
               <div className="flex items-center justify-between">
@@ -481,6 +561,18 @@ export const AvatarTab = ({
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                   <span>{wordCount} words</span>
                   <span>~{readTime} min</span>
+                  {chapterId && topicId && (
+                    <button
+                      type="button"
+                      onClick={() => handleRegenerateTTSForType(scriptType)}
+                      disabled={isReadOnly || isRegeneratingThis || !value.trim()}
+                      title={`Generate TTS for ${section.label}`}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-md text-primary hover:bg-primary/10 border border-primary/20 hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isRegeneratingThis ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
+                      {isRegeneratingThis ? 'Generating…' : 'Generate TTS'}
+                    </button>
+                  )}
                 </div>
               </div>
               

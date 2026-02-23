@@ -13,6 +13,10 @@
  *
  * Save Draft reads originalSnapshot vs draftSnapshot, runs the diff engine,
  * creates a version commit, then resets dirty state.
+ *
+ * Optional: draft can be persisted to localStorage (keyed by chapterId:topicId:userId)
+ * so associates can switch topic or go to lesson and return without losing work.
+ * Stored draft is cleared on Save draft success so server remains source of truth.
  */
 
 import { create } from 'zustand';
@@ -70,6 +74,12 @@ export interface LessonDraftState {
   loadLesson: (snapshot: LessonDraftSnapshot, meta: LessonMeta) => void;
 
   /**
+   * Load from a previously persisted StoredDraft (e.g. from localStorage).
+   * Restores snapshot, meta, dirtyTabs, and pendingDeleteRequests so work can continue.
+   */
+  loadLessonFromStored: (stored: StoredDraft) => void;
+
+  /**
    * Update a specific tab section of the draft.
    * Automatically marks that tab as dirty.
    */
@@ -92,6 +102,11 @@ export interface LessonDraftState {
    * Manually mark a tab as dirty (e.g. when a child component modifies state).
    */
   markDirty: (tabKey: EditableTabKey) => void;
+
+  /**
+   * Set draft TTS (Associate-generated); stored in snapshot and applied to chapter_tts on approval.
+   */
+  setDraftTts: (tts: LessonDraftSnapshot['tts']) => void;
 
   /**
    * Add a pending delete request (Associate can't hard delete).
@@ -136,6 +151,59 @@ export interface LessonDraftState {
 
   /** Check if an item has a pending delete request */
   hasDeleteRequest: (itemId: string) => boolean;
+
+  /**
+   * Persist current draft to localStorage (keyed by chapterId:topicId:userId).
+   * Call before switching topic or navigating away so draft can be restored later.
+   */
+  persistToLocalStorage: (userId: string) => void;
+
+  /**
+   * Clear the stored draft for the currently loaded lesson (call after Save draft success).
+   */
+  clearLocalDraftForCurrent: (userId: string) => void;
+}
+
+/** Stored draft shape for localStorage */
+export interface StoredDraft {
+  snapshot: LessonDraftSnapshot;
+  meta: LessonMeta;
+  dirtyTabs: Partial<Record<EditableTabKey, boolean>>;
+  pendingDeleteRequests: PendingDeleteRequest[];
+  savedAt: string;
+}
+
+const DRAFT_STORAGE_PREFIX = 'lessonDraft:';
+
+export function getDraftStorageKey(chapterId: string, topicId: string, userId: string): string {
+  return `${DRAFT_STORAGE_PREFIX}${chapterId}:${topicId}:${userId}`;
+}
+
+/** Read stored draft for a lesson (returns null if none or invalid). */
+export function getStoredDraft(
+  chapterId: string,
+  topicId: string,
+  userId: string
+): StoredDraft | null {
+  try {
+    const key = getDraftStorageKey(chapterId, topicId, userId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredDraft;
+    if (!parsed?.snapshot || !parsed?.meta?.chapterId || !parsed?.meta?.topicId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove stored draft for a lesson. */
+export function clearLocalDraft(chapterId: string, topicId: string, userId: string): void {
+  try {
+    localStorage.removeItem(getDraftStorageKey(chapterId, topicId, userId));
+  } catch {
+    // ignore
+  }
 }
 
 // ============================================================================
@@ -179,6 +247,18 @@ export const useLessonDraftStore = create<LessonDraftState>((set, get) => ({
       isLoaded: true,
       meta,
       originalSnapshot: cloneSnapshot(snapshot),
+      draftSnapshot: cloneSnapshot(snapshot),
+      dirtyTabs: {},
+      pendingDeleteRequests: [],
+    });
+  },
+
+  loadLessonFromStored: (stored) => {
+    const snapshot = cloneSnapshot(stored.snapshot);
+    set({
+      isLoaded: true,
+      meta: stored.meta,
+      originalSnapshot: snapshot,
       draftSnapshot: cloneSnapshot(snapshot),
       dirtyTabs: {},
       pendingDeleteRequests: [],
@@ -242,6 +322,21 @@ export const useLessonDraftStore = create<LessonDraftState>((set, get) => ({
       dirtyTabs: {
         ...get().dirtyTabs,
         [tabKey]: true,
+      },
+    });
+  },
+
+  setDraftTts: (tts: LessonDraftSnapshot['tts']) => {
+    const { draftSnapshot } = get();
+    if (!draftSnapshot) return;
+    set({
+      draftSnapshot: {
+        ...draftSnapshot,
+        tts: tts ?? undefined,
+      },
+      dirtyTabs: {
+        ...get().dirtyTabs,
+        avatar_script: true,
       },
     });
   },
@@ -322,5 +417,29 @@ export const useLessonDraftStore = create<LessonDraftState>((set, get) => ({
 
   hasDeleteRequest: (itemId) => {
     return get().pendingDeleteRequests.some((r) => r.itemId === itemId);
+  },
+
+  persistToLocalStorage: (userId) => {
+    const { meta, draftSnapshot, dirtyTabs, pendingDeleteRequests } = get();
+    if (!meta || !draftSnapshot || !userId) return;
+    try {
+      const key = getDraftStorageKey(meta.chapterId, meta.topicId, userId);
+      const stored: StoredDraft = {
+        snapshot: cloneSnapshot(draftSnapshot),
+        meta: { ...meta },
+        dirtyTabs: { ...dirtyTabs },
+        pendingDeleteRequests: [...pendingDeleteRequests],
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(key, JSON.stringify(stored));
+    } catch {
+      // ignore
+    }
+  },
+
+  clearLocalDraftForCurrent: (userId) => {
+    const { meta } = get();
+    if (!meta || !userId) return;
+    clearLocalDraft(meta.chapterId, meta.topicId, userId);
   },
 }));

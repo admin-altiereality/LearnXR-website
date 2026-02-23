@@ -168,6 +168,15 @@ export interface LessonDraftSnapshot {
     difficulty?: string;
     [key: string]: unknown;
   }>;
+  /** Optional draft TTS (Associate-generated); applied to chapter_tts on approval */
+  tts?: Array<{
+    id?: string;
+    script_type: 'intro' | 'explanation' | 'outro';
+    audio_url?: string;
+    language?: string;
+    voice_name?: string;
+    [key: string]: unknown;
+  }>;
 }
 
 /**
