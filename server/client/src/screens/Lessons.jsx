@@ -1313,6 +1313,16 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
   }, [selectedLanguage, profile?.role, user?.uid]);
 
+  // Open lesson detail modal and start fetching data (uses current selectedLanguage for bundle)
+  const openLessonModal = useCallback((chapter, topicInput) => {
+    setSelectedLesson({ chapter, topicInput });
+    setLessonData(null);
+    setDataLoading(true);
+    setDataError(null);
+    setDataReady(false);
+    fetchLessonData(chapter, topicInput);
+  }, [fetchLessonData]);
+
   // When teacher launches a lesson to the class, fetch bundle and open XR player
   React.useEffect(() => {
     const launched = joinedSession?.launched_lesson;
@@ -1819,7 +1829,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     const topic = topicInput || chapter.topics?.[0];
     const topicName = topic 
       ? (getTopicNameByLanguage(topic, selectedLanguage) || topic.topic_name || chapter.chapter_name)
-      : (getChapterNameByLanguage(chapter, selectedLanguage) || chapter.chapter_name);
+      : (getChapterNameByLanguage(chapter._rawData || chapter, selectedLanguage) || chapter.chapter_name);
     const learningObjective = topic 
       ? (getLearningObjectiveByLanguage(topic, selectedLanguage) || topic.learning_objective || '')
       : '';
@@ -2329,7 +2339,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                         <LessonCard 
                           lessonItem={lessonItem}
                           completedLessons={completedLessons}
-                          onOpenModal={handleLessonClick}
+                          onOpenModal={openLessonModal}
                           getThumbnail={getThumbnail}
                           selectedLanguage={selectedLanguage}
                           isLockedForGuest={isLockedForGuest}
@@ -2379,7 +2389,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                       key={`${itemKey}_${index}`}
                       lessonItem={lessonItem}
                       completedLessons={completedLessons}
-                      onOpenModal={handleLessonClick}
+                      onOpenModal={openLessonModal}
                       selectedLanguage={selectedLanguage}
                       isLockedForGuest={isLockedForGuest}
                       onGuestSignup={handleGuestSignup}
