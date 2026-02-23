@@ -115,13 +115,14 @@ const StudentDashboard = () => {
     if (launchedLessonHandledRef.current === key) return;
     launchedLessonHandledRef.current = key;
 
+    const effectiveLang = launched.lang ?? 'en';
     let cancelled = false;
     (async () => {
       try {
         const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId: launched.chapter_id,
-          lang: 'en',
+          lang: effectiveLang,
           topicId: launched.topic_id,
         });
         if (cancelled) return;
@@ -152,9 +153,9 @@ const StudentDashboard = () => {
             id: tts.id || '',
             script_type: tts.script_type || tts.section || 'full',
             audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
-            language: tts.language || tts.lang || 'en',
+            language: tts.language || tts.lang || effectiveLang,
           }))
-          .filter((tts) => (tts.language || 'en').toLowerCase() === 'en');
+          .filter((tts) => (tts.language || 'en').toLowerCase() === effectiveLang.toLowerCase());
         const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
         const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
 
@@ -185,7 +186,7 @@ const StudentDashboard = () => {
           tts_ids: topic.tts_ids || [],
           tts_audio_url: topic.tts_audio_url || '',
           ttsAudio,
-          language: 'en',
+          language: effectiveLang,
         };
         const fullLessonData = {
           chapter: cleanChapter,
@@ -195,7 +196,7 @@ const StudentDashboard = () => {
           assets3d: safeAssets3d,
           startedAt: new Date().toISOString(),
           _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
-          language: 'en',
+          language: effectiveLang,
           ttsAudio,
         };
         sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));

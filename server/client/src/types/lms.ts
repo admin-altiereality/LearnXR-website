@@ -149,6 +149,8 @@ export interface LaunchedLesson {
   curriculum?: string;
   class_name?: string;
   subject?: string;
+  /** Language for the launched lesson (e.g. 'en' | 'hi'); used for bundle and TTS */
+  lang?: string;
 }
 
 /** Payload when teacher sends current Create-page scene to the class */

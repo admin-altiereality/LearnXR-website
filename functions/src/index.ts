@@ -38,40 +38,44 @@ const getApp = (): express.Application => {
   
   // Create Express app once per instance
   app = express();
-    
+
+    // CORS: set headers early for all responses so preflight and errors still get them.
+    const isAllowedOrigin = (origin: string | undefined): boolean => {
+      if (!origin) return true;
+      const o = origin.toLowerCase();
+      return o.includes('.web.app') || o.includes('.firebaseapp.com') || o.includes('localhost') || o.includes('127.0.0.1');
+    };
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      const origin = req.headers.origin;
+      if (isAllowedOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-In3d-Key');
+        res.setHeader('Access-Control-Max-Age', '86400');
+      }
+      if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+      }
+      next();
+    });
+
     // CORS configuration - allow Firebase Hosting + localhost.
-    // Use a single options object for BOTH middleware and preflight so headers are consistent.
     const corsOptions: cors.CorsOptions = {
       origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-
-        const o = origin.toLowerCase();
-        
-        // Allow all Firebase Hosting origins (production and preview channels)
-        if (o.includes('.web.app') || o.includes('.firebaseapp.com')) {
-          return callback(null, true);
-        }
-        
-        // Allow localhost for development
-        if (o.includes('localhost') || o.includes('127.0.0.1')) {
-          return callback(null, true);
-        }
-        
-        // Default-deny anything else (tighten security; avoids accidental cross-site usage)
+        if (isAllowedOrigin(origin)) return callback(null, true);
         return callback(new Error(`CORS blocked for origin: ${origin}`));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-In3d-Key'],
       exposedHeaders: ['Content-Type', 'Authorization'],
-      maxAge: 86400, // 24 hours
+      maxAge: 86400,
       optionsSuccessStatus: 204
     };
 
     app.use(cors(corsOptions));
-
-    // Handle preflight requests explicitly (same options as above)
     app.options('*', cors(corsOptions));
     
     app.use(express.json());

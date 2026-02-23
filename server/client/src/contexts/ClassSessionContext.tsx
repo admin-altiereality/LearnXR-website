@@ -38,7 +38,7 @@ interface ClassSessionContextValue {
   activeSession: ClassSession | null;
   progressList: SessionStudentProgress[];
   startSession: (classId: string) => Promise<string | null>;
-  launchLesson: (payload: LaunchedLesson) => Promise<boolean>;
+  launchLesson: (payload: LaunchedLesson, sessionIdOverride?: string) => Promise<boolean>;
   launchScene: (payload: LaunchedScene) => Promise<boolean>;
   endSession: () => Promise<boolean>;
   leaveSessionAsTeacher: () => void;
@@ -118,11 +118,12 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
   );
 
   const launchLesson = useCallback(
-    async (payload: LaunchedLesson): Promise<boolean> => {
-      if (!activeSessionId || !user?.uid) return false;
+    async (payload: LaunchedLesson, sessionIdOverride?: string): Promise<boolean> => {
+      const sessionId = sessionIdOverride ?? activeSessionId;
+      if (!sessionId || !user?.uid) return false;
       setSessionLoading(true);
       try {
-        const ok = await apiLaunchLesson(activeSessionId, user.uid, payload);
+        const ok = await apiLaunchLesson(sessionId, user.uid, payload);
         if (!ok) setSessionError('Failed to launch lesson.');
         return ok;
       } finally {
