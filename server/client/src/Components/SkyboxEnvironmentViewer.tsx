@@ -15,7 +15,7 @@ import {
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getProxyAssetUrl } from '../utils/apiConfig';
 
 // ============================================
 // Types
@@ -119,10 +119,9 @@ function InteractiveAsset({ asset, isSelected, onSelect, transformMode, onTransf
 
     // Try loading strategies
     const tryLoad = async () => {
-      const apiBaseUrl = getApiBaseUrl();
       const strategies = [
         modelUrl,
-        `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(modelUrl)}`,
+        getProxyAssetUrl(modelUrl),
       ];
 
       for (const url of strategies) {

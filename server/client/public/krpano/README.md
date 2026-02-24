@@ -1,35 +1,44 @@
 # krpano viewer for VR Lesson Player
 
-This folder must contain the krpano HTML5 viewer so the VR Lesson Player (krpano version) can load 360° panoramas.
+This folder contains the krpano HTML5 viewer so the VR Lesson Player (krpano version) can load 360° panoramas and 3D assets (GLB/GLTF) via the Three.js plugin.
 
-## Setup
+## Version and contents
 
-1. **Copy the main viewer script** from the LearnXR-website-main repo:
-   - From: `LearnXR-website-main/js/eiffeltower.js`
-   - To: **`krpano.js`** (this folder, i.e. `public/krpano/krpano.js`)
-
-2. **Copy the WebVR plugin** (and any other plugins you need):
-   - Create a subfolder: `public/krpano/plugins/`
-   - From: `LearnXR-website-main/swf/plugins/`
-   - Copy at least:
-     - `webvr.js`
-     - `webvr.xml`
-   - Optional: copy other plugins (e.g. `videoplayer.js`) if you use them.
+- **krpano 1.23.3** (from `krpano-1.23.3/viewer/` in this repo).
+- **Main script**: `krpano.js`
+- **Plugins** (in `plugins/`):
+  - **webvr.xml**, **webvr.js** – WebVR / headset support
+  - **threejs_krpanoplugin.js** – Three.js plugin for 3D model hotspots (GLB/GLTF)
+  - **controls3d.xml** – 3D controls (movement, collision)
+  - **drag3d.xml** – Drag 3D objects in the scene
+  - **iphone_fullscreen_swipe.xml** – iPhone fullscreen swipe helper
 
 ## Resulting structure
 
 ```
 public/krpano/
-  README.md          (this file)
-  krpano.js          (copy of eiffeltower.js)
+  README.md
+  krpano.js
   plugins/
-    webvr.js
     webvr.xml
+    webvr.js
+    controls3d.xml
+    drag3d.xml
+    iphone_fullscreen_swipe.xml
+    threejs_krpanoplugin.js
 ```
 
 ## Note
 
-The krpano viewer in LearnXR-website-main is version **1.20.9**. For production you may use a licensed krpano build; the embed API is the same.
+When lessons have both a skybox and 3D assets (GLB), the player uses krpano with the Three.js plugin to render 3D models as `type="threejs"` hotspots inside the same 360° view. Lessons with only a skybox use krpano with sphere + WebVR; lessons with only a GLB (no skybox) use the React Three Fiber model-only path.
+
+## License
+
+The license is embedded in the viewer file (`krpano.js`), not in the app code. If you see **"Registered to: ... (old license)"** in the browser console after renewing:
+
+1. Open **krpano Tools**, go to registration, and paste your **new** license code.
+2. **Re-generate the viewer**: run the **Update Tool** or use **kprotect** to produce a new `krpano.js`.
+3. **Replace** this folder’s `krpano.js` with the newly generated file, then rebuild and redeploy hosting.
 
 ---
 
@@ -54,7 +63,8 @@ The krpano viewer in LearnXR-website-main is version **1.20.9**. For production 
 
 4. **Check that it works**  
    - **Loading**: “Loading environment...” then the 360° view appears (no red errors in console).
-   - **View**: You can drag to look around the panorama; optional WebVR button if the plugin is present.
+   - **View**: You can drag to look around the panorama; optional WebVR / Enter VR on supported devices.
+   - **3D assets**: If the lesson has GLB/GLTF assets, they appear as 3D objects in the scene (draggable when drag3d is used).
    - **Flow**: Welcome screen → “Start Lesson” → TTS/avatar, MCQs, chat, etc., behave the same as the original player.
 
 5. **If there’s no skybox**  

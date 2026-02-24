@@ -25,7 +25,7 @@ import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
 import { isGuestUser } from '../utils/rbac';
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getApiBaseUrl, getProxyAssetUrl } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
 import { getLessonBundle } from '../services/firestore/getLessonBundle';
@@ -438,8 +438,7 @@ function AssetModel({
 
     let loadUrl = url;
     if (url.includes('assets.meshy.ai')) {
-      const apiBaseUrl = getApiBaseUrl();
-      loadUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(url)}`;
+      loadUrl = getProxyAssetUrl(url);
       log('🔄', 'Using proxy for Meshy asset');
     }
 

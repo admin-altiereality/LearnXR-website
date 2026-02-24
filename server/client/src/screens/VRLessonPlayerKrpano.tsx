@@ -26,7 +26,7 @@ import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
 import { isGuestUser } from '../utils/rbac';
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getApiBaseUrl, getProxyAssetUrl } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
 import { getLessonBundle } from '../services/firestore/getLessonBundle';
@@ -430,7 +430,7 @@ function AssetModelInScene({
       /^https?:\/\//i.test(url) &&
       !url.startsWith(window.location.origin);
     if (url.includes('assets.meshy.ai') || isExternal) {
-      loadUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+      loadUrl = getProxyAssetUrl(url);
     }
     const loader = new GLTFLoader();
     loader.load(
@@ -835,6 +835,9 @@ const VRLessonPlayerInner = () => {
   const prepCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [prepVRCapabilities, setPrepVRCapabilities] = useState<any>(null);
 
+  /** Set to true to show the teacher avatar panel in the scene (hidden for now to avoid console output). */
+  const SHOW_TEACHER_AVATAR = false;
+
   // Load extra lesson data from sessionStorage on mount
   useEffect(() => {
     const initializeData = async () => {
@@ -1034,6 +1037,7 @@ const VRLessonPlayerInner = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const krpanoContainerRef = useRef<HTMLDivElement>(null);
   const krpanoViewerRef = useRef<{ call?: (action: string) => void; get?: (name: string) => string } | null>(null);
+  const krpanoFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
@@ -1041,6 +1045,17 @@ const VRLessonPlayerInner = () => {
   const [isQuestDevice, setIsQuestDevice] = useState(false);
   const [showEnterVROverlay, setShowEnterVROverlay] = useState(true);
   const [lastHotspotClicked, setLastHotspotClicked] = useState<string | null>(null);
+
+  // Krpano 3D debug (right-side panel)
+  const [krpanoDebug, setKrpanoDebug] = useState<{
+    rawGlbUrls: string[];
+    threeJsAssetUrls: string[];
+    xmlHasThreejs: boolean;
+    xmlHotspot3dCount: number;
+    xmlSnippet: string;
+    krpanoReady: boolean;
+    error?: string;
+  } | null>(null);
 
   // Skybox State
   const [skyboxData, setSkyboxData] = useState<SkyboxData | null>(null);
@@ -1194,12 +1209,12 @@ const VRLessonPlayerInner = () => {
   const currentMcq = mcqs[currentMcqIndex];
 
   // All content ready: skybox (or no skybox), 3D assets (or none), and TTS must be ready.
-  // When lesson has both skybox + GLB we use integrated scene: wait for skybox texture and 3D model before Start Lesson.
+  // When we have skybox we use krpano (3D loads inside krpano) so don't wait for assetLoading. Only wait for asset when GLB-only (model-only R3F path).
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
     const hasGlbAsset = !!(assetUrl && isGlbOrGltfUrl(assetUrl));
-    const assetReady = hasGlbAsset ? !assetLoading : true;
+    const assetReady = hasGlbAsset ? (!assetLoading || !!skyboxUrl) : true;
     const ttsReady =
       ttsStatus !== 'loading' &&
       (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
@@ -1406,14 +1421,17 @@ const VRLessonPlayerInner = () => {
     setIsQuestDevice(isMetaQuestBrowser());
   }, []);
 
-  // Embed krpano when we have skybox and container is mounted, and we're NOT using integrated Three.js (no GLB asset)
+  // Embed krpano when we have skybox and container is mounted (with or without 3D assets; 3D via threejs plugin)
   useEffect(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     if (!skyboxUrl || !krpanoContainerRef.current || !krpanoContainerMounted) return;
-    if (assetUrl && isGlbOrGltfUrl(assetUrl)) return; // use integrated Three.js scene instead
 
     let cancelled = false;
     krpanoViewerRef.current = null;
+    if (krpanoFallbackTimerRef.current) {
+      clearTimeout(krpanoFallbackTimerRef.current);
+      krpanoFallbackTimerRef.current = null;
+    }
     // Guided lookto & hotspots from lesson topic (optional)
     const lookatByPhase: LookatByPhase | undefined = extraLessonData?.topic?.lookatByPhase;
     let hotspots: KrpanoHotspotOption[] = Array.isArray(extraLessonData?.topic?.hotspots)
@@ -1433,10 +1451,24 @@ const VRLessonPlayerInner = () => {
 
     // Use proxy for external skybox URLs to avoid CORS (krpano loads image cross-origin)
     const isFirebaseStorage =
-      skyboxUrl.includes('firebasestorage.googleapis.com') || skyboxUrl.includes('firebasestorage.app');
-    const sphereUrlForKrpano = isFirebaseStorage
+      (url: string) =>
+        url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app');
+    const sphereUrlForKrpano = isFirebaseStorage(skyboxUrl)
       ? skyboxUrl
-      : `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
+      : getProxyAssetUrl(skyboxUrl);
+
+    // Collect GLB/GLTF URLs for threejs plugin (proxy non-Firebase for CORS)
+    const rawGlbUrls: string[] = [];
+    if (assetUrl && isGlbOrGltfUrl(assetUrl)) rawGlbUrls.push(assetUrl);
+    if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d)) {
+      for (const a of extraLessonData.assets3d) {
+        const glb = (a as { glb_url?: string }).glb_url || (a as { stored_glb_url?: string }).stored_glb_url || (a as { model_urls?: { glb?: string } }).model_urls?.glb;
+        if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
+      }
+    }
+    const threeJsAssetUrls = rawGlbUrls.map((url) =>
+      isFirebaseStorage(url) ? url : getProxyAssetUrl(url)
+    );
 
     loadKrpanoScript()
       .then(() => {
@@ -1448,6 +1480,21 @@ const VRLessonPlayerInner = () => {
           webvr: true,
           lookatByPhase,
           hotspots,
+          threeJsAssetUrls: threeJsAssetUrls.length > 0 ? threeJsAssetUrls : undefined,
+        });
+        const xmlHasThreejs = xml.includes('<threejs');
+        const xmlHotspot3dCount = (xml.match(/type="threejs"/g) || []).length;
+        const snippetStart = xml.indexOf('<threejs');
+        const xmlSnippet = snippetStart >= 0
+          ? xml.slice(Math.max(0, snippetStart - 80), snippetStart + 400)
+          : xml.slice(0, 600);
+        setKrpanoDebug({
+          rawGlbUrls: [...rawGlbUrls],
+          threeJsAssetUrls: [...threeJsAssetUrls],
+          xmlHasThreejs,
+          xmlHotspot3dCount,
+          xmlSnippet,
+          krpanoReady: false,
         });
         embedKrpano({
           xml,
@@ -1461,25 +1508,41 @@ const VRLessonPlayerInner = () => {
                 hotspotClickRef.current?.(name);
               };
               setSceneReady(true);
+              setKrpanoDebug((prev) => (prev ? { ...prev, krpanoReady: true } : null));
             }
           },
           onerror: (msg) => {
             if (!cancelled) {
               setSkyboxError(msg || 'Failed to load 360° viewer');
               setSceneReady(true);
+              setKrpanoDebug((prev) => (prev ? { ...prev, error: msg || 'Unknown error', krpanoReady: false } : null));
             }
           },
         });
+
+        // Fallback: if onready never fires (e.g. plugin load hang), allow user to proceed after 12s
+        krpanoFallbackTimerRef.current = setTimeout(() => {
+          if (!cancelled) {
+            setSceneReady((prev) => (prev ? prev : true));
+            setKrpanoDebug((prev) => (prev && !prev.krpanoReady ? { ...prev, error: 'onready timeout (12s)' } : prev));
+          }
+          krpanoFallbackTimerRef.current = null;
+        }, 12000);
       })
       .catch((err) => {
         if (!cancelled) {
           setSkyboxError(err?.message || 'Failed to load 360° viewer');
           setSceneReady(true);
+          setKrpanoDebug((prev) => (prev ? { ...prev, error: err?.message || 'Load failed', krpanoReady: false } : null));
         }
       });
 
     return () => {
       cancelled = true;
+      if (krpanoFallbackTimerRef.current) {
+        clearTimeout(krpanoFallbackTimerRef.current);
+        krpanoFallbackTimerRef.current = null;
+      }
       (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
     };
   }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetUrl, extraLessonData]);
@@ -1559,7 +1622,9 @@ const VRLessonPlayerInner = () => {
   }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
 
   // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
-  const useKrpanoView = !assetUrl || !isGlbOrGltfUrl(assetUrl);
+  // Krpano is the active view whenever we have a skybox (skybox-only or skybox+GLB); sync uses this.
+  // Note: Console warning "Unknown action: 90" may come from a krpano plugin (e.g. view/fov handling) and is under investigation.
+  const useKrpanoView = !!(skyboxData?.imageUrl || skyboxData?.file_url);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
     const phase = lessonPhase as string;
@@ -2946,10 +3011,11 @@ const VRLessonPlayerInner = () => {
   };
 
   const skyboxImageUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-  const useIntegratedScene = !!(skyboxImageUrl && assetUrl && isGlbOrGltfUrl(assetUrl));
-  // Always proxy skybox for integrated scene to avoid CORS with TextureLoader
+  // Use krpano for all skybox (with or without 3D assets; 3D via krpano threejs plugin). R3F only for GLB-only (no skybox).
+  const useIntegratedScene = false;
+  // Always proxy skybox for integrated scene to avoid CORS with TextureLoader (used only when useIntegratedScene is re-enabled)
   const resolvedSkyboxUrlForScene = skyboxImageUrl
-    ? `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxImageUrl)}`
+    ? getProxyAssetUrl(skyboxImageUrl)
     : '';
   const useModelOnlyScene = !!(assetUrl && isGlbOrGltfUrl(assetUrl) && !skyboxImageUrl);
 
@@ -3116,6 +3182,33 @@ const VRLessonPlayerInner = () => {
         )}
       </AnimatePresence>
 
+      {/* Krpano 3D debug panel (right side) */}
+      {krpanoDebug && (
+        <div className="absolute top-20 right-4 z-50 w-80 max-h-[70vh] overflow-auto rounded-lg border border-amber-500/50 bg-slate-950/95 backdrop-blur-sm shadow-xl text-left text-xs font-mono p-3 space-y-2">
+          <div className="text-amber-400 font-semibold border-b border-amber-500/30 pb-1">Krpano 3D Debug</div>
+          <div><span className="text-slate-500">assetUrl:</span> {assetUrl ? (assetUrl.length > 50 ? assetUrl.slice(0, 50) + '…' : assetUrl) : 'null'}</div>
+          <div><span className="text-slate-500">extraLessonData.assets3d:</span> {Array.isArray(extraLessonData?.assets3d) ? extraLessonData.assets3d.length : '—'}</div>
+          <div><span className="text-slate-500">rawGlbUrls:</span> {krpanoDebug.rawGlbUrls.length}</div>
+          {krpanoDebug.rawGlbUrls[0] && (
+            <div className="break-all text-slate-400">{krpanoDebug.rawGlbUrls[0].slice(0, 70)}…</div>
+          )}
+          <div><span className="text-slate-500">threeJsAssetUrls:</span> {krpanoDebug.threeJsAssetUrls.length}</div>
+          {krpanoDebug.threeJsAssetUrls[0] && (
+            <div className="break-all text-slate-400">{krpanoDebug.threeJsAssetUrls[0].slice(0, 70)}…</div>
+          )}
+          <div><span className="text-slate-500">XML &lt;threejs&gt;:</span> {krpanoDebug.xmlHasThreejs ? 'yes' : 'no'}</div>
+          <div><span className="text-slate-500">XML type="threejs" hotspots:</span> {krpanoDebug.xmlHotspot3dCount}</div>
+          <div><span className="text-slate-500">krpano onready:</span> {krpanoDebug.krpanoReady ? 'yes' : 'no'}</div>
+          {krpanoDebug.error && (
+            <div className="text-red-400">Error: {krpanoDebug.error}</div>
+          )}
+          <div className="text-slate-500 border-t border-slate-700 pt-1 mt-1">XML snippet:</div>
+          <pre className="whitespace-pre-wrap break-all text-[10px] text-slate-500 bg-slate-900/80 p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
+            {krpanoDebug.xmlSnippet}
+          </pre>
+        </div>
+      )}
+
       {/* Exit Button */}
       <button
         onClick={handleExit}
@@ -3185,38 +3278,38 @@ const VRLessonPlayerInner = () => {
         </button>
       </div>
 
-      {/* Avatar Panel - Transparent Background (No Gender Selection) */}
-      <div className="absolute right-4 bottom-4 z-20 w-[180px] h-[270px] md:w-[220px] md:h-[330px]">
-        <div className="w-full h-full rounded-2xl overflow-hidden" style={{ background: 'transparent' }}>
-          <Suspense fallback={
-            <div className="w-full h-full flex items-center justify-center bg-black/20">
-              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
-            </div>
-          }>
-            <TeacherAvatar
-              ref={avatarRef}
-              className="w-full h-full"
-              avatarModelUrl="/models/avatar3.glb"
-              curriculum={effectiveLesson?.chapter?.curriculum}
-              class={effectiveLesson?.chapter?.class_name}
-              subject={effectiveLesson?.chapter?.subject}
-              useAvatarKey={true}
-              externalThreadId={threadId}
-              onReady={handleAvatarReady}
-              // Pass audio URL for lip sync - TeacherAvatar will animate lips
-              audioUrl={ttsStatus === 'playing' ? currentAudioUrl : null}
-              visemes={currentVisemes}
-            />
-          </Suspense>
-        </div>
-        
-        {avatarReady && (
-          <div className="absolute -top-2 -right-2 flex items-center gap-1 px-2 py-1 bg-emerald-500 text-white text-xs font-medium rounded-full">
-            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-            Ready
+      {/* Avatar Panel - hidden for now; set SHOW_TEACHER_AVATAR true to re-enable */}
+      {SHOW_TEACHER_AVATAR && (
+        <div className="absolute right-4 bottom-4 z-20 w-[180px] h-[270px] md:w-[220px] md:h-[330px]">
+          <div className="w-full h-full rounded-2xl overflow-hidden" style={{ background: 'transparent' }}>
+            <Suspense fallback={
+              <div className="w-full h-full flex items-center justify-center bg-black/20">
+                <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+              </div>
+            }>
+              <TeacherAvatar
+                ref={avatarRef}
+                className="w-full h-full"
+                avatarModelUrl="/models/avatar3.glb"
+                curriculum={effectiveLesson?.chapter?.curriculum}
+                class={effectiveLesson?.chapter?.class_name}
+                subject={effectiveLesson?.chapter?.subject}
+                useAvatarKey={true}
+                externalThreadId={threadId}
+                onReady={handleAvatarReady}
+                audioUrl={ttsStatus === 'playing' ? currentAudioUrl : null}
+                visemes={currentVisemes}
+              />
+            </Suspense>
           </div>
-        )}
-      </div>
+          {avatarReady && (
+            <div className="absolute -top-2 -right-2 flex items-center gap-1 px-2 py-1 bg-emerald-500 text-white text-xs font-medium rounded-full">
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+              Ready
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Welcome Screen - Before Lesson Starts */}
       <AnimatePresence>

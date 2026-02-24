@@ -52,6 +52,21 @@ export const getApiBaseUrl = (): string => {
 };
 
 /**
+ * Build proxy-asset URL for a given target URL. Decodes the target once before encoding
+ * to avoid double-encoding (e.g. signed URLs with & as %26).
+ * @param targetUrl - The URL to proxy (may be already percent-encoded)
+ * @returns Full proxy URL: {apiBase}/proxy-asset?url={encoded target}
+ */
+export const getProxyAssetUrl = (targetUrl: string): string => {
+  try {
+    targetUrl = decodeURIComponent(targetUrl);
+  } catch {
+    // leave as-is if decoding fails
+  }
+  return `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(targetUrl)}`;
+};
+
+/**
  * Get Firebase project configuration
  */
 export const getFirebaseProjectConfig = () => {

@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState, useMemo, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { getProxyAssetUrl } from '../utils/apiConfig';
 
 export interface StudentViewAngle {
   hlookat: number;
@@ -109,10 +110,8 @@ export function StudentScreen360Preview({
     const isFirebase =
       skyboxUrl.includes('firebasestorage.googleapis.com') ||
       skyboxUrl.includes('firebasestorage.app');
-    return isFirebase
-      ? skyboxUrl
-      : `${getApiBaseUrl().replace(/\/$/, '')}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
-  }, [skyboxUrl, getApiBaseUrl]);
+    return isFirebase ? skyboxUrl : getProxyAssetUrl(skyboxUrl);
+  }, [skyboxUrl]);
 
   useEffect(() => {
     mountedRef.current = true;

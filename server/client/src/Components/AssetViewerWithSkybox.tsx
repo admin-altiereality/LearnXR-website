@@ -14,7 +14,7 @@ import {
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getProxyAssetUrl } from '../utils/apiConfig';
 
 interface AssetViewerWithSkyboxProps {
   assetUrl: string;
@@ -736,8 +736,7 @@ function AssetModel({
         
         if (!isFirebaseStorageUrl) {
           // Only use proxy for external URLs (like Meshy.ai)
-          const apiBaseUrl = getApiBaseUrl();
-          finalUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+          finalUrl = getProxyAssetUrl(assetUrl);
           console.log('🔄 Loading 3D asset via proxy (external URL):', finalUrl);
         } else {
           console.log('✅ Loading 3D asset directly from Firebase Storage:', assetUrl);
@@ -923,8 +922,7 @@ function AssetModel({
                 
                 let finalUrl = refreshedUrl;
                 if (!isFirebaseStorageUrl) {
-                  const apiBaseUrl = getApiBaseUrl();
-                  finalUrl = `${apiBaseUrl}/proxy-asset?url=${encodeURIComponent(refreshedUrl)}`;
+                  finalUrl = getProxyAssetUrl(refreshedUrl);
                 }
                 
                 const loadedGltf = await new Promise<any>((resolve, reject) => {

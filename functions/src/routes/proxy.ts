@@ -19,29 +19,52 @@ router.options('/proxy-asset', (req: Request, res: Response) => {
 
 router.get('/proxy-asset', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
-  const { url } = req.query;
-  
+  let urlParam = req.query.url;
+  // Some query parsers split on & and break signed URLs; use raw query if parsed value looks truncated
+  if (typeof urlParam !== 'string' || (urlParam.includes('assets.meshy.ai') && !urlParam.includes('Key-Pair-Id') && req.originalUrl?.includes('url='))) {
+    const raw = req.originalUrl || '';
+    const match = raw.match(/[?&]url=([^&]+(?:\&(?:Key-Pair-Id|Signature|Policy)=[^&]*)*)/);
+    if (match && match[1]) {
+      urlParam = match[1]; // may still be encoded
+    }
+  }
+  const url = typeof urlParam === 'string' ? urlParam : '';
+
   try {
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ 
+    if (!url) {
+      return res.status(400).json({
         error: 'URL parameter is required',
-        requestId 
+        requestId
       });
     }
 
-    console.log(`[${requestId}] Proxying asset request:`, url);
+    console.log(`[${requestId}] Proxying asset request:`, url.substring(0, 120) + (url.length > 120 ? '...' : ''));
 
-    // Decode the URL to handle double encoding issues
-    const decodedUrl = decodeURIComponent(url);
-    console.log(`[${requestId}] Decoded URL:`, decodedUrl);
+    // Decode until stable so single- or double-encoded query params (e.g. signed URLs with &) work
+    let decodedUrl = url;
+    let prev = '';
+    while (prev !== decodedUrl) {
+      prev = decodedUrl;
+      try {
+        decodedUrl = decodeURIComponent(decodedUrl);
+      } catch {
+        break;
+      }
+    }
+    console.log(`[${requestId}] Decoded URL:`, decodedUrl.substring(0, 120) + (decodedUrl.length > 120 ? '...' : ''));
+
+    // Use app origin as Referer so origins that check it (e.g. Meshy CDN) allow the request
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const fetchHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Accept-Encoding': 'identity',
+      'Referer': origin + '/',
+    };
 
     const response = await axios.get(decodedUrl, {
       responseType: 'stream',
-      headers: {
-        'User-Agent': 'In3D.ai-WebApp/1.0',
-        'Accept': '*/*',
-        'Accept-Encoding': 'identity', // Prevent compression issues
-      },
+      headers: fetchHeaders,
       timeout: 30000,
       maxRedirects: 5,
       validateStatus: (status) => status < 500, // Don't throw on 4xx errors
@@ -110,8 +133,13 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
       });
     }
 
-    const contentType = response.headers['content-type'] || 'application/octet-stream';
-    
+    let contentType = response.headers['content-type'] || 'application/octet-stream';
+    // Ensure GLB/GLTF is recognized (some origins return application/octet-stream)
+    if (contentType === 'application/octet-stream' && /\.glb(\?|$)/i.test(decodedUrl)) {
+      contentType = 'model/gltf-binary';
+    } else if (contentType === 'application/octet-stream' && /\.gltf(\?|$)/i.test(decodedUrl)) {
+      contentType = 'model/gltf+json';
+    }
     res.setHeader('Content-Type', contentType);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
