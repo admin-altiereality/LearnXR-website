@@ -25,7 +25,8 @@ function SphereWithTexture({ texture }: { texture: THREE.Texture | null }) {
     });
   }, [texture]);
   if (!material) return null;
-  return <mesh geometry={geometry} material={material} scale={[-1, 1, 1]} />;
+  // No horizontal flip: scale [1,1,1] so skybox left-to-right matches student view (not mirrored).
+  return <mesh geometry={geometry} material={material} scale={[1, 1, 1]} />;
 }
 
 function CameraController({
@@ -41,9 +42,10 @@ function CameraController({
   const lookAt = useRef(new THREE.Vector3());
 
   useFrame(() => {
-    // Match VRLessonPlayerKrpano: theta = -h so preview matches Krpano/integrated orientation.
+    // Krpano hlookat/vlookat; negate so drag-right → preview right, drag-up → preview up.
+    // Sphere is [1,1,1] so texture left-to-right matches student (no mirror).
     const theta = (-hlookat * Math.PI) / 180;
-    const phi = (vlookat * Math.PI) / 180;
+    const phi = (-vlookat * Math.PI) / 180;
     const cx = Math.cos(phi) * Math.sin(theta);
     const cy = Math.sin(phi);
     const cz = Math.cos(phi) * Math.cos(theta);
@@ -99,9 +101,9 @@ export function StudentScreen360Preview({
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [loading, setLoading] = useState(true);
   const mountedRef = useRef(true);
-  const h = view.hlookat ?? 0;
-  const v = view.vlookat ?? 0;
-  const fov = view.fov ?? 90;
+  const h = Number(view.hlookat) || 0;
+  const v = Number(view.vlookat) || 0;
+  const fov = Number(view.fov) || 90;
 
   const imgSrc = useMemo(() => {
     const isFirebase =
@@ -134,7 +136,7 @@ export function StudentScreen360Preview({
       tex.mapping = THREE.EquirectangularReflectionMapping;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.wrapS = THREE.RepeatWrapping;
-      // Single flip via mesh scale only to match VRLessonPlayerKrpano SkyboxSphereIntegrated
+      tex.repeat.x = 1;
       tex.needsUpdate = true;
       setTexture(tex);
       setLoading(false);
@@ -168,7 +170,7 @@ export function StudentScreen360Preview({
           
         ) : (
           <Canvas
-            camera={{ position: [0, 0, 0], fov: 90, near: 0.1, far: 1000 }}
+            camera={{ position: [0, 0, 0], fov: fov, near: 0.1, far: 1000 }}
             gl={{ antialias: true, alpha: false }}
             frameloop="always"
             style={{ width: '100%', height: '100%', display: 'block' }}
