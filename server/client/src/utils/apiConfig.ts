@@ -67,6 +67,24 @@ export const getProxyAssetUrl = (targetUrl: string): string => {
 };
 
 /**
+ * Build proxy-asset URL for krpano Three.js hotspots. The URL must end in .glb so
+ * krpano.utils.spliturl() returns ext="glb" and the plugin accepts it. Target URL
+ * is encoded in the path (path-safe base64url) since the loader does not send query.
+ * @param targetUrl - The real asset URL (e.g. Meshy CDN); may be percent-encoded
+ * @returns Full proxy URL: {apiBase}/proxy-asset/{base64url}/model.glb
+ */
+export const getProxyAssetUrlForThreejs = (targetUrl: string): string => {
+  try {
+    targetUrl = decodeURIComponent(targetUrl);
+  } catch {
+    // leave as-is if decoding fails
+  }
+  const base64 = btoa(encodeURIComponent(targetUrl));
+  const pathSafe = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${getApiBaseUrl()}/proxy-asset/${pathSafe}/model.glb`;
+};
+
+/**
  * Get Firebase project configuration
  */
 export const getFirebaseProjectConfig = () => {

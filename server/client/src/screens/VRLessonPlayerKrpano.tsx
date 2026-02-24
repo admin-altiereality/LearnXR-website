@@ -26,7 +26,7 @@ import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
 import { isGuestUser } from '../utils/rbac';
-import { getApiBaseUrl, getProxyAssetUrl } from '../utils/apiConfig';
+import { getApiBaseUrl, getProxyAssetUrl, getProxyAssetUrlForThreejs } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
 import { getLessonBundle } from '../services/firestore/getLessonBundle';
@@ -1046,17 +1046,6 @@ const VRLessonPlayerInner = () => {
   const [showEnterVROverlay, setShowEnterVROverlay] = useState(true);
   const [lastHotspotClicked, setLastHotspotClicked] = useState<string | null>(null);
 
-  // Krpano 3D debug (right-side panel)
-  const [krpanoDebug, setKrpanoDebug] = useState<{
-    rawGlbUrls: string[];
-    threeJsAssetUrls: string[];
-    xmlHasThreejs: boolean;
-    xmlHotspot3dCount: number;
-    xmlSnippet: string;
-    krpanoReady: boolean;
-    error?: string;
-  } | null>(null);
-
   // Skybox State
   const [skyboxData, setSkyboxData] = useState<SkyboxData | null>(null);
   const [skyboxLoading, setSkyboxLoading] = useState(true);
@@ -1467,7 +1456,7 @@ const VRLessonPlayerInner = () => {
       }
     }
     const threeJsAssetUrls = rawGlbUrls.map((url) =>
-      isFirebaseStorage(url) ? url : getProxyAssetUrl(url)
+      isFirebaseStorage(url) ? url : getProxyAssetUrlForThreejs(url)
     );
 
     loadKrpanoScript()
@@ -1482,20 +1471,6 @@ const VRLessonPlayerInner = () => {
           hotspots,
           threeJsAssetUrls: threeJsAssetUrls.length > 0 ? threeJsAssetUrls : undefined,
         });
-        const xmlHasThreejs = xml.includes('<threejs');
-        const xmlHotspot3dCount = (xml.match(/type="threejs"/g) || []).length;
-        const snippetStart = xml.indexOf('<threejs');
-        const xmlSnippet = snippetStart >= 0
-          ? xml.slice(Math.max(0, snippetStart - 80), snippetStart + 400)
-          : xml.slice(0, 600);
-        setKrpanoDebug({
-          rawGlbUrls: [...rawGlbUrls],
-          threeJsAssetUrls: [...threeJsAssetUrls],
-          xmlHasThreejs,
-          xmlHotspot3dCount,
-          xmlSnippet,
-          krpanoReady: false,
-        });
         embedKrpano({
           xml,
           target: KRPANO_CONTAINER_ID,
@@ -1508,14 +1483,12 @@ const VRLessonPlayerInner = () => {
                 hotspotClickRef.current?.(name);
               };
               setSceneReady(true);
-              setKrpanoDebug((prev) => (prev ? { ...prev, krpanoReady: true } : null));
             }
           },
           onerror: (msg) => {
             if (!cancelled) {
               setSkyboxError(msg || 'Failed to load 360° viewer');
               setSceneReady(true);
-              setKrpanoDebug((prev) => (prev ? { ...prev, error: msg || 'Unknown error', krpanoReady: false } : null));
             }
           },
         });
@@ -1524,7 +1497,6 @@ const VRLessonPlayerInner = () => {
         krpanoFallbackTimerRef.current = setTimeout(() => {
           if (!cancelled) {
             setSceneReady((prev) => (prev ? prev : true));
-            setKrpanoDebug((prev) => (prev && !prev.krpanoReady ? { ...prev, error: 'onready timeout (12s)' } : prev));
           }
           krpanoFallbackTimerRef.current = null;
         }, 12000);
@@ -1533,7 +1505,6 @@ const VRLessonPlayerInner = () => {
         if (!cancelled) {
           setSkyboxError(err?.message || 'Failed to load 360° viewer');
           setSceneReady(true);
-          setKrpanoDebug((prev) => (prev ? { ...prev, error: err?.message || 'Load failed', krpanoReady: false } : null));
         }
       });
 
@@ -3181,33 +3152,6 @@ const VRLessonPlayerInner = () => {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Krpano 3D debug panel (right side) */}
-      {krpanoDebug && (
-        <div className="absolute top-20 right-4 z-50 w-80 max-h-[70vh] overflow-auto rounded-lg border border-amber-500/50 bg-slate-950/95 backdrop-blur-sm shadow-xl text-left text-xs font-mono p-3 space-y-2">
-          <div className="text-amber-400 font-semibold border-b border-amber-500/30 pb-1">Krpano 3D Debug</div>
-          <div><span className="text-slate-500">assetUrl:</span> {assetUrl ? (assetUrl.length > 50 ? assetUrl.slice(0, 50) + '…' : assetUrl) : 'null'}</div>
-          <div><span className="text-slate-500">extraLessonData.assets3d:</span> {Array.isArray(extraLessonData?.assets3d) ? extraLessonData.assets3d.length : '—'}</div>
-          <div><span className="text-slate-500">rawGlbUrls:</span> {krpanoDebug.rawGlbUrls.length}</div>
-          {krpanoDebug.rawGlbUrls[0] && (
-            <div className="break-all text-slate-400">{krpanoDebug.rawGlbUrls[0].slice(0, 70)}…</div>
-          )}
-          <div><span className="text-slate-500">threeJsAssetUrls:</span> {krpanoDebug.threeJsAssetUrls.length}</div>
-          {krpanoDebug.threeJsAssetUrls[0] && (
-            <div className="break-all text-slate-400">{krpanoDebug.threeJsAssetUrls[0].slice(0, 70)}…</div>
-          )}
-          <div><span className="text-slate-500">XML &lt;threejs&gt;:</span> {krpanoDebug.xmlHasThreejs ? 'yes' : 'no'}</div>
-          <div><span className="text-slate-500">XML type="threejs" hotspots:</span> {krpanoDebug.xmlHotspot3dCount}</div>
-          <div><span className="text-slate-500">krpano onready:</span> {krpanoDebug.krpanoReady ? 'yes' : 'no'}</div>
-          {krpanoDebug.error && (
-            <div className="text-red-400">Error: {krpanoDebug.error}</div>
-          )}
-          <div className="text-slate-500 border-t border-slate-700 pt-1 mt-1">XML snippet:</div>
-          <pre className="whitespace-pre-wrap break-all text-[10px] text-slate-500 bg-slate-900/80 p-2 rounded overflow-x-auto max-h-32 overflow-y-auto">
-            {krpanoDebug.xmlSnippet}
-          </pre>
-        </div>
-      )}
 
       {/* Exit Button */}
       <button
