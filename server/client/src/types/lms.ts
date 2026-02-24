@@ -142,6 +142,13 @@ export interface Principal {
 // Class Launch – Sessions and live progress
 // =============================================================================
 
+/** Optional scene data sent with launched lesson so students can render 3D before sessionStorage */
+export interface LaunchedLessonSceneSnapshot {
+  skybox_image_url?: string;
+  skybox_glb_url?: string;
+  asset_urls?: string[];
+}
+
 /** Payload when teacher launches a curriculum lesson to the class */
 export interface LaunchedLesson {
   chapter_id: string;
@@ -151,6 +158,8 @@ export interface LaunchedLesson {
   subject?: string;
   /** Language for the launched lesson (e.g. 'en' | 'hi'); used for bundle and TTS */
   lang?: string;
+  /** Optional scene snapshot so player can show skybox + 3D from Firestore before sessionStorage */
+  scene_snapshot?: LaunchedLessonSceneSnapshot;
 }
 
 /** Payload when teacher sends current Create-page scene to the class */

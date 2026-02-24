@@ -23,6 +23,7 @@ const PUBLIC_PATHS = [
   '/subscription',
   '/user/subscription-status',
   '/proxy-asset',
+  '/api/proxy-asset',  // client calls .../api/proxy-asset/model.glb for krpano 3D
   '/ai-detection/enhance',  // Allow prompt enhancement without auth
   '/ai-detection/detect',  // Allow AI detection without auth
   '/ai-detection/extract-assets',  // Allow asset extraction without auth

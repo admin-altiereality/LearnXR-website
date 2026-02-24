@@ -1234,6 +1234,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
       // Get skybox URL from bundle or topic
       const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+      const skyboxGlbUrl = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
 
       // Build lesson data with language-specific content from bundle
       const preparedData = {
@@ -1259,6 +1260,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           status: topic.status || 'generated',
           skybox_id: bundle.skybox?.id || topic.skybox_id || null,
           skybox_url: skyboxUrl,
+          skybox_glb_url: skyboxGlbUrl || undefined,
           skybox_remix_id: topic.skybox_remix_id || null,
           // Use language-specific scripts from bundle
           avatar_intro: scripts.intro || '',
@@ -1844,6 +1846,17 @@ const Lessons = ({ setBackgroundSkybox }) => {
       subject: String(lessonData.chapter.subject ?? ''),
       lang: lessonData.language || selectedLanguage,
     };
+    // Scene snapshot so students can render skybox + 3D from Firestore before sessionStorage
+    const skyboxImageUrl = lessonData.topic?.skybox_url || '';
+    const skyboxGlbUrl = lessonData.topic?.skybox_glb_url || '';
+    const assetUrls = Array.isArray(lessonData.topic?.asset_urls) ? lessonData.topic.asset_urls.filter(Boolean) : [];
+    if (skyboxImageUrl || skyboxGlbUrl || assetUrls.length > 0) {
+      payload.scene_snapshot = {
+        ...(skyboxImageUrl && { skybox_image_url: skyboxImageUrl }),
+        ...(skyboxGlbUrl && { skybox_glb_url: skyboxGlbUrl }),
+        ...(assetUrls.length > 0 && { asset_urls: assetUrls }),
+      };
+    }
     let sessionId = activeSessionId;
     if (!sessionId && startSession && classIdForLaunch) {
       const newId = await startSession(classIdForLaunch);

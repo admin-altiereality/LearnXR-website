@@ -16,22 +16,49 @@ router.options('/proxy-asset', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Max-Age', '3600');
   res.status(204).send();
 });
+router.options('/proxy-asset/model.glb', (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '3600');
+  res.status(204).send();
+});
+router.options('/proxy-asset/model.gltf', (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '3600');
+  res.status(204).send();
+});
+router.options('/api/proxy-asset/model.glb', (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '3600');
+  res.status(204).send();
+});
+router.options('/api/proxy-asset/model.gltf', (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '3600');
+  res.status(204).send();
+});
 
-router.get('/proxy-asset', async (req: Request, res: Response) => {
+async function handleProxyAsset(req: Request, res: Response, contentTypeOverride?: string): Promise<void> {
   const requestId = (req as any).requestId;
   const { url } = req.query;
-  
+
   try {
     if (!url || typeof url !== 'string') {
-      return res.status(400).json({ 
+      res.status(400).json({
         error: 'URL parameter is required',
-        requestId 
+        requestId,
       });
+      return;
     }
 
     console.log(`[${requestId}] Proxying asset request:`, url);
-
-    // Decode the URL to handle double encoding issues
     const decodedUrl = decodeURIComponent(url);
     console.log(`[${requestId}] Decoded URL:`, decodedUrl);
 
@@ -39,38 +66,30 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
       responseType: 'stream',
       headers: {
         'User-Agent': 'In3D.ai-WebApp/1.0',
-        'Accept': '*/*',
-        'Accept-Encoding': 'identity', // Prevent compression issues
+        Accept: '*/*',
+        'Accept-Encoding': 'identity',
       },
       timeout: 30000,
       maxRedirects: 5,
-      validateStatus: (status) => status < 500, // Don't throw on 4xx errors
+      validateStatus: (status) => status < 500,
     });
 
-    // Check if the response is an error (4xx status)
     if (response.status >= 400) {
       console.error(`[${requestId}] Asset proxy failed with status ${response.status}:`, response.statusText);
-      
-      // Check content type to determine if we should try to parse as text/JSON
       const contentType = response.headers['content-type'] || '';
       const isTextContent = contentType.includes('text/') || contentType.includes('application/json');
-      
-      // Try to get error message from response (only for text/JSON content)
       let errorMessage = `Failed to fetch asset: ${response.status} ${response.statusText}`;
       if (isTextContent) {
         try {
           const errorData = await new Promise<string>((resolve) => {
             let data = '';
-            response.data.on('data', (chunk: Buffer) => { 
-              // Only read first 1000 bytes to avoid memory issues
+            response.data.on('data', (chunk: Buffer) => {
               if (data.length < 1000) {
                 data += chunk.toString('utf8', 0, Math.min(chunk.length, 1000 - data.length));
               }
             });
             response.data.on('end', () => resolve(data));
           });
-          
-          // Try to parse as JSON if it looks like JSON
           if (errorData.trim().startsWith('{') || errorData.trim().startsWith('[')) {
             try {
               const parsed = JSON.parse(errorData);
@@ -78,67 +97,80 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
                 errorMessage += ` - ${parsed.error || parsed.message}`;
               }
             } catch {
-              // Not valid JSON, use as-is if it's reasonable length
-              if (errorData.length < 200) {
-                errorMessage += ` - ${errorData}`;
-              }
+              if (errorData.length < 200) errorMessage += ` - ${errorData}`;
             }
           } else if (errorData.length < 200) {
             errorMessage += ` - ${errorData}`;
           }
         } catch (e) {
-          // Ignore error reading error response
           console.warn(`[${requestId}] Could not read error response:`, e);
         }
       } else {
-        // Binary content (image, etc.) - don't try to parse, just return generic error
         console.warn(`[${requestId}] Error response is binary (${contentType}), not parsing`);
       }
-      
-      return res.status(response.status).json({ 
+      res.status(response.status).json({
         error: errorMessage,
         requestId,
-        originalUrl: decodedUrl.substring(0, 100) + '...' // Log first 100 chars for debugging
+        originalUrl: decodedUrl.substring(0, 100) + '...',
       });
+      return;
     }
 
     if (!response.data) {
       console.error(`[${requestId}] Asset proxy failed: No data received`);
-      return res.status(500).json({ 
+      res.status(500).json({
         error: 'Failed to fetch asset: No data received',
-        requestId 
+        requestId,
       });
+      return;
     }
 
-    const contentType = response.headers['content-type'] || 'application/octet-stream';
-    
+    const contentType =
+      contentTypeOverride ||
+      response.headers['content-type'] ||
+      'application/octet-stream';
+
     res.setHeader('Content-Type', contentType);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    
+
     response.data.pipe(res);
-    
     console.log(`[${requestId}] Asset proxy successful`);
-    return;
   } catch (error: any) {
     console.error(`[${requestId}] Asset proxy error:`, error);
-    
     if (error.response) {
-      return res.status(error.response.status).json({ 
+      res.status(error.response.status).json({
         error: `Failed to fetch asset: ${error.response.status} ${error.response.statusText}`,
-        requestId 
+        requestId,
       });
+      return;
     }
-    
-    return res.status(500).json({ 
+    res.status(500).json({
       error: 'Internal server error during asset proxy',
       details: error.message,
-      requestId 
+      requestId,
     });
   }
-});
+}
+
+router.get('/proxy-asset', (req, res) => handleProxyAsset(req, res));
+// Krpano Three.js plugin detects format from URL path; path must end in .glb/.gltf. Force
+// Content-Type so the plugin and loaders accept the response even if upstream returns wrong type.
+router.get('/proxy-asset/model.glb', (req, res) =>
+  handleProxyAsset(req, res, 'model/gltf-binary'),
+);
+router.get('/proxy-asset/model.gltf', (req, res) =>
+  handleProxyAsset(req, res, 'model/gltf+json'),
+);
+// Client calls .../api/proxy-asset/model.glb; some runtimes pass path with /api prefix before normalization.
+router.get('/api/proxy-asset/model.glb', (req, res) =>
+  handleProxyAsset(req, res, 'model/gltf-binary'),
+);
+router.get('/api/proxy-asset/model.gltf', (req, res) =>
+  handleProxyAsset(req, res, 'model/gltf+json'),
+);
 
 export default router;
 
