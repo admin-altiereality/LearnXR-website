@@ -8,6 +8,18 @@ import axios from 'axios';
 
 const router = Router();
 
+/** Decode path-safe base64url (from getProxyAssetUrlForThreejs) back to target URL */
+function decodeProxyAssetEncoded(encoded: string): string | null {
+  try {
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    return decodeURIComponent(decoded);
+  } catch {
+    return null;
+  }
+}
+
 // Handle CORS preflight requests
 router.options('/proxy-asset', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,6 +27,66 @@ router.options('/proxy-asset', (req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Max-Age', '3600');
   res.status(204).send();
+});
+
+// Path-based proxy for krpano Three.js: URL must end in .glb so plugin accepts it. Target URL is in path.
+// Use regex so long base64 segment is matched reliably; also match /api/proxy-asset/... if path not normalized yet.
+const pathProxyGlbRegex = /^\/(?:api\/)?proxy-asset\/([^/]+)\/model\.glb\/?$/;
+router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void> => {
+  const requestId = (req as any).requestId;
+  const pathStr = req.path || req.url || '';
+  const pathMatch = pathStr.match(/proxy-asset\/([^/]+)\/model\.glb/);
+  const encoded = pathMatch ? pathMatch[1] : '';
+  const targetUrl = decodeProxyAssetEncoded(encoded);
+  if (!targetUrl) {
+    res.status(400).json({ error: 'Invalid encoded URL in path', requestId });
+    return;
+  }
+  try {
+    console.log(`[${requestId}] Proxying asset (path-based):`, targetUrl.substring(0, 120) + (targetUrl.length > 120 ? '...' : ''));
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const fetchHeaders: Record<string, string> = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Accept-Encoding': 'identity',
+      'Referer': origin + '/',
+    };
+    const response = await axios.get(targetUrl, {
+      responseType: 'stream',
+      headers: fetchHeaders,
+      timeout: 30000,
+      maxRedirects: 5,
+      validateStatus: (status) => status < 500,
+    });
+    if (response.status >= 400) {
+      console.error(`[${requestId}] Asset proxy (path) failed:`, response.status, response.statusText);
+      res.status(response.status).json({
+        error: `Failed to fetch asset: ${response.status} ${response.statusText}`,
+        requestId,
+      });
+      return;
+    }
+    if (!response.data) {
+      res.status(500).json({ error: 'No data received', requestId });
+      return;
+    }
+    let contentType = response.headers['content-type'] || '';
+    if (!contentType) contentType = 'model/gltf-binary';
+    else if (contentType === 'application/octet-stream') contentType = 'model/gltf-binary';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    response.data.pipe(res);
+    console.log(`[${requestId}] Asset proxy (path) successful`);
+  } catch (error: any) {
+    console.error(`[${requestId}] Asset proxy (path) error:`, error);
+    res.status(500).json({
+      error: error?.response ? `Failed to fetch asset: ${error.response.status}` : 'Internal server error',
+      requestId,
+    });
+  }
 });
 
 router.get('/proxy-asset', async (req: Request, res: Response) => {

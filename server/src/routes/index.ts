@@ -28,7 +28,55 @@ router.use((req, res, next) => {
   next();
 });
 
-// Proxy route for Meshy assets to handle CORS
+// Decode path-safe base64url (from getProxyAssetUrlForThreejs) back to target URL
+function decodeProxyAssetEncoded(encoded: string): string | null {
+  try {
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const decoded = Buffer.from(padded, 'base64').toString('utf8');
+    return decodeURIComponent(decoded);
+  } catch {
+    return null;
+  }
+}
+
+// Path-based proxy for krpano Three.js: URL must end in .glb so plugin accepts it. Target URL is in path.
+router.get('/proxy-asset/:encoded/model.glb', async (req, res) => {
+  try {
+    const targetUrl = decodeProxyAssetEncoded(req.params.encoded);
+    if (!targetUrl) {
+      return res.status(400).json({ error: 'Invalid encoded URL in path' });
+    }
+    console.log('🔗 Proxying asset (path-based):', targetUrl.slice(0, 100) + (targetUrl.length > 100 ? '...' : ''));
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Referer': origin + '/',
+      },
+    });
+    if (!response.ok) {
+      console.error('❌ Asset proxy (path) failed:', response.status, response.statusText);
+      return res.status(response.status).json({ error: `Failed to fetch asset: ${response.status} ${response.statusText}` });
+    }
+    let contentType = response.headers.get('content-type')?.split(';')[0]?.trim() || '';
+    if (!contentType) contentType = 'model/gltf-binary';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (response.body) {
+      Readable.fromWeb(response.body as any).pipe(res);
+    }
+    console.log('✅ Asset proxy (path) successful');
+  } catch (error) {
+    console.error('❌ Asset proxy (path) error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Proxy route for Meshy assets to handle CORS (query-based)
 router.get('/proxy-asset', async (req, res) => {
   try {
     let urlParam = req.query.url;
