@@ -57,7 +57,7 @@ const getApp = (): express.Application => {
       if (req.method === 'OPTIONS') {
         return res.status(204).end();
       }
-      next();
+      return next();
     });
 
     // CORS configuration - allow Firebase Hosting + localhost.

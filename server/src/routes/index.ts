@@ -31,29 +31,54 @@ router.use((req, res, next) => {
 // Proxy route for Meshy assets to handle CORS
 router.get('/proxy-asset', async (req, res) => {
   try {
-    const { url } = req.query;
-    
-    if (!url || typeof url !== 'string') {
+    let urlParam = req.query.url;
+    // Some query parsers split on & and break signed URLs; use raw query if parsed value looks truncated
+    if (typeof urlParam !== 'string' || (typeof urlParam === 'string' && urlParam.includes('assets.meshy.ai') && !urlParam.includes('Key-Pair-Id') && req.originalUrl?.includes('url='))) {
+      const raw = req.originalUrl || '';
+      const match = raw.match(/[?&]url=([^&]+(?:\&(?:Key-Pair-Id|Signature|Policy)=[^&]*)*)/);
+      if (match?.[1]) urlParam = match[1];
+    }
+    let targetUrl = typeof urlParam === 'string' ? urlParam : '';
+
+    if (!targetUrl) {
       return res.status(400).json({ error: 'URL parameter is required' });
     }
 
-    console.log('🔗 Proxying asset request:', url);
+    // Decode until stable so single- or double-encoded query params (e.g. signed URLs with &) work
+    let prev = '';
+    while (prev !== targetUrl) {
+      prev = targetUrl;
+      try {
+        targetUrl = decodeURIComponent(targetUrl);
+      } catch {
+        break;
+      }
+    }
 
-    const response = await fetch(url, {
+    console.log('🔗 Proxying asset request:', targetUrl.slice(0, 100) + (targetUrl.length > 100 ? '...' : ''));
+
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const response = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'In3D.ai-WebApp/1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Referer': origin + '/',
       },
     });
 
     if (!response.ok) {
       console.error('❌ Asset proxy failed:', response.status, response.statusText);
-      return res.status(response.status).json({ 
-        error: `Failed to fetch asset: ${response.status} ${response.statusText}` 
+      return res.status(response.status).json({
+        error: `Failed to fetch asset: ${response.status} ${response.statusText}`
       });
     }
 
-    // Get the content type
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    // Get the content type; for GLB/GLTF URLs with no type from upstream, set correct type so krpano accepts it
+    let contentType = response.headers.get('content-type')?.split(';')[0]?.trim() || '';
+    if (!contentType && /\.(glb|gltf)$/i.test(targetUrl)) {
+      contentType = targetUrl.toLowerCase().endsWith('.glb') ? 'model/gltf-binary' : 'model/gltf+json';
+    }
+    if (!contentType) contentType = 'application/octet-stream';
     
     // Set appropriate headers
     res.setHeader('Content-Type', contentType);

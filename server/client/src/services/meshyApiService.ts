@@ -1,6 +1,8 @@
 // Meshy.ai API Service for 3D Asset Generation
 // Updated to match official Meshy API documentation: https://docs.meshy.ai/en/api/text-to-3d
 
+import { getProxyAssetUrl } from '../utils/apiConfig';
+
 export interface MeshyGenerationRequest {
   prompt: string;
   negative_prompt?: string;
@@ -930,7 +932,7 @@ export class MeshyApiService {
     if (!assetUrl) return '';
     
     // Always use proxy to avoid CORS issues in both development and production
-    return `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+    return getProxyAssetUrl(assetUrl);
   }
 
   /**
@@ -993,7 +995,7 @@ export class MeshyApiService {
       // Strategy 1: Proxy download (primary method to avoid CORS)
       async () => {
         console.log('🔄 Trying proxy download...');
-        const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(assetUrl)}`;
+        const proxyUrl = getProxyAssetUrl(assetUrl);
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {

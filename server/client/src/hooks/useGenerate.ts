@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { skyboxApiService } from '../services/skyboxApiService';
 import { meshyApiService } from '../services/meshyApiService';
 import { unifiedStorageService } from '../services/unifiedStorageService';
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getProxyAssetUrl } from '../utils/apiConfig';
 import type { 
   GenerationRequest, 
   GenerationResponse, 
@@ -631,7 +631,7 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
         
         try {
           // Try proxy first
-          const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(downloadInfo.url)}`;
+          const proxyUrl = getProxyAssetUrl(downloadInfo.url);
           const response = await fetch(proxyUrl);
           
           if (response.ok) {

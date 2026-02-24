@@ -427,11 +427,11 @@ export class UnifiedStorageService {
     }
 
     // Import API config utility
-    const { getApiBaseUrl } = await import('../utils/apiConfig');
+    const { getProxyAssetUrl } = await import('../utils/apiConfig');
 
     // Always use Firebase Functions proxy URL to avoid CORS issues
     // Direct URL will always fail due to CORS policy
-    const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+    const proxyUrl = getProxyAssetUrl(url);
     console.log('🔄 Fetching via Firebase Functions proxy:', proxyUrl);
     
     const response = await fetch(proxyUrl, {

@@ -49,6 +49,8 @@ export interface KrpanoXmlOptions {
   lookatByPhase?: LookatByPhase;
   /** Optional hotspots to place in the pano; onclick will call window.__krpanoOnHotspotClick(name) */
   hotspots?: KrpanoHotspotOption[];
+  /** Optional GLB/GLTF URLs to render as threejs 3D hotspots (requires Three.js plugin) */
+  threeJsAssetUrls?: string[];
 }
 
 function escapeXml(unsafe: string): string {
@@ -83,6 +85,34 @@ function buildHotspotXml(spot: KrpanoHotspotOption): string {
   return `<hotspot name="${name}" ath="${ath}" atv="${atv}" depth="${depth}" url="${url}" tooltip="${title}" scale="0.4" distorted="false" zoom="false" onover="tween(scale,0.5)" onout="tween(scale,0.4)" onclick="${onclick}" />`;
 }
 
+/** Resolve plugin URL for blob-loaded XML (origin + basePath + plugins/name) */
+function pluginUrl(origin: string | undefined, basePath: string, pluginFile: string): string {
+  if (origin) {
+    return `${origin.replace(/\/$/, '')}${basePath.replace(/\/$/, '')}/plugins/${pluginFile}`;
+  }
+  return `plugins/${pluginFile}`;
+}
+
+/** Only GLB/GLTF URLs are valid for threejs hotspots; filter out images and other formats. */
+function isGlbOrGltfUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  return /\.(glb|gltf)(\?|$)/i.test(url) || /\.glb\b/i.test((url.split('?')[0] ?? '').trim());
+}
+
+/** True if url is a proxy URL that points to a GLB (target in query param). Caller already validated original as GLB. */
+function isProxyToGlb(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const lower = url.toLowerCase();
+  if (!lower.includes('proxy-asset') && !lower.includes('proxy_asset')) return false;
+  try {
+    const u = new URL(url);
+    const target = u.searchParams.get('url') || '';
+    return isGlbOrGltfUrl(target);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Build krpano XML string for embedding.
  * Plugin includes are relative to basePath (e.g. plugins/webvr.xml).
@@ -99,7 +129,14 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     fov: optFov = 90,
     lookatByPhase,
     hotspots = [],
+    threeJsAssetUrls = [],
   } = options;
+
+  // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...)
+  const safe3dUrls = threeJsAssetUrls.filter(
+    (url) => isGlbOrGltfUrl(url) || isProxyToGlb(url)
+  );
+  const has3dAssets = safe3dUrls.length > 0;
 
   // Initial view: use first phase lookat if provided, else options
   const firstLookat = lookatByPhase && (lookatByPhase.intro ?? lookatByPhase.explanation ?? lookatByPhase.outro);
@@ -109,10 +146,23 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   const safeSphereUrl = escapeXml(sphereUrl);
 
-  const webvrIncludeUrl = origin
-    ? `${origin.replace(/\/$/, '')}${basePath.replace(/\/$/, '')}/plugins/webvr.xml`
-    : 'plugins/webvr.xml';
+  const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const includeWebVr = webvr ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` : '';
+
+  // Three.js plugin + controls3d + drag3d when we have 3D assets
+  const threeJsPluginUrl = pluginUrl(origin, basePath, 'threejs_krpanoplugin.js');
+  const controls3dIncludeUrl = pluginUrl(origin, basePath, 'controls3d.xml');
+  const drag3dIncludeUrl = pluginUrl(origin, basePath, 'drag3d.xml');
+  const iphoneSwipeIncludeUrl = pluginUrl(origin, basePath, 'iphone_fullscreen_swipe.xml');
+  const threeJsBlock = has3dAssets
+    ? `  <include url="${escapeXml(controls3dIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(drag3dIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(iphoneSwipeIncludeUrl)}" />\n` +
+      `  <plugin api="threejs" keep="true" url="${escapeXml(threeJsPluginUrl)}" />\n` +
+      `  <threejs ambientlight="0.3" shadowmap="pcf" />\n` +
+      `  <display depthbuffer="true" depthrange="5,100000" />\n` +
+      `  <hotspot name="lesson_light" type="threejslight" mode="sun" intensity="2.0" castshadow="true" ath="-90" atv="45" keep="true" />\n`
+    : '';
 
   const depthmapBlock = depthmapUrl
     ? `    <depthmap url="${escapeXml(depthmapUrl)}" enabled="true" />\n`
@@ -121,17 +171,30 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
+  // 3D model hotspots (type="threejs") - one per URL; offset by index so multiple models don't stack. URLs are direct GLB/GLTF or proxy-to-GLB.
+  const threeJsHotspotBlocks = safe3dUrls
+    .map((url, i) => {
+      const safeUrl = escapeXml(url);
+      const name = `asset_${i}`;
+      // Row in front: tx offset so models are side-by-side, tz increases for each row
+      const tx = (i % 3 - 1) * 80;
+      const tz = 300 + Math.floor(i / 3) * 120;
+      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="0" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+    })
+    .join('\n');
+  const threeJsHotspotsSection = threeJsHotspotBlocks ? '\n' + threeJsHotspotBlocks + '\n' : '';
+
   // View sync per krpano docs: view.hlookat (-180..180), view.vlookat (-90..90), view.fov (degrees).
   // https://krpano.com/docu/xml/#view - onviewchange fires when view changes (drag, zoom). Use it to sync.
   const onviewchangeJs = 'js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );';
   return `<?xml version="1.0" encoding="UTF-8"?>
-<krpano version="1.20.9" onstart="" bgcolor="0x050810">
-${includeWebVr}
+<krpano version="1.23" onstart="" bgcolor="0x050810">
+${includeWebVr}${threeJsBlock}
   <view hlookat="${hlookat}" vlookat="${vlookat}" fov="${fov}" fovmin="1" fovmax="179" />
   <events onviewchange="${onviewchangeJs}" />
   <action name="sync_view_to_js">js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );</action>
   <image>
     <sphere url="${safeSphereUrl}" />
 ${depthmapBlock}  </image>
-  <control mouse="drag" touch="drag" />${hotspotsSection}</krpano>`;
+  <control mouse="drag" touch="drag" />${hotspotsSection}${threeJsHotspotsSection}</krpano>`;
 }

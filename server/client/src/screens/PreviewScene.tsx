@@ -34,7 +34,7 @@ interface PreviewSceneProps {
   className?: string;
 }
 
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getProxyAssetUrl } from '../utils/apiConfig';
 
 // Enhanced model loading with fallback strategies
 class ModelLoader {
@@ -57,7 +57,7 @@ class ModelLoader {
     
     if (!isFirebaseStorageUrl) {
       // Only use proxy for external URLs (like Meshy.ai)
-      const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+      const proxyUrl = getProxyAssetUrl(url);
       console.log('🔄 Loading via proxy (external URL):', proxyUrl);
       finalUrl = proxyUrl;
     } else {
@@ -235,7 +235,7 @@ const SkyboxEnvironment: React.FC<{
         
         if (!isFirebaseStorageUrl) {
           // Only use proxy for external URLs
-          finalSkyboxUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
+          finalSkyboxUrl = getProxyAssetUrl(skyboxUrl);
           console.log('🔄 Loading skybox texture via proxy (external URL):', finalSkyboxUrl);
         } else {
           console.log('✅ Loading skybox texture directly from Firebase Storage:', skyboxUrl);

@@ -1,7 +1,7 @@
 // CORS Test Utilities
 // Utils for testing CORS-related asset loading with fallback strategies
 
-import { getApiBaseUrl } from './apiConfig';
+import { getProxyAssetUrl } from './apiConfig';
 
 /**
  * Test asset loading with fallback strategies
@@ -14,7 +14,7 @@ export const testAssetLoading = async (assetUrl: string): Promise<{
   const strategies = [
     {
       name: 'Firebase Functions Proxy',
-      url: `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(assetUrl)}`
+      url: getProxyAssetUrl(assetUrl)
     }
   ];
 

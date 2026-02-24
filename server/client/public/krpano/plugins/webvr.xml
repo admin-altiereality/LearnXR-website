@@ -1,13 +1,16 @@
 <krpano>
+	
 	<!--
 		webvr.xml
-		- krpano 1.20.9
+		krpano 1.23
 		
+		https://krpano.com/plugins/xmlextensions/#webvr
 		https://krpano.com/plugins/webvr/
 	-->
+	
 
 	<!-- load the WebVR plugin and assign it to a global 'webvr' variable -->
-	<plugin name="webvr" devices="html5" keep="true"
+	<plugin api="webvr" keep="true"
 	        url="webvr.js"
 	        mobilevr_support="true"
 	        mobilevr_touch_support="true"
@@ -17,14 +20,16 @@
 	        mobilevr_wakelock="true"
 	        fullscreen_mirroring="false"
 	        mouse_pointerlock="true"
+	        metaquestlink="true"
 	        vr_cursor_onover="if(handcursor, tween(hotspot[vr_cursor].scale,0.4,0.1); vr_auto_click(get(vr_timeout)); );"
 	        vr_cursor_onout="tween(hotspot[vr_cursor].scale,0.3,0.1);"
 	        onavailable="webvr_onavailable();"
-	        onunavailable=""
+	        onunavailable="webvr_onunavailable();"
 	        onunknowndevice="webvr_onunknowndevice();"
 	        onvrcontrollers="webvr_onvrcontrollers();"
 	        onentervr="webvr_onentervr();"
 	        onexitvr="webvr_onexitvr();"
+	        ondenied="webvr_ondenied();"
 	        />
 
 
@@ -35,6 +40,7 @@
 		visible="false"
 		enabled="false"
 		distorted="true"
+		renderer="webgl"
 		crop="0|0|80|80"
 		scale="0.3"
 		depth="120"
@@ -54,8 +60,8 @@
 		addhotspot('vr_controller_r', vr_ctrl_r);
 		set(vr_ctrl_l.keep, true);
 		set(vr_ctrl_r.keep, true);
-		vr_ctrl_l.loadstyle(calc(controllerstyle ? controllerstyle : 'vrcontroller_light_and_point'));
-		vr_ctrl_r.loadstyle(calc(controllerstyle ? controllerstyle : 'vrcontroller_light_and_point'));
+		vr_ctrl_l.loadstyle(calc(controllerstyle ? controllerstyle : (global.display.depthbuffer ? 'vrcontroller_laser' : 'vrcontroller_light_and_point')));
+		vr_ctrl_r.loadstyle(calc(controllerstyle ? controllerstyle : (global.display.depthbuffer ? 'vrcontroller_laser' : 'vrcontroller_light_and_point')));
 
 		<!-- optional: vibrate the controllers on hovering:
 		vr_ctrl_l.addevent('onover', pulse(1.0, 0.25) );
@@ -89,9 +95,10 @@
 			torigin="world" tx="0" ty="0" tz="0" depth="0"
 			zorder="99999"
 			depthbuffer="true"
-			onloaded="asyncloop(loaded, 
-				calc(height, (target AND target.hitd GT 0 ? target.hitd : 1000) / display.hotspotworldscale); 
-				);"
+			targethitd.number="0"
+			onover="copy(targethitd, target.hitd);"
+			onout="set(targethitd, 0);"
+			onloaded="asyncloop(loaded, calc(height, (targethitd GT 0 ? targethitd : (hitd GT 0 ? hitd : 1000)) / display.hotspotworldscale); );"
 			/>
 			
 	<style name="vrcontroller_light_and_point" 
@@ -135,7 +142,7 @@
 					webvr_load_vr_controller_hs('vrcontroller_laser');
 				  ,
 					calc(hs.bgcolor, caller.pressed ? 0x049AFF : (caller.hovering ? 0x00FF00 : 0xFFFFFF));
-					calc(distance, (caller.target AND caller.target.hitd GT 0 ? caller.target.hitd : 1000));
+					calc(distance, (caller.target AND caller.target.hitd GT 0 ? caller.target.hitd : (caller.hitd GT 0 ? caller.hitd : 1000)));
 					calc(hs.scale, 0.4 * (distance GT 1000 ? distance / 1000 : (distance LT 200 ? 0.25 : (0.25 + (distance - 200)/800 * 0.75))));
 					calc(hs.tx, caller.tx + caller.dx * distance);
 					calc(hs.ty, caller.ty + caller.dy * distance);
@@ -179,7 +186,7 @@
 						set(vr_aclk_waiting,false);
 						set(hotspot[vr_cursor].crop,'0|0|80|80');
 						<!-- call onclick -->
-						callwith(caller, scope(global, ondown();onup();onclick(); ); );
+						callwith(caller, scope(global, triggerevent('ondown');triggerevent('onup');triggerevent('onclick'); ); );
 					);
 				);
 			);
@@ -188,8 +195,9 @@
 
 
 	<!-- by pressing SPACE the headset could be re-centered -->
-	<events name="webvr_events" devices="html5" keep="true"
+	<events name="webvr_events" keep="true"
 	        onmousedown="if(webvr AND webvr.isenabled, webvr_showbuttons() );"
+	        onresize="if(webvr.isfake AND layer[webvr_show_infos] != null, layer[webvr_show_infos].visible = stagewidth LT stageheight; );"
 	        />
 
 
@@ -198,6 +206,51 @@
 	<action name="webvr_onavailable">
 		webvr.loadsettings();
 		if(layer[webvr_enterbutton], delayedcall(0.5, tween(layer[webvr_enterbutton].alpha,1.0); ); );
+	</action>
+	
+
+	<!-- 
+		A special case for Apple Vision Pro when WebXR is not enabled:
+		- Trigger a 'fake' onavailable event,
+		- and then when trying to enter the VR mode,
+		- show instructions for how to enable WebXR.
+	-->
+	<action name="webvr_onunavailable">
+		if(device.applevision,
+			webvr.entervr = 'webvr_applevision_how_to_enable_webxr()';
+			webvr.triggerevent('onavailable');
+			events.dispatch('webvr_onavailable');
+		);
+	</action>
+	
+	<action name="webvr_applevision_how_to_enable_webxr" scope="local">
+		addlayer(auto, bg);
+		set(bg,
+			type=container,
+			zorder=999999,
+			parent=OVERLAY,
+			width=100%, 
+			height=100%,
+			bgalpha=0.5,
+			bgcolor=0x000000,
+			bgblur=3,
+			bgcapture=true,
+			onclick='remove()'
+		);
+		addlayer(auto, iframe);
+		set(iframe,
+			parent=get(bg.path),
+			type=iframe,
+			iframeurl='https://krpano.com/docu/applevision-enable-webxr/',
+			align=center,
+			width=50%,
+			height=80%,
+			bgcolor=0xFFFFFF,
+			bgalpha=1,
+			bgshadow='0 10 30 0x000000 1.0',
+			bgroundedge=19,
+			maskchildren=true
+		);
 	</action>
 	
 	
@@ -220,7 +273,7 @@
 		webvr_showbuttons();
 		webvr_hide_all_non_vr_layers();
 
-		if(webvr.isfake, webvr_show_fakemode_info(true); );
+		if(webvr.isfake OR (webvr.ismobilevr AND device.mobile), webvr_show_infos(true); );
 		
 		webvr_load_vr_cursor_hs();
 	</action>
@@ -238,16 +291,29 @@
 		tween(layer[webvr_exitbutton].alpha,0);
 		tween(layer[webvr_setupbutton].alpha,0);
 		
-		webvr_show_fakemode_info(false);
+		webvr_show_infos(false);
 
 		webvr_restore_layers();
+	</action>
+	
+	
+	<action name="webvr_ondenied" scope="local">
+		addlayer(webvr_ondenied_info);
+		layer[webvr_ondenied_info].loadstyle(webvr_button_style);
+		set(layer[webvr_ondenied_info],
+			align='center',
+			html='Entering VR mode was denied!',
+			onclick='set(enabled,false); tween(alpha,0,0.5,default,removelayer(get(name)));'
+		);
+		delayedcall(2.0,
+			callwith(layer[webvr_ondenied_info], triggerevent('onclick'); );
+		);
 	</action>
 
 
 	<action name="webvr_hide_all_non_vr_layers" scope="local">
-		for(set(i,0), i LT layer.count, inc(i),
-			copy(lr, layer[get(i)]);
-			if(lr.vr !== true,
+		forall(layer, lr,
+			if(lr.vr !== true AND lr.parentobject == null,
 				copy(lr.vr_backup_visible, lr.visible);
 				set(lr.visible, false);
 			);
@@ -255,8 +321,7 @@
 	</action>
 
 	<action name="webvr_restore_layers" scope="local">
-		for(set(i,0), i LT layer.count, inc(i),
-			copy(lr, layer[get(i)]);
+		forall(layer, lr,
 			if(lr.vr_backup_visible,
 				copy(lr.visible, lr.vr_backup_visible);
 				delete(lr.vr_backup_visible);
@@ -264,20 +329,62 @@
 		);
 	</action>
 	
-	<action name="webvr_show_fakemode_info" scope="local" args="show">
+	<action name="webvr_show_infos" scope="local" args="show">
+		
 		if(show == true,
-			addlayer(webvr_fakemode_info);
-			set(layer[webvr_fakemode_info],
-				type='text',
-				keep=true,
-				align='bottom',
-				y=80,
-				bg=false,
-				css='color:#FFFFFF;text-align:center;',
-				html='[i][u]Simulated WebVR Mode![/u][br]For real WebVR with headset tracking use a [a href="http://webvr.info" target="_blank" style="color:#FFFFFF;"]WebVR-capable[/a] browser or a mobile device and a VR headset.[/i]'
+		
+			open_in_quest_url = "https://www.oculus.com/open_url/?url=" + escapeurl(browser.location);
+		
+			infotext = '';
+			if(webvr.isfake,
+				infotext += '[u]Simulated VR Mode[/u][br]';
+				infotext += '[i]Use a VR Headset or a Mobile Device for real VR.[/i][br]';
 			);
+			if(webvr.metaquestlink,
+				if(infotext != '', infotext += '[br]');
+				infotext += '[a href="' + escape(open_in_quest_url) + '" target="_blank" style="color:inherit;"]Open in your Meta Quest VR Headset[/a]';
+			);
+			
+			if(infotext != '',
+			
+				addlayer(webvr_show_infos);
+				set(layer[webvr_show_infos],
+					type='text',
+					keep=true,
+					align=bottom,
+					y=calc(webvr.metaquestlink ? 120 : 80),
+					bg=false,
+					css='font-size:13px; color:#FFFFFF; text-align:center;',
+					txtshadow='0 1 2 0x000000 1.0',
+					handcursor=false,
+					text=get(infotext),
+					onclick=calc(webvr.metaquestlink ? '' : 'remove()')
+				);
+				
+				if(webvr.metaquestlink,
+					addlayer(auto,closebutton);
+					set(closebutton,
+						type=text, 
+						keep=true,
+						text='X',
+						align=bottom, edge=center, y=-24,
+						textalign=center,
+						width=20, height=20, 
+						bgroundedge=10,
+						bgshadow='0 1 2 0x000000 1.0',
+						parent='webvr_show_infos',
+						onclick='parentobject.remove();'
+					);
+					
+					if (webvr.isfake == false,
+						<!-- show the Meta Quest link only in portrait mode -->
+						layer[webvr_show_infos].visible = stagewidth LT stageheight;
+					);
+				);
+			);
+			
 		  ,
-			removelayer(webvr_fakemode_info);
+			removelayer(webvr_show_infos, true);
 		);
 	</action>
 	
@@ -371,6 +478,7 @@
 				dlg.bg.keep = true;
 				dlg.bg.type = 'text';
 				dlg.bg.distorted = true;
+				dlg.bg.renderer = 'webgl';
 				dlg.bg.ath = krpano.view.hlookat;
 				dlg.bg.atv = 0;
 				dlg.bg.depth = 150;
@@ -411,6 +519,7 @@
 				txt.keep = true;
 				txt.type = 'text';
 				txt.distorted = true;
+				txt.renderer = 'webgl';
 				txt.zorder = 101;
 				txt.ath = dlg.bg.ath;
 				txt.atv = dlg.bg.atv;
@@ -475,6 +584,7 @@
 				inc.keep = true;
 				inc.type = 'text';
 				inc.distorted = true;
+				inc.renderer = 'webgl';
 				inc.zorder = 101;
 				inc.ath = dlg.bg.ath;
 				inc.atv = dlg.bg.atv;
@@ -490,6 +600,7 @@
 				dec.keep = true;
 				dec.type = 'text';
 				dec.distorted = true;
+				dec.renderer = 'webgl';
 				dec.zorder = 101;
 				dec.ath = dlg.bg.ath;
 				dec.atv = dlg.bg.atv;

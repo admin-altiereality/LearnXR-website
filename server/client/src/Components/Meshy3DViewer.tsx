@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getProxyAssetUrl } from '../utils/apiConfig';
 
 interface Meshy3DViewerProps {
   modelUrl: string;
@@ -93,7 +93,7 @@ class ModelLoader {
     
     if (!isFirebaseStorageUrl) {
       // Only use proxy for external URLs (like Meshy.ai)
-      const proxyUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+      const proxyUrl = getProxyAssetUrl(url);
       console.log('🔄 Loading via proxy (external URL):', proxyUrl);
       finalUrl = proxyUrl;
     } else {
