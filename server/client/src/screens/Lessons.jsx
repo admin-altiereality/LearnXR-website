@@ -1857,7 +1857,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     if (ok) {
       toast.success('Lesson launched to class');
       closeLessonModal();
-      navigate('/dashboard');
+      navigate('/dashboard/teacher');
     } else {
       toast.error('Failed to launch lesson to class');
     }

@@ -478,12 +478,17 @@ function AssetModelInScene({
   const modelRef = useRef<THREE.Group>(null);
   const [model, setModel] = useState<THREE.Group | null>(null);
   const [loading, setLoading] = useState(true);
+  const onLoadRef = useRef(onLoad);
+  const onErrorRef = useRef(onError);
+  onLoadRef.current = onLoad;
+  onErrorRef.current = onError;
 
   useEffect(() => {
     if (!url || !isGlbOrGltfUrl(url)) {
       setLoading(false);
       return;
     }
+    setLoading(true);
     let loadUrl = url;
     try {
       const urlOrigin = typeof window !== 'undefined' && url.startsWith('http') ? new URL(url).origin : '';
@@ -492,7 +497,6 @@ function AssetModelInScene({
         loadUrl = `${getApiBaseUrl().replace(/\/$/, '')}/proxy-asset?url=${encodeURIComponent(url)}`;
       }
     } catch {
-      // If URL parsing fails, use proxy for safety (e.g. relative URLs stay as-is via loadUrl still being url)
       if (url.includes('assets.meshy.ai') || url.includes('firebasestorage') || url.includes('googleapis.com')) {
         loadUrl = `${getApiBaseUrl().replace(/\/$/, '')}/proxy-asset?url=${encodeURIComponent(url)}`;
       }
@@ -510,15 +514,15 @@ function AssetModelInScene({
         gltf.scene.scale.setScalar(modelScale * scale);
         setModel(gltf.scene);
         setLoading(false);
-        onLoad?.();
+        onLoadRef.current?.();
       },
       undefined,
       (err) => {
         setLoading(false);
-        onError?.(err);
+        onErrorRef.current?.(err);
       }
     );
-  }, [url, scale, onLoad, onError]);
+  }, [url, scale]);
 
   useFrame((_, delta) => {
     if (modelRef.current) modelRef.current.rotation.y += delta * 0.3;
@@ -1701,55 +1705,6 @@ const VRLessonPlayerInner = () => {
     (typeof sessionStorage !== 'undefined'
       ? sessionStorage.getItem('learnxr_class_session_id') ?? sessionStorage.getItem('learnxr_joined_session_id')
       : null);
-  // Report initial progress as soon as student is in lesson with a session (so teacher sees them in "Student views")
-  useEffect(() => {
-    if (!sessionIdForReport || !user?.uid) return;
-    reportSessionProgress(
-      sessionIdForReport,
-      user.uid,
-      profile?.displayName ?? (profile as any)?.name ?? undefined,
-      'loading',
-      undefined,
-      undefined,
-      (profile as any)?.email ?? user?.email ?? undefined
-    ).catch(() => {});
-  }, [sessionIdForReport, user?.uid]);
-  useEffect(() => {
-    if (!sessionIdForReport || !user?.uid) return;
-    const phaseMap: Record<string, SessionLessonPhase> = {
-      intro: 'intro',
-      explanation: 'explanation',
-      outro: 'outro',
-      quiz: 'quiz',
-      completed: 'completed',
-      idle: 'idle',
-      loading: 'loading',
-    };
-    const phase = phaseMap[lessonPhase as string] ?? 'idle';
-    if (phase === 'completed' && pendingQuizReportRef.current) {
-      const quiz = pendingQuizReportRef.current;
-      pendingQuizReportRef.current = null;
-      reportSessionProgress(
-        sessionIdForReport,
-        user.uid,
-        profile?.displayName ?? (profile as any)?.name ?? undefined,
-        'completed',
-        undefined,
-        { score: quiz.score, total: quiz.total, answers: quiz.answers },
-        (profile as any)?.email ?? user?.email ?? undefined
-      ).catch(() => {});
-    } else {
-      reportSessionProgress(
-        sessionIdForReport,
-        user.uid,
-        profile?.displayName ?? (profile as any)?.name ?? undefined,
-        phase,
-        undefined,
-        undefined,
-        (profile as any)?.email ?? user?.email ?? undefined
-      ).catch(() => {});
-    }
-  }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
 
   // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
   const useKrpanoView = !((assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0));
@@ -1809,6 +1764,57 @@ const VRLessonPlayerInner = () => {
   // Student: follow teacher view when in joined session (teacher_view from Firestore)
   const teacherView = joinedSession?.teacher_view;
   const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
+
+  // Report progress to class session only when user is a student (Firestore allows only students to write progress)
+  useEffect(() => {
+    if (!isStudentInSession || !sessionIdForReport || !user?.uid) return;
+    reportSessionProgress(
+      sessionIdForReport,
+      user.uid,
+      profile?.displayName ?? (profile as any)?.name ?? undefined,
+      'loading',
+      undefined,
+      undefined,
+      (profile as any)?.email ?? user?.email ?? undefined
+    ).catch(() => {});
+  }, [isStudentInSession, sessionIdForReport, user?.uid]);
+  useEffect(() => {
+    if (!isStudentInSession || !sessionIdForReport || !user?.uid) return;
+    const phaseMap: Record<string, SessionLessonPhase> = {
+      intro: 'intro',
+      explanation: 'explanation',
+      outro: 'outro',
+      quiz: 'quiz',
+      completed: 'completed',
+      idle: 'idle',
+      loading: 'loading',
+    };
+    const phase = phaseMap[lessonPhase as string] ?? 'idle';
+    if (phase === 'completed' && pendingQuizReportRef.current) {
+      const quiz = pendingQuizReportRef.current;
+      pendingQuizReportRef.current = null;
+      reportSessionProgress(
+        sessionIdForReport,
+        user.uid,
+        profile?.displayName ?? (profile as any)?.name ?? undefined,
+        'completed',
+        undefined,
+        { score: quiz.score, total: quiz.total, answers: quiz.answers },
+        (profile as any)?.email ?? user?.email ?? undefined
+      ).catch(() => {});
+    } else {
+      reportSessionProgress(
+        sessionIdForReport,
+        user.uid,
+        profile?.displayName ?? (profile as any)?.name ?? undefined,
+        phase,
+        undefined,
+        undefined,
+        (profile as any)?.email ?? user?.email ?? undefined
+      ).catch(() => {});
+    }
+  }, [isStudentInSession, lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
+
   const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number } | null>(null);
   useEffect(() => {
     if (!isStudentInSession || !useKrpanoView || !teacherView || !krpanoViewerRef.current?.call) return;
@@ -2886,6 +2892,11 @@ const VRLessonPlayerInner = () => {
     }
   }, [prepLessonData, prepLang, lessonContext]);
 
+  // Reset integrated-scene asset load report when lesson or primary asset changes (must run unconditionally to avoid hook count mismatch)
+  useEffect(() => {
+    integratedAssetLoadReportedRef.current = false;
+  }, [assetUrl, allAssetUrls?.[0] ?? null, activeLesson?.topic?.topic_id]);
+
   if (prepChapter && prepTopic && !preparationDone) {
     const meta = prepLessonData?._meta;
     const isVRAvailable = !!prepVRCapabilities;
@@ -3196,11 +3207,6 @@ const VRLessonPlayerInner = () => {
 
   const lessonLanguageForWelcome = extraLessonData?.topic?.language || extraLessonData?.language || activeLesson?.topic?.language || 'en';
   const welcomeStrings = getWelcomeStrings(lessonLanguageForWelcome);
-
-  // Reset integrated-scene asset load report when lesson or primary asset changes (so new lesson can report once)
-  useEffect(() => {
-    integratedAssetLoadReportedRef.current = false;
-  }, [assetUrl, allAssetUrls?.[0] ?? null, activeLesson?.topic?.topic_id]);
 
   // ============================================================================
   // Render
