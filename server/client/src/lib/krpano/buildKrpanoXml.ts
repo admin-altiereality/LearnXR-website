@@ -121,7 +121,8 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
-  // View sync per krpano docs: onviewchange fires on every view change; sync_view_to_js allows JS to poll view (get(view.hlookat/vlookat/fov)).
+  // View sync per krpano docs: view.hlookat (-180..180), view.vlookat (-90..90), view.fov (degrees).
+  // https://krpano.com/docu/xml/#view - onviewchange fires when view changes (drag, zoom). Use it to sync.
   const onviewchangeJs = 'js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <krpano version="1.20.9" onstart="" bgcolor="0x050810">

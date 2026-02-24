@@ -15,7 +15,6 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
 import { useAuth } from '../contexts/AuthContext';
@@ -208,16 +207,6 @@ const log = (emoji: string, message: string, data?: any) => {
   }
 };
 
-/** Debug categories for the in-app debug panel (like XRLessonPlayerV3). */
-const DEBUG_CATEGORIES = {
-  SKYBOX: '🌅',
-  KRPANO: '🔄',
-  ASSET: '📦',
-  SCENE: '🎬',
-  LESSON: '📚',
-  ERROR: '❌',
-} as const;
-
 // ============================================================================
 // Platform Detection - For 3D Asset Format Selection
 // ============================================================================
@@ -359,42 +348,6 @@ const fetchSkyboxFromFirestore = async (skyboxId: string): Promise<SkyboxData | 
   }
 };
 
-// Welcome popup copy by language (Hindi when content is Hindi)
-function getWelcomeStrings(lang: string): {
-  whatYouLearn: string;
-  startLesson: string;
-  loading: string;
-  backToLessons: string;
-  view360: string;
-  sections: string;
-  questions: string;
-  defaultObjective: string;
-} {
-  const normalized = (lang || 'en').toLowerCase();
-  if (normalized === 'hi' || normalized === 'hindi') {
-    return {
-      whatYouLearn: 'आप क्या सीखेंगे',
-      startLesson: 'पाठ शुरू करें',
-      loading: 'लोड हो रहा है...',
-      backToLessons: '← पाठों पर वापस जाएं',
-      view360: '360° दृश्य',
-      sections: 'अनुभाग',
-      questions: 'प्रश्न',
-      defaultObjective: 'इस इंटरैक्टिव VR पाठ में अपने AI शिक्षक के साथ जानें।',
-    };
-  }
-  return {
-    whatYouLearn: "What you'll learn",
-    startLesson: 'Start Lesson',
-    loading: 'Loading...',
-    backToLessons: '← Back to lessons',
-    view360: '360° view',
-    sections: 'sections',
-    questions: 'questions',
-    defaultObjective: 'Explore this interactive VR lesson with your AI teacher.',
-  };
-}
-
 // ============================================================================
 // Integrated 3D environment (skybox + lesson model in same scene - model part of environment)
 // ============================================================================
@@ -406,26 +359,15 @@ function SkyboxSphereIntegrated({ imageUrl, onLoad, onError }: { imageUrl: strin
 
   useEffect(() => {
     if (!imageUrl) return;
-    setLoadError(false);
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
     loader.load(
       imageUrl,
       (tex) => {
-        const img = tex.image;
-        if (!img || img.width < 2 || img.height < 2) {
-          tex.dispose();
-          setLoadError(true);
-          onError?.(new Error('Skybox texture has invalid dimensions'));
-          return;
-        }
         tex.mapping = THREE.EquirectangularReflectionMapping;
         tex.colorSpace = THREE.SRGBColorSpace;
         tex.wrapS = THREE.RepeatWrapping;
-        tex.wrapT = THREE.ClampToEdgeWrapping;
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
-        tex.generateMipmaps = false;
+        tex.repeat.x = -1;
         textureRef.current = tex;
         setTexture(tex);
         onLoad?.();
@@ -433,27 +375,20 @@ function SkyboxSphereIntegrated({ imageUrl, onLoad, onError }: { imageUrl: strin
       undefined,
       (err) => {
         setLoadError(true);
+        console.warn('[VRLessonKrpano] Skybox texture failed to load:', imageUrl?.substring(0, 80), err);
         onError?.(err);
       }
     );
     return () => {
-      if (textureRef.current) {
-        textureRef.current.dispose();
+      const tex = textureRef.current;
+      if (tex) {
+        tex.dispose();
         textureRef.current = null;
       }
     };
   }, [imageUrl]);
 
-  // Fallback sphere while loading or on error so we never show pure black
-  const fallbackSphere = (
-    <mesh scale={[-1, 1, 1]}>
-      <sphereGeometry args={[500, 32, 16]} />
-      <meshBasicMaterial color="#0a1628" side={THREE.BackSide} toneMapped={false} />
-    </mesh>
-  );
-
-  if (loadError) return <>{fallbackSphere}</>;
-  if (!texture) return <>{fallbackSphere}</>;
+  if (loadError || !texture) return null;
   return (
     <mesh scale={[-1, 1, 1]}>
       <sphereGeometry args={[500, 64, 32]} />
@@ -490,16 +425,12 @@ function AssetModelInScene({
     }
     setLoading(true);
     let loadUrl = url;
-    try {
-      const urlOrigin = typeof window !== 'undefined' && url.startsWith('http') ? new URL(url).origin : '';
-      const sameOrigin = typeof window !== 'undefined' && urlOrigin && urlOrigin === window.location.origin;
-      if (!sameOrigin && url.startsWith('http')) {
-        loadUrl = `${getApiBaseUrl().replace(/\/$/, '')}/proxy-asset?url=${encodeURIComponent(url)}`;
-      }
-    } catch {
-      if (url.includes('assets.meshy.ai') || url.includes('firebasestorage') || url.includes('googleapis.com')) {
-        loadUrl = `${getApiBaseUrl().replace(/\/$/, '')}/proxy-asset?url=${encodeURIComponent(url)}`;
-      }
+    const isExternal =
+      typeof window !== 'undefined' &&
+      /^https?:\/\//i.test(url) &&
+      !url.startsWith(window.location.origin);
+    if (url.includes('assets.meshy.ai') || isExternal) {
+      loadUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
     }
     const loader = new GLTFLoader();
     loader.load(
@@ -546,33 +477,18 @@ function AssetModelInScene({
   );
 }
 
-/** Normalize hlookat to [-180, 180] for consistent sync and no wrap jumps */
-function normalizeHlookat(h: number): number {
-  let n = h % 360;
-  if (n > 180) n -= 360;
-  if (n < -180) n += 360;
-  return n;
-}
-
-/** Clamp vlookat away from exact ±90 to avoid gimbal lock and tween issues at zenith/nadir */
-const VLOOKAT_MIN = -89.5;
-const VLOOKAT_MAX = 89.5;
-function clampVlookat(v: number): number {
-  return Math.max(VLOOKAT_MIN, Math.min(VLOOKAT_MAX, v));
-}
-
-/** Convert camera position (orbit around origin) to hlookat/vlookat degrees for sync. Negate theta so integrated sphere (single flip) matches Krpano. */
+/** Convert camera position (orbit around origin) to hlookat/vlookat degrees for sync */
 function cameraToHlookatVlookat(position: THREE.Vector3): { h: number; v: number } {
   const x = position.x, y = position.y, z = position.z;
   const theta = Math.atan2(x, z) * (180 / Math.PI);
   const r = Math.sqrt(x * x + y * y + z * z) || 1;
   const phi = Math.asin(Math.max(-1, Math.min(1, y / r))) * (180 / Math.PI);
-  return { h: -theta, v: phi };
+  return { h: theta, v: phi };
 }
 
-/** Apply teacher view (hlookat, vlookat) to camera position at given radius. Uses -h for theta to match Krpano orientation. */
+/** Apply teacher view (hlookat, vlookat) to camera position at given radius */
 function applyTeacherViewToCamera(camera: THREE.PerspectiveCamera, h: number, v: number, radius: number): void {
-  const theta = (-h * Math.PI) / 180;
+  const theta = (h * Math.PI) / 180;
   const phi = (v * Math.PI) / 180;
   const x = radius * Math.cos(phi) * Math.sin(theta);
   const y = radius * Math.sin(phi);
@@ -586,52 +502,49 @@ function applyTeacherViewToCamera(camera: THREE.PerspectiveCamera, h: number, v:
 function LessonSceneIntegrated({
   skyboxUrl,
   assetUrl,
-  assetUrls,
   onSkyboxLoad,
   onSkyboxError,
   onAssetLoad,
   onAssetError,
   onViewChange,
   teacherView,
+  skyboxOptional = false,
 }: {
   skyboxUrl: string;
   assetUrl: string | null;
-  /** All GLB URLs to render in the scene (when set, overrides single assetUrl for display; primary load still uses assetUrl for allReady) */
-  assetUrls?: string[];
   onSkyboxLoad?: () => void;
   onSkyboxError?: (err: any) => void;
   onAssetLoad?: () => void;
   onAssetError?: (err: any) => void;
   onViewChange?: (h: number, v: number, fov: number) => void;
   teacherView?: { hlookat: number; vlookat: number; fov?: number } | null;
+  skyboxOptional?: boolean;
 }) {
   const { camera } = useThree();
   const lastSentRef = useRef(0);
   const lastAppliedRef = useRef<{ h: number; v: number; fov: number } | null>(null);
   const lastLogRef = useRef(0);
-  const skyboxLoadedRef = useRef(false);
 
   useFrame(() => {
     const persp = camera as THREE.PerspectiveCamera;
     if (persp.fov === undefined) return; // orthographic or unsupported
     if (onViewChange) {
       const now = Date.now();
-      if (now - lastSentRef.current < 300) return;
+      if (now - lastSentRef.current < 100) return;
       lastSentRef.current = now;
       const { h, v } = cameraToHlookatVlookat(camera.position);
       const fov = persp.fov ?? 75;
       onViewChange(h, v, fov);
     }
-    // Only apply teacher view after skybox has loaded so student doesn't get a black frame
-    if (teacherView && skyboxLoadedRef.current) {
-      const h = normalizeHlookat(Number(teacherView.hlookat));
-      const v = clampVlookat(Number(teacherView.vlookat));
+    if (teacherView) {
+      const h = Number(teacherView.hlookat);
+      const v = Number(teacherView.vlookat);
       const fov = Number(teacherView.fov ?? 75);
       if (Number.isNaN(h) || Number.isNaN(v)) return;
       const prev = lastAppliedRef.current;
       if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
       lastAppliedRef.current = { h, v, fov };
-      const radius = Math.max(2, camera.position.length());
+      const radius = Math.max(0.1, camera.position.length());
       applyTeacherViewToCamera(persp, h, v, radius);
       if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && Date.now() - lastLogRef.current > 2000) {
         lastLogRef.current = Date.now();
@@ -644,35 +557,19 @@ function LessonSceneIntegrated({
     }
   }, 1);
 
-  const urlsToRender = (assetUrls && assetUrls.length > 0) ? assetUrls : (assetUrl ? [assetUrl] : []);
-  const scale = urlsToRender.length > 1 ? 1.2 : 1.5;
-
   return (
     <>
-      <SkyboxSphereIntegrated
-        imageUrl={skyboxUrl}
-        onLoad={() => {
-          skyboxLoadedRef.current = true;
-          onSkyboxLoad?.();
-        }}
-        onError={onSkyboxError}
-      />
-      {urlsToRender.map((url, i) => {
-        const n = urlsToRender.length;
-        const position: [number, number, number] = n === 1
-          ? [0, 0, -5]
-          : [((- (n - 1) / 2) + i) * 3, 0, -5];
-        return (
-          <AssetModelInScene
-            key={`${url.slice(-40)}-${i}`}
-            url={url}
-            position={position}
-            scale={scale}
-            onLoad={i === 0 ? onAssetLoad : undefined}
-            onError={i === 0 ? onAssetError : undefined}
-          />
-        );
-      })}
+      {skyboxUrl ? (
+        <SkyboxSphereIntegrated imageUrl={skyboxUrl} onLoad={onSkyboxLoad} onError={onSkyboxError} />
+      ) : skyboxOptional ? (
+        <mesh>
+          <sphereGeometry args={[500, 16, 16]} />
+          <meshBasicMaterial color="#0a1628" side={THREE.BackSide} />
+        </mesh>
+      ) : null}
+      {assetUrl && (
+        <AssetModelInScene url={assetUrl} onLoad={onAssetLoad} onError={onAssetError} />
+      )}
       <OrbitControls
         enabled={!teacherView}
         enableZoom={true}
@@ -1140,11 +1037,6 @@ const VRLessonPlayerInner = () => {
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
-  const studentViewReportLastTimeRef = useRef(0);
-  const integratedSceneGlRef = useRef<THREE.WebGLRenderer | null>(null);
-  const integratedSceneVrButtonContainerRef = useRef<HTMLDivElement | null>(null);
-  const [integratedCanvasSize, setIntegratedCanvasSize] = useState<{ w: number; h: number } | null>(null);
-  const integratedAssetLoadReportedRef = useRef(false);
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
   const [isQuestDevice, setIsQuestDevice] = useState(false);
   const [showEnterVROverlay, setShowEnterVROverlay] = useState(true);
@@ -1201,33 +1093,9 @@ const VRLessonPlayerInner = () => {
   const [showDragHint, setShowDragHint] = useState(true);
   const [sceneReady, setSceneReady] = useState(false);
 
-  // Debug panel (like XRLessonPlayerV3) - asset/skybox/krpano status for black-screen debugging
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const [debugExpanded, setDebugExpanded] = useState(true);
-  const addDebug = useCallback((msg: string, category?: keyof typeof DEBUG_CATEGORIES) => {
-    const prefix = category ? DEBUG_CATEGORIES[category] : '[Krpano]';
-    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
-    const fullMsg = `${prefix} ${msg}`;
-    if (DEBUG) console.log(`[${timestamp}] ${fullMsg}`);
-    setDebugInfo((prev) => [...prev.slice(-40), `${timestamp}: ${msg}`]);
-  }, []);
-
   // LMS Tracking State
   const [currentLaunchId, setCurrentLaunchId] = useState<string | null>(null);
   const [lessonStartTime, setLessonStartTime] = useState<number | null>(null);
-
-  // Debug: log when lesson data becomes available (once per topic)
-  const lastLoggedTopicIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const topicId = effectiveLesson?.topic?.topic_id ?? null;
-    if (topicId && lastLoggedTopicIdRef.current !== topicId) {
-      lastLoggedTopicIdRef.current = topicId;
-      addDebug(`Lesson: ${effectiveLesson?.topic?.topic_name ?? 'unknown'} (${topicId})`, 'LESSON');
-    } else if (!effectiveLesson && !extraLessonData && lastLoggedTopicIdRef.current !== 'none') {
-      lastLoggedTopicIdRef.current = 'none';
-      addDebug('Lesson: no effectiveLesson or extraLessonData yet', 'LESSON');
-    }
-  }, [effectiveLesson?.topic?.topic_id, effectiveLesson?.topic?.topic_name, !!effectiveLesson, !!extraLessonData, addDebug]);
 
   // Derived State - use effectiveLesson so dashboard-open (sessionStorage only) works
   const lessonId = effectiveLesson ? `${effectiveLesson.chapter?.chapter_id || 'unknown'}_${effectiveLesson.topic?.topic_id || 'unknown'}` : '';
@@ -1326,12 +1194,12 @@ const VRLessonPlayerInner = () => {
   const currentMcq = mcqs[currentMcqIndex];
 
   // All content ready: skybox (or no skybox), 3D assets (or none), and TTS must be ready.
-  // Start Lesson is only active when all scene assets have loaded so intro/explanation/outro and scene render correctly.
+  // When lesson has both skybox + GLB we use integrated scene: wait for skybox texture and 3D model before Start Lesson.
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
-    // When topic has a 3D asset, wait for it to load; otherwise allow start
-    const assetReady = assetUrl ? !assetLoading : true;
+    const hasGlbAsset = !!(assetUrl && isGlbOrGltfUrl(assetUrl));
+    const assetReady = hasGlbAsset ? !assetLoading : true;
     const ttsReady =
       ttsStatus !== 'loading' &&
       (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
@@ -1471,51 +1339,33 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const loadSkybox = async () => {
-      addDebug('Skybox: load started', 'SKYBOX');
-      // Priority 0: Class session launched_scene (teacher sent scene to class)
-      const launched = joinedSession?.launched_scene;
-      if (launched?.skybox_image_url) {
-        addDebug(`Skybox: from launched_scene (${launched.skybox_image_url.substring(0, 50)}...)`, 'SKYBOX');
-        setSkyboxLoading(true);
-        setSkyboxError(null);
-        setSceneReady(false);
-        setSkyboxData({
-          id: launched.skybox_id || 'launched_scene',
-          imageUrl: launched.skybox_image_url,
-          file_url: launched.skybox_image_url,
-          status: 'complete',
-        });
-        if (launched.skybox_glb_url && isGlbOrGltfUrl(launched.skybox_glb_url)) {
-          setAssetUrl(launched.skybox_glb_url);
-          setAssetLoading(true);
-          addDebug(`Asset: set from launched_scene GLB`, 'ASSET');
-        }
-        setSkyboxLoading(false);
-        return;
-      }
-
       // Use effectiveLesson so we get topic from sessionStorage when activeLesson is null (e.g. on refresh)
       const topic = effectiveLesson?.topic;
-      if (!topic) {
-        addDebug('Skybox: no topic (effectiveLesson?.topic missing)', 'SKYBOX');
+      if (!topic && !extraLessonData) {
         setSkyboxLoading(false);
         return;
       }
       
       setSkyboxLoading(true);
       setSkyboxError(null);
-      // When this lesson has a skybox, wait for the texture to load before showing Start Lesson
-      const hasSkybox = !!(topic.skybox_url || topic.sharedAssets?.skybox_url || topic.skybox_id || topic.sharedAssets?.skybox_id);
+      // Resolve skybox URL: topic, sharedAssets, or bundle/top-level from extraLessonData (teacher launch)
+      const skyboxUrl =
+        topic?.skybox_url ||
+        topic?.sharedAssets?.skybox_url ||
+        (extraLessonData as any)?.skybox_url ||
+        (extraLessonData as any)?.topic?.skybox_url ||
+        '';
+      const skyboxId = topic?.skybox_id || topic?.sharedAssets?.skybox_id || (extraLessonData as any)?.skybox_id || '';
+      const hasSkybox = !!(skyboxUrl || skyboxId);
       if (hasSkybox) {
         setSceneReady(false);
       }
-      
-      // Resolve skybox URL (topic-level or sharedAssets)
-      const skyboxUrl = topic.skybox_url || topic.sharedAssets?.skybox_url || '';
-      const skyboxId = topic.skybox_id || topic.sharedAssets?.skybox_id;
+      if (!topic && !skyboxUrl && !skyboxId) {
+        setSkyboxLoading(false);
+        return;
+      }
       
       if (skyboxUrl) {
-        addDebug(`Skybox: from topic URL (${skyboxUrl.substring(0, 50)}...)`, 'SKYBOX');
         setSkyboxData({
           id: skyboxId || 'direct_url',
           imageUrl: skyboxUrl,
@@ -1527,84 +1377,41 @@ const VRLessonPlayerInner = () => {
       }
       
       if (skyboxId) {
-        addDebug(`Skybox: fetching from Firestore skyboxes/${skyboxId}`, 'SKYBOX');
         const data = await fetchSkyboxFromFirestore(skyboxId);
         if (data) {
-          addDebug(`Skybox: Firestore OK (${(data.imageUrl || data.file_url || '').substring(0, 50)}...)`, 'SKYBOX');
           setSkyboxData(data);
         } else {
-          addDebug('Skybox: Firestore doc not found', 'ERROR');
           setSkyboxError('Skybox not found');
         }
         setSkyboxLoading(false);
         return;
       }
       
-      addDebug('Skybox: no URL or ID — no skybox for this lesson', 'SKYBOX');
       setSkyboxLoading(false);
     };
     
     loadSkybox();
-  }, [effectiveLesson, joinedSession, addDebug]);
+  }, [effectiveLesson, extraLessonData]);
 
   // When there is no skybox to load, mark scene ready so we don't block Start Lesson
   useEffect(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     if (!skyboxLoading && !skyboxUrl) {
-      addDebug('Scene: no skybox → sceneReady=true', 'SCENE');
       setSceneReady(true);
     }
-  }, [skyboxLoading, skyboxData, addDebug]);
+  }, [skyboxLoading, skyboxData]);
 
   // Detect Meta Quest so we can show "Enter VR" overlay
   useEffect(() => {
     setIsQuestDevice(isMetaQuestBrowser());
   }, []);
 
-  // All GLB URLs for integrated scene (web: render every 3D asset in the lesson) – must be before any effect that references it
-  const allAssetUrls = useMemo((): string[] => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    const add = (url: string | null | undefined) => {
-      if (!url || !isGlbOrGltfUrl(url)) return;
-      if (seen.has(url)) return;
-      seen.add(url);
-      out.push(url);
-    };
-    // Class session launched_scene GLB (teacher sent scene to class)
-    add(joinedSession?.launched_scene?.skybox_glb_url);
-    if (Array.isArray(meshyAssets)) {
-      meshyAssets.forEach((a) => add(a.glb_url));
-    }
-    const effectiveTopic = extraLessonData?.topic || activeLesson?.topic;
-    if (effectiveTopic?.asset_urls && Array.isArray(effectiveTopic.asset_urls)) {
-      effectiveTopic.asset_urls.forEach((u: string) => add(u));
-    }
-    const img3d = extraLessonData?.image3dasset || activeLesson?.image3dasset;
-    if (img3d) {
-      add(img3d.imagemodel_glb);
-      if (img3d.imageasset_url && isGlbOrGltfUrl(img3d.imageasset_url)) add(img3d.imageasset_url);
-    }
-    return out;
-  }, [joinedSession?.launched_scene?.skybox_glb_url, meshyAssets, extraLessonData?.topic, extraLessonData?.image3dasset, activeLesson?.topic, activeLesson?.image3dasset]);
-
   // Embed krpano when we have skybox and container is mounted, and we're NOT using integrated Three.js (no GLB asset)
-  // Testing: Guided lookto runs on phase change (intro/explanation/outro) with default angles if topic has no lookatByPhase.
-  // Hotspots: add ?krpanoTest=1 to the URL to inject 3 demo hotspots when topic has none; click them to see the feedback message.
   useEffect(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-    if (!skyboxUrl || !krpanoContainerRef.current || !krpanoContainerMounted) {
-      if (skyboxUrl && (!krpanoContainerRef.current || !krpanoContainerMounted)) {
-        addDebug('Krpano: waiting for container or mount', 'KRPANO');
-      }
-      return;
-    }
-    if ((assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0)) {
-      addDebug(`Krpano: skipped — using integrated scene (assets: ${allAssetUrls?.length ?? 0}, primary: ${!!assetUrl})`, 'KRPANO');
-      return; // use integrated Three.js scene instead
-    }
+    if (!skyboxUrl || !krpanoContainerRef.current || !krpanoContainerMounted) return;
+    if (assetUrl && isGlbOrGltfUrl(assetUrl)) return; // use integrated Three.js scene instead
 
-    addDebug('Krpano: embedding viewer (sphere-only mode)', 'KRPANO');
     let cancelled = false;
     krpanoViewerRef.current = null;
     // Guided lookto & hotspots from lesson topic (optional)
@@ -1634,7 +1441,6 @@ const VRLessonPlayerInner = () => {
     loadKrpanoScript()
       .then(() => {
         if (cancelled) return;
-        addDebug('Krpano: script loaded, building XML', 'KRPANO');
         const xml = buildKrpanoXml({
           sphereUrl: sphereUrlForKrpano,
           basePath: '/krpano/',
@@ -1649,7 +1455,6 @@ const VRLessonPlayerInner = () => {
           basepath: '/krpano/',
           onready: (krpano: unknown) => {
             if (!cancelled) {
-              addDebug('Krpano: onready — sceneReady=true', 'KRPANO');
               krpanoViewerRef.current = krpano as { call?: (action: string) => void };
               // Bridge: krpano hotspot onclick calls this so React can react
               (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = (name: string) => {
@@ -1660,7 +1465,6 @@ const VRLessonPlayerInner = () => {
           },
           onerror: (msg) => {
             if (!cancelled) {
-              addDebug(`Krpano: onerror — ${msg || 'Failed to load 360° viewer'}`, 'ERROR');
               setSkyboxError(msg || 'Failed to load 360° viewer');
               setSceneReady(true);
             }
@@ -1669,7 +1473,6 @@ const VRLessonPlayerInner = () => {
       })
       .catch((err) => {
         if (!cancelled) {
-          addDebug(`Krpano: script/embed failed — ${err?.message || err}`, 'ERROR');
           setSkyboxError(err?.message || 'Failed to load 360° viewer');
           setSceneReady(true);
         }
@@ -1679,7 +1482,7 @@ const VRLessonPlayerInner = () => {
       cancelled = true;
       (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
     };
-  }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetUrl, allAssetUrls, extraLessonData, addDebug]);
+  }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetUrl, extraLessonData]);
 
   // Hotspot click handler: keep ref updated so krpano callback can trigger React state
   useEffect(() => {
@@ -1705,69 +1508,9 @@ const VRLessonPlayerInner = () => {
     (typeof sessionStorage !== 'undefined'
       ? sessionStorage.getItem('learnxr_class_session_id') ?? sessionStorage.getItem('learnxr_joined_session_id')
       : null);
-
-  // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
-  const useKrpanoView = !((assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0));
+  // Report initial progress as soon as student is in lesson with a session (so teacher sees them in "Student views")
   useEffect(() => {
-    if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
-    const phase = lessonPhase as string;
-    if (phase !== 'intro' && phase !== 'explanation' && phase !== 'outro') return;
-
-    const lookatByPhase = extraLessonData?.topic?.lookatByPhase as LookatByPhase | undefined;
-    const target = lookatByPhase?.[phase];
-    const h = target?.h ?? (phase === 'intro' ? 0 : phase === 'explanation' ? 25 : -20);
-    const v = target?.v ?? (phase === 'intro' ? 0 : phase === 'explanation' ? 5 : -5);
-    const fov = target?.fov ?? 90;
-    const time = 1.5;
-
-    const action = `tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=${time})`;
-    krpanoViewerRef.current.call(action);
-    log('👁️', `Guided lookto [${phase}]`, { h, v, fov });
-  }, [lessonPhase, useKrpanoView, extraLessonData?.topic?.lookatByPhase]);
-
-  // Teacher: broadcast view to session so students follow (krpano: poll action; integrated: onViewChange from Three.js)
-  const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
-  const useIntegratedSceneEarly = !!((skyboxData?.imageUrl ?? skyboxData?.file_url) && ((assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0)));
-  useEffect(() => {
-    if (!isTeacherInSession || (!useKrpanoView && !useIntegratedSceneEarly) || !activeSessionId || !user?.uid) return;
-    let lastSent = 0;
-    const throttleMs = 300;
-    const sendView = (h: number, v: number, fov: number) => {
-      const now = Date.now();
-      if (now - lastSent < throttleMs) return;
-      lastSent = now;
-      const hNorm = normalizeHlookat(h);
-      const vClamp = clampVlookat(v);
-      updateTeacherView(activeSessionId, user!.uid, { hlookat: hNorm, vlookat: vClamp, fov }).catch((err) => {
-        console.warn('[ViewSync] Teacher updateTeacherView failed:', err);
-      });
-    };
-    viewSyncSendRef.current = sendView;
-    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && useIntegratedSceneEarly && !useKrpanoView) {
-      console.debug('[ViewSync] Teacher integrated-scene callback registered; drag will send view to students.');
-    }
-    if (useKrpanoView) {
-      (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = sendView;
-      const interval = setInterval(() => {
-        const viewer = krpanoViewerRef.current;
-        if (viewer?.call) viewer.call('sync_view_to_js');
-      }, throttleMs);
-      return () => {
-        (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
-        viewSyncSendRef.current = () => {};
-        clearInterval(interval);
-      };
-    }
-    return () => { viewSyncSendRef.current = () => {}; };
-  }, [isTeacherInSession, useKrpanoView, useIntegratedSceneEarly, activeSessionId, user?.uid]);
-
-  // Student: follow teacher view when in joined session (teacher_view from Firestore)
-  const teacherView = joinedSession?.teacher_view;
-  const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
-
-  // Report progress to class session only when user is a student (Firestore allows only students to write progress)
-  useEffect(() => {
-    if (!isStudentInSession || !sessionIdForReport || !user?.uid) return;
+    if (!sessionIdForReport || !user?.uid) return;
     reportSessionProgress(
       sessionIdForReport,
       user.uid,
@@ -1777,9 +1520,9 @@ const VRLessonPlayerInner = () => {
       undefined,
       (profile as any)?.email ?? user?.email ?? undefined
     ).catch(() => {});
-  }, [isStudentInSession, sessionIdForReport, user?.uid]);
+  }, [sessionIdForReport, user?.uid]);
   useEffect(() => {
-    if (!isStudentInSession || !sessionIdForReport || !user?.uid) return;
+    if (!sessionIdForReport || !user?.uid) return;
     const phaseMap: Record<string, SessionLessonPhase> = {
       intro: 'intro',
       explanation: 'explanation',
@@ -1813,53 +1556,97 @@ const VRLessonPlayerInner = () => {
         (profile as any)?.email ?? user?.email ?? undefined
       ).catch(() => {});
     }
-  }, [isStudentInSession, lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
+  }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
 
+  // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
+  const useKrpanoView = !assetUrl || !isGlbOrGltfUrl(assetUrl);
+  useEffect(() => {
+    if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
+    const phase = lessonPhase as string;
+    if (phase !== 'intro' && phase !== 'explanation' && phase !== 'outro') return;
+
+    const lookatByPhase = extraLessonData?.topic?.lookatByPhase as LookatByPhase | undefined;
+    const target = lookatByPhase?.[phase];
+    const h = target?.h ?? (phase === 'intro' ? 0 : phase === 'explanation' ? 25 : -20);
+    const v = target?.v ?? (phase === 'intro' ? 0 : phase === 'explanation' ? 5 : -5);
+    const fov = target?.fov ?? 90;
+    const time = 1.5;
+
+    const action = `tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=${time})`;
+    krpanoViewerRef.current.call(action);
+    log('👁️', `Guided lookto [${phase}]`, { h, v, fov });
+  }, [lessonPhase, useKrpanoView, extraLessonData?.topic?.lookatByPhase]);
+
+  const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
+  const useIntegratedSceneEarly = !!((skyboxData?.imageUrl ?? skyboxData?.file_url) && assetUrl && isGlbOrGltfUrl(assetUrl));
+  const useModelOnlySceneEarly = !!(assetUrl && isGlbOrGltfUrl(assetUrl) && !(skyboxData?.imageUrl ?? skyboxData?.file_url));
+  const useThreeScene = useIntegratedSceneEarly || useModelOnlySceneEarly;
+  // Teacher: broadcast view to students. Krpano: use onviewchange only (per krpano docs – no polling).
+  useEffect(() => {
+    if (!isTeacherInSession || (!useKrpanoView && !useThreeScene) || !activeSessionId || !user?.uid) return;
+    let lastSent = 0;
+    const throttleMs = 100;
+    const sendView = (h: number, v: number, fov: number) => {
+      const now = Date.now();
+      if (now - lastSent < throttleMs) return;
+      lastSent = now;
+      updateTeacherView(activeSessionId, user!.uid, { hlookat: h, vlookat: v, fov }).catch((err) => {
+        console.warn('[ViewSync] Teacher updateTeacherView failed:', err);
+      });
+    };
+    viewSyncSendRef.current = sendView;
+    if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && useThreeScene && !useKrpanoView) {
+      console.debug('[ViewSync] Teacher Three.js scene callback registered; drag will send view to students.');
+    }
+    if (useKrpanoView) {
+      (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = sendView;
+      const viewer = krpanoViewerRef.current;
+      if (viewer?.call) viewer.call('sync_view_to_js');
+      const t = setTimeout(() => {
+        krpanoViewerRef.current?.call?.('sync_view_to_js');
+      }, 500);
+      return () => {
+        clearTimeout(t);
+        (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
+        viewSyncSendRef.current = () => {};
+      };
+    }
+    return () => { viewSyncSendRef.current = () => {}; };
+  }, [isTeacherInSession, useKrpanoView, useThreeScene, activeSessionId, user?.uid]);
+
+  // Student: follow teacher view (krpano view.hlookat / view.vlookat / view.fov per docs)
+  const teacherView = joinedSession?.teacher_view;
+  const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
   const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number } | null>(null);
   useEffect(() => {
     if (!isStudentInSession || !useKrpanoView || !teacherView || !krpanoViewerRef.current?.call) return;
-    const hNorm = normalizeHlookat(Number(teacherView.hlookat));
-    const vClamp = clampVlookat(Number(teacherView.vlookat));
-    const fov = teacherView.fov ?? 90;
+    const h = Number(teacherView.hlookat);
+    const v = Number(teacherView.vlookat);
+    const fov = Number(teacherView.fov) || 90;
+    if (Number.isNaN(h) || Number.isNaN(v)) return;
     const prev = lastTeacherViewRef.current;
-    if (prev && prev.h === hNorm && prev.v === vClamp && prev.fov === fov) return;
-    lastTeacherViewRef.current = { h: hNorm, v: vClamp, fov };
-    const action = `tween(view.hlookat,${hNorm},view.vlookat,${vClamp},view.fov,${fov},time=1.0)`;
-    krpanoViewerRef.current.call(action);
-    log('👁️', 'Following teacher view', { h: hNorm, v: vClamp, fov });
+    if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
+    lastTeacherViewRef.current = { h, v, fov };
+    krpanoViewerRef.current.call(`tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=0.28)`);
+    log('👁️', 'Following teacher view', { h, v, fov });
   }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov]);
 
-  // Student: report current 360° view to session progress so teacher can see “what they see” (throttled)
-  const lastStudentViewRef = useRef<{ hlookat: number; vlookat: number; fov: number } | null>(null);
-  const lastStudentReportTimeRef = useRef(0);
-  const STUDENT_VIEW_THROTTLE_MS = 400;
-  const STUDENT_VIEW_POLL_MS = 500;
+  // Student: report view on onviewchange (throttled) so teacher preview matches student drag; was: report to session so teacher can see “what they see” (throttled)
   useEffect(() => {
     if (!isStudentInSession || !joinedSessionId || !user?.uid || !useKrpanoView) return;
-    const doReport = (view: { hlookat: number; vlookat: number; fov: number }) => {
+    let lastReported = 0;
+    const reportThrottleMs = 220;
+    const onViewChange = (h: number, v: number, fov: number) => {
       const now = Date.now();
-      if (now - lastStudentReportTimeRef.current < STUDENT_VIEW_THROTTLE_MS) return;
-      lastStudentReportTimeRef.current = now;
-      reportStudentView(joinedSessionId, user.uid, view).catch(() => {});
+      if (now - lastReported < reportThrottleMs) return;
+      lastReported = now;
+      reportStudentView(joinedSessionId, user.uid, { hlookat: h, vlookat: v, fov }).catch(() => {});
     };
-    const storeView = (h: number, v: number, fovVal: number) => {
-      const view = {
-        hlookat: normalizeHlookat(h),
-        vlookat: clampVlookat(v),
-        fov: fovVal ?? 90,
-      };
-      lastStudentViewRef.current = view;
-      doReport(view);
-    };
-    (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = storeView;
+    (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = onViewChange;
     krpanoViewerRef.current?.call?.('sync_view_to_js');
-    const interval = setInterval(() => {
-      krpanoViewerRef.current?.call?.('sync_view_to_js');
-      const view = lastStudentViewRef.current;
-      if (view) doReport(view);
-    }, STUDENT_VIEW_POLL_MS);
+    const t = setTimeout(() => krpanoViewerRef.current?.call?.('sync_view_to_js'), 400);
     return () => {
-      clearInterval(interval);
+      clearTimeout(t);
       (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
     };
   }, [isStudentInSession, joinedSessionId, user?.uid, useKrpanoView, sceneReady]);
@@ -1870,38 +1657,28 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const loadAsset = () => {
-      addDebug('Asset: load started (first path)', 'ASSET');
-      // Priority 0: Class session launched_scene (teacher sent scene to class)
-      const launchedGlb = joinedSession?.launched_scene?.skybox_glb_url;
-      if (launchedGlb && isGlbOrGltfUrl(launchedGlb)) {
-        addDebug(`Asset: from launched_scene (${launchedGlb.substring(0, 50)}...)`, 'ASSET');
-        setAssetUrl(launchedGlb);
-        setAssetLoading(true);
-        return;
-      }
-
-      if (!activeLesson) {
-        addDebug('Asset: no activeLesson, skip', 'ASSET');
-        return;
-      }
+      if (!activeLesson) return;
       
       let selectedUrl: string | null = null;
       
       // Priority 1: Check image3dasset from extraLessonData (image-to-3D converted models with multiple formats)
       const img3d = extraLessonData?.image3dasset;
       if (img3d) {
-        addDebug(`Asset: trying image3dasset (platform: ${platform})`, 'ASSET');
+        log('📦', '3D Asset: Found image3dasset, selecting by platform:', platform);
         
         if (platform === 'android') {
+          // Android/Meta Quest: prefer FBX, fallback to GLB
           selectedUrl = img3d.imagemodel_fbx || img3d.imagemodel_glb || img3d.imageasset_url;
         } else if (platform === 'ios') {
+          // iOS: prefer USDZ, fallback to GLB
           selectedUrl = img3d.imagemodel_usdz || img3d.imagemodel_glb || img3d.imageasset_url;
         } else {
+          // Web: only GLB/GLTF
           selectedUrl = img3d.imagemodel_glb || (isGlbOrGltfUrl(img3d.imageasset_url || '') ? img3d.imageasset_url : null) || null;
         }
         
         if (selectedUrl && (platform === 'web' ? isGlbOrGltfUrl(selectedUrl) : true)) {
-          addDebug(`Asset: set from image3dasset (${selectedUrl.substring(0, 50)}...)`, 'ASSET');
+          log('✅', `Selected ${platform} asset from image3dasset:`, selectedUrl.substring(0, 80));
           setAssetUrl(selectedUrl);
           setAssetLoading(true);
           return;
@@ -1913,7 +1690,7 @@ const VRLessonPlayerInner = () => {
       if (assetUrls && assetUrls.length > 0) {
         selectedUrl = platform === 'web' ? firstGlbOrGltfUrl(assetUrls) : assetUrls[0];
         if (selectedUrl) {
-          addDebug(`Asset: set from topic.asset_urls (${selectedUrl.substring(0, 50)}...)`, 'ASSET');
+          log('📦', '3D Asset URL from topic.asset_urls:', selectedUrl.substring(0, 80));
           setAssetUrl(selectedUrl);
           setAssetLoading(true);
           return;
@@ -1922,11 +1699,12 @@ const VRLessonPlayerInner = () => {
       
       // Priority 3: Fetch from Meshy assets collection
       if (activeLesson.chapter?.chapter_id && activeLesson.topic?.topic_id) {
-        addDebug('Asset: fetching meshy_assets from Firestore...', 'ASSET');
+        log('🔍', 'Fetching 3D assets from meshy_assets collection...');
         getMeshyAssets(activeLesson.chapter.chapter_id, activeLesson.topic.topic_id)
           .then((assets) => {
             if (assets.length > 0) {
               const asset = assets[0];
+              // Select platform-appropriate URL
               if (platform === 'android') {
                 selectedUrl = asset.fbx_url || asset.glb_url;
               } else if (platform === 'ios') {
@@ -1936,26 +1714,23 @@ const VRLessonPlayerInner = () => {
               }
               
               if (selectedUrl) {
-                addDebug(`Asset: set from meshy_assets (${selectedUrl.substring(0, 50)}...)`, 'ASSET');
+                log('✅', `Selected ${platform} asset from meshy_assets:`, selectedUrl.substring(0, 80));
                 setAssetUrl(selectedUrl);
                 setAssetLoading(true);
                 setMeshyAssets(assets);
               }
             } else {
-              addDebug('Asset: no meshy assets for this lesson', 'ASSET');
+              log('ℹ️', 'No 3D assets found for this lesson');
             }
           })
           .catch((err) => {
-            addDebug(`Asset: meshy fetch error — ${err?.message || err}`, 'ERROR');
             console.error('Failed to fetch meshy assets:', err);
           });
-      } else {
-        addDebug('Asset: no chapter/topic ID for meshy fetch', 'ASSET');
       }
     };
     
     loadAsset();
-  }, [activeLesson, platform, extraLessonData, joinedSession, addDebug]);
+  }, [activeLesson, platform, extraLessonData]);
 
   // Hide drag hint
   useEffect(() => {
@@ -2117,30 +1892,26 @@ const VRLessonPlayerInner = () => {
         }
       });
       
-      const maxRetries = 2;
       for (const ttsId of languageTtsIds.slice(0, 3)) { // Max 3 for intro/explanation/outro
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            const ttsDoc = await getDoc(doc(db, 'chapter_tts', ttsId));
-            if (ttsDoc.exists()) {
-              const data = ttsDoc.data();
-              const ttsLang = data.language || 'en';
-              if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
-                ttsResults.push({
-                  id: ttsId,
-                  section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
-                  audioUrl: data.audio_url || data.audioUrl,
-                  text: data.text || data.content || '',
-                });
-                log('✅', `TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
-              }
-              break;
+        try {
+          const ttsDoc = await getDoc(doc(db, 'chapter_tts', ttsId));
+          if (ttsDoc.exists()) {
+            const data = ttsDoc.data();
+            const ttsLang = data.language || 'en';
+            
+            // Only include if language matches
+            if (ttsLang === lessonLanguage && (data.audio_url || data.audioUrl)) {
+              ttsResults.push({
+                id: ttsId,
+                section: data.section || ttsId.split('_').slice(-3, -2).join('_') || 'content',
+                audioUrl: data.audio_url || data.audioUrl,
+                text: data.text || data.content || '',
+              });
+              log('✅', `TTS loaded: ${ttsId.substring(0, 40)}... (${ttsLang})`);
             }
-            break;
-          } catch (err) {
-            log('❌', `TTS error for ${ttsId} (attempt ${attempt + 1}/${maxRetries + 1}):`, err);
-            if (attempt < maxRetries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
           }
+        } catch (err) {
+          log('❌', `TTS error for ${ttsId}: ${err}`);
         }
       }
       
@@ -2158,20 +1929,10 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchAssets = async () => {
-      addDebug('Asset: bundle path started', 'ASSET');
-      // Priority 0: Class session launched_scene (teacher sent scene to class)
-      const launchedGlb = joinedSession?.launched_scene?.skybox_glb_url;
-      if (launchedGlb && isGlbOrGltfUrl(launchedGlb)) {
-        addDebug(`Asset: from launched_scene bundle (${launchedGlb.substring(0, 50)}...)`, 'ASSET');
-        setAssetUrl(launchedGlb);
-        setAssetLoading(true);
-        return;
-      }
-
       // Priority 1: Check sessionStorage for 3D assets from bundle
       if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d) && extraLessonData.assets3d.length > 0) {
         const bundleAssets = extraLessonData.assets3d;
-        addDebug(`Asset: using ${bundleAssets.length} from bundle`, 'ASSET');
+        log('📦', `Using ${bundleAssets.length} 3D assets from bundle`);
         
         // Convert bundle assets to MeshyAsset format
         const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
@@ -2191,7 +1952,7 @@ const VRLessonPlayerInner = () => {
           const firstAssetUrl = selectPlatformAssetUrl(convertedAssets[0], platform);
           setAssetUrl(firstAssetUrl);
           setAssetLoading(true); // wait for 3D model to load; onAssetLoad will set false
-          addDebug(`Asset: set ${convertedAssets.length} from bundle (platform: ${platform})`, 'ASSET');
+          log('✅', `Loaded ${convertedAssets.length} 3D assets from bundle, selected format for ${platform}`);
           return;
         }
       }
@@ -2201,7 +1962,7 @@ const VRLessonPlayerInner = () => {
       if (effectiveTopic?.asset_urls && Array.isArray(effectiveTopic.asset_urls) && effectiveTopic.asset_urls.length > 0) {
         const urlForPlatform = platform === 'web' ? firstGlbOrGltfUrl(effectiveTopic.asset_urls) : effectiveTopic.asset_urls[0];
         if (urlForPlatform) {
-          addDebug(`Asset: set from topic.asset_urls (${effectiveTopic.asset_urls.length} URLs)`, 'ASSET');
+          log('📦', `Using ${effectiveTopic.asset_urls.length} asset URLs from topic`);
           setAssetUrl(urlForPlatform);
           setAssetLoading(true);
           return;
@@ -2222,7 +1983,7 @@ const VRLessonPlayerInner = () => {
         }
         
         if (selectedUrl && (platform === 'web' ? isGlbOrGltfUrl(selectedUrl) : true)) {
-          addDebug(`Asset: set from image3dasset (${selectedUrl.substring(0, 50)}...)`, 'ASSET');
+          log('✅', `Using image3dasset for ${platform}:`, selectedUrl.substring(0, 60));
           setAssetUrl(selectedUrl);
           setAssetLoading(true);
           return;
@@ -2231,18 +1992,17 @@ const VRLessonPlayerInner = () => {
       
       // Priority 4: Fallback to Firestore fetch
       if (!activeLesson?.topic?.topic_id || !activeLesson?.chapter?.chapter_id) {
-        addDebug('Asset: no topic/chapter ID — skip Firestore', 'ASSET');
         setAssetLoading(false);
         return;
       }
       
       setAssetLoading(true);
-      addDebug('Asset: fetching from Firestore meshy_assets...', 'ASSET');
       
       try {
         const chapterId = activeLesson.chapter.chapter_id;
         const topicId = activeLesson.topic.topic_id;
         
+        log('📦', 'Fetching 3D assets from Firestore for platform:', platform);
         const assets = await getMeshyAssets(chapterId, topicId);
         
         if (assets.length > 0) {
@@ -2250,20 +2010,20 @@ const VRLessonPlayerInner = () => {
           const firstAssetUrl = selectPlatformAssetUrl(assets[0], platform);
           setAssetUrl(firstAssetUrl);
           setAssetLoading(true); // wait for 3D model to load; onAssetLoad will set false
-          addDebug(`Asset: set ${assets.length} from Firestore (platform: ${platform})`, 'ASSET');
+          log('✅', `Loaded ${assets.length} 3D assets from Firestore, selected format for ${platform}`);
         } else {
-          addDebug('Asset: no assets in Firestore', 'ASSET');
+          log('⚠️', 'No 3D assets found in Firestore');
           setAssetLoading(false);
         }
       } catch (error) {
-        addDebug(`Asset: Firestore error — ${(error as Error)?.message}`, 'ERROR');
         console.error('Failed to fetch 3D assets:', error);
+        log('❌', 'Error fetching 3D assets from Firestore');
         setAssetLoading(false);
       }
     };
     
     fetchAssets();
-  }, [activeLesson, extraLessonData, platform, joinedSession, addDebug]);
+  }, [activeLesson, extraLessonData, platform]);
 
   // ============================================================================
   // Get TTS Audio URL for Current Script Type
@@ -2388,20 +2148,13 @@ const VRLessonPlayerInner = () => {
       setWaitingForUser(true);
     };
     
-    const src = ttsEntry.audioUrl;
-    audio.src = src;
+    // Set source and play
+    audio.src = ttsEntry.audioUrl;
     audio.play().catch(err => {
-      console.warn('Failed to play TTS, retrying once:', err);
-      setTimeout(() => {
-        audio.load();
-        audio.src = src;
-        audio.play().catch(err2 => {
-          console.error('Failed to play audio after retry:', err2);
-          setTtsStatus('error');
-          setIsPlayingAudio(false);
-          setWaitingForUser(true);
-        });
-      }, 400);
+      console.error('Failed to play audio:', err);
+      setTtsStatus('error');
+      setIsPlayingAudio(false);
+      setWaitingForUser(true);
     });
   }, [isMuted, getTTSForCurrentPhase, isPlayingAudio, lessonPhase, cleanupAudio]);
 
@@ -2892,11 +2645,6 @@ const VRLessonPlayerInner = () => {
     }
   }, [prepLessonData, prepLang, lessonContext]);
 
-  // Reset integrated-scene asset load report when lesson or primary asset changes (must run unconditionally to avoid hook count mismatch)
-  useEffect(() => {
-    integratedAssetLoadReportedRef.current = false;
-  }, [assetUrl, allAssetUrls?.[0] ?? null, activeLesson?.topic?.topic_id]);
-
   if (prepChapter && prepTopic && !preparationDone) {
     const meta = prepLessonData?._meta;
     const isVRAvailable = !!prepVRCapabilities;
@@ -3198,15 +2946,12 @@ const VRLessonPlayerInner = () => {
   };
 
   const skyboxImageUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-  const hasGlbAsset = !!(assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0);
-  const useIntegratedScene = !!(skyboxImageUrl && hasGlbAsset);
-  const isFirebaseStorage = skyboxImageUrl && (skyboxImageUrl.includes('firebasestorage.googleapis.com') || skyboxImageUrl.includes('firebasestorage.app'));
+  const useIntegratedScene = !!(skyboxImageUrl && assetUrl && isGlbOrGltfUrl(assetUrl));
+  // Always proxy skybox for integrated scene to avoid CORS with TextureLoader
   const resolvedSkyboxUrlForScene = skyboxImageUrl
-    ? (isFirebaseStorage ? skyboxImageUrl : `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxImageUrl)}`)
+    ? `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxImageUrl)}`
     : '';
-
-  const lessonLanguageForWelcome = extraLessonData?.topic?.language || extraLessonData?.language || activeLesson?.topic?.language || 'en';
-  const welcomeStrings = getWelcomeStrings(lessonLanguageForWelcome);
+  const useModelOnlyScene = !!(assetUrl && isGlbOrGltfUrl(assetUrl) && !skyboxImageUrl);
 
   // ============================================================================
   // Render
@@ -3214,70 +2959,50 @@ const VRLessonPlayerInner = () => {
 
   return (
     <div className="fixed inset-0 bg-black text-white overflow-hidden">
-      {/* Main 3D view: integrated scene (skybox + model in same env) when lesson has GLB, else krpano */}
-      <div className="absolute inset-0 z-0 w-full h-full" style={{ minWidth: 1, minHeight: 1 }}>
+      {/* Main 3D view: integrated (skybox+model), or model-only when GLB but no skybox, else krpano */}
+      <div className="absolute inset-0 z-0">
         {useIntegratedScene && resolvedSkyboxUrlForScene ? (
           <Canvas
             camera={{ position: [0, 0, 0.1], fov: 75, near: 0.1, far: 1000 }}
             gl={{ antialias: true }}
-            onCreated={({ gl }) => {
-              gl.xr.enabled = true;
-              integratedSceneGlRef.current = gl;
-              const w = gl.drawingBufferWidth ?? gl.canvas?.clientWidth ?? 0;
-              const h = gl.drawingBufferHeight ?? gl.canvas?.clientHeight ?? 0;
-              setIntegratedCanvasSize({ w, h });
-            }}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: '100%',
-              height: '100%',
-              display: 'block',
-              background: '#050810',
-            }}
+            style={{ background: '#050810' }}
           >
             <Suspense fallback={null}>
               <LessonSceneIntegrated
                 skyboxUrl={resolvedSkyboxUrlForScene}
                 assetUrl={assetUrl}
-                assetUrls={allAssetUrls}
-                onSkyboxLoad={() => {
-                  addDebug('Scene: integrated skybox loaded → sceneReady=true', 'SCENE');
-                  setSceneReady(true);
-                }}
+                onSkyboxLoad={() => setSceneReady(true)}
                 onSkyboxError={() => {
-                  addDebug('Scene: integrated skybox error', 'ERROR');
                   setSkyboxError('Failed to load skybox');
                   setSceneReady(true);
                 }}
-                onAssetLoad={() => {
-                  if (integratedAssetLoadReportedRef.current) return;
-                  integratedAssetLoadReportedRef.current = true;
-                  addDebug('Scene: integrated primary asset loaded', 'SCENE');
-                  setAssetLoading(false);
-                }}
-                onAssetError={() => {
-                  addDebug('Scene: integrated asset error', 'ERROR');
-                  setAssetLoading(false);
-                }}
-                onViewChange={
-                  isTeacherInSession && useIntegratedScene
-                    ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov)
-                    : isStudentInSession && useIntegratedScene && joinedSessionId && user?.uid
-                      ? (h, v, fov) => {
-                          const now = Date.now();
-                          if (now - studentViewReportLastTimeRef.current < 400) return;
-                          studentViewReportLastTimeRef.current = now;
-                          reportStudentView(joinedSessionId, user.uid, {
-                            hlookat: normalizeHlookat(h),
-                            vlookat: clampVlookat(v),
-                            fov: fov ?? 90,
-                          }).catch(() => {});
-                        }
-                      : undefined
-                }
+                onAssetLoad={() => setAssetLoading(false)}
+                onAssetError={() => setAssetLoading(false)}
+                onViewChange={isTeacherInSession && useIntegratedScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
                 teacherView={isStudentInSession && useIntegratedScene ? teacherView : undefined}
+              />
+            </Suspense>
+          </Canvas>
+        ) : useModelOnlyScene && assetUrl ? (
+          <Canvas
+            camera={{ position: [0, 0, 0.1], fov: 75, near: 0.1, far: 1000 }}
+            gl={{ antialias: true }}
+            style={{ background: '#050810' }}
+          >
+            <Suspense fallback={null}>
+              <LessonSceneIntegrated
+                skyboxUrl=""
+                assetUrl={assetUrl}
+                onSkyboxLoad={() => {}}
+                onSkyboxError={() => {}}
+                onAssetLoad={() => {
+                  setAssetLoading(false);
+                  setSceneReady(true);
+                }}
+                onAssetError={() => setAssetLoading(false)}
+                onViewChange={isTeacherInSession && useModelOnlyScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
+                teacherView={isStudentInSession && useModelOnlyScene ? teacherView : undefined}
+                skyboxOptional
               />
             </Suspense>
           </Canvas>
@@ -3293,8 +3018,8 @@ const VRLessonPlayerInner = () => {
           />
         )}
 
-        {/* Loading overlay */}
-        {(skyboxLoading || (skyboxImageUrl && !sceneReady)) && (
+        {/* Loading overlay: skybox and, when integrated (skybox+3D), 3D asset must be ready */}
+        {(skyboxLoading || (skyboxImageUrl && !sceneReady) || (useIntegratedScene && assetLoading) || (useModelOnlyScene && assetLoading)) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
             <div className="text-center">
               <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mx-auto mb-3" />
@@ -3355,59 +3080,11 @@ const VRLessonPlayerInner = () => {
             </div>
           </div>
         )}
-
-        {/* Meta Quest: Enter VR overlay (integrated Three.js scene - skybox + 3D assets) */}
-        {isQuestDevice && sceneReady && useIntegratedScene && showEnterVROverlay && !showWelcomeScreen && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-30">
-            <div ref={integratedSceneVrButtonContainerRef} className="hidden" aria-hidden="true" />
-            <div className="max-w-sm mx-4 bg-card rounded-2xl border border-primary/30 p-6 text-center shadow-xl">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
-                <Glasses className="w-8 h-8 text-primary" />
-              </div>
-              <h2 className="text-xl font-bold text-foreground mb-2">Enter VR</h2>
-              <p className="text-slate-400 text-sm mb-4">
-                You&apos;re on a VR headset. Tap below to experience this lesson in immersive mode.
-              </p>
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={() => {
-                    const gl = integratedSceneGlRef.current;
-                    const container = integratedSceneVrButtonContainerRef.current;
-                    if (gl && container) {
-                      try {
-                        const vrButton = VRButton.createButton(gl);
-                        container.appendChild(vrButton);
-                        vrButton.click();
-                        setShowEnterVROverlay(false);
-                      } catch (e) {
-                        console.warn('[VRLessonKrpano] Enter VR failed:', e);
-                        setShowEnterVROverlay(false);
-                      }
-                    } else {
-                      setShowEnterVROverlay(false);
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl
-                           bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-colors"
-                >
-                  <Glasses className="w-5 h-5" />
-                  Enter VR
-                </button>
-                <button
-                  onClick={() => setShowEnterVROverlay(false)}
-                  className="w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Continue in 2D
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Teacher: you control where the class looks */}
       <AnimatePresence>
-        {isTeacherInSession && (useKrpanoView || useIntegratedScene) && sceneReady && !showWelcomeScreen && (
+        {isTeacherInSession && (useKrpanoView || useIntegratedScene || useModelOnlyScene) && sceneReady && !showWelcomeScreen && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -3424,7 +3101,7 @@ const VRLessonPlayerInner = () => {
 
       {/* Drag Hint (student or when not in class session) */}
       <AnimatePresence>
-        {showDragHint && sceneReady && skyboxImageUrl && !(isTeacherInSession && (useKrpanoView || useIntegratedScene)) && (
+        {showDragHint && sceneReady && (skyboxImageUrl || useModelOnlyScene) && !(isTeacherInSession && (useKrpanoView || useIntegratedScene || useModelOnlyScene)) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -3449,176 +3126,6 @@ const VRLessonPlayerInner = () => {
         <LogOut className="w-5 h-5" />
         <span className="font-medium">Exit</span>
       </button>
-
-      {/* Debug Panel - asset/skybox/krpano status for black-screen debugging (like XRLessonPlayerV3) */}
-      <div className="absolute bottom-4 left-4 z-50 max-w-xl">
-        <div className="bg-black/95 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/50 text-xs font-mono">
-          <div className="flex items-center justify-between mb-2">
-            <button
-              type="button"
-              onClick={() => setDebugExpanded(!debugExpanded)}
-              className="text-yellow-400 font-bold hover:text-yellow-300 flex items-center gap-1"
-            >
-              🐛 Debug Panel {debugExpanded ? '▼' : '▶'}
-            </button>
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                sceneReady ? 'bg-green-600 text-white' : skyboxLoading ? 'bg-yellow-600 text-white' : 'bg-slate-600 text-white'
-              }`}>
-                {sceneReady ? 'Ready' : skyboxLoading ? 'Loading' : 'Waiting'}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const skyboxImageUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-                  const hasGlb = !!(assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0);
-                  const useInt = !!(skyboxImageUrl && hasGlb);
-                  console.log('[Krpano Debug State]', {
-                    skyboxImageUrl: skyboxImageUrl ? `${skyboxImageUrl.substring(0, 60)}...` : null,
-                    skyboxLoading,
-                    sceneReady,
-                    assetUrl: assetUrl ? `${assetUrl.substring(0, 60)}...` : null,
-                    assetLoading,
-                    allAssetUrlsCount: allAssetUrls?.length ?? 0,
-                    useIntegratedScene: useInt,
-                    krpanoViewer: !!krpanoViewerRef.current,
-                    krpanoContainerMounted,
-                    effectiveLesson: !!effectiveLesson,
-                    extraLessonData: !!extraLessonData,
-                  });
-                  addDebug('State summary logged to console', 'SCENE');
-                }}
-                className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
-                title="Log state to console"
-              >
-                📊 Log State
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const skyboxImageUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-                  const hasGlb = !!(assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0);
-                  const useInt = !!(skyboxImageUrl && hasGlb);
-                  const fullLog = [
-                    '=== VRLessonPlayerKrpano Debug Log ===',
-                    `Time: ${new Date().toISOString()}`,
-                    '',
-                    '=== SCENE STATE ===',
-                    `Skybox URL: ${skyboxImageUrl ? skyboxImageUrl.substring(0, 80) + '...' : 'null'}`,
-                    `Skybox Loading: ${skyboxLoading}`,
-                    `Scene Ready: ${sceneReady}`,
-                    `Skybox Error: ${skyboxError ?? 'null'}`,
-                    '',
-                    '=== ASSETS ===',
-                    `Primary Asset URL: ${assetUrl ? assetUrl.substring(0, 80) + '...' : 'null'}`,
-                    `Asset Loading: ${assetLoading}`,
-                    `All Asset URLs count: ${allAssetUrls?.length ?? 0}`,
-                    ...(allAssetUrls?.length ? allAssetUrls.map((u, i) => `  [${i}] ${u.substring(0, 70)}...`) : []),
-                    '',
-                    '=== MODE ===',
-                    `Use Integrated Scene (skybox+GLB): ${useInt}`,
-                    `Canvas size (integrated): ${integratedCanvasSize ? `${integratedCanvasSize.w}x${integratedCanvasSize.h}` : 'n/a'}`,
-                    `Krpano viewer ref: ${!!krpanoViewerRef.current}`,
-                    `Krpano container mounted: ${krpanoContainerMounted}`,
-                    '',
-                    '=== LESSON ===',
-                    `Effective lesson: ${!!effectiveLesson}`,
-                    `Topic name: ${effectiveLesson?.topic?.topic_name ?? 'null'}`,
-                    `Extra lesson data: ${!!extraLessonData}`,
-                    '',
-                    '=== DEBUG MESSAGES ===',
-                    ...debugInfo,
-                  ].join('\n');
-                  navigator.clipboard.writeText(fullLog).then(() => {
-                    addDebug('Full log copied to clipboard', 'SCENE');
-                  });
-                }}
-                className="px-2 py-0.5 bg-yellow-600 hover:bg-yellow-500 text-black rounded text-xs"
-                title="Copy full debug log"
-              >
-                📋 Copy All
-              </button>
-            </div>
-          </div>
-          {debugExpanded && (
-            <>
-              <div className="mb-2 p-2 bg-slate-800/50 rounded grid grid-cols-3 gap-2 text-xs">
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${(skyboxData?.imageUrl || skyboxData?.file_url) ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
-                  <span className="text-slate-300">Skybox</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${sceneReady ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
-                  <span className="text-slate-300">Scene</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${(assetUrl && isGlbOrGltfUrl(assetUrl)) || (allAssetUrls && allAssetUrls.length > 0) ? 'bg-green-500' : 'bg-gray-500'}`} />
-                  <span className="text-slate-300">GLB: {(allAssetUrls?.length ?? 0) || (assetUrl ? 1 : 0)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${assetLoading ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'}`} />
-                  <span className="text-slate-300">Asset load</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${useIntegratedScene ? 'bg-cyan-500' : 'bg-purple-500'}`} />
-                  <span className="text-slate-300">{useIntegratedScene ? 'Integrated' : 'Krpano'}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${krpanoContainerMounted ? 'bg-green-500' : 'bg-gray-500'}`} />
-                  <span className="text-slate-300">Container</span>
-                </div>
-                {useIntegratedScene && (
-                  <div className="col-span-3 flex items-center gap-1 text-slate-400">
-                    <span className="text-slate-300">Canvas:</span>
-                    {integratedCanvasSize ? (
-                      <span className={integratedCanvasSize.w > 0 && integratedCanvasSize.h > 0 ? 'text-green-400' : 'text-amber-400'}>
-                        {integratedCanvasSize.w}×{integratedCanvasSize.h}
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                  </div>
-                )}
-              </div>
-              {allAssetUrls && allAssetUrls.length > 0 && (
-                <div className="mb-2 p-2 bg-slate-800/50 rounded">
-                  <div className="text-slate-400 text-xs font-bold mb-1">Asset URLs ({allAssetUrls.length})</div>
-                  <div className="max-h-20 overflow-y-auto space-y-0.5">
-                    {allAssetUrls.slice(0, 8).map((url, i) => (
-                      <div key={i} className="text-[10px] text-slate-400 truncate" title={url}>
-                        [{i}] {url.substring(0, 60)}...
-                      </div>
-                    ))}
-                    {allAssetUrls.length > 8 && <div className="text-[10px] text-slate-500">+{allAssetUrls.length - 8} more</div>}
-                  </div>
-                </div>
-              )}
-              <div className="max-h-40 overflow-y-auto space-y-0.5 p-2 bg-slate-900/50 rounded">
-                {debugInfo.slice(-25).map((msg, i) => (
-                  <div
-                    key={i}
-                    className={`text-xs ${
-                      msg.includes('ERROR') || msg.includes('❌') ? 'text-red-400' :
-                      msg.includes('✅') || msg.includes('loaded') ? 'text-green-400' :
-                      msg.includes('⚠') || msg.includes('waiting') ? 'text-yellow-400' :
-                      msg.includes('🌅') ? 'text-cyan-400' :
-                      msg.includes('🔄') ? 'text-purple-400' :
-                      msg.includes('📦') ? 'text-orange-400' :
-                      msg.includes('🎬') ? 'text-emerald-400' :
-                      'text-slate-300'
-                    }`}
-                  >
-                    {msg}
-                  </div>
-                ))}
-                {debugInfo.length === 0 && (
-                  <div className="text-slate-500 text-center py-2">Waiting for debug messages...</div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
 
       {/* Top Bar - use effectiveLesson (from context or sessionStorage) so dashboard-open works */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
@@ -3711,9 +3218,9 @@ const VRLessonPlayerInner = () => {
         )}
       </div>
 
-      {/* Welcome Screen - Before Lesson Starts (only after skybox loaded when lesson has skybox) */}
+      {/* Welcome Screen - Before Lesson Starts */}
       <AnimatePresence>
-        {showWelcomeScreen && (sceneReady || !skyboxImageUrl) && (
+        {showWelcomeScreen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -3757,12 +3264,12 @@ const VRLessonPlayerInner = () => {
               <div className="mb-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700/50 text-left">
                 <h3 className="text-xs font-semibold text-slate-300 mb-2 flex items-center gap-2">
                   <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
-                  {welcomeStrings.whatYouLearn}
+                  What you'll learn
                 </h3>
                 <p className="text-xs text-slate-400 line-clamp-3">
                   {effectiveLesson?.topic?.learning_objective ||
                    effectiveLesson?.topic?.avatar_intro?.substring(0, 150) + '...' ||
-                   welcomeStrings.defaultObjective}
+                   'Explore this interactive VR lesson with your AI teacher.'}
                 </p>
               </div>
 
@@ -3771,19 +3278,19 @@ const VRLessonPlayerInner = () => {
                 {scripts.length > 0 && (
                   <div className="flex items-center gap-1.5 text-xs text-slate-400">
                     <Volume2 className="w-4 h-4 text-emerald-400" />
-                    <span>{scripts.length} {welcomeStrings.sections}</span>
+                    <span>{scripts.length} sections</span>
                   </div>
                 )}
                 {mcqs.length > 0 && (
                   <div className="flex items-center gap-1.5 text-xs text-slate-400">
                     <HelpCircle className="w-4 h-4 text-amber-400" />
-                    <span>{mcqs.length} {welcomeStrings.questions}</span>
+                    <span>{mcqs.length} questions</span>
                   </div>
                 )}
                 {skyboxData && (
                   <div className="flex items-center gap-1.5 text-xs text-slate-400">
                     <Sparkles className="w-4 h-4 text-purple-400" />
-                    <span>{welcomeStrings.view360}</span>
+                    <span>360° view</span>
                   </div>
                 )}
               </div>
@@ -3803,12 +3310,12 @@ const VRLessonPlayerInner = () => {
                 {allReady ? (
                   <>
                     <Play className="w-6 h-6" />
-                    {welcomeStrings.startLesson}
+                    Start Lesson
                   </>
                 ) : (
                   <>
                     <Loader2 className="w-6 h-6 animate-spin" />
-                    {welcomeStrings.loading}
+                    Loading...
                   </>
                 )}
               </motion.button>
@@ -3818,7 +3325,7 @@ const VRLessonPlayerInner = () => {
                 onClick={handleExit}
                 className="mt-4 text-sm text-slate-500 hover:text-slate-300 transition-colors"
               >
-                {welcomeStrings.backToLessons}
+                ← Back to lessons
               </button>
             </motion.div>
           </motion.div>
