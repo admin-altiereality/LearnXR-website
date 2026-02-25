@@ -26,7 +26,7 @@ import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
 import { isGuestUser } from '../utils/rbac';
-import { getApiBaseUrl } from '../utils/apiConfig';
+import { getApiBaseUrl, getProxyAssetUrl, getProxyAssetUrlForThreejs } from '../utils/apiConfig';
 import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
 import { getLessonBundle } from '../services/firestore/getLessonBundle';
@@ -430,7 +430,7 @@ function AssetModelInScene({
       /^https?:\/\//i.test(url) &&
       !url.startsWith(window.location.origin);
     if (url.includes('assets.meshy.ai') || isExternal) {
-      loadUrl = `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(url)}`;
+      loadUrl = getProxyAssetUrl(url);
     }
     const loader = new GLTFLoader();
     loader.load(
@@ -835,6 +835,9 @@ const VRLessonPlayerInner = () => {
   const prepCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [prepVRCapabilities, setPrepVRCapabilities] = useState<any>(null);
 
+  /** Set to true to show the teacher avatar panel in the scene (hidden for now to avoid console output). */
+  const SHOW_TEACHER_AVATAR = false;
+
   // Load extra lesson data from sessionStorage on mount
   useEffect(() => {
     const initializeData = async () => {
@@ -1033,10 +1036,32 @@ const VRLessonPlayerInner = () => {
   const avatarRef = useRef<{ sendMessage: (text: string) => Promise<void> } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const krpanoContainerRef = useRef<HTMLDivElement>(null);
-  const krpanoViewerRef = useRef<{ call?: (action: string) => void; get?: (name: string) => string } | null>(null);
+  type KrpanoViewer = {
+    call?: (action: string) => void;
+    get?: (name: string) => string;
+    set?: (path: string, value: string | number) => void;
+    playsound_at_hotspot?: (name: string, url: string, hotspot: string, loop: boolean, volume: number, oncomplete?: () => void) => unknown;
+    destroysound?: (name: string) => void;
+  };
+  const krpanoViewerRef = useRef<KrpanoViewer | null>(null);
+  const krpanoFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
+  const continueHandlerRef = useRef<(() => void) | null>(null);
+  const prevLessonPhaseRef = useRef<string>('');
+  /** When true, current TTS session was started via krpano soundinterface (so pause/stop/cleanup must call destroysound) */
+  const ttsPlayedViaKrpanoRef = useRef(false);
+  /** Set when we embed krpano with avatar (so we use krpano for TTS when available) */
+  const useKrpanoTTSRef = useRef(false);
+  const ttsCompleteRef = useRef<() => void>(() => {});
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
+  /** Refs for krpano MCQ callbacks so registration effect can run before handlers are defined */
+  const handleMcqSelectRef = useRef<(index: number) => void>(() => {});
+  const handleMcqSubmitRef = useRef<() => void>(() => {});
+  const handleMcqNextRef = useRef<() => void>(() => {});
+  /** Refs for krpano script control callbacks (Skip to Quiz, Previous) */
+  const skipToQuizRef = useRef<() => void>(() => {});
+  const skipPrevRef = useRef<() => void>(() => {});
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
   const [isQuestDevice, setIsQuestDevice] = useState(false);
   const [showEnterVROverlay, setShowEnterVROverlay] = useState(true);
@@ -1194,12 +1219,12 @@ const VRLessonPlayerInner = () => {
   const currentMcq = mcqs[currentMcqIndex];
 
   // All content ready: skybox (or no skybox), 3D assets (or none), and TTS must be ready.
-  // When lesson has both skybox + GLB we use integrated scene: wait for skybox texture and 3D model before Start Lesson.
+  // When we have skybox we use krpano (3D loads inside krpano) so don't wait for assetLoading. Only wait for asset when GLB-only (model-only R3F path).
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
     const hasGlbAsset = !!(assetUrl && isGlbOrGltfUrl(assetUrl));
-    const assetReady = hasGlbAsset ? !assetLoading : true;
+    const assetReady = hasGlbAsset ? (!assetLoading || !!skyboxUrl) : true;
     const ttsReady =
       ttsStatus !== 'loading' &&
       (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
@@ -1406,14 +1431,17 @@ const VRLessonPlayerInner = () => {
     setIsQuestDevice(isMetaQuestBrowser());
   }, []);
 
-  // Embed krpano when we have skybox and container is mounted, and we're NOT using integrated Three.js (no GLB asset)
+  // Embed krpano when we have skybox and container is mounted (with or without 3D assets; 3D via threejs plugin)
   useEffect(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     if (!skyboxUrl || !krpanoContainerRef.current || !krpanoContainerMounted) return;
-    if (assetUrl && isGlbOrGltfUrl(assetUrl)) return; // use integrated Three.js scene instead
 
     let cancelled = false;
     krpanoViewerRef.current = null;
+    if (krpanoFallbackTimerRef.current) {
+      clearTimeout(krpanoFallbackTimerRef.current);
+      krpanoFallbackTimerRef.current = null;
+    }
     // Guided lookto & hotspots from lesson topic (optional)
     const lookatByPhase: LookatByPhase | undefined = extraLessonData?.topic?.lookatByPhase;
     let hotspots: KrpanoHotspotOption[] = Array.isArray(extraLessonData?.topic?.hotspots)
@@ -1433,21 +1461,40 @@ const VRLessonPlayerInner = () => {
 
     // Use proxy for external skybox URLs to avoid CORS (krpano loads image cross-origin)
     const isFirebaseStorage =
-      skyboxUrl.includes('firebasestorage.googleapis.com') || skyboxUrl.includes('firebasestorage.app');
-    const sphereUrlForKrpano = isFirebaseStorage
+      (url: string) =>
+        url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app');
+    const sphereUrlForKrpano = isFirebaseStorage(skyboxUrl)
       ? skyboxUrl
-      : `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxUrl)}`;
+      : getProxyAssetUrl(skyboxUrl);
+
+    // Collect GLB/GLTF URLs for threejs plugin (proxy non-Firebase for CORS)
+    const rawGlbUrls: string[] = [];
+    if (assetUrl && isGlbOrGltfUrl(assetUrl)) rawGlbUrls.push(assetUrl);
+    if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d)) {
+      for (const a of extraLessonData.assets3d) {
+        const glb = (a as { glb_url?: string }).glb_url || (a as { stored_glb_url?: string }).stored_glb_url || (a as { model_urls?: { glb?: string } }).model_urls?.glb;
+        if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
+      }
+    }
+    const threeJsAssetUrls = rawGlbUrls.map((url) =>
+      isFirebaseStorage(url) ? url : getProxyAssetUrlForThreejs(url)
+    );
 
     loadKrpanoScript()
       .then(() => {
         if (cancelled) return;
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const avatarModelUrl = origin + '/models/avatar3.glb';
+        useKrpanoTTSRef.current = true;
         const xml = buildKrpanoXml({
           sphereUrl: sphereUrlForKrpano,
           basePath: '/krpano/',
-          origin: typeof window !== 'undefined' ? window.location.origin : '',
+          origin,
           webvr: true,
           lookatByPhase,
           hotspots,
+          threeJsAssetUrls: threeJsAssetUrls.length > 0 ? threeJsAssetUrls : undefined,
+          avatarModelUrl,
         });
         embedKrpano({
           xml,
@@ -1455,10 +1502,16 @@ const VRLessonPlayerInner = () => {
           basepath: '/krpano/',
           onready: (krpano: unknown) => {
             if (!cancelled) {
-              krpanoViewerRef.current = krpano as { call?: (action: string) => void };
+              krpanoViewerRef.current = krpano as KrpanoViewer;
               // Bridge: krpano hotspot onclick calls this so React can react
               (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = (name: string) => {
                 hotspotClickRef.current?.(name);
+              };
+              (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete = () => {
+                ttsCompleteRef.current?.();
+              };
+              (window as unknown as { __krpanoOnContinue?: () => void }).__krpanoOnContinue = () => {
+                continueHandlerRef.current?.();
               };
               setSceneReady(true);
             }
@@ -1470,6 +1523,14 @@ const VRLessonPlayerInner = () => {
             }
           },
         });
+
+        // Fallback: if onready never fires (e.g. plugin load hang), allow user to proceed after 12s
+        krpanoFallbackTimerRef.current = setTimeout(() => {
+          if (!cancelled) {
+            setSceneReady((prev) => (prev ? prev : true));
+          }
+          krpanoFallbackTimerRef.current = null;
+        }, 12000);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -1480,7 +1541,14 @@ const VRLessonPlayerInner = () => {
 
     return () => {
       cancelled = true;
+      useKrpanoTTSRef.current = false;
+      if (krpanoFallbackTimerRef.current) {
+        clearTimeout(krpanoFallbackTimerRef.current);
+        krpanoFallbackTimerRef.current = null;
+      }
       (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
+      (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
+      (window as unknown as { __krpanoOnContinue?: unknown }).__krpanoOnContinue = undefined;
     };
   }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetUrl, extraLessonData]);
 
@@ -1559,7 +1627,9 @@ const VRLessonPlayerInner = () => {
   }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
 
   // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
-  const useKrpanoView = !assetUrl || !isGlbOrGltfUrl(assetUrl);
+  // Krpano is the active view whenever we have a skybox (skybox-only or skybox+GLB); sync uses this.
+  // Note: Console warning "Unknown action: 90" may come from a krpano plugin (e.g. view/fov handling) and is under investigation.
+  const useKrpanoView = !!(skyboxData?.imageUrl || skyboxData?.file_url);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
     const phase = lessonPhase as string;
@@ -1576,6 +1646,113 @@ const VRLessonPlayerInner = () => {
     krpanoViewerRef.current.call(action);
     log('👁️', `Guided lookto [${phase}]`, { h, v, fov });
   }, [lessonPhase, useKrpanoView, extraLessonData?.topic?.lookatByPhase]);
+
+  // Escape HTML for krpano hotspot/layer text (script and quiz)
+  const escapeForKrpanoHtml = (s: string) =>
+    String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '<br/>');
+
+  // Register krpano MCQ and script control callbacks (refs avoid TDZ: handlers defined later)
+  useEffect(() => {
+    const win = window as unknown as {
+      __krpanoOnMCQSelect?: (index: number) => void;
+      __krpanoOnMCQSubmit?: () => void;
+      __krpanoOnMCQNext?: () => void;
+      __krpanoOnSkipToQuiz?: () => void;
+      __krpanoOnSkipPrev?: () => void;
+    };
+    win.__krpanoOnMCQSelect = (index: number) => {
+      if (typeof index !== 'number' || index < 0) return;
+      handleMcqSelectRef.current(index);
+    };
+    win.__krpanoOnMCQSubmit = () => handleMcqSubmitRef.current();
+    win.__krpanoOnMCQNext = () => handleMcqNextRef.current();
+    win.__krpanoOnSkipToQuiz = () => skipToQuizRef.current();
+    win.__krpanoOnSkipPrev = () => skipPrevRef.current();
+    return () => {
+      win.__krpanoOnMCQSelect = undefined;
+      win.__krpanoOnMCQSubmit = undefined;
+      win.__krpanoOnMCQNext = undefined;
+      win.__krpanoOnSkipToQuiz = undefined;
+      win.__krpanoOnSkipPrev = undefined;
+    };
+  }, []);
+
+  // Sync immersive script_panel and quiz hotspots from React (intro/explanation/outro = script; quiz = question + options + buttons)
+  useEffect(() => {
+    const k = krpanoViewerRef.current;
+    if (!sceneReady || !k?.set) return;
+    if (lessonPhase === 'quiz' && currentMcq) {
+      k.set('hotspot[script_panel].alpha', 0);
+      k.set('hotspot[script_phase_badge].alpha', 0);
+      k.set('hotspot[script_next].alpha', 0);
+      k.set('hotspot[script_skip_to_quiz].alpha', 0);
+      k.set('hotspot[script_prev].alpha', 0);
+      const questionHtml = escapeForKrpanoHtml(`Q${currentMcqIndex + 1}/${mcqs.length}: ${currentMcq.question || ''}`);
+      k.set('hotspot[quiz_question].html', questionHtml);
+      k.set('hotspot[quiz_question].alpha', 1);
+      const opts = currentMcq.options || [];
+      for (let i = 0; i < 4; i++) {
+        const label = i < opts.length ? `${String.fromCharCode(65 + i)}. ${opts[i]}` : '';
+        k.set(`hotspot[quiz_opt_${i}].html`, label);
+        k.set(`hotspot[quiz_opt_${i}].alpha`, i < opts.length ? 1 : 0);
+      }
+      if (showMcqResult) {
+        k.set('hotspot[quiz_submit].alpha', 0);
+        k.set('hotspot[quiz_next].html', currentMcqIndex < mcqs.length - 1 ? 'Next' : 'Results');
+        k.set('hotspot[quiz_next].alpha', 1);
+      } else {
+        k.set('hotspot[quiz_next].alpha', 0);
+        k.set('hotspot[quiz_submit].alpha', selectedAnswer !== null ? 1 : 0);
+      }
+    } else if (['intro', 'explanation', 'outro', 'loading'].includes(lessonPhase)) {
+      const scriptHtml = escapeForKrpanoHtml(currentScript || '');
+      k.set('hotspot[script_panel].html', scriptHtml);
+      k.set('hotspot[script_panel].alpha', scriptHtml ? 1 : 0);
+      k.set('hotspot[quiz_question].alpha', 0);
+      for (let i = 0; i < 4; i++) k.set(`hotspot[quiz_opt_${i}].alpha`, 0);
+      k.set('hotspot[quiz_submit].alpha', 0);
+      k.set('hotspot[quiz_next].alpha', 0);
+      // Script control hotspots: phase badge, Next, Skip to Quiz, Previous
+      const phaseLabel = lessonPhase === 'intro' ? 'Intro' : lessonPhase === 'explanation' ? 'Explanation' : lessonPhase === 'outro' ? 'Outro' : '';
+      k.set('hotspot[script_phase_badge].html', escapeForKrpanoHtml(phaseLabel));
+      k.set('hotspot[script_phase_badge].alpha', phaseLabel ? 1 : 0);
+      const nextLabel = lessonPhase === 'outro' && mcqs.length > 0 ? 'Start Quiz' : lessonPhase === 'outro' ? 'Complete' : 'Next';
+      k.set('hotspot[script_next].html', nextLabel);
+      k.set('hotspot[script_next].alpha', 1);
+      k.set('hotspot[script_skip_to_quiz].alpha', mcqs.length > 0 ? 1 : 0);
+      k.set('hotspot[script_prev].alpha', lessonPhase !== 'intro' ? 1 : 0);
+    } else {
+      k.set('hotspot[script_panel].alpha', 0);
+      k.set('hotspot[quiz_question].alpha', 0);
+      for (let i = 0; i < 4; i++) k.set(`hotspot[quiz_opt_${i}].alpha`, 0);
+      k.set('hotspot[quiz_submit].alpha', 0);
+      k.set('hotspot[quiz_next].alpha', 0);
+      k.set('hotspot[script_phase_badge].alpha', 0);
+      k.set('hotspot[script_next].alpha', 0);
+      k.set('hotspot[script_skip_to_quiz].alpha', 0);
+      k.set('hotspot[script_prev].alpha', 0);
+    }
+  }, [sceneReady, lessonPhase, currentScript, currentMcq, currentMcqIndex, mcqs.length, showMcqResult, selectedAnswer]);
+
+  // Avatar phase-based movement: tween teacher_avatar tx when transitioning intro→explanation or explanation→outro
+  useEffect(() => {
+    const prev = prevLessonPhaseRef.current;
+    const next = lessonPhase as string;
+    prevLessonPhaseRef.current = next;
+    if (!useKrpanoView || !krpanoViewerRef.current?.call || !useKrpanoTTSRef.current) return;
+    const fromIntroToExplanation = prev === 'intro' && next === 'explanation';
+    const fromExplanationToOutro = prev === 'explanation' && next === 'outro';
+    if (fromIntroToExplanation || fromExplanationToOutro) {
+      // Subtle step: move avatar slightly (tx) so it feels like movement
+      const offset = fromIntroToExplanation ? 25 : -15;
+      krpanoViewerRef.current.call(`tween(hotspot[teacher_avatar].tx,${offset},time=0.6)`);
+    }
+  }, [lessonPhase, useKrpanoView]);
 
   const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
   const useIntegratedSceneEarly = !!((skyboxData?.imageUrl ?? skyboxData?.file_url) && assetUrl && isGlbOrGltfUrl(assetUrl));
@@ -1759,8 +1936,14 @@ const VRLessonPlayerInner = () => {
   // Audio Cleanup (defined early for use in other hooks)
   // ============================================================================
 
-  // Cleanup function to properly dispose of audio
+  // Cleanup function to properly dispose of audio (and krpano TTS if active)
   const cleanupAudio = useCallback(() => {
+    if (ttsPlayedViaKrpanoRef.current && krpanoViewerRef.current?.destroysound) {
+      try {
+        krpanoViewerRef.current.destroysound('tts');
+      } catch (_) {}
+      ttsPlayedViaKrpanoRef.current = false;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
@@ -1774,6 +1957,23 @@ const VRLessonPlayerInner = () => {
     }
     setIsPlayingAudio(false);
   }, []);
+
+  // Krpano TTS oncomplete: same state updates as HTML audio onended (for __krpanoOnTTSComplete)
+  const onTTSComplete = useCallback(() => {
+    log('✅', `TTS ${lessonPhase} completed (krpano)`);
+    setTtsStatus('ready');
+    setAudioCurrentTime(0);
+    setCurrentAudioUrl(null);
+    setCurrentVisemes([]);
+    setIsPlayingAudio(false);
+    setWaitingForUser(true);
+  }, [lessonPhase]);
+  useEffect(() => {
+    ttsCompleteRef.current = onTTSComplete;
+    return () => {
+      ttsCompleteRef.current = () => {};
+    };
+  }, [onTTSComplete]);
 
   // ============================================================================
   // NO Auto-start - Wait for user to click "Start Lesson"
@@ -2093,6 +2293,36 @@ const VRLessonPlayerInner = () => {
     setIsPlayingAudio(true);
     setTtsStatus('loading');
     
+    const krpano = krpanoViewerRef.current;
+    const useKrpanoTTS = useKrpanoTTSRef.current && krpano?.playsound_at_hotspot;
+    
+    if (useKrpanoTTS) {
+      // Directional 3D TTS from teacher_avatar hotspot
+      try {
+        krpano.playsound_at_hotspot!(
+          'tts',
+          ttsEntry.audioUrl,
+          'teacher_avatar',
+          false,
+          1.0,
+          () => {
+            (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete?.();
+          }
+        );
+        ttsPlayedViaKrpanoRef.current = true;
+        setTtsStatus('playing');
+        setCurrentAudioUrl(ttsEntry.audioUrl || null);
+        setUserPaused(false);
+      } catch (err) {
+        console.error('Krpano TTS playback error:', err);
+        setTtsStatus('error');
+        setIsPlayingAudio(false);
+        setWaitingForUser(true);
+      }
+      return;
+    }
+    
+    // HTML Audio fallback (no krpano or no avatar/soundinterface)
     const audio = new Audio();
     audioRef.current = audio;
     
@@ -2159,6 +2389,15 @@ const VRLessonPlayerInner = () => {
   }, [isMuted, getTTSForCurrentPhase, isPlayingAudio, lessonPhase, cleanupAudio]);
 
   const pauseTTS = useCallback(() => {
+    if (ttsPlayedViaKrpanoRef.current && krpanoViewerRef.current?.destroysound) {
+      try {
+        krpanoViewerRef.current.destroysound('tts');
+      } catch (_) {}
+      ttsPlayedViaKrpanoRef.current = false;
+      setTtsStatus('paused');
+      setUserPaused(true);
+      return;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       setUserPaused(true);
@@ -2175,13 +2414,18 @@ const VRLessonPlayerInner = () => {
   }, [cleanupAudio]);
 
   const resumeTTS = useCallback(() => {
-    if (audioRef.current && ttsStatus === 'paused') {
+    if (ttsStatus !== 'paused') return;
+    if (audioRef.current) {
       audioRef.current.play().catch(err => {
         console.error('Failed to resume audio:', err);
       });
       setUserPaused(false);
+    } else {
+      // Was paused via krpano (sound destroyed); restart TTS from beginning
+      playTTS();
+      setUserPaused(false);
     }
-  }, [ttsStatus]);
+  }, [ttsStatus, playTTS]);
 
   // ============================================================================
   // Lesson Flow Control - Auto-play on phase change (only once per phase)
@@ -2312,6 +2556,14 @@ const VRLessonPlayerInner = () => {
     }
   }, [lessonPhase, mcqs, setPhase, advanceScript, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
 
+  // Keep ref updated so __krpanoOnContinue (from krpano) can trigger handleContinue
+  useEffect(() => {
+    continueHandlerRef.current = handleContinue;
+    return () => {
+      continueHandlerRef.current = null;
+    };
+  }, [handleContinue]);
+
   // Legacy handler for backward compatibility
   const handleNext = handleContinue;
 
@@ -2330,6 +2582,25 @@ const VRLessonPlayerInner = () => {
       saveLessonCompletionToFirestore();
     }
   }, [mcqs, setPhase, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
+
+  // Previous section (XR parity) - go back one phase during intro/explanation/outro
+  const handleSkipPrev = useCallback(() => {
+    cleanupAudio();
+    setTtsStatus('ready');
+    lastPlayedPhaseRef.current = null;
+    if (lessonPhase === 'explanation') {
+      setPhase('intro');
+    } else if (lessonPhase === 'outro') {
+      setPhase('explanation');
+    }
+    // intro: no-op (button hidden via alpha)
+  }, [lessonPhase, setPhase, cleanupAudio]);
+
+  // Keep krpano script control refs in sync with handlers
+  useEffect(() => {
+    skipToQuizRef.current = handleSkipToQuiz;
+    skipPrevRef.current = handleSkipPrev;
+  }, [handleSkipToQuiz, handleSkipPrev]);
 
   // ============================================================================
   // Chat Functions with TTS
@@ -2571,15 +2842,20 @@ const VRLessonPlayerInner = () => {
     }
   };
 
+  // Keep krpano callback refs in sync with MCQ handlers (handlers are defined here, registration effect runs earlier)
+  useEffect(() => {
+    handleMcqSelectRef.current = handleMcqSelect;
+    handleMcqSubmitRef.current = handleMcqSubmit;
+    handleMcqNextRef.current = handleMcqNext;
+  }, [handleMcqSelect, handleMcqSubmit, handleMcqNext]);
+
   // ============================================================================
   // Handle Exit
   // ============================================================================
 
   const handleExit = () => {
     log('👋', 'Exiting lesson player');
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+    cleanupAudio();
     endLesson();
     navigate('/lessons');
   };
@@ -2946,10 +3222,11 @@ const VRLessonPlayerInner = () => {
   };
 
   const skyboxImageUrl = skyboxData?.imageUrl || skyboxData?.file_url;
-  const useIntegratedScene = !!(skyboxImageUrl && assetUrl && isGlbOrGltfUrl(assetUrl));
-  // Always proxy skybox for integrated scene to avoid CORS with TextureLoader
+  // Use krpano for all skybox (with or without 3D assets; 3D via krpano threejs plugin). R3F only for GLB-only (no skybox).
+  const useIntegratedScene = false;
+  // Always proxy skybox for integrated scene to avoid CORS with TextureLoader (used only when useIntegratedScene is re-enabled)
   const resolvedSkyboxUrlForScene = skyboxImageUrl
-    ? `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(skyboxImageUrl)}`
+    ? getProxyAssetUrl(skyboxImageUrl)
     : '';
   const useModelOnlyScene = !!(assetUrl && isGlbOrGltfUrl(assetUrl) && !skyboxImageUrl);
 
@@ -3185,38 +3462,38 @@ const VRLessonPlayerInner = () => {
         </button>
       </div>
 
-      {/* Avatar Panel - Transparent Background (No Gender Selection) */}
-      <div className="absolute right-4 bottom-4 z-20 w-[180px] h-[270px] md:w-[220px] md:h-[330px]">
-        <div className="w-full h-full rounded-2xl overflow-hidden" style={{ background: 'transparent' }}>
-          <Suspense fallback={
-            <div className="w-full h-full flex items-center justify-center bg-black/20">
-              <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
-            </div>
-          }>
-            <TeacherAvatar
-              ref={avatarRef}
-              className="w-full h-full"
-              avatarModelUrl="/models/avatar3.glb"
-              curriculum={effectiveLesson?.chapter?.curriculum}
-              class={effectiveLesson?.chapter?.class_name}
-              subject={effectiveLesson?.chapter?.subject}
-              useAvatarKey={true}
-              externalThreadId={threadId}
-              onReady={handleAvatarReady}
-              // Pass audio URL for lip sync - TeacherAvatar will animate lips
-              audioUrl={ttsStatus === 'playing' ? currentAudioUrl : null}
-              visemes={currentVisemes}
-            />
-          </Suspense>
-        </div>
-        
-        {avatarReady && (
-          <div className="absolute -top-2 -right-2 flex items-center gap-1 px-2 py-1 bg-emerald-500 text-white text-xs font-medium rounded-full">
-            <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-            Ready
+      {/* Avatar Panel - hidden for now; set SHOW_TEACHER_AVATAR true to re-enable */}
+      {SHOW_TEACHER_AVATAR && (
+        <div className="absolute right-4 bottom-4 z-20 w-[180px] h-[270px] md:w-[220px] md:h-[330px]">
+          <div className="w-full h-full rounded-2xl overflow-hidden" style={{ background: 'transparent' }}>
+            <Suspense fallback={
+              <div className="w-full h-full flex items-center justify-center bg-black/20">
+                <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+              </div>
+            }>
+              <TeacherAvatar
+                ref={avatarRef}
+                className="w-full h-full"
+                avatarModelUrl="/models/avatar3.glb"
+                curriculum={effectiveLesson?.chapter?.curriculum}
+                class={effectiveLesson?.chapter?.class_name}
+                subject={effectiveLesson?.chapter?.subject}
+                useAvatarKey={true}
+                externalThreadId={threadId}
+                onReady={handleAvatarReady}
+                audioUrl={ttsStatus === 'playing' ? currentAudioUrl : null}
+                visemes={currentVisemes}
+              />
+            </Suspense>
           </div>
-        )}
-      </div>
+          {avatarReady && (
+            <div className="absolute -top-2 -right-2 flex items-center gap-1 px-2 py-1 bg-emerald-500 text-white text-xs font-medium rounded-full">
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+              Ready
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Welcome Screen - Before Lesson Starts */}
       <AnimatePresence>
@@ -3358,8 +3635,8 @@ const VRLessonPlayerInner = () => {
         )}
         
         <AnimatePresence mode="wait">
-          {/* Lesson Stage Display - Interactive Experience */}
-          {['intro', 'explanation', 'outro', 'loading'].includes(lessonPhase) && (
+          {/* Lesson Stage Display - hide when krpano script UI is active (in-pano script_panel + controls) */}
+          {['intro', 'explanation', 'outro', 'loading'].includes(lessonPhase) && !(sceneReady && useKrpanoView) && (
             <motion.div
               key="script"
               initial={{ opacity: 0, y: 10 }}
@@ -3558,8 +3835,8 @@ const VRLessonPlayerInner = () => {
             </motion.div>
           )}
 
-          {/* MCQ Display - Compact */}
-          {lessonPhase === 'quiz' && currentMcq && (
+          {/* MCQ Display - show only when not using immersive krpano quiz (when scene is ready and krpano view, quiz is in-pano) */}
+          {lessonPhase === 'quiz' && currentMcq && !(sceneReady && useKrpanoView) && (
             <motion.div
               key="mcq"
               initial={{ opacity: 0, y: 10 }}
