@@ -51,6 +51,8 @@ export interface KrpanoXmlOptions {
   hotspots?: KrpanoHotspotOption[];
   /** Optional GLB/GLTF URLs to render as threejs 3D hotspots (requires Three.js plugin) */
   threeJsAssetUrls?: string[];
+  /** Optional teacher avatar GLB URL; when set, adds teacher_avatar threejs hotspot and soundinterface for directional TTS */
+  avatarModelUrl?: string;
 }
 
 function escapeXml(unsafe: string): string {
@@ -130,6 +132,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     lookatByPhase,
     hotspots = [],
     threeJsAssetUrls = [],
+    avatarModelUrl,
   } = options;
 
   // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...)
@@ -137,6 +140,9 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     (url) => isGlbOrGltfUrl(url) || isProxyToGlb(url)
   );
   const has3dAssets = safe3dUrls.length > 0;
+  const hasAvatar = !!(avatarModelUrl && (isGlbOrGltfUrl(avatarModelUrl) || avatarModelUrl.endsWith('.glb') || avatarModelUrl.endsWith('.gltf')));
+  // Include threejs block when we have 3D assets and/or teacher avatar (for directional TTS)
+  const has3d = has3dAssets || hasAvatar;
 
   // Initial view: use first phase lookat if provided, else options
   const firstLookat = lookatByPhase && (lookatByPhase.intro ?? lookatByPhase.explanation ?? lookatByPhase.outro);
@@ -149,16 +155,18 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const includeWebVr = webvr ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` : '';
 
-  // Three.js plugin + controls3d + drag3d when we have 3D assets
+  // Three.js plugin + controls3d + drag3d when we have 3D assets or avatar
   const threeJsPluginUrl = pluginUrl(origin, basePath, 'threejs_krpanoplugin.js');
+  const soundinterfaceUrl = pluginUrl(origin, basePath, 'soundinterface.js');
   const controls3dIncludeUrl = pluginUrl(origin, basePath, 'controls3d.xml');
   const drag3dIncludeUrl = pluginUrl(origin, basePath, 'drag3d.xml');
   const iphoneSwipeIncludeUrl = pluginUrl(origin, basePath, 'iphone_fullscreen_swipe.xml');
-  const threeJsBlock = has3dAssets
+  const threeJsBlock = has3d
     ? `  <include url="${escapeXml(controls3dIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(drag3dIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(iphoneSwipeIncludeUrl)}" />\n` +
       `  <plugin api="threejs" keep="true" url="${escapeXml(threeJsPluginUrl)}" />\n` +
+      (hasAvatar ? `  <plugin name="soundinterface" url="${escapeXml(soundinterfaceUrl)}" preload="true" keep="true" />\n` : '') +
       `  <threejs ambientlight="0.3" shadowmap="pcf" />\n` +
       `  <display depthbuffer="true" depthrange="5,100000" />\n` +
       `  <hotspot name="lesson_light" type="threejslight" mode="sun" intensity="2.0" castshadow="true" ath="-90" atv="45" keep="true" />\n`
@@ -182,7 +190,14 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
       return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="0" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
     })
     .join('\n');
-  const threeJsHotspotsSection = threeJsHotspotBlocks ? '\n' + threeJsHotspotBlocks + '\n' : '';
+  // Teacher avatar: single threejs hotspot in front of viewer (soundinterface uses it for directional TTS)
+  const avatarUrlResolved = hasAvatar && avatarModelUrl
+    ? (avatarModelUrl.startsWith('http') ? avatarModelUrl : `${(origin || '').replace(/\/$/, '')}${avatarModelUrl.startsWith('/') ? '' : '/'}${avatarModelUrl}`.trim())
+    : '';
+  const teacherAvatarHotspot = hasAvatar && avatarUrlResolved
+    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="0" ty="0" tz="350" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />\n`
+    : '';
+  const threeJsHotspotsSection = threeJsHotspotBlocks || teacherAvatarHotspot ? '\n' + (teacherAvatarHotspot + threeJsHotspotBlocks) + '\n' : '';
 
   // View sync per krpano docs: view.hlookat (-180..180), view.vlookat (-90..90), view.fov (degrees).
   // https://krpano.com/docu/xml/#view - onviewchange fires when view changes (drag, zoom). Use it to sync.

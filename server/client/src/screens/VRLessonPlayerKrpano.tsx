@@ -1036,9 +1036,20 @@ const VRLessonPlayerInner = () => {
   const avatarRef = useRef<{ sendMessage: (text: string) => Promise<void> } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const krpanoContainerRef = useRef<HTMLDivElement>(null);
-  const krpanoViewerRef = useRef<{ call?: (action: string) => void; get?: (name: string) => string } | null>(null);
+  type KrpanoViewer = {
+    call?: (action: string) => void;
+    get?: (name: string) => string;
+    playsound_at_hotspot?: (name: string, url: string, hotspot: string, loop: boolean, volume: number, oncomplete?: () => void) => unknown;
+    destroysound?: (name: string) => void;
+  };
+  const krpanoViewerRef = useRef<KrpanoViewer | null>(null);
   const krpanoFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
+  /** When true, current TTS session was started via krpano soundinterface (so pause/stop/cleanup must call destroysound) */
+  const ttsPlayedViaKrpanoRef = useRef(false);
+  /** Set when we embed krpano with avatar (so we use krpano for TTS when available) */
+  const useKrpanoTTSRef = useRef(false);
+  const ttsCompleteRef = useRef<() => void>(() => {});
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
@@ -1462,14 +1473,18 @@ const VRLessonPlayerInner = () => {
     loadKrpanoScript()
       .then(() => {
         if (cancelled) return;
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const avatarModelUrl = origin + '/models/avatar3.glb';
+        useKrpanoTTSRef.current = true;
         const xml = buildKrpanoXml({
           sphereUrl: sphereUrlForKrpano,
           basePath: '/krpano/',
-          origin: typeof window !== 'undefined' ? window.location.origin : '',
+          origin,
           webvr: true,
           lookatByPhase,
           hotspots,
           threeJsAssetUrls: threeJsAssetUrls.length > 0 ? threeJsAssetUrls : undefined,
+          avatarModelUrl,
         });
         embedKrpano({
           xml,
@@ -1477,10 +1492,13 @@ const VRLessonPlayerInner = () => {
           basepath: '/krpano/',
           onready: (krpano: unknown) => {
             if (!cancelled) {
-              krpanoViewerRef.current = krpano as { call?: (action: string) => void };
+              krpanoViewerRef.current = krpano as KrpanoViewer;
               // Bridge: krpano hotspot onclick calls this so React can react
               (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = (name: string) => {
                 hotspotClickRef.current?.(name);
+              };
+              (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete = () => {
+                ttsCompleteRef.current?.();
               };
               setSceneReady(true);
             }
@@ -1510,11 +1528,13 @@ const VRLessonPlayerInner = () => {
 
     return () => {
       cancelled = true;
+      useKrpanoTTSRef.current = false;
       if (krpanoFallbackTimerRef.current) {
         clearTimeout(krpanoFallbackTimerRef.current);
         krpanoFallbackTimerRef.current = null;
       }
       (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
+      (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
     };
   }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetUrl, extraLessonData]);
 
@@ -1795,8 +1815,14 @@ const VRLessonPlayerInner = () => {
   // Audio Cleanup (defined early for use in other hooks)
   // ============================================================================
 
-  // Cleanup function to properly dispose of audio
+  // Cleanup function to properly dispose of audio (and krpano TTS if active)
   const cleanupAudio = useCallback(() => {
+    if (ttsPlayedViaKrpanoRef.current && krpanoViewerRef.current?.destroysound) {
+      try {
+        krpanoViewerRef.current.destroysound('tts');
+      } catch (_) {}
+      ttsPlayedViaKrpanoRef.current = false;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
@@ -1810,6 +1836,23 @@ const VRLessonPlayerInner = () => {
     }
     setIsPlayingAudio(false);
   }, []);
+
+  // Krpano TTS oncomplete: same state updates as HTML audio onended (for __krpanoOnTTSComplete)
+  const onTTSComplete = useCallback(() => {
+    log('✅', `TTS ${lessonPhase} completed (krpano)`);
+    setTtsStatus('ready');
+    setAudioCurrentTime(0);
+    setCurrentAudioUrl(null);
+    setCurrentVisemes([]);
+    setIsPlayingAudio(false);
+    setWaitingForUser(true);
+  }, [lessonPhase]);
+  useEffect(() => {
+    ttsCompleteRef.current = onTTSComplete;
+    return () => {
+      ttsCompleteRef.current = () => {};
+    };
+  }, [onTTSComplete]);
 
   // ============================================================================
   // NO Auto-start - Wait for user to click "Start Lesson"
@@ -2129,6 +2172,36 @@ const VRLessonPlayerInner = () => {
     setIsPlayingAudio(true);
     setTtsStatus('loading');
     
+    const krpano = krpanoViewerRef.current;
+    const useKrpanoTTS = useKrpanoTTSRef.current && krpano?.playsound_at_hotspot;
+    
+    if (useKrpanoTTS) {
+      // Directional 3D TTS from teacher_avatar hotspot
+      try {
+        krpano.playsound_at_hotspot!(
+          'tts',
+          ttsEntry.audioUrl,
+          'teacher_avatar',
+          false,
+          1.0,
+          () => {
+            (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete?.();
+          }
+        );
+        ttsPlayedViaKrpanoRef.current = true;
+        setTtsStatus('playing');
+        setCurrentAudioUrl(ttsEntry.audioUrl || null);
+        setUserPaused(false);
+      } catch (err) {
+        console.error('Krpano TTS playback error:', err);
+        setTtsStatus('error');
+        setIsPlayingAudio(false);
+        setWaitingForUser(true);
+      }
+      return;
+    }
+    
+    // HTML Audio fallback (no krpano or no avatar/soundinterface)
     const audio = new Audio();
     audioRef.current = audio;
     
@@ -2195,6 +2268,15 @@ const VRLessonPlayerInner = () => {
   }, [isMuted, getTTSForCurrentPhase, isPlayingAudio, lessonPhase, cleanupAudio]);
 
   const pauseTTS = useCallback(() => {
+    if (ttsPlayedViaKrpanoRef.current && krpanoViewerRef.current?.destroysound) {
+      try {
+        krpanoViewerRef.current.destroysound('tts');
+      } catch (_) {}
+      ttsPlayedViaKrpanoRef.current = false;
+      setTtsStatus('paused');
+      setUserPaused(true);
+      return;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       setUserPaused(true);
@@ -2211,13 +2293,18 @@ const VRLessonPlayerInner = () => {
   }, [cleanupAudio]);
 
   const resumeTTS = useCallback(() => {
-    if (audioRef.current && ttsStatus === 'paused') {
+    if (ttsStatus !== 'paused') return;
+    if (audioRef.current) {
       audioRef.current.play().catch(err => {
         console.error('Failed to resume audio:', err);
       });
       setUserPaused(false);
+    } else {
+      // Was paused via krpano (sound destroyed); restart TTS from beginning
+      playTTS();
+      setUserPaused(false);
     }
-  }, [ttsStatus]);
+  }, [ttsStatus, playTTS]);
 
   // ============================================================================
   // Lesson Flow Control - Auto-play on phase change (only once per phase)
@@ -2613,9 +2700,7 @@ const VRLessonPlayerInner = () => {
 
   const handleExit = () => {
     log('👋', 'Exiting lesson player');
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+    cleanupAudio();
     endLesson();
     navigate('/lessons');
   };
