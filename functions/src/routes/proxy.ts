@@ -32,10 +32,22 @@ router.options('/proxy-asset', (req: Request, res: Response) => {
 // Path-based proxy for krpano Three.js: URL must end in .glb so plugin accepts it. Target URL is in path.
 // Use regex so long base64 segment is matched reliably; also match /api/proxy-asset/... if path not normalized yet.
 const pathProxyGlbRegex = /^\/(?:api\/)?proxy-asset\/([^/]+)\/model\.glb\/?$/;
+const pathProxyGlbExtract = /proxy-asset\/([^/]+)\/model\.glb/;
+
+// CORS preflight for path-based proxy (e.g. OPTIONS /proxy-asset/xxx/model.glb)
+router.options(pathProxyGlbRegex, (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '3600');
+  res.status(204).send();
+});
+
 router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
-  const pathStr = req.path || req.url || '';
-  const pathMatch = pathStr.match(/proxy-asset\/([^/]+)\/model\.glb/);
+  // Use normalized path first, then original (path normalization may strip /api)
+  const pathStr = req.path || (req as any).originalPath || req.url || '';
+  const pathMatch = pathStr.match(pathProxyGlbExtract);
   const encoded = pathMatch ? pathMatch[1] : '';
   const targetUrl = decodeProxyAssetEncoded(encoded);
   if (!targetUrl) {
@@ -59,10 +71,14 @@ router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void>
       validateStatus: (status) => status < 500,
     });
     if (response.status >= 400) {
-      console.error(`[${requestId}] Asset proxy (path) failed:`, response.status, response.statusText);
+      console.error(`[${requestId}] Asset proxy (path) upstream returned:`, response.status, response.statusText);
+      const message = response.status === 404
+        ? 'Upstream URL returned 404; signed asset URLs may have expired.'
+        : `Failed to fetch asset: ${response.status} ${response.statusText}`;
       res.status(response.status).json({
-        error: `Failed to fetch asset: ${response.status} ${response.statusText}`,
+        error: message,
         requestId,
+        code: 'UPSTREAM_ERROR',
       });
       return;
     }
