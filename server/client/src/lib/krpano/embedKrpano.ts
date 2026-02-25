@@ -25,7 +25,8 @@ export interface KrpanoEmbedOptions {
 }
 
 const SCRIPT_ID = 'krpano-viewer-script';
-const SCRIPT_URL = '/krpano/krpano.js';
+/** Cache-bust so browsers do not use an old cached 1.20.x viewer; plugins require 1.22+ */
+const SCRIPT_URL = '/krpano/krpano.js?v=1.23.3';
 
 /**
  * Load the krpano viewer script once. Resolves when krpanoJS.embedpano is available.
