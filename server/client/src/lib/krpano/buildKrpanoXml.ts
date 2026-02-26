@@ -127,7 +127,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     origin,
     webvr = true,
     hlookat: optH = 0,
-    vlookat: optV = 0,
+    vlookat: optV = -5,
     fov: optFov = 90,
     lookatByPhase,
     hotspots = [],
@@ -141,8 +141,9 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   );
   const has3dAssets = safe3dUrls.length > 0;
   const hasAvatar = !!(avatarModelUrl && (isGlbOrGltfUrl(avatarModelUrl) || avatarModelUrl.endsWith('.glb') || avatarModelUrl.endsWith('.gltf')));
-  // Include threejs block when we have 3D assets and/or teacher avatar (for directional TTS)
+  // Include threejs block when we have 3D assets and/or teacher avatar, or WebVR (for immersive UI panel)
   const has3d = has3dAssets || hasAvatar;
+  const needThreeJs = has3d || webvr;
 
   // Initial view: use first phase lookat if provided, else options
   const firstLookat = lookatByPhase && (lookatByPhase.intro ?? lookatByPhase.explanation ?? lookatByPhase.outro);
@@ -153,15 +154,20 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const safeSphereUrl = escapeXml(sphereUrl);
 
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
-  const includeWebVr = webvr ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` : '';
+  const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
+  const includeWebVr = webvr
+    ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
+      // Immersive lesson UI (world-space floating panel for scripts + quizzes)
+      `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n`
+    : '';
 
-  // Three.js plugin + controls3d + drag3d when we have 3D assets or avatar
+  // Three.js plugin + controls3d + drag3d when we have 3D assets, avatar, or WebVR (immersive UI)
   const threeJsPluginUrl = pluginUrl(origin, basePath, 'threejs_krpanoplugin.js');
   const soundinterfaceUrl = pluginUrl(origin, basePath, 'soundinterface.js');
   const controls3dIncludeUrl = pluginUrl(origin, basePath, 'controls3d.xml');
   const drag3dIncludeUrl = pluginUrl(origin, basePath, 'drag3d.xml');
   const iphoneSwipeIncludeUrl = pluginUrl(origin, basePath, 'iphone_fullscreen_swipe.xml');
-  const threeJsBlock = has3d
+  const threeJsBlock = needThreeJs
     ? `  <include url="${escapeXml(controls3dIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(drag3dIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(iphoneSwipeIncludeUrl)}" />\n` +
@@ -179,25 +185,33 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
-  // 3D model hotspots (type="threejs") - one per URL; offset by index so multiple models don't stack. URLs are direct GLB/GLTF or proxy-to-GLB.
+  // 3D model hotspots (type="threejs") - classroom layout: to the right of avatar, raised as if on a desk.
   const threeJsHotspotBlocks = safe3dUrls
     .map((url, i) => {
       const safeUrl = escapeXml(url);
       const name = `asset_${i}`;
-      // Row in front: tx offset so models are side-by-side, tz increases for each row
-      const tx = (i % 3 - 1) * 80;
-      const tz = 300 + Math.floor(i / 3) * 120;
-      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="0" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+      const tx = 60 + (i % 3 - 1) * 50;
+      const ty = -40;
+      const tz = 300 + Math.floor(i / 3) * 80;
+      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="${ty}" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
     })
     .join('\n');
-  // Teacher avatar: single threejs hotspot in front of viewer (soundinterface uses it for directional TTS)
+  // Teacher avatar: center, standing (feet near floor, head near eye level).
   const avatarUrlResolved = hasAvatar && avatarModelUrl
     ? (avatarModelUrl.startsWith('http') ? avatarModelUrl : `${(origin || '').replace(/\/$/, '')}${avatarModelUrl.startsWith('/') ? '' : '/'}${avatarModelUrl}`.trim())
     : '';
   const teacherAvatarHotspot = hasAvatar && avatarUrlResolved
-    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="0" ty="0" tz="350" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />\n`
+    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="0" ty="-80" tz="300" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />\n`
     : '';
   const threeJsHotspotsSection = threeJsHotspotBlocks || teacherAvatarHotspot ? '\n' + (teacherAvatarHotspot + threeJsHotspotBlocks) + '\n' : '';
+
+  // Immersive UI: single unified panel at back wall (tz=350); click detection via raycasting in immersive_ui_panel_click.
+  const iuPanel =
+    '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="-30" tz="350" hittest="true" keep="true" onloaded="immersive_ui_build_hotspot();" onclick="immersive_ui_panel_click();" />';
+  const immersiveUiThreeJsHotspotsSection =
+    webvr && needThreeJs
+      ? '\n' + iuPanel + '\n'
+      : '';
 
   // View sync per krpano docs: view.hlookat (-180..180), view.vlookat (-90..90), view.fov (degrees).
   // https://krpano.com/docu/xml/#view - onviewchange fires when view changes (drag, zoom). Use it to sync.
@@ -211,5 +225,5 @@ ${includeWebVr}${threeJsBlock}
   <image>
     <sphere url="${safeSphereUrl}" />
 ${depthmapBlock}  </image>
-  <control mouse="drag" touch="drag" />${hotspotsSection}${threeJsHotspotsSection}</krpano>`;
+  <control mouse="drag" touch="drag" />${hotspotsSection}${threeJsHotspotsSection}${immersiveUiThreeJsHotspotsSection}</krpano>`;
 }

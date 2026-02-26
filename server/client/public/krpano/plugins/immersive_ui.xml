@@ -1,0 +1,921 @@
+<krpano>
+
+  <!--
+    immersive_ui.xml  –  World-class immersive lesson UI for krpano 1.23
+    Single unified 2048x1280 canvas panel with raycasted click regions.
+    All UI (phase stepper, script, buttons, quiz, completed) drawn on one surface.
+  -->
+
+  <krpano name="immersive_ui_config" iu_enabled="true" />
+
+  <!-- ===== INIT ===== -->
+  <action name="immersive_ui_init" autorun="onstart" type="js"><![CDATA[
+    var enabled = krpano.iu_enabled;
+    if (enabled === false || enabled === "false" || enabled === "0" || krpano.immersive_ui_initialized) return;
+    krpano.immersive_ui_initialized = true;
+    if (!krpano.immersive_ui_refs) {
+      krpano.immersive_ui_refs = { panel: null, buttonRegions: [], state: {} };
+    }
+  ]]></action>
+
+  <!-- ===== BUILD ===== -->
+  <action name="immersive_ui_build_hotspot" type="js"><![CDATA[
+    if (!caller || !caller.threejsobject) return;
+    if (!krpano.threejs || !krpano.threejs.THREE) return;
+    var name = String(caller.name || "");
+    if (name !== "iu_panel_3d") return;
+
+    var group = caller.threejsobject;
+    var THREE = krpano.threejs.THREE;
+    if (!krpano.immersive_ui_refs) krpano.immersive_ui_refs = { panel: null, buttonRegions: [], state: {} };
+    var refs = krpano.immersive_ui_refs;
+    var ws = (krpano.display && krpano.display.hotspotworldscale) || 100;
+
+    var CW = 2048, CH = 1280;
+    var canvas = document.createElement("canvas");
+    canvas.width = CW;
+    canvas.height = CH;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    var FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+    try {
+      var ff = new FontFace("Inter", "url(https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZhrib2Bg-4.ttf)", { weight: "400" });
+      var ffBold = new FontFace("Inter", "url(https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZhrib2Bg-4.ttf)", { weight: "700" });
+      ff.load().then(function(f) { document.fonts.add(f); FONT = "'Inter', system-ui, sans-serif"; });
+      ffBold.load().then(function(f) { document.fonts.add(f); });
+    } catch(e) {}
+
+    // Phase color palette
+    var COLORS = {
+      intro:       { accent: "#10b981", accentBg: "rgba(16,185,129,0.25)", accentBorder: "rgba(16,185,129,0.5)", text: "#34d399", light: "#d1fae5" },
+      explanation: { accent: "#06b6d4", accentBg: "rgba(6,182,212,0.25)",  accentBorder: "rgba(6,182,212,0.5)",  text: "#22d3ee", light: "#cffafe" },
+      outro:       { accent: "#a855f7", accentBg: "rgba(168,85,247,0.25)", accentBorder: "rgba(168,85,247,0.5)", text: "#c084fc", light: "#f3e8ff" },
+      quiz:        { accent: "#f59e0b", accentBg: "rgba(245,158,11,0.25)", accentBorder: "rgba(245,158,11,0.5)", text: "#fbbf24", light: "#fef3c7" },
+      completed:   { accent: "#10b981", accentBg: "rgba(16,185,129,0.25)", accentBorder: "rgba(16,185,129,0.5)", text: "#34d399", light: "#d1fae5" }
+    };
+
+    var STEPS = [
+      { num: 1, label: "Intro",   key: "intro" },
+      { num: 2, label: "Learn",   key: "explanation" },
+      { num: 3, label: "Summary", key: "outro" },
+      { num: 4, label: "Quiz",    key: "quiz" }
+    ];
+
+    var PHASE_ORDER = ["intro", "explanation", "outro", "quiz", "completed"];
+
+    var animTime = 0;
+    var animRunning = false;
+    var animId = 0;
+
+    // State
+    var S = {
+      phase: "intro", script: "", ttsStatus: "idle",
+      question: "", options: [], showQuiz: false, showResult: false, scoreLabel: "",
+      selectedAnswer: -1, waitingForUser: false, isPlayingAudio: false,
+      currentMcqIndex: 0, totalMcqs: 0, correctAnswer: -1, explanation: ""
+    };
+
+    refs.state = S;
+    refs.buttonRegions = [];
+
+    function phaseKey(p) {
+      if (!p) return "intro";
+      var lp = p.toLowerCase();
+      if (lp.indexOf("quiz") >= 0) return "quiz";
+      if (lp.indexOf("learn") >= 0 || lp.indexOf("explan") >= 0) return "explanation";
+      if (lp.indexOf("summ") >= 0 || lp.indexOf("outro") >= 0) return "outro";
+      if (lp.indexOf("complet") >= 0) return "completed";
+      return "intro";
+    }
+
+    function isPastPhase(current, check) {
+      var ci = PHASE_ORDER.indexOf(current);
+      var si = PHASE_ORDER.indexOf(check);
+      return si >= 0 && ci >= 0 && si < ci;
+    }
+
+    function getPhaseColors(pk) { return COLORS[pk] || COLORS.intro; }
+
+    // Utility: rounded rect with fill and optional stroke
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    // Utility: word-wrap text, returns array of lines
+    function wrapText(text, maxW, font) {
+      ctx.font = font;
+      var words = String(text).split(/\s+/);
+      var lines = [];
+      var line = "";
+      for (var i = 0; i < words.length; i++) {
+        var test = line ? line + " " + words[i] : words[i];
+        if (ctx.measureText(test).width > maxW && line) {
+          lines.push(line);
+          line = words[i];
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+      return lines;
+    }
+
+    // Utility: draw gradient-filled rounded rect
+    function drawGradientButton(x, y, w, h, r, c1, c2, alpha) {
+      ctx.save();
+      ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+      roundRect(x, y, w, h, r);
+      var grad = ctx.createLinearGradient(x, y, x + w, y);
+      grad.addColorStop(0, c1);
+      grad.addColorStop(1, c2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ===== DRAW ROUTINES =====
+
+    function drawBackground(pk) {
+      var pc = getPhaseColors(pk);
+      ctx.clearRect(0, 0, CW, CH);
+
+      // Outer rounded rect
+      roundRect(0, 0, CW, CH, 40);
+      var bgGrad = ctx.createLinearGradient(0, 0, 0, CH);
+      bgGrad.addColorStop(0, "rgba(5, 8, 22, 0.92)");
+      bgGrad.addColorStop(1, "rgba(2, 4, 14, 0.95)");
+      ctx.fillStyle = bgGrad;
+      ctx.fill();
+
+      // Subtle border
+      roundRect(0, 0, CW, CH, 40);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Top accent line
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(40, 2);
+      ctx.lineTo(CW - 40, 2);
+      ctx.strokeStyle = pc.accent;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawPhaseStepper(pk) {
+      var stepW = 200, gap = 36, stepH = 48;
+      var totalW = STEPS.length * stepW + (STEPS.length - 1) * gap;
+      var startX = (CW - totalW) / 2;
+      var Y = 50;
+
+      for (var i = 0; i < STEPS.length; i++) {
+        var s = STEPS[i];
+        var sx = startX + i * (stepW + gap);
+        var isActive = pk === s.key;
+        var past = isPastPhase(pk, s.key);
+        var sc = COLORS[s.key] || COLORS.intro;
+
+        // Pill background
+        roundRect(sx, Y, stepW, stepH, stepH / 2);
+        if (isActive) {
+          ctx.fillStyle = sc.accentBg;
+          ctx.fill();
+          roundRect(sx, Y, stepW, stepH, stepH / 2);
+          ctx.strokeStyle = sc.accentBorder;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (past) {
+          ctx.fillStyle = "rgba(16, 185, 129, 0.06)";
+          ctx.fill();
+        } else {
+          ctx.fillStyle = "rgba(51, 65, 85, 0.2)";
+          ctx.fill();
+        }
+
+        // Number circle
+        var cx = sx + 30;
+        var cy = Y + stepH / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+        ctx.fillStyle = isActive ? sc.accent : past ? "rgba(16,185,129,0.4)" : "#475569";
+        ctx.fill();
+
+        // Number text
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(s.num), cx, cy + 1);
+
+        // Label
+        ctx.textAlign = "left";
+        ctx.fillStyle = isActive ? "#e2e8f0" : past ? "rgba(148,163,184,0.7)" : "#64748b";
+        ctx.font = (isActive ? "700" : "600") + " 22px " + FONT;
+        ctx.fillText(s.label, sx + 56, cy + 1);
+
+        // Chevron separator
+        if (i < STEPS.length - 1) {
+          ctx.fillStyle = "#475569";
+          ctx.font = "bold 22px " + FONT;
+          ctx.textAlign = "center";
+          ctx.fillText("\u203A", sx + stepW + gap / 2, cy + 1);
+        }
+      }
+    }
+
+    function drawPhaseIcon(pk, x, y, size) {
+      var pc = getPhaseColors(pk);
+      // Icon background
+      roundRect(x, y, size, size, size * 0.22);
+      ctx.fillStyle = pc.accentBg;
+      ctx.fill();
+
+      ctx.save();
+      ctx.strokeStyle = pc.text;
+      ctx.fillStyle = pc.text;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      var cx = x + size / 2;
+      var cy = y + size / 2;
+      var s = size * 0.28;
+
+      if (pk === "intro") {
+        // Play triangle
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.4, cy - s);
+        ctx.lineTo(cx + s * 0.8, cy);
+        ctx.lineTo(cx - s * 0.4, cy + s);
+        ctx.closePath();
+        ctx.fill();
+      } else if (pk === "explanation") {
+        // Sparkle / star
+        ctx.beginPath();
+        for (var i = 0; i < 5; i++) {
+          var a = Math.PI * 2 * i / 5 - Math.PI / 2;
+          var r1 = s;
+          var r2 = s * 0.4;
+          ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+          var a2 = a + Math.PI / 5;
+          ctx.lineTo(cx + Math.cos(a2) * r2, cy + Math.sin(a2) * r2);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else if (pk === "outro") {
+        // Checkmark
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.7, cy);
+        ctx.lineTo(cx - s * 0.15, cy + s * 0.6);
+        ctx.lineTo(cx + s * 0.7, cy - s * 0.5);
+        ctx.stroke();
+      } else if (pk === "quiz") {
+        // Question mark
+        ctx.font = "bold " + (size * 0.5) + "px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("?", cx, cy + 2);
+      } else if (pk === "completed") {
+        // Trophy
+        ctx.beginPath();
+        ctx.moveTo(cx - s * 0.6, cy - s * 0.6);
+        ctx.lineTo(cx + s * 0.6, cy - s * 0.6);
+        ctx.lineTo(cx + s * 0.4, cy + s * 0.1);
+        ctx.quadraticCurveTo(cx, cy + s * 0.5, cx - s * 0.4, cy + s * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        // Base
+        ctx.fillRect(cx - s * 0.3, cy + s * 0.3, s * 0.6, s * 0.15);
+        ctx.fillRect(cx - s * 0.15, cy + s * 0.1, s * 0.3, s * 0.25);
+      }
+      ctx.restore();
+    }
+
+    function drawHeader(pk) {
+      var pc = getPhaseColors(pk);
+      var TITLES = { intro: "Introduction", explanation: "Explanation", outro: "Summary", quiz: "Quiz", completed: "Lesson Complete!" };
+      var SUBS = { intro: "Welcome to the lesson", explanation: "Main learning content", outro: "Recap and key points", quiz: "Answer the question", completed: "Well done!" };
+
+      var iconSize = 56;
+      var hx = 60, hy = 126;
+
+      drawPhaseIcon(pk, hx, hy, iconSize);
+
+      // Title
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 42px " + FONT;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(TITLES[pk] || "Lesson", hx + iconSize + 20, hy + 2);
+
+      // Subtitle
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "400 24px " + FONT;
+      ctx.fillText(SUBS[pk] || "", hx + iconSize + 20, hy + 42);
+
+      // Speaking indicator (animated)
+      if (S.ttsStatus === "playing") {
+        var spX = CW - 280, spY = hy + 10;
+        // Pill bg
+        roundRect(spX, spY, 200, 40, 20);
+        ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
+        ctx.fill();
+        roundRect(spX, spY, 200, 40, 20);
+        ctx.strokeStyle = "rgba(16,185,129,0.3)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Animated bars
+        var barX = spX + 20;
+        var barY = spY + 20;
+        for (var b = 0; b < 3; b++) {
+          var bh = 6 + 10 * Math.abs(Math.sin(animTime * 8 + b * 1.2));
+          roundRect(barX + b * 10, barY - bh / 2, 4, bh, 2);
+          ctx.fillStyle = "#34d399";
+          ctx.fill();
+        }
+
+        // "Speaking" text
+        ctx.fillStyle = "#34d399";
+        ctx.font = "600 20px " + FONT;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Speaking", spX + 56, spY + 20);
+      } else if (S.ttsStatus === "paused") {
+        var ppX = CW - 220, ppY = hy + 14;
+        roundRect(ppX, ppY, 150, 36, 18);
+        ctx.fillStyle = "rgba(245, 158, 11, 0.15)";
+        ctx.fill();
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "600 20px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Paused", ppX + 75, ppY + 18);
+      }
+    }
+
+    function drawScriptBox(pk) {
+      var pc = getPhaseColors(pk);
+      var bx = 52, by = 216, bw = CW - 104, bh = CH - 460;
+
+      // Box background
+      roundRect(bx, by, bw, bh, 20);
+      ctx.fillStyle = "rgba(30, 41, 59, 0.45)";
+      ctx.fill();
+      roundRect(bx, by, bw, bh, 20);
+      ctx.strokeStyle = "rgba(71, 85, 105, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Script text
+      var textFont = "400 28px " + FONT;
+      var lineH = 42;
+      var px = bx + 36, py = by + 40;
+      var maxW = bw - 72;
+      var maxLines = Math.floor((bh - 80) / lineH);
+      var scriptText = S.script || "No script available for this section.";
+      var lines = wrapText(scriptText, maxW, textFont);
+
+      ctx.font = textFont;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+
+      for (var i = 0; i < lines.length && i < maxLines; i++) {
+        var alpha = 1;
+        if (i >= maxLines - 2) {
+          alpha = 1 - (i - (maxLines - 2)) * 0.5;
+        }
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#e2e8f0";
+        ctx.fillText(lines[i], px, py + i * lineH);
+        ctx.restore();
+      }
+
+      // Fade-out gradient at bottom if text is truncated
+      if (lines.length > maxLines) {
+        var fadeH = 60;
+        var fadeY = by + bh - fadeH;
+        var grad = ctx.createLinearGradient(0, fadeY, 0, fadeY + fadeH);
+        grad.addColorStop(0, "rgba(30, 41, 59, 0)");
+        grad.addColorStop(1, "rgba(30, 41, 59, 0.8)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(bx + 1, fadeY, bw - 2, fadeH);
+      }
+    }
+
+    function drawButtonBar(pk) {
+      refs.buttonRegions = [];
+      var pc = getPhaseColors(pk);
+      var btnY = CH - 190;
+      var btnH = 72;
+      var btnR = 16;
+      var gap = 24;
+
+      // Replay button (left)
+      var replayW = 220;
+      var replayX = 60;
+      roundRect(replayX, btnY, replayW, btnH, btnR);
+      ctx.fillStyle = S.isPlayingAudio ? "rgba(51, 65, 85, 0.3)" : "rgba(51, 65, 85, 0.5)";
+      ctx.fill();
+      roundRect(replayX, btnY, replayW, btnH, btnR);
+      ctx.strokeStyle = "rgba(100, 116, 139, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Replay icon (circular arrow)
+      var riX = replayX + 36, riY = btnY + btnH / 2;
+      ctx.save();
+      ctx.strokeStyle = S.isPlayingAudio ? "#64748b" : "#cbd5e1";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(riX, riY, 10, -Math.PI * 0.8, Math.PI * 0.6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(riX + 7, riY + 6);
+      ctx.lineTo(riX + 12, riY + 10);
+      ctx.lineTo(riX + 7, riY + 14);
+      ctx.fillStyle = S.isPlayingAudio ? "#64748b" : "#cbd5e1";
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = S.isPlayingAudio ? "#64748b" : "#cbd5e1";
+      ctx.font = "600 24px " + FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Replay", replayX + replayW / 2 + 12, btnY + btnH / 2);
+      refs.buttonRegions.push({ x: replayX, y: btnY, w: replayW, h: btnH, action: "replay" });
+
+      // Skip to Quiz button (center, only if mcqs exist)
+      if (S.totalMcqs > 0) {
+        var skipW = 280;
+        var skipX = (CW - skipW) / 2;
+        drawGradientButton(skipX, btnY, skipW, btnH, btnR, "#d97706", "#ea580c", S.isPlayingAudio ? 0.4 : 0.9);
+        ctx.fillStyle = "#fef3c7";
+        ctx.font = "700 24px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Skip to Quiz", skipX + skipW / 2, btnY + btnH / 2);
+        refs.buttonRegions.push({ x: skipX, y: btnY, w: skipW, h: btnH, action: "skipToQuiz" });
+      }
+
+      // Continue button (right, prominent)
+      var contW = 380;
+      var contX = CW - contW - 60;
+      var contAlpha = S.isPlayingAudio && !S.waitingForUser ? 0.4 : 1;
+      var pulseAlpha = S.waitingForUser ? 0.8 + 0.2 * Math.sin(animTime * 4) : contAlpha;
+
+      if (S.waitingForUser) {
+        drawGradientButton(contX, btnY, contW, btnH, btnR, "#10b981", "#14b8a6", pulseAlpha);
+        // Glow ring
+        ctx.save();
+        ctx.globalAlpha = 0.3 + 0.15 * Math.sin(animTime * 4);
+        roundRect(contX - 3, btnY - 3, contW + 6, btnH + 6, btnR + 3);
+        ctx.strokeStyle = "#34d399";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.restore();
+      } else if (S.isPlayingAudio) {
+        roundRect(contX, btnY, contW, btnH, btnR);
+        ctx.fillStyle = "rgba(51, 65, 85, 0.4)";
+        ctx.fill();
+      } else {
+        drawGradientButton(contX, btnY, contW, btnH, btnR, "#475569", "#334155", 0.8);
+      }
+
+      // Continue label
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      var contCx = contX + contW / 2;
+      var contCy = btnY + btnH / 2;
+
+      if (S.waitingForUser) {
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "700 26px " + FONT;
+        var contLabel = pk === "outro" && S.totalMcqs > 0 ? "Start Quiz" : pk === "outro" ? "Complete Lesson" : "Continue";
+        ctx.fillText(contLabel, contCx - 12, contCy);
+        // Chevron
+        ctx.beginPath();
+        ctx.moveTo(contCx + ctx.measureText(contLabel).width / 2 + 4, contCy - 8);
+        ctx.lineTo(contCx + ctx.measureText(contLabel).width / 2 + 14, contCy);
+        ctx.lineTo(contCx + ctx.measureText(contLabel).width / 2 + 4, contCy + 8);
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+      } else if (S.isPlayingAudio) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "600 24px " + FONT;
+        // Spinner dots
+        for (var d = 0; d < 3; d++) {
+          var da = animTime * 6 + d * 2.1;
+          var dotA = 0.3 + 0.7 * Math.abs(Math.sin(da));
+          ctx.save();
+          ctx.globalAlpha = dotA;
+          ctx.beginPath();
+          ctx.arc(contCx - 60 + d * 14, contCy, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#94a3b8";
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.fillText("Listening...", contCx + 10, contCy);
+      } else {
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = "600 26px " + FONT;
+        var defLabel = pk === "outro" && S.totalMcqs > 0 ? "Quiz" : pk === "outro" ? "Done" : "Continue";
+        ctx.fillText(defLabel, contCx, contCy);
+      }
+
+      refs.buttonRegions.push({ x: contX, y: btnY, w: contW, h: btnH, action: "continue" });
+    }
+
+    function drawQuizView(pk) {
+      refs.buttonRegions = [];
+      var pc = getPhaseColors(pk);
+
+      // Q header
+      var qhY = 216;
+      ctx.fillStyle = pc.text;
+      ctx.font = "700 28px " + FONT;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("Q" + (S.currentMcqIndex + 1) + " / " + S.totalMcqs, 72, qhY);
+
+      // Question text
+      var qFont = "600 30px " + FONT;
+      var qLines = wrapText(S.question || "", CW - 160, qFont);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = qFont;
+      var qy = qhY + 52;
+      for (var qi = 0; qi < qLines.length && qi < 3; qi++) {
+        ctx.fillText(qLines[qi], 72, qy + qi * 42);
+      }
+
+      // Options
+      var optY = qy + Math.min(qLines.length, 3) * 42 + 30;
+      var optW = CW - 144;
+      var optH = 72;
+      var optGap = 16;
+      var optX = 72;
+      var letters = ["A", "B", "C", "D"];
+
+      for (var oi = 0; oi < S.options.length && oi < 4; oi++) {
+        var oy = optY + oi * (optH + optGap);
+        var isSel = S.selectedAnswer === oi;
+        var isCorrect = S.showResult && oi === S.correctAnswer;
+        var isWrong = S.showResult && isSel && oi !== S.correctAnswer;
+
+        // Option background
+        roundRect(optX, oy, optW, optH, 14);
+        if (isCorrect) {
+          ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
+          ctx.fill();
+          roundRect(optX, oy, optW, optH, 14);
+          ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (isWrong) {
+          ctx.fillStyle = "rgba(239, 68, 68, 0.2)";
+          ctx.fill();
+          roundRect(optX, oy, optW, optH, 14);
+          ctx.strokeStyle = "rgba(239, 68, 68, 0.5)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (isSel) {
+          ctx.fillStyle = "rgba(6, 182, 212, 0.2)";
+          ctx.fill();
+          roundRect(optX, oy, optW, optH, 14);
+          ctx.strokeStyle = "rgba(6, 182, 212, 0.5)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = "rgba(30, 41, 59, 0.4)";
+          ctx.fill();
+          roundRect(optX, oy, optW, optH, 14);
+          ctx.strokeStyle = "rgba(71, 85, 105, 0.3)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        // Letter badge
+        var badgeX = optX + 16;
+        var badgeY = oy + (optH - 42) / 2;
+        roundRect(badgeX, badgeY, 42, 42, 10);
+        ctx.fillStyle = isCorrect ? "rgba(16,185,129,0.3)" : isWrong ? "rgba(239,68,68,0.3)" : isSel ? "rgba(6,182,212,0.3)" : "rgba(71,85,105,0.3)";
+        ctx.fill();
+
+        ctx.fillStyle = isCorrect ? "#34d399" : isWrong ? "#f87171" : isSel ? "#22d3ee" : "#94a3b8";
+        ctx.font = "bold 22px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(letters[oi], badgeX + 21, badgeY + 22);
+
+        // Option text
+        ctx.textAlign = "left";
+        ctx.fillStyle = isCorrect ? "#d1fae5" : isWrong ? "#fecaca" : isSel ? "#cffafe" : "#e2e8f0";
+        ctx.font = "500 24px " + FONT;
+        var optText = String(S.options[oi] || "");
+        if (ctx.measureText(optText).width > optW - 130) {
+          while (ctx.measureText(optText + "...").width > optW - 130 && optText.length > 0) {
+            optText = optText.slice(0, -1);
+          }
+          optText += "...";
+        }
+        ctx.fillText(optText, optX + 74, oy + optH / 2 + 1);
+
+        // Result icon
+        if (isCorrect) {
+          ctx.save();
+          ctx.strokeStyle = "#34d399";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(optX + optW - 48, oy + optH / 2 - 4);
+          ctx.lineTo(optX + optW - 38, oy + optH / 2 + 6);
+          ctx.lineTo(optX + optW - 24, oy + optH / 2 - 8);
+          ctx.stroke();
+          ctx.restore();
+        } else if (isWrong) {
+          ctx.save();
+          ctx.strokeStyle = "#f87171";
+          ctx.lineWidth = 3;
+          var xc = optX + optW - 36;
+          var yc = oy + optH / 2;
+          ctx.beginPath();
+          ctx.moveTo(xc - 8, yc - 8); ctx.lineTo(xc + 8, yc + 8);
+          ctx.moveTo(xc + 8, yc - 8); ctx.lineTo(xc - 8, yc + 8);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        refs.buttonRegions.push({ x: optX, y: oy, w: optW, h: optH, action: "mcqSelect:" + oi });
+      }
+
+      // Explanation (after result)
+      var afterOptsY = optY + Math.min(S.options.length, 4) * (optH + optGap) + 10;
+      if (S.showResult && S.explanation) {
+        var expX = 72, expW = CW - 144, expH = 90;
+        roundRect(expX, afterOptsY, expW, expH, 14);
+        ctx.fillStyle = "rgba(30, 41, 59, 0.5)";
+        ctx.fill();
+        roundRect(expX, afterOptsY, expW, expH, 14);
+        ctx.strokeStyle = "rgba(71, 85, 105, 0.3)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = "#22d3ee";
+        ctx.font = "600 20px " + FONT;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText("Explanation:", expX + 20, afterOptsY + 14);
+
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "400 20px " + FONT;
+        var expLines = wrapText(S.explanation, expW - 40, "400 20px " + FONT);
+        for (var ei = 0; ei < expLines.length && ei < 2; ei++) {
+          ctx.fillText(expLines[ei], expX + 20, afterOptsY + 40 + ei * 26);
+        }
+        afterOptsY += expH + 16;
+      }
+
+      // Submit / Next button
+      var sbtnW = 360, sbtnH = 72, sbtnR = 16;
+      var sbtnX = (CW - sbtnW) / 2;
+      var sbtnY = Math.max(afterOptsY, CH - 160);
+
+      if (!S.showResult) {
+        // Submit
+        var submitDisabled = S.selectedAnswer < 0;
+        drawGradientButton(sbtnX, sbtnY, sbtnW, sbtnH, sbtnR, "#d97706", "#ea580c", submitDisabled ? 0.4 : 0.95);
+        ctx.fillStyle = submitDisabled ? "rgba(255,255,255,0.4)" : "#fef3c7";
+        ctx.font = "700 26px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Submit Answer", sbtnX + sbtnW / 2, sbtnY + sbtnH / 2);
+        if (!submitDisabled) {
+          refs.buttonRegions.push({ x: sbtnX, y: sbtnY, w: sbtnW, h: sbtnH, action: "mcqSubmit" });
+        }
+      } else {
+        // Next
+        var nextLabel = S.currentMcqIndex < S.totalMcqs - 1 ? "Next Question" : "See Results";
+        drawGradientButton(sbtnX, sbtnY, sbtnW, sbtnH, sbtnR, "#10b981", "#0d9488", 0.95);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "700 26px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(nextLabel, sbtnX + sbtnW / 2, sbtnY + sbtnH / 2);
+        refs.buttonRegions.push({ x: sbtnX, y: sbtnY, w: sbtnW, h: sbtnH, action: "mcqNext" });
+      }
+    }
+
+    function drawCompletedView() {
+      refs.buttonRegions = [];
+      var cy = CH / 2 - 120;
+
+      // Trophy icon (large centered)
+      var tSize = 120;
+      var tx = (CW - tSize) / 2;
+      drawPhaseIcon("completed", tx, cy - 80, tSize);
+
+      // Title
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 56px " + FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Lesson Complete!", CW / 2, cy + 80);
+
+      // Score
+      if (S.scoreLabel) {
+        var scoreY = cy + 150;
+        var scoreW = 380, scoreH = 120;
+        var scoreX = (CW - scoreW) / 2;
+        roundRect(scoreX, scoreY, scoreW, scoreH, 24);
+        ctx.fillStyle = "rgba(30, 41, 59, 0.5)";
+        ctx.fill();
+
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "500 24px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText("Score", CW / 2, scoreY + 18);
+
+        ctx.fillStyle = "#34d399";
+        ctx.font = "bold 52px " + FONT;
+        ctx.fillText(S.scoreLabel, CW / 2, scoreY + 52);
+      }
+
+      // Done button
+      var doneW = 320, doneH = 72, doneR = 16;
+      var doneX = (CW - doneW) / 2;
+      var doneY = CH - 180;
+      drawGradientButton(doneX, doneY, doneW, doneH, doneR, "#10b981", "#0d9488", 0.95);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 28px " + FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Done", doneX + doneW / 2, doneY + doneH / 2);
+      refs.buttonRegions.push({ x: doneX, y: doneY, w: doneW, h: doneH, action: "continue" });
+    }
+
+    // ===== MAIN DRAW =====
+    function drawPanel() {
+      var pk = phaseKey(S.phase);
+      drawBackground(pk);
+      drawPhaseStepper(pk);
+
+      if (pk === "completed") {
+        drawHeader(pk);
+        drawCompletedView();
+      } else if (S.showQuiz) {
+        drawHeader(pk);
+        drawQuizView(pk);
+      } else {
+        drawHeader(pk);
+        drawScriptBox(pk);
+        if (pk !== "completed") {
+          drawButtonBar(pk);
+        }
+      }
+
+      texture.needsUpdate = true;
+    }
+
+    // ===== THREE.JS SETUP =====
+    var texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    try {
+      var renderer = krpano.threejs.renderer;
+      if (renderer && renderer.capabilities) {
+        texture.anisotropy = renderer.capabilities.maxAnisotropy || 4;
+      }
+    } catch(e) {}
+
+    var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
+    var panelW = 40 / ws, panelH = 25 / ws;
+    var geo = new THREE.PlaneGeometry(panelW, panelH);
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.y = Math.PI;
+    mesh.scale.x = -1;
+    group.add(mesh);
+    if (typeof caller.updateboundingbox === "function") caller.updateboundingbox();
+
+    refs.panel = { canvas: canvas, texture: texture, draw: drawPanel, mesh: mesh };
+
+    // ===== ANIMATION LOOP =====
+    function needsAnim() {
+      return S.ttsStatus === "playing" || S.waitingForUser || S.isPlayingAudio;
+    }
+
+    function animLoop() {
+      animTime = performance.now() / 1000;
+      if (refs.panel && refs.panel.draw) {
+        refs.panel.draw();
+      }
+      if (needsAnim()) {
+        animId = requestAnimationFrame(animLoop);
+        animRunning = true;
+      } else {
+        animRunning = false;
+      }
+    }
+
+    refs.startAnim = function() {
+      if (!animRunning && needsAnim()) {
+        animRunning = true;
+        animId = requestAnimationFrame(animLoop);
+      }
+    };
+
+    refs.stopAnim = function() {
+      if (animId) cancelAnimationFrame(animId);
+      animRunning = false;
+    };
+
+    // Initial draw
+    drawPanel();
+    console.log("[ImmersiveUI] Panel built", CW + "x" + CH);
+  ]]></action>
+
+  <!-- ===== UPDATE ===== -->
+  <action name="immersive_ui_update" type="Javascript"
+          args="phase,script,ttsStatus,question,options,showQuiz,showResult,scoreLabel,selectedAnswer,waitingForUser,isPlayingAudio,currentMcqIndex,totalMcqs,correctAnswer,explanation"><![CDATA[
+    var refs = krpano.immersive_ui_refs;
+    if (!refs || !refs.panel) return;
+
+    var S = refs.state;
+    S.phase = phase || "intro";
+    S.script = script || "";
+    S.ttsStatus = ttsStatus || "idle";
+    S.question = question || "";
+    S.options = (options && String(options)) ? String(options).split("||") : [];
+    S.showQuiz = (showQuiz === "true" && (phase === "quiz" || S.phase.toLowerCase().indexOf("quiz") >= 0));
+    S.showResult = showResult === "true";
+    S.scoreLabel = scoreLabel || "";
+    S.selectedAnswer = parseInt(selectedAnswer, 10);
+    if (isNaN(S.selectedAnswer)) S.selectedAnswer = -1;
+    S.waitingForUser = waitingForUser === "true";
+    S.isPlayingAudio = isPlayingAudio === "true";
+    S.currentMcqIndex = parseInt(currentMcqIndex, 10) || 0;
+    S.totalMcqs = parseInt(totalMcqs, 10) || 0;
+    S.correctAnswer = parseInt(correctAnswer, 10);
+    if (isNaN(S.correctAnswer)) S.correctAnswer = -1;
+    S.explanation = explanation || "";
+
+    if (refs.panel.draw) refs.panel.draw();
+
+    if (refs.startAnim) refs.startAnim();
+  ]]></action>
+
+  <!-- ===== PANEL CLICK (raycasting) ===== -->
+  <action name="immersive_ui_panel_click" type="js"><![CDATA[
+    var refs = krpano.immersive_ui_refs;
+    if (!refs || !refs.panel || !refs.panel.mesh) return;
+    var THREE = krpano.threejs.THREE;
+    if (!THREE) return;
+
+    var CW = 2048, CH = 1280;
+    var panelMesh = refs.panel.mesh;
+    var camera = krpano.threejs.camera;
+    if (!camera) return;
+
+    var raycaster = new THREE.Raycaster();
+    var ndc = new THREE.Vector2(
+      (krpano.mouse.x / krpano.stagewidth) * 2 - 1,
+      -(krpano.mouse.y / krpano.stageheight) * 2 + 1
+    );
+    raycaster.setFromCamera(ndc, camera);
+    var hits = raycaster.intersectObject(panelMesh);
+    if (hits.length > 0 && hits[0].uv) {
+      var u = hits[0].uv.x;
+      var v = 1 - hits[0].uv.y;
+      var cx = u * CW;
+      var cy = v * CH;
+
+      var regions = refs.buttonRegions || [];
+      for (var i = 0; i < regions.length; i++) {
+        var r = regions[i];
+        if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
+          if (window.__krpanoUIAction) {
+            window.__krpanoUIAction(r.action);
+          }
+          break;
+        }
+      }
+    }
+  ]]></action>
+
+</krpano>
