@@ -795,8 +795,9 @@ service cloud.firestore {
     
     // Production logs - for debugging and monitoring
     match /production_logs/{logId} {
-      // Anyone authenticated can write logs (for the logger service)
-      allow create: if isAuthenticated();
+      // Allow create from any client (including unauthenticated) so error-boundary and
+      // pre-login errors (e.g. on /login) are captured; read remains admin-only.
+      allow create: if true;
       // Admin and superadmin can read logs (for the admin UI)
       allow read: if isAdminOrSuperadmin();
       // No updates or deletes allowed (logs are immutable)
