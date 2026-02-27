@@ -176,7 +176,8 @@
       return meshes;
     }
 
-    // Process a raycast hit on the UI panel
+    // Process a raycast hit on the UI panel (with 4px padding for forgiving button hits)
+    var HIT_PADDING = 4;
     function processUIHit(hit, inputSource) {
       var refs = krpano.immersive_ui_refs;
       if (!refs || !refs.panel || !hit || !hit.uv) return null;
@@ -188,7 +189,7 @@
       var regions = refs.buttonRegions || [];
       for (var i = 0; i < regions.length; i++) {
         var r = regions[i];
-        if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
+        if (cx >= r.x - HIT_PADDING && cx <= r.x + r.w + HIT_PADDING && cy >= r.y - HIT_PADDING && cy <= r.y + r.h + HIT_PADDING) {
           return r;
         }
       }
@@ -225,6 +226,8 @@
     var gazeStartTime = 0;
     var gazeLockedRegion = null;
     var prevTriggerPressed = false;
+    var lastSelectTime = 0;
+    var SELECT_COOLDOWN_MS = 350;
 
     // Main per-frame update
     function xrInputFrame() {
@@ -252,12 +255,12 @@
       var bestInputType = "none";
       var handState = null;
 
+      // Prefer controller over hand over gaze for hit stability
       for (var si = 0; si < inputSources.length; si++) {
         var source = inputSources[si];
         var itype = classifyInput(source);
 
         if (itype === "controller") {
-          // Get controller ray from grip/target space
           var controller = renderer.xr.getController(si);
           if (!controller) continue;
           tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -275,8 +278,7 @@
               bestInputType = "controller";
             }
           }
-        } else if (itype === "hand" && xi.frameCount % 2 === 0) {
-          // Hand tracking at 30Hz (every other frame)
+        } else if (itype === "hand" && xi.frameCount % 2 === 0 && bestInputType !== "controller") {
           handState = getHandState(source.hand, frame, refSpace);
           if (handState) {
             raycaster.set(handState.origin, handState.direction);
@@ -291,8 +293,7 @@
               }
             }
           }
-        } else if (itype === "gaze") {
-          // Gaze from camera center
+        } else if (itype === "gaze" && bestInputType === "none") {
           if (camera) {
             camera.getWorldDirection(direction);
             camera.getWorldPosition(origin);
@@ -354,6 +355,14 @@
       }
       prevHoveredRegion = bestRegion;
 
+      // Dispatch with cooldown to avoid double-firing on one press
+      function dispatchWithCooldown(region, inputSource) {
+        var now = performance.now();
+        if (now - lastSelectTime < SELECT_COOLDOWN_MS) return;
+        lastSelectTime = now;
+        dispatchAction(region, inputSource);
+      }
+
       // Controller trigger → select
       var triggerPressed = false;
       if (bestInputType === "controller" && bestSource && bestSource.gamepad && bestSource.gamepad.buttons && bestSource.gamepad.buttons.length > 0) {
@@ -364,14 +373,14 @@
         }
       }
       if (triggerPressed && !prevTriggerPressed && bestRegion) {
-        dispatchAction(bestRegion, bestSource);
+        dispatchWithCooldown(bestRegion, bestSource);
       }
       prevTriggerPressed = triggerPressed;
 
       // Hand tracking: pinch to select
       if (bestInputType === "hand" && handState) {
         if (handState.isPinching && !prevPinching && bestRegion) {
-          dispatchAction(bestRegion, bestSource);
+          dispatchWithCooldown(bestRegion, bestSource);
         }
         prevPinching = handState.isPinching;
       }
@@ -392,7 +401,7 @@
         gazeRingMat.opacity = progress * 0.9;
 
         if (progress >= 1.0) {
-          dispatchAction(bestRegion, null);
+          dispatchWithCooldown(bestRegion, null);
           gazeStartTime = performance.now() + 500;
           gazeLockedRegion = null;
         }

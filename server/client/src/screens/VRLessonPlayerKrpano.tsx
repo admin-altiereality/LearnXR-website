@@ -1050,11 +1050,16 @@ const VRLessonPlayerInner = () => {
   /** Set when we embed krpano with avatar (so we use krpano for TTS when available) */
   const useKrpanoTTSRef = useRef(false);
   const ttsCompleteRef = useRef<() => void>(() => {});
+  const ttsStatusRef = useRef<string>('idle');
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
   const [isQuestDevice, setIsQuestDevice] = useState(false);
   const [lastHotspotClicked, setLastHotspotClicked] = useState<string | null>(null);
+  /** When true, enter VR as soon as krpano is ready (used when launching from prep with "Start in VR"). */
+  const enterVRWhenReadyRef = useRef(false);
+  /** When true, first TTS auto-play in VR should use 5s delay (cleared after use). */
+  const vrEntryTtsDelayRef = useRef(false);
 
   // Skybox State
   const [skyboxData, setSkyboxData] = useState<SkyboxData | null>(null);
@@ -1086,6 +1091,8 @@ const VRLessonPlayerInner = () => {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false); // Prevent echo/double play
   const [lessonStage, setLessonStage] = useState<'intro' | 'explanation' | 'outro' | 'quiz' | 'completed'>('intro');
   const [waitingForUser, setWaitingForUser] = useState(false); // Wait for user to click "Continue"
+
+  ttsStatusRef.current = ttsStatus;
 
   // Chat State
   const [showChat, setShowChat] = useState(false);
@@ -1538,6 +1545,11 @@ const VRLessonPlayerInner = () => {
                     if (!Number.isNaN(idx) && idx >= 0) {
                       handleMcqSelect(idx);
                     }
+                  } else if (action === 'ttsPlay') {
+                    if (ttsStatusRef.current === 'paused') resumeTTS();
+                    else playTTS();
+                  } else if (action === 'ttsPause') {
+                    pauseTTS();
                   } else if (action === 'toggleMute') {
                     setIsMuted((prev) => !prev);
                   } else if (action === 'openChat') {
@@ -1721,7 +1733,11 @@ const VRLessonPlayerInner = () => {
         try {
           const flag = viewer.get('webvr.isenabled');
           const enabled = flag === true || flag === 'true' || flag === '1';
-          setIsInKrpanoVR((prev) => (prev === enabled ? prev : enabled));
+          setIsInKrpanoVR((prev) => {
+            if (prev === enabled) return prev;
+            if (enabled) vrEntryTtsDelayRef.current = true;
+            return enabled;
+          });
         } catch {
           // Ignore get() errors; will retry on next tick
         }
@@ -1736,6 +1752,28 @@ const VRLessonPlayerInner = () => {
       cancelled = true;
     };
   }, [useKrpanoView]);
+
+  // When user chose "Start in VR" from prep overlay, enter VR as soon as krpano is ready
+  useEffect(() => {
+    if (!enterVRWhenReadyRef.current || !lessonReady || !useKrpanoView) return;
+    let cancelled = false;
+    const tryEnterVR = () => {
+      if (cancelled || !enterVRWhenReadyRef.current) return;
+      const viewer = krpanoViewerRef.current;
+      if (viewer?.call) {
+        try {
+          viewer.call('webvr.enterVR');
+        } catch (e) {
+          console.warn('[Krpano] webvr.enterVR failed:', e);
+        }
+        enterVRWhenReadyRef.current = false;
+        return;
+      }
+      setTimeout(tryEnterVR, 300);
+    };
+    tryEnterVR();
+    return () => { cancelled = true; };
+  }, [lessonReady, useKrpanoView]);
 
   // Push lesson UI state into krpano immersive UI whenever key state changes
   useEffect(() => {
@@ -2508,14 +2546,18 @@ const VRLessonPlayerInner = () => {
     ) {
       lastPlayedPhaseRef.current = lessonPhase;
       setWaitingForUser(false);
-      
-      // Delay to ensure UI is ready
+
+      // In VR, wait 5s on first play after entering VR; otherwise 800ms
+      const useVrDelay = isInKrpanoVR && vrEntryTtsDelayRef.current;
+      if (useVrDelay) vrEntryTtsDelayRef.current = false;
+      const delayMs = useVrDelay ? 5000 : 800;
+
       const timer = setTimeout(() => {
         playTTS();
-      }, 800);
+      }, delayMs);
       return () => clearTimeout(timer);
     }
-  }, [lessonReady, lessonPhase, ttsData, ttsStatus, autoplayEnabled, userPaused, isMuted, isPlayingAudio, playTTS]);
+  }, [lessonReady, lessonPhase, ttsData, ttsStatus, autoplayEnabled, userPaused, isMuted, isPlayingAudio, isInKrpanoVR, playTTS]);
 
   // Reset lastPlayedPhase when changing lessons
   useEffect(() => {
@@ -3064,42 +3106,79 @@ const VRLessonPlayerInner = () => {
               </div>
             )}
 
-            <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
-              <Button variant="outline" className="sm:flex-1 border-border h-11" onClick={() => navigate('/lessons')}>
-                Cancel
-              </Button>
-              <Button
-                className="sm:flex-1 h-11 gap-2 font-semibold"
-                onClick={handleLaunchFromPrep}
-                disabled={!canLaunch}
-              >
-                {prepCountdown > 0 ? (
-                  <>
-                    <Clock className="w-4 h-4" />
-                    Ready in {prepCountdown}s…
-                  </>
-                ) : prepLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Preparing…
-                  </>
-                ) : prepError ? (
-                  <>
-                    <AlertTriangle className="w-4 h-4" />
-                    {prepError.length > 30 ? 'Unavailable' : prepError}
-                  </>
-                ) : canLaunch ? (
-                  <>
-                    <Play className="w-4 h-4" />
-                    Launch lesson
-                  </>
+            <div className="flex flex-col gap-3 pt-1">
+              {canLaunch ? (
+                isVRAvailable ? (
+                  <div className="space-y-3">
+                    <Button
+                      className="w-full h-11 gap-2 font-semibold bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white border-0"
+                      onClick={() => {
+                        handleLaunchFromPrep();
+                        enterVRWhenReadyRef.current = true;
+                        setTimeout(() => handleStartLesson(), 0);
+                      }}
+                    >
+                      <Play className="w-4 h-4" />
+                      Start lesson in VR
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full h-11 border-border"
+                      onClick={() => {
+                        handleLaunchFromPrep();
+                        setTimeout(() => handleStartLesson(), 0);
+                      }}
+                    >
+                      Or continue in 2D
+                    </Button>
+                  </div>
                 ) : (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Finalizing…
-                  </>
+                  <Button
+                    className="w-full h-11 gap-2 font-semibold"
+                    onClick={() => {
+                      handleLaunchFromPrep();
+                      setTimeout(() => handleStartLesson(), 0);
+                    }}
+                  >
+                    <Play className="w-4 h-4" />
+                    Start lesson
+                  </Button>
+                )
+              ) : null}
+              <div className="flex flex-col-reverse sm:flex-row gap-3">
+                <Button variant="outline" className="sm:flex-1 border-border h-11" onClick={() => navigate('/lessons')}>
+                  Cancel
+                </Button>
+                {!canLaunch && (
+                  <Button
+                    className="sm:flex-1 h-11 gap-2 font-semibold"
+                    onClick={handleLaunchFromPrep}
+                    disabled={!canLaunch}
+                  >
+                    {prepCountdown > 0 ? (
+                      <>
+                        <Clock className="w-4 h-4" />
+                        Ready in {prepCountdown}s…
+                      </>
+                    ) : prepLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Preparing…
+                      </>
+                    ) : prepError ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4" />
+                        {prepError.length > 30 ? 'Unavailable' : prepError}
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Finalizing…
+                      </>
+                    )}
+                  </Button>
                 )}
-              </Button>
+              </div>
             </div>
 
             {prepLoading && !prepCountdown && (

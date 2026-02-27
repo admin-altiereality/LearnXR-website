@@ -485,6 +485,23 @@
       ctx.fillText("Replay", replayX + replayW / 2 + 12, btnY + btnH / 2);
       refs.buttonRegions.push({ x: replayX, y: btnY, w: replayW, h: btnH, action: "replay" });
 
+      // Play/Pause TTS button (next to Replay)
+      var playPauseW = 160;
+      var playPauseX = replayX + replayW + gap;
+      roundRect(playPauseX, btnY, playPauseW, btnH, btnR);
+      ctx.fillStyle = (S.ttsStatus === "playing" ? "rgba(245, 158, 11, 0.25)" : "rgba(51, 65, 85, 0.5)");
+      ctx.fill();
+      roundRect(playPauseX, btnY, playPauseW, btnH, btnR);
+      ctx.strokeStyle = S.ttsStatus === "playing" ? "rgba(245, 158, 11, 0.4)" : "rgba(100, 116, 139, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = S.ttsStatus === "playing" ? "#fbbf24" : "#cbd5e1";
+      ctx.font = "600 22px " + FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(S.ttsStatus === "playing" ? "Pause" : "Play", playPauseX + playPauseW / 2, btnY + btnH / 2);
+      refs.buttonRegions.push({ x: playPauseX, y: btnY, w: playPauseW, h: btnH, action: S.ttsStatus === "playing" ? "ttsPause" : "ttsPlay" });
+
       // Skip to Quiz button (center, only if mcqs exist)
       if (S.totalMcqs > 0) {
         var skipW = 280;
@@ -498,9 +515,20 @@
         refs.buttonRegions.push({ x: skipX, y: btnY, w: skipW, h: btnH, action: "skipToQuiz" });
       }
 
-      // Continue button (right, prominent)
+      // Next stage button (always enabled, left of Continue)
+      var nextStageW = 200;
       var contW = 380;
       var contX = CW - contW - 60;
+      var nextStageX = contX - nextStageW - gap;
+      drawGradientButton(nextStageX, btnY, nextStageW, btnH, btnR, "#334155", "#1e293b", 0.9);
+      ctx.fillStyle = "#e2e8f0";
+      ctx.font = "600 22px " + FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Next stage", nextStageX + nextStageW / 2, btnY + btnH / 2);
+      refs.buttonRegions.push({ x: nextStageX, y: btnY, w: nextStageW, h: btnH, action: "continue" });
+
+      // Continue button (right, prominent)
       var contAlpha = S.isPlayingAudio && !S.waitingForUser ? 0.4 : 1;
       var pulseAlpha = S.waitingForUser ? 0.8 + 0.2 * Math.sin(animTime * 4) : contAlpha;
 
@@ -872,8 +900,8 @@
     } catch(e) {}
 
     var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.88, side: THREE.DoubleSide });
-    // Panel size: 80% of previous 120x75 worldscale-aware dimensions
-    var panelW = 9.6 / ws, panelH = 6 / ws;
+    // Panel size: half of previous (4.8x3 worldscale-aware) for less obtrusive VR UI
+    var panelW = 4.8 / ws, panelH = 3 / ws;
     var geo = new THREE.PlaneGeometry(panelW, panelH);
     var mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.y = Math.PI;
@@ -999,9 +1027,10 @@
       var cy = v * CH;
 
       var regions = refs.buttonRegions || [];
+      var pad = 4;
       for (var i = 0; i < regions.length; i++) {
         var r = regions[i];
-        if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
+        if (cx >= r.x - pad && cx <= r.x + r.w + pad && cy >= r.y - pad && cy <= r.y + r.h + pad) {
           var act = r.action;
           if (act && act.indexOf("layoutToggle:") === 0) {
             var lname = act.split(":")[1];
