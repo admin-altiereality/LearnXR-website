@@ -1,0 +1,148 @@
+<krpano>
+
+  <!--
+    classroom_ambience.xml – 360 Environment Enhancements
+    Ambient particle system, attention guidance (light pulse),
+    and interactive environment hotspots.
+  -->
+
+  <!-- ===== AMBIENT PARTICLES ===== -->
+  <action name="ambience_init" autorun="onstart" type="js"><![CDATA[
+    if (krpano.ambience_initialized) return;
+    krpano.ambience_initialized = true;
+
+    function tryInit() {
+      if (!krpano.threejs || !krpano.threejs.THREE || !krpano.threejs.scene) {
+        setTimeout(tryInit, 500);
+        return;
+      }
+
+      var THREE = krpano.threejs.THREE;
+      var scene = krpano.threejs.scene;
+      var ws = (krpano.display && krpano.display.hotspotworldscale) || 100;
+
+      // --- Ambient Dust Particles ---
+      var PARTICLE_COUNT = 80;
+      var positions = new Float32Array(PARTICLE_COUNT * 3);
+      var velocities = [];
+      var spread = 400 / ws;
+
+      for (var i = 0; i < PARTICLE_COUNT; i++) {
+        positions[i * 3]     = (Math.random() - 0.5) * spread;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * spread * 0.6;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
+        velocities.push({
+          x: (Math.random() - 0.5) * 0.0003,
+          y: 0.0002 + Math.random() * 0.0004,
+          z: (Math.random() - 0.5) * 0.0003
+        });
+      }
+
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+      var mat = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 2.0 / ws,
+        transparent: true,
+        opacity: 0.15,
+        sizeAttenuation: true,
+        depthWrite: false
+      });
+
+      var particles = new THREE.Points(geo, mat);
+      particles.renderOrder = 1;
+      scene.add(particles);
+
+      // --- Attention Guidance: Light Pulse ---
+      var lightPulseActive = false;
+      var lightPulseStart = 0;
+      var lightPulseDuration = 1200;
+      var baseLightIntensity = 2.0;
+
+      window.__ambienceLightPulse = function() {
+        lightPulseActive = true;
+        lightPulseStart = performance.now();
+      };
+
+      // --- Animation Loop ---
+      var halfSpread = spread / 2;
+      function animateAmbience() {
+        var posArr = geo.attributes.position.array;
+        for (var i = 0; i < PARTICLE_COUNT; i++) {
+          var vi = velocities[i];
+          posArr[i * 3]     += vi.x;
+          posArr[i * 3 + 1] += vi.y;
+          posArr[i * 3 + 2] += vi.z;
+
+          // Wrap around when particles drift too far
+          if (posArr[i * 3 + 1] > halfSpread * 0.6) {
+            posArr[i * 3 + 1] = -halfSpread * 0.6;
+            posArr[i * 3]     = (Math.random() - 0.5) * spread;
+            posArr[i * 3 + 2] = (Math.random() - 0.5) * spread;
+          }
+        }
+        geo.attributes.position.needsUpdate = true;
+
+        // Subtle opacity breathing
+        var t = performance.now() / 1000;
+        mat.opacity = 0.12 + 0.06 * Math.sin(t * 0.5);
+
+        // Light pulse
+        if (lightPulseActive) {
+          var elapsed = performance.now() - lightPulseStart;
+          var progress = elapsed / lightPulseDuration;
+          if (progress >= 1.0) {
+            lightPulseActive = false;
+            try { krpano.set("hotspot[lesson_light].intensity", baseLightIntensity); } catch(e) {}
+          } else {
+            var pulse = baseLightIntensity + 0.8 * Math.sin(progress * Math.PI);
+            try { krpano.set("hotspot[lesson_light].intensity", pulse); } catch(e) {}
+          }
+        }
+
+        requestAnimationFrame(animateAmbience);
+      }
+
+      animateAmbience();
+      console.log("[Ambience] Particles (" + PARTICLE_COUNT + ") and light pulse initialized");
+    }
+
+    setTimeout(tryInit, 1500);
+  ]]></action>
+
+  <!-- ===== INTERACTIVE ENVIRONMENT HOTSPOTS ===== -->
+  <hotspot name="env_board"
+           ath="-90" atv="5" depth="800"
+           url="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect x='4' y='8' width='56' height='44' rx='4' fill='%23334155' stroke='%2394a3b8' stroke-width='2'/%3E%3Cline x1='12' y1='20' x2='52' y2='20' stroke='%2364748b' stroke-width='2'/%3E%3Cline x1='12' y1='30' x2='44' y2='30' stroke='%2364748b' stroke-width='2'/%3E%3Cline x1='12' y1='40' x2='48' y2='40' stroke='%2364748b' stroke-width='2'/%3E%3C/svg%3E"
+           scale="0.6" distorted="false" zoom="false"
+           tooltip="Classroom Board"
+           onover="tween(scale,0.72,0.3); tween(alpha,1.0,0.2);"
+           onout="tween(scale,0.6,0.3); tween(alpha,0.7,0.2);"
+           onclick="js( if(window.__xrHaptic) window.__xrHaptic('select'); );"
+           alpha="0.7"
+           keep="true" />
+
+  <hotspot name="env_clock"
+           ath="120" atv="-20" depth="900"
+           url="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%231e293b' stroke='%2394a3b8' stroke-width='2'/%3E%3Cline x1='32' y1='32' x2='32' y2='14' stroke='%23e2e8f0' stroke-width='2' stroke-linecap='round'/%3E%3Cline x1='32' y1='32' x2='44' y2='32' stroke='%23e2e8f0' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='32' r='3' fill='%2310b981'/%3E%3C/svg%3E"
+           scale="0.5" distorted="false" zoom="false"
+           tooltip="Lesson Timer"
+           onover="tween(scale,0.6,0.3); tween(alpha,1.0,0.2);"
+           onout="tween(scale,0.5,0.3); tween(alpha,0.6,0.2);"
+           onclick="js( if(window.__xrHaptic) window.__xrHaptic('select'); );"
+           alpha="0.6"
+           keep="true" />
+
+  <hotspot name="env_shelf"
+           ath="170" atv="15" depth="850"
+           url="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect x='8' y='6' width='48' height='52' rx='3' fill='%23292524' stroke='%2378716c' stroke-width='1.5'/%3E%3Crect x='14' y='12' width='10' height='14' rx='1' fill='%23dc2626'/%3E%3Crect x='26' y='10' width='8' height='16' rx='1' fill='%232563eb'/%3E%3Crect x='36' y='13' width='12' height='13' rx='1' fill='%2316a34a'/%3E%3Cline x1='10' y1='30' x2='54' y2='30' stroke='%2378716c' stroke-width='1.5'/%3E%3Crect x='14' y='34' width='12' height='12' rx='1' fill='%23ca8a04'/%3E%3Crect x='30' y='36' width='9' height='10' rx='1' fill='%239333ea'/%3E%3C/svg%3E"
+           scale="0.55" distorted="false" zoom="false"
+           tooltip="Resource Library"
+           onover="tween(scale,0.65,0.3); tween(alpha,1.0,0.2);"
+           onout="tween(scale,0.55,0.3); tween(alpha,0.65,0.2);"
+           onclick="js( if(window.__xrHaptic) window.__xrHaptic('select'); );"
+           alpha="0.65"
+           keep="true" />
+
+</krpano>
