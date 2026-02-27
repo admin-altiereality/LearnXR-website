@@ -155,12 +155,11 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
-  const xrInputIncludeUrl = pluginUrl(origin, basePath, 'xr_input.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
+  // xr_input.xml not included: VR ray/controller interaction disabled (display-only in VR)
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
-      `  <include url="${escapeXml(xrInputIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n`
     : '';
 
@@ -208,9 +207,9 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     : '';
   const threeJsHotspotsSection = threeJsHotspotBlocks || teacherAvatarHotspot ? '\n' + (teacherAvatarHotspot + threeJsHotspotBlocks) + '\n' : '';
 
-  // Immersive UI: single unified panel at back wall (tz=350); click detection via raycasting in immersive_ui_panel_click.
+  // Immersive UI: display-only panel (no interaction in VR; ray/click disabled)
   const iuPanel =
-    '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="10" tz="250" hittest="true" keep="true" onloaded="immersive_ui_build_hotspot();" onclick="immersive_ui_panel_click();" />';
+    '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="10" tz="250" hittest="false" keep="true" onloaded="immersive_ui_build_hotspot();" />';
   const immersiveUiThreeJsHotspotsSection =
     webvr && needThreeJs
       ? '\n' + iuPanel + '\n'
