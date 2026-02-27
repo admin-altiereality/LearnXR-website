@@ -1051,6 +1051,7 @@ const VRLessonPlayerInner = () => {
   const useKrpanoTTSRef = useRef(false);
   const ttsCompleteRef = useRef<() => void>(() => {});
   const ttsStatusRef = useRef<string>('idle');
+  const showMcqResultRef = useRef(false);
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
@@ -1109,6 +1110,7 @@ const VRLessonPlayerInner = () => {
   const [mcqAnswers, setMcqAnswers] = useState<Record<string, number>>({});
   const [showMcqResult, setShowMcqResult] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  showMcqResultRef.current = showMcqResult;
 
   // UI State
   const [showDragHint, setShowDragHint] = useState(true);
@@ -1540,6 +1542,9 @@ const VRLessonPlayerInner = () => {
                     handleMcqSubmit();
                   } else if (action === 'mcqNext') {
                     handleMcqNext();
+                  } else if (action === 'mcqSubmitOrNext') {
+                    if (showMcqResultRef.current) handleMcqNext();
+                    else handleMcqSubmit();
                   } else if (action.startsWith('mcqSelect:')) {
                     const idx = Number(action.split(':')[1] ?? '-1');
                     if (!Number.isNaN(idx) && idx >= 0) {
@@ -1550,10 +1555,19 @@ const VRLessonPlayerInner = () => {
                     else playTTS();
                   } else if (action === 'ttsPause') {
                     pauseTTS();
+                  } else if (action === 'ttsToggle') {
+                    if (ttsStatusRef.current === 'playing') pauseTTS();
+                    else if (ttsStatusRef.current === 'paused') resumeTTS();
+                    else playTTS();
                   } else if (action === 'toggleMute') {
                     setIsMuted((prev) => !prev);
                   } else if (action === 'openChat') {
                     setShowChat(true);
+                  } else if (action.startsWith('phaseGo:')) {
+                    const phaseKey = action.split(':')[1];
+                    if (phaseKey && ['intro', 'explanation', 'outro', 'quiz'].includes(phaseKey)) {
+                      setPhase(phaseKey);
+                    }
                   }
                 } catch (err) {
                   console.warn('[KrpanoUI] Failed to handle action from immersive UI:', action, err);

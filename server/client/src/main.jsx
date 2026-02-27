@@ -8,7 +8,7 @@ import { productionLogger } from './services/productionLogger';
 (function applyInitialTheme() {
   if (typeof document === 'undefined') return;
   const stored = localStorage.getItem('theme');
-  const next = stored === 'light' || stored === 'dark' ? stored : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = stored === 'light' || stored === 'dark' ? stored : 'dark';
   document.documentElement.classList.toggle('light', next === 'light');
 })();
 import './utils/consoleLogger'; // Initialize enhanced console logging

@@ -176,8 +176,8 @@
       return meshes;
     }
 
-    // Process a raycast hit on the UI panel (with 4px padding for forgiving button hits)
-    var HIT_PADDING = 4;
+    // Process a raycast hit on the UI panel (with padding for forgiving button hits, esp. Meta Quest controller)
+    var HIT_PADDING = 6;
     function processUIHit(hit, inputSource) {
       var refs = krpano.immersive_ui_refs;
       if (!refs || !refs.panel || !hit || !hit.uv) return null;
@@ -206,6 +206,9 @@
         krpano.call("immersive_ui_set_layout()");
         hapticForEvent(inputSource, "layout");
         setTimeout(function() { pulseHaptic(inputSource, 0.3, 30); }, 80);
+      } else if (act && act.indexOf("phaseGo:") === 0) {
+        if (window.__krpanoUIAction) window.__krpanoUIAction(act);
+        hapticForEvent(inputSource, "layout");
       } else if (act && act.indexOf("mcqSelect:") === 0) {
         if (window.__krpanoUIAction) window.__krpanoUIAction(act);
         hapticForEvent(inputSource, "select");
@@ -229,6 +232,30 @@
     var lastSelectTime = 0;
     var SELECT_COOLDOWN_MS = 350;
 
+    // One-time attempt to bind session from krpano webvr to Three.js renderer (when main canvas has session)
+    var sessionBindAttempted = false;
+    window.__xrInputResetSessionBind = function() { sessionBindAttempted = false; };
+    function tryBindWebVrSession() {
+      if (sessionBindAttempted) return null;
+      var w = (typeof krpano !== "undefined" && krpano.webvr) ? krpano.webvr : null;
+      if (!w || !w.isenabled) return null;
+      var s = null;
+      try { if (w.session) s = w.session; } catch(e) {}
+      try { if (!s && w.xrSession) s = w.xrSession; } catch(e) {}
+      try { if (!s && w.getSession && typeof w.getSession === "function") s = w.getSession(); } catch(e) {}
+      sessionBindAttempted = true;
+      if (s && renderer.xr && renderer.xr.setSession) {
+        try {
+          renderer.xr.setSession(s);
+          console.log("[XRInput] Bound WebXR session from krpano webvr to Three.js renderer");
+          return s;
+        } catch (err) {
+          console.warn("[XRInput] Could not set session on renderer:", err);
+        }
+      }
+      return null;
+    }
+
     // Main per-frame update
     function xrInputFrame() {
       if (!xi.active) return;
@@ -236,6 +263,15 @@
 
       var session = null;
       try { session = renderer.xr.getSession(); } catch(e) {}
+      // If no session on renderer but webvr is in VR, try once to bind krpano's session to this renderer
+      if (!session && krpano.webvr && krpano.webvr.isenabled) {
+        var bound = tryBindWebVrSession();
+        if (bound) {
+          // Session was just set on renderer; wait one frame for getController/getFrame to be ready
+          requestAnimationFrame(xrInputFrame);
+          return;
+        }
+      }
       if (!session) {
         reticleMesh.visible = false;
         gazeRingMesh.visible = false;
@@ -417,12 +453,12 @@
       requestAnimationFrame(xrInputFrame);
     }
 
-    // Listen for VR session start/end
+    // Listen for VR session start/end (when Three.js renderer receives the session)
     try {
       renderer.xr.addEventListener("sessionstart", function() {
         xi.active = true;
         xrInputFrame();
-        console.log("[XRInput] VR session started, input loop active");
+        console.log("[XRInput] VR session started (sessionstart), input loop active");
       });
       renderer.xr.addEventListener("sessionend", function() {
         xi.active = false;
@@ -433,6 +469,12 @@
     } catch(e) {
       console.warn("[XRInput] Could not attach session listeners:", e);
     }
+
+    // Start the frame loop immediately so we don't rely on sessionstart (session may be
+    // bound to a different renderer; we poll for session every frame).
+    xi.active = true;
+    xrInputFrame();
+    console.log("[XRInput] Frame loop started (polling for session when in VR)");
 
     // Also expose haptic function globally so immersive_ui can trigger haptics
     window.__xrHaptic = function(eventType) {
@@ -461,6 +503,11 @@
       krpano.call("xr_input_start()");
     }
     setTimeout(tryStart, 1000);
+  ]]></action>
+
+  <!-- Called by webvr when user enters VR so we retry binding session to Three.js renderer -->
+  <action name="xr_input_onentervr" type="js"><![CDATA[
+    if (window.__xrInputResetSessionBind) window.__xrInputResetSessionBind();
   ]]></action>
 
 </krpano>

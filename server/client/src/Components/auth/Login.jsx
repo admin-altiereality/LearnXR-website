@@ -2,13 +2,8 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import {
     FaArrowLeft,
-    FaArrowRight,
     FaChalkboardTeacher,
-    FaEnvelope,
-    FaEye,
-    FaEyeSlash,
     FaGoogle,
-    FaLock,
     FaMoon,
     FaRocket,
     FaSchool,
@@ -28,18 +23,13 @@ import { learnXRFontStyle, TrademarkSymbol } from '../LearnXRTypography';
 import { Button } from '../ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import FuturisticBackground from '../FuturisticBackground';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { Separator } from '../ui/separator';
 
 export const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState('role-select');
-  const { login, loginWithGoogle, loginAsGuestStudent, user, profile, selectedRole, setSelectedRole } = useAuth();
+  const { loginWithGoogle, user, profile, selectedRole, setSelectedRole } = useAuth();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
 
@@ -94,38 +84,13 @@ export const Login = () => {
     setError('');
   };
 
-  const handleGuestLogin = async () => {
+  const handleGoogleLogin = async (isDemo = false) => {
     setIsLoading(true);
     setError('');
     try {
-      await loginAsGuestStudent();
+      await loginWithGoogle(selectedRole, isDemo ? { isDemo: true } : undefined);
     } catch (err) {
-      setError(err?.message || 'Could not start guest session. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    try {
-      setError('');
-      await login(email, password);
-    } catch (err) {
-      setError('Failed to login. ' + err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    try {
-      setError('');
-      await loginWithGoogle(selectedRole);
-    } catch (err) {
-      setError('Failed to login with Google. ' + err.message);
+      setError(err?.message || 'Failed to sign in with Google. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -161,7 +126,7 @@ export const Login = () => {
       <button
         type="button"
         onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
+        className="invisible pointer-events-none fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
         aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       >
@@ -252,28 +217,6 @@ export const Login = () => {
                       <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4 group-hover:opacity-100" aria-hidden />
                     </motion.button>
 
-                    <Separator className="my-0.5 bg-border" />
-                    <motion.button
-                      type="button"
-                      onClick={handleGuestLogin}
-                      disabled={isLoading}
-                      className="group w-full p-2.5 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 transition-all duration-300 flex items-center gap-2.5 text-left disabled:opacity-70 shrink-0"
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.99 }}
-                    >
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shrink-0 shadow-lg">
-                        <FaRocket className="text-sm sm:text-base text-primary-foreground" />
-                      </div>
-                      <div className="text-left min-w-0 flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-foreground">Explore as guest</h3>
-                        <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-2">Try one lesson — no account or school code needed</p>
-                      </div>
-                      {isLoading ? (
-                        <span className="animate-pulse text-sm text-muted-foreground shrink-0">Starting...</span>
-                      ) : (
-                        <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4" aria-hidden />
-                      )}
-                    </motion.button>
                     </div>
                   </div>
                   <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
@@ -330,7 +273,7 @@ export const Login = () => {
                     <div className="mt-3 grid grid-cols-1 gap-2">
                       <motion.button
                         type="button"
-                        onClick={handleGoogleLogin}
+                        onClick={() => handleGoogleLogin(false)}
                         disabled={isLoading}
                         className="w-full flex items-center justify-center gap-3 rounded-xl py-3.5 font-medium bg-card border-2 border-border text-foreground hover:border-primary/40 hover:bg-accent/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                         whileHover={{ scale: 1.01 }}
@@ -339,87 +282,23 @@ export const Login = () => {
                         <FaGoogle className="h-5 w-5" />
                         <span>Continue with Google</span>
                       </motion.button>
-                    </div>
-
-                    <div className="flex items-center gap-3 my-2">
-                      <div className="h-px flex-1 bg-border" />
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">or with email</span>
-                      <div className="h-px flex-1 bg-border" />
-                    </div>
-
-                    <form onSubmit={handleSubmit} className="space-y-2 flex-1 min-h-0 flex flex-col min-h-0">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="login-email" className="text-xs">Email</Label>
-                        <div className="relative">
-                          <FaEnvelope className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                          <Input
-                            id="login-email"
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="you@example.com"
-                            required
-                            disabled={isLoading}
-                            className="pl-10 pr-4 rounded-xl border-border bg-card/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/30 focus-visible:border-primary/50"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="login-password" className="text-xs">Password</Label>
-                        <div className="relative">
-                          <FaLock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                          <Input
-                            id="login-password"
-                            type={showPassword ? 'text' : 'password'}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Enter your password"
-                            required
-                            disabled={isLoading}
-                            className="pl-10 pr-12 rounded-xl border-border bg-card/50 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/30 focus-visible:border-primary/50"
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="absolute right-0 top-0 h-full w-10 min-w-[2.5rem] px-3 text-muted-foreground hover:text-foreground"
-                            onClick={() => setShowPassword(!showPassword)}
-                            aria-label={showPassword ? 'Hide password' : 'Show password'}
-                          >
-                            {showPassword ? <FaEyeSlash className="h-4 w-4" /> : <FaEye className="h-4 w-4" />}
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end pt-0.5">
-                        <Link
-                          to="/forgot-password"
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      {selectedRole === 'student' && (
+                        <motion.button
+                          type="button"
+                          onClick={() => handleGoogleLogin(true)}
+                          disabled={isLoading}
+                          className="w-full flex items-center justify-center gap-3 rounded-xl py-3 font-medium border-2 border-dashed border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10 hover:border-primary/60 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
                         >
-                          Forgot Password?
-                        </Link>
-                      </div>
-
-                      <motion.button
-                        type="submit"
-                        disabled={isLoading}
-                        className="relative w-full rounded-xl py-3 font-semibold text-sm text-primary-foreground overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed bg-primary hover:opacity-95 transition-opacity shrink-0"
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                      >
-                        <span className="relative flex items-center justify-center gap-2">
-                          {isLoading ? (
-                            <span className="animate-pulse">Signing in...</span>
-                          ) : (
-                            <>
-                              <span>Sign In</span>
-                              <FaArrowRight className="h-4 w-4" />
-                            </>
-                          )}
-                        </span>
-                      </motion.button>
-                    </form>
+                          <FaRocket className="h-4 w-4 text-primary" />
+                          <span>Try Demo with Google</span>
+                        </motion.button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      Sign in with Google is required to use LearnXR.
+                    </p>
                   </div>
 
                   <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">

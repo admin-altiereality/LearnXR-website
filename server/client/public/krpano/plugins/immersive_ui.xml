@@ -14,8 +14,103 @@
     if (enabled === false || enabled === "false" || enabled === "0" || krpano.immersive_ui_initialized) return;
     krpano.immersive_ui_initialized = true;
     if (!krpano.immersive_ui_refs) {
-      krpano.immersive_ui_refs = { panel: null, buttonRegions: [], state: {} };
+      krpano.immersive_ui_refs = { panel: null, buttonRegions: [], state: {}, gazeHotspotNames: [] };
     }
+  ]]></action>
+
+  <!--
+    Gaze interactor: fixed button regions in canvas space (CW=2048, CH=1280).
+    Convert to world (tx,ty,tz) using panel position and size 4.8 x 3.
+  -->
+  <action name="immersive_ui_create_gaze_hotspots" type="js"><![CDATA[
+    var refs = krpano.immersive_ui_refs;
+    if (!refs || !refs.layouts) return;
+    var layout = refs.currentLayout || "lecture";
+    var p = refs.layouts[layout] && refs.layouts[layout].panel;
+    if (!p) return;
+    var CW = 2048, CH = 1280;
+    var panelW = 4.8, panelH = 3;
+
+    function canvasToWorld(cx, cy) {
+      var dx = ((cx / CW) - 0.5) * panelW;
+      var dy = (0.5 - (cy / CH)) * panelH;
+      return { tx: p.tx + dx, ty: p.ty + dy, tz: p.tz };
+    }
+
+    var regions = [
+      { name: "iu_gaze_phase_intro",    x: 570,  y: 50,  w: 200, h: 48, action: "phaseGo:intro" },
+      { name: "iu_gaze_phase_learn",    x: 806,  y: 50,  w: 200, h: 48, action: "phaseGo:explanation" },
+      { name: "iu_gaze_phase_summary",  x: 942,  y: 50,  w: 200, h: 48, action: "phaseGo:outro" },
+      { name: "iu_gaze_phase_quiz",     x: 1078, y: 50,  w: 200, h: 48, action: "phaseGo:quiz" },
+      { name: "iu_gaze_layout_lecture", x: 1590, y: 56,  w: 130, h: 34, action: "layoutToggle:lecture" },
+      { name: "iu_gaze_layout_podium",  x: 1738, y: 56,  w: 130, h: 34, action: "layoutToggle:podium" },
+      { name: "iu_gaze_layout_museum",  x: 1886, y: 56,  w: 130, h: 34, action: "layoutToggle:museum" },
+      { name: "iu_gaze_replay",         x: 60,   y: 1090, w: 220, h: 72, action: "replay" },
+      { name: "iu_gaze_tts",            x: 304, y: 1090, w: 160, h: 72, action: "ttsToggle" },
+      { name: "iu_gaze_skip_quiz",      x: 884, y: 1090, w: 280, h: 72, action: "skipToQuiz" },
+      { name: "iu_gaze_next_stage",     x: 1384, y: 1090, w: 200, h: 72, action: "continue" },
+      { name: "iu_gaze_continue",       x: 1608, y: 1090, w: 380, h: 72, action: "continue" },
+      { name: "iu_gaze_done",           x: 864,  y: 1100, w: 320, h: 72, action: "continue" },
+      { name: "iu_gaze_mcq_btn",        x: 844,  y: 1050, w: 360, h: 72, action: "mcqSubmitOrNext" }
+    ];
+
+    var transparentUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    refs.gazeHotspotNames = [];
+
+    for (var i = 0; i < regions.length; i++) {
+      var r = regions[i];
+      var c = canvasToWorld(r.x + r.w / 2, r.y + r.h / 2);
+      try {
+        var hs = krpano.get("hotspot[" + r.name + "]");
+        if (!hs) {
+          krpano.call("addhotspot(" + r.name + ")");
+        }
+        krpano.set("hotspot[" + r.name + "].url", transparentUrl);
+        krpano.set("hotspot[" + r.name + "].alpha", 0.01);
+        krpano.set("hotspot[" + r.name + "].width", Math.max(40, r.w / 4));
+        krpano.set("hotspot[" + r.name + "].height", Math.max(24, r.h / 4));
+        krpano.set("hotspot[" + r.name + "].torigin", "world");
+        krpano.set("hotspot[" + r.name + "].tx", c.tx);
+        krpano.set("hotspot[" + r.name + "].ty", c.ty);
+        krpano.set("hotspot[" + r.name + "].tz", c.tz);
+        krpano.set("hotspot[" + r.name + "].dataaction", r.action);
+        krpano.set("hotspot[" + r.name + "].onclick", "js(immersive_ui_gaze_click('" + r.name.replace(/'/g, "\\'") + "'));");
+        krpano.set("hotspot[" + r.name + "].keep", true);
+        krpano.set("hotspot[" + r.name + "].zorder", "1");
+        refs.gazeHotspotNames.push(r.name);
+      } catch (e) { console.warn("[ImmersiveUI] Gaze hotspot " + r.name + ":", e); }
+    }
+
+    krpano.call("immersive_ui_gaze_update_visibility()");
+    console.log("[ImmersiveUI] Gaze hotspots created:", refs.gazeHotspotNames.length);
+  ]]></action>
+
+  <action name="immersive_ui_gaze_click" type="js" args="hotspotName"><![CDATA[
+    var name = hotspotName;
+    if (!name) return;
+    var action = null;
+    try { action = krpano.get("hotspot[" + name + "].dataaction"); } catch(e) {}
+    if (!action) return;
+    if (action.indexOf("layoutToggle:") === 0) {
+      window.__krpanoLayoutToSet = action.split(":")[1];
+      krpano.call("immersive_ui_set_layout()");
+    }
+    if (window.__krpanoUIAction) window.__krpanoUIAction(action);
+  ]]></action>
+
+  <action name="immersive_ui_gaze_update_visibility" type="js"><![CDATA[
+    var refs = krpano.immersive_ui_refs;
+    if (!refs || !refs.gazeHotspotNames) return;
+    var show = !!(window.__showImmersiveUI === true && krpano.webvr && (krpano.webvr.isenabled === true || krpano.webvr.isenabled === "true" || krpano.webvr.isenabled === "1"));
+    for (var i = 0; i < refs.gazeHotspotNames.length; i++) {
+      try {
+        krpano.set("hotspot[" + refs.gazeHotspotNames[i] + "].visible", show);
+      } catch (e) {}
+    }
+  ]]></action>
+
+  <action name="immersive_ui_gaze_update_positions" type="js"><![CDATA[
+    krpano.call("immersive_ui_create_gaze_hotspots()");
   ]]></action>
 
   <!-- ===== BUILD ===== -->
@@ -883,6 +978,15 @@
 
       drawLayoutToggle();
 
+      // Phase stepper pills: add click regions (after other regions so they are not cleared)
+      var stepW = 200, gap = 36, stepH = 48, Y = 50;
+      var totalW = STEPS.length * stepW + (STEPS.length - 1) * gap;
+      var startX = (CW - totalW) / 2;
+      for (var i = 0; i < STEPS.length; i++) {
+        var sx = startX + i * (stepW + gap);
+        refs.buttonRegions.push({ x: sx, y: Y, w: stepW, h: stepH, action: "phaseGo:" + STEPS[i].key });
+      }
+
       texture.needsUpdate = true;
     }
 
@@ -919,6 +1023,7 @@
         var wv = krpano.webvr;
         var enabled = !!(wv && (wv.isenabled === true || wv.isenabled === "true" || wv.isenabled === "1"));
         mesh.visible = !!(showFlag && enabled);
+        if (typeof krpano.call === "function") krpano.call("immersive_ui_gaze_update_visibility()");
       } catch(e) {
         mesh.visible = false;
       }
@@ -926,6 +1031,9 @@
 
     updateVisibility();
     refs.updateVisibility = updateVisibility;
+
+    // Create gaze hotspots so krpano's built-in gaze/VR cursor can click the UI
+    try { krpano.call("immersive_ui_create_gaze_hotspots()"); } catch(e) { console.warn("[ImmersiveUI] Gaze hotspots:", e); }
     try {
       if (!refs.visibilityTimer) {
         refs.visibilityTimer = setInterval(updateVisibility, 800);
@@ -1037,6 +1145,9 @@
             window.__krpanoLayoutToSet = lname;
             krpano.call("immersive_ui_set_layout()");
             if (window.__xrHaptic) window.__xrHaptic("layout");
+          } else if (act && act.indexOf("phaseGo:") === 0) {
+            if (window.__krpanoUIAction) window.__krpanoUIAction(act);
+            if (window.__xrHaptic) window.__xrHaptic("layout");
           } else if (window.__krpanoUIAction) {
             window.__krpanoUIAction(act);
             if (window.__xrHaptic) {
@@ -1095,6 +1206,7 @@
     }
 
     if (refs.panel && refs.panel.draw) refs.panel.draw();
+    krpano.call("immersive_ui_gaze_update_positions()");
   ]]></action>
 
 </krpano>

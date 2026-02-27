@@ -13,7 +13,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'fire
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
-import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
+import { FaArrowRight, FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Badge } from '../../Components/ui/badge';
@@ -413,33 +413,60 @@ const StudentDashboard = () => {
 
         {/* Join class session - students only */}
         {!isGuest && (
-          <Card className="mb-8 rounded-xl border-primary/30 border bg-card">
-            <CardContent className="p-4">
+          <Card className="mb-8 rounded-xl border-primary/30 border bg-card shadow-sm overflow-hidden">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <FaChalkboardTeacher className="text-primary text-lg" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">Join a class session</CardTitle>
+                  <CardDescription className="text-sm mt-0.5">
+                    Enter the code your teacher shared, or see active classes from your school.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
               {!joinedSessionId ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Join class session (enter code from your teacher):</span>
-                  <Input
-                    type="text"
-                    value={sessionCodeInput}
-                    onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
-                    placeholder="e.g. ABC123"
-                    className="w-28 font-mono uppercase tracking-wider bg-background border-border"
-                    maxLength={8}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      const ok = await joinSession(sessionCodeInput.trim());
-                      if (ok) setSessionCodeInput('');
-                    }}
-                    disabled={sessionJoinLoading || !sessionCodeInput.trim()}
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
+                    <div className="flex-1 min-w-0">
+                      <label htmlFor="session-code" className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                        Session code
+                      </label>
+                      <Input
+                        id="session-code"
+                        type="text"
+                        value={sessionCodeInput}
+                        onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
+                        placeholder="e.g. ABC123"
+                        className="w-full sm:w-36 font-mono uppercase tracking-wider bg-background border-border"
+                        maxLength={8}
+                      />
+                    </div>
+                    <Button
+                      className="shrink-0"
+                      onClick={async () => {
+                        const ok = await joinSession(sessionCodeInput.trim());
+                        if (ok) setSessionCodeInput('');
+                      }}
+                      disabled={sessionJoinLoading || !sessionCodeInput.trim()}
+                    >
+                      {sessionJoinLoading ? 'Joining...' : 'Join session'}
+                    </Button>
+                  </div>
+                  <Link
+                    to="/join-class"
+                    className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline font-medium"
                   >
-                    {sessionJoinLoading ? 'Joining...' : 'Join'}
-                  </Button>
+                    See active classes from my school
+                    <FaArrowRight className="w-3.5 h-3.5" />
+                  </Link>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm text-primary font-medium">Joined. Waiting for teacher to launch a lesson...</span>
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
+                  <span className="text-sm text-primary font-medium">You&apos;re in a session. Waiting for your teacher to launch a lesson...</span>
                   <Button size="sm" variant="outline" onClick={leaveSessionAsStudent}>
                     Leave session
                   </Button>

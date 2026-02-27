@@ -172,6 +172,7 @@ service cloud.firestore {
     
     // Users collection - users can read/write their own data
     // Hierarchical approval system: teachers can approve students, schools can approve teachers, admins approve schools
+    // Demo users (isDemo: true, signed in with Google) have same access as regular users; owner may set isDemo and demoLocation
     match /users/{userId} {
       // Allow read if:
       // 1. User is reading their own document, OR
