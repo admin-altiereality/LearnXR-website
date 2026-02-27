@@ -1054,7 +1054,6 @@ const VRLessonPlayerInner = () => {
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
   const [isQuestDevice, setIsQuestDevice] = useState(false);
-  const [showEnterVROverlay, setShowEnterVROverlay] = useState(true);
   const [lastHotspotClicked, setLastHotspotClicked] = useState<string | null>(null);
 
   // Skybox State
@@ -1416,9 +1415,19 @@ const VRLessonPlayerInner = () => {
     }
   }, [skyboxLoading, skyboxData]);
 
-  // Detect Meta Quest so we can show "Enter VR" overlay
+  // Detect Meta Quest / mobile so we can configure immersive UI visibility
   useEffect(() => {
-    setIsQuestDevice(isMetaQuestBrowser());
+    const quest = isMetaQuestBrowser();
+    setIsQuestDevice(quest);
+
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+
+    try {
+      (window as any).__showImmersiveUI = quest || isMobile;
+    } catch (e) {
+      // ignore if window is not available
+    }
   }, []);
 
   // Embed krpano when we have skybox and container is mounted (with or without 3D assets; 3D via threejs plugin)
@@ -1558,33 +1567,25 @@ const VRLessonPlayerInner = () => {
               }) => void }).__krpanoUIUpdate = (state) => {
                 const viewer = krpanoViewerRef.current;
                 if (!viewer?.call) return;
-                const escapeArg = (value: string) =>
-                  String(value ?? '')
-                    .replace(/\\/g, '\\\\')
-                    .replace(/'/g, "\\'")
-                    .replace(/\r?\n/g, ' ');
-                const phase = escapeArg(state.phase);
-                const script = escapeArg(state.script);
-                const ttsStatus = escapeArg(state.ttsStatus);
-                const question = escapeArg(state.question);
-                const optionsJoined = escapeArg(state.options.join('||'));
-                const showQuiz = state.showQuiz ? 'true' : 'false';
-                const showResult = state.showResult ? 'true' : 'false';
-                const scoreLabel = escapeArg(state.scoreLabel);
-                const selAnswer = String(state.selectedAnswer ?? -1);
-                const waiting = state.waitingForUser ? 'true' : 'false';
-                const playing = state.isPlayingAudio ? 'true' : 'false';
-                const mcqIdx = String(state.currentMcqIndex ?? 0);
-                const mcqTotal = String(state.totalMcqs ?? 0);
-                const correctAns = String(state.correctAnswer ?? -1);
-                const explanationStr = escapeArg(state.explanation);
-                const actionStr =
-                  `immersive_ui_update('${phase}','${script}','${ttsStatus}','${question}',` +
-                  `'${optionsJoined}','${showQuiz}','${showResult}','${scoreLabel}',` +
-                  `'${selAnswer}','${waiting}','${playing}','${mcqIdx}','${mcqTotal}',` +
-                  `'${correctAns}','${explanationStr}')`;
+                (window as unknown as Record<string, unknown>).__krpanoUIState = {
+                  phase: state.phase ?? 'intro',
+                  script: state.script ?? '',
+                  ttsStatus: state.ttsStatus ?? 'idle',
+                  question: state.question ?? '',
+                  options: state.options.join('||'),
+                  showQuiz: state.showQuiz === true,
+                  showResult: state.showResult === true,
+                  scoreLabel: state.scoreLabel ?? '',
+                  selectedAnswer: state.selectedAnswer ?? -1,
+                  waitingForUser: state.waitingForUser === true,
+                  isPlayingAudio: state.isPlayingAudio === true,
+                  currentMcqIndex: state.currentMcqIndex ?? 0,
+                  totalMcqs: state.totalMcqs ?? 0,
+                  correctAnswer: state.correctAnswer ?? -1,
+                  explanation: state.explanation ?? '',
+                };
                 try {
-                  viewer.call(actionStr);
+                  viewer.call('immersive_ui_update()');
                 } catch (err) {
                   console.warn('[KrpanoUI] Failed to push immersive UI state:', err);
                 }
@@ -1797,8 +1798,8 @@ const VRLessonPlayerInner = () => {
 
     const lookatByPhase = extraLessonData?.topic?.lookatByPhase as LookatByPhase | undefined;
     const target = lookatByPhase?.[phase];
-    const h = target?.h ?? (phase === 'intro' ? 0 : phase === 'explanation' ? 25 : -20);
-    const v = target?.v ?? (phase === 'intro' ? -5 : phase === 'explanation' ? 0 : -10);
+    const h = target?.h ?? 0;
+    const v = target?.v ?? (phase === 'intro' ? -5 : phase === 'explanation' ? -3 : -5);
     const fov = target?.fov ?? 90;
     const time = 1.5;
 
@@ -3334,48 +3335,6 @@ const VRLessonPlayerInner = () => {
           </div>
         )}
 
-        {/* Meta Quest: Enter VR overlay (krpano view only) */}
-        {isQuestDevice && sceneReady && skyboxImageUrl && !useIntegratedScene && showEnterVROverlay && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-30">
-            <div className="max-w-sm mx-4 bg-card rounded-2xl border border-primary/30 p-6 text-center shadow-xl">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
-                <Glasses className="w-8 h-8 text-primary" />
-              </div>
-              <h2 className="text-xl font-bold text-foreground mb-2">Enter VR</h2>
-              <p className="text-slate-400 text-sm mb-4">
-                You&apos;re on a VR headset. Tap below to experience this lesson in immersive mode.
-              </p>
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={() => {
-                    const k = krpanoViewerRef.current;
-                    if (k?.call) {
-                      try {
-                        k.call('webvr.enterVR');
-                        setShowEnterVROverlay(false);
-                      } catch (e) {
-                        console.warn('[Krpano] webvr.enterVR failed:', e);
-                      }
-                    } else {
-                      setShowEnterVROverlay(false);
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl
-                           bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-colors"
-                >
-                  <Glasses className="w-5 h-5" />
-                  Enter VR
-                </button>
-                <button
-                  onClick={() => setShowEnterVROverlay(false)}
-                  className="w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Continue in 2D
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Teacher: you control where the class looks */}
@@ -3591,30 +3550,83 @@ const VRLessonPlayerInner = () => {
                 )}
               </div>
 
-              {/* Start Button - enabled only when skybox, 3D assets, and TTS are ready */}
-              <motion.button
-                onClick={handleStartLesson}
-                disabled={!allReady}
-                whileHover={allReady ? { scale: 1.02 } : undefined}
-                whileTap={allReady ? { scale: 0.98 } : undefined}
-                className={`w-full flex items-center justify-center gap-3 px-8 py-4 
-                         text-lg font-bold rounded-xl transition-all duration-300
-                         ${allReady
-                  ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer'
-                  : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}
-              >
-                {allReady ? (
-                  <>
-                    <Play className="w-6 h-6" />
-                    Start Lesson
-                  </>
-                ) : (
-                  <>
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                    Loading...
-                  </>
-                )}
-              </motion.button>
+              {/* Start Buttons - enabled only when skybox, 3D assets, and TTS are ready */}
+              {isQuestDevice ? (
+                <div className="space-y-3">
+                  <motion.button
+                    onClick={() => {
+                      if (!allReady) return;
+                      const k = krpanoViewerRef.current;
+                      if (k?.call) {
+                        try {
+                          k.call('webvr.enterVR');
+                        } catch (e) {
+                          console.warn('[Krpano] webvr.enterVR failed:', e);
+                        }
+                      }
+                      handleStartLesson();
+                    }}
+                    disabled={!allReady}
+                    whileHover={allReady ? { scale: 1.02 } : undefined}
+                    whileTap={allReady ? { scale: 0.98 } : undefined}
+                    className={`w-full flex items-center justify-center gap-3 px-8 py-4 
+                             text-lg font-bold rounded-xl transition-all duration-300
+                             ${allReady
+                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer'
+                      : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}
+                  >
+                    {allReady ? (
+                      <>
+                        <Play className="w-6 h-6" />
+                        Start Lesson in VR
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 className="w-6 h-6 animate-spin" />
+                        Preparing VR experience...
+                      </>
+                    )}
+                  </motion.button>
+
+                  <button
+                    disabled={!allReady}
+                    onClick={() => {
+                      if (!allReady) return;
+                      handleStartLesson();
+                    }}
+                    className={`w-full px-4 py-2 text-sm rounded-lg border transition-colors
+                      ${allReady
+                        ? 'border-slate-600 text-slate-200 hover:bg-slate-800/80'
+                        : 'border-slate-700 text-slate-500 cursor-not-allowed'}`}
+                  >
+                    Or continue in 2D
+                  </button>
+                </div>
+              ) : (
+                <motion.button
+                  onClick={handleStartLesson}
+                  disabled={!allReady}
+                  whileHover={allReady ? { scale: 1.02 } : undefined}
+                  whileTap={allReady ? { scale: 0.98 } : undefined}
+                  className={`w-full flex items-center justify-center gap-3 px-8 py-4 
+                           text-lg font-bold rounded-xl transition-all duration-300
+                           ${allReady
+                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer'
+                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}
+                >
+                  {allReady ? (
+                    <>
+                      <Play className="w-6 h-6" />
+                      Start Lesson
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                      Loading...
+                    </>
+                  )}
+                </motion.button>
+              )}
 
               {/* Back button */}
               <button

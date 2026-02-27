@@ -9,7 +9,8 @@
     "build": "tsup",
     "build:client": "cd client && npm install && npm run build",
     "build:hosting": "npm --prefix server/client run build",
-    "deploy:preview": "npm run build:hosting && firebase use learnxr-evoneuralai && firebase hosting:channel:deploy testing"
+    "deploy:preview": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy testing",
+    "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav"
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.1",

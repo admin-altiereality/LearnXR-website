@@ -155,10 +155,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
+  const xrInputIncludeUrl = pluginUrl(origin, basePath, 'xr_input.xml');
+  const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
-      // Immersive lesson UI (world-space floating panel for scripts + quizzes)
-      `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n`
+      `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(xrInputIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n`
     : '';
 
   // Three.js plugin + controls3d + drag3d when we have 3D assets, avatar, or WebVR (immersive UI)
@@ -190,9 +193,9 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     .map((url, i) => {
       const safeUrl = escapeXml(url);
       const name = `asset_${i}`;
-      const tx = 60 + (i % 3 - 1) * 50;
-      const ty = -40;
-      const tz = 300 + Math.floor(i / 3) * 80;
+      const tx = 60 + (i % 3 - 1) * 40;
+      const ty = -30;
+      const tz = 150 + Math.floor(i / 3) * 50;
       return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="${ty}" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
     })
     .join('\n');
@@ -201,13 +204,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     ? (avatarModelUrl.startsWith('http') ? avatarModelUrl : `${(origin || '').replace(/\/$/, '')}${avatarModelUrl.startsWith('/') ? '' : '/'}${avatarModelUrl}`.trim())
     : '';
   const teacherAvatarHotspot = hasAvatar && avatarUrlResolved
-    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="0" ty="-80" tz="300" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />\n`
+    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="-80" ty="-60" tz="180" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />\n`
     : '';
   const threeJsHotspotsSection = threeJsHotspotBlocks || teacherAvatarHotspot ? '\n' + (teacherAvatarHotspot + threeJsHotspotBlocks) + '\n' : '';
 
   // Immersive UI: single unified panel at back wall (tz=350); click detection via raycasting in immersive_ui_panel_click.
   const iuPanel =
-    '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="-30" tz="350" hittest="true" keep="true" onloaded="immersive_ui_build_hotspot();" onclick="immersive_ui_panel_click();" />';
+    '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="10" tz="250" hittest="true" keep="true" onloaded="immersive_ui_build_hotspot();" onclick="immersive_ui_panel_click();" />';
   const immersiveUiThreeJsHotspotsSection =
     webvr && needThreeJs
       ? '\n' + iuPanel + '\n'
