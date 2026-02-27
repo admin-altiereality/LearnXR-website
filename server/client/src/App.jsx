@@ -65,6 +65,7 @@ import VRLessonPlayer from './screens/VRLessonPlayer';
 import VRLessonPlayerKrpano from './screens/VRLessonPlayerKrpano';
 import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 import StudentDashboard from './screens/dashboard/StudentDashboard';
+import JoinClassPage from './screens/dashboard/JoinClassPage';
 import TeacherDashboard from './screens/dashboard/TeacherDashboard';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
 import SchoolDashboard from './screens/dashboard/SchoolDashboard';
@@ -978,6 +979,7 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/join-class" element={<JoinClassPage />} />
                       <Route path="/dashboard/teacher" element={
                         <ProtectedRoute>
                           <RoleGuard allowedRoles={['teacher']}>

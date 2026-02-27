@@ -57,7 +57,7 @@ import {
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
 
-// Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
+// Student demo view (guest or student with isDemo): only lessons marked as demo by superadmin appear; first is unlocked, rest blurred
 const GUEST_DEMO_CHAPTERS_LIMIT = 200; // Max chapters to scan for demo topics (client-side filter)
 
 // Content indicators (simple badges) - Memoized; theme tokens
@@ -483,6 +483,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const isStudent = profile?.role === 'student';
   const isTeacher = profile?.role === 'teacher';
   const isGuest = !!(profile?.isGuest === true && profile?.role === 'student');
+  // Student demo view: guest OR student who logged in with "Try demo" (isDemo) — only show lessons marked as demo by superadmin
+  const isStudentDemoView = isGuest || (isStudent && profile?.isDemo === true);
 
   // Guest: logout then navigate so user can sign up or log in with a full account
   const handleGuestSignup = useCallback(async () => {
@@ -671,23 +673,23 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
     
-    // Guest: fetch a bounded set of chapters; we will filter to demo-only topics in groupedTopicsByChapter
-    if (isGuest) {
+    // Guest or student demo view: fetch a bounded set of chapters; we will filter to demo-only topics in groupedTopicsByChapter
+    if (isStudentDemoView) {
       effectiveCurriculum = null;
       effectiveClass = null;
     }
     
-    // Wait for classes to load if user is student/teacher (not guest) and classes are expected
-    if ((isStudent || isTeacher) && !isGuest && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
+    // Wait for classes to load if user is student/teacher (not in demo view) and classes are expected
+    if ((isStudent || isTeacher) && !isStudentDemoView && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
       console.log('⏳ Lessons: Waiting for student classes to load', { role: 'student', profileClassIds: profile?.class_ids?.length });
       return;
     }
-    if ((isStudent || isTeacher) && profile?.managed_class_ids?.length > 0 && isTeacher && teacherClasses.length === 0) {
+    if ((isStudent || isTeacher) && !isStudentDemoView && profile?.managed_class_ids?.length > 0 && isTeacher && teacherClasses.length === 0) {
       console.log('⏳ Lessons: Waiting for teacher classes to load', { role: 'teacher', profileClassIds: profile?.managed_class_ids?.length });
       return;
     }
     
-    if ((isStudent || isTeacher) && !isGuest && userClasses.length > 0) {
+    if ((isStudent || isTeacher) && !isStudentDemoView && userClasses.length > 0) {
       // Use the first class's curriculum and class number
       const firstClass = userClasses[0];
       if (!effectiveCurriculum && firstClass.curriculum) {
@@ -712,8 +714,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
-    // For students and teachers (not guest): require both curriculum and class to be set
-    if ((isStudent || isTeacher) && !isGuest && (!effectiveCurriculum || !effectiveClass)) {
+    // For students and teachers (not in demo view): require both curriculum and class to be set
+    if ((isStudent || isTeacher) && !isStudentDemoView && (!effectiveCurriculum || !effectiveClass)) {
       console.log(`⚠️ ${isStudent ? 'Student' : 'Teacher'} lessons: Missing curriculum or class filter`, {
         effectiveCurriculum,
         effectiveClass,
@@ -727,10 +729,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
     
     // Note: We filter by topic-level approval in groupedTopicsByChapter
-    // For guest: fetch bounded set of chapters (no curriculum/class filter), then filter to demo-only topics client-side
+    // For guest/demo view: fetch bounded set of chapters (no curriculum/class filter), then filter to demo-only topics client-side
     const chaptersRef = collection(db, 'curriculum_chapters');
     let chaptersQuery;
-    if (isGuest) {
+    if (isStudentDemoView) {
       chaptersQuery = query(chaptersRef, limit(GUEST_DEMO_CHAPTERS_LIMIT));
     } else if (constraints.length > 0) {
       chaptersQuery = query(chaptersRef, ...constraints);
@@ -796,7 +798,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isGuest, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isStudentDemoView, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -885,22 +887,22 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Extract all topics from chapters
     const allTopics = [];
     
-    // For students and teachers (not guest): get class numbers and curriculum from their classes
+    // For students and teachers (not in demo view): get class numbers and curriculum from their classes
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
-    const userClassNumbers = !isGuest && (isStudent || isTeacher) && userClasses.length > 0
+    const userClassNumbers = !isStudentDemoView && (isStudent || isTeacher) && userClasses.length > 0
       ? userClasses.map(c => {
           const match = c.class_name?.match(/\d+/);
           return match ? parseInt(match[0]) : null;
         }).filter(Boolean)
       : [];
     
-    const userCurricula = !isGuest && (isStudent || isTeacher) && userClasses.length > 0
+    const userCurricula = !isStudentDemoView && (isStudent || isTeacher) && userClasses.length > 0
       ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
       : [];
     
     chapters.forEach(chapter => {
-      // For students and teachers (not guest): filter by their class numbers AND curriculum
-      if (!isGuest && (isStudent || isTeacher)) {
+      // For students and teachers (not in demo view): filter by their class numbers AND curriculum
+      if (!isStudentDemoView && (isStudent || isTeacher)) {
         // If user has classes, only show chapters matching their classes
         if (userClassNumbers.length > 0) {
           if (!userClassNumbers.includes(chapter.class)) {
@@ -924,8 +926,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
         chapter.topics.forEach(topic => {
           // For /lessons page:
           // - Admins/superadmins can see ALL topics (for approval management)
-          // - Guest: only topics marked as demo AND approved
-          // - Students/teachers: APPROVED topics (by class/curriculum)
+          // - Student demo view (guest or student with isDemo): only topics marked as demo by superadmin AND approved
+          // - Students/teachers (full view): APPROVED topics (by class/curriculum)
           const approval = topic.approval || {};
           const isTopicApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
           const isChapterApproved = chapter.approved === true;
@@ -939,8 +941,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
               topic,
               chapter,
             });
-          } else if (isGuest) {
-            // Guest: only show topics marked as demo and approved
+          } else if (isStudentDemoView) {
+            // Student demo view: only show lessons marked as demo by superadmin and approved; rest stay hidden (not in list)
             if (isDemoTopic && shouldShowTopic) {
               allTopics.push({
                 topic,
@@ -1026,7 +1028,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     return sortedGroups;
-  }, [chapters, canApprove, isStudent, isTeacher, isGuest, studentClasses, teacherClasses]);
+  }, [chapters, canApprove, isStudent, isTeacher, isStudentDemoView, studentClasses, teacherClasses]);
   
   // Flatten grouped topics into lesson items for display
   const lessonItems = useMemo(() => {
@@ -1079,12 +1081,12 @@ const Lessons = ({ setBackgroundSkybox }) => {
     return result;
   }, [lessonItems, searchQuery, selectedLanguage]);
 
-  // Guest: only the first lesson is unlocked; key = chapterId_topicId
+  // Student demo view: only the first lesson is unlocked; rest remain blurred; key = chapterId_topicId
   const guestUnlockedLessonKey = useMemo(() => {
-    if (!isGuest || lessonItems.length === 0) return null;
+    if (!isStudentDemoView || lessonItems.length === 0) return null;
     const first = lessonItems[0];
     return `${first.chapter.id}_${first.topic.topic_id}`;
-  }, [isGuest, lessonItems]);
+  }, [isStudentDemoView, lessonItems]);
 
   const toggleChapter = useCallback((chapterId) => {
     setExpandedChapters(prev => {
@@ -2375,10 +2377,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
             <CardContent className="flex flex-col items-center justify-center py-20">
               <BookOpen className="w-16 h-16 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold text-foreground mb-2">
-                {isGuest ? 'No Demo Lessons Available' : 'No Lessons Found'}
+                {isStudentDemoView ? 'No Demo Lessons Available' : 'No Lessons Found'}
               </h3>
               <p className="text-sm text-muted-foreground text-center max-w-sm">
-                {isGuest
+                {isStudentDemoView
                   ? 'Demo lessons are marked by your administrator. Sign up or log in with a full account to see more lessons.'
                   : 'Try adjusting your filters'}
               </p>
@@ -2416,7 +2418,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {groupItems.map((lessonItem, index) => {
                       const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
-                      const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                      const isLockedForGuest = isStudentDemoView && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
                       return (
                       <div
                         key={`${itemKey}_${index}`}
@@ -2470,7 +2472,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   {/* Topic Items */}
                   {groupItems.map((lessonItem, index) => {
                     const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
-                    const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                    const isLockedForGuest = isStudentDemoView && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
                     return (
                     <LessonListItem
                       key={`${itemKey}_${index}`}

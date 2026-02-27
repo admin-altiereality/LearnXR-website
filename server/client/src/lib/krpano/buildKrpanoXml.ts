@@ -156,7 +156,6 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
-  // xr_input.xml not included: VR ray/controller interaction disabled (display-only in VR)
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
@@ -203,7 +202,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     ? (avatarModelUrl.startsWith('http') ? avatarModelUrl : `${(origin || '').replace(/\/$/, '')}${avatarModelUrl.startsWith('/') ? '' : '/'}${avatarModelUrl}`.trim())
     : '';
   const teacherAvatarHotspot = hasAvatar && avatarUrlResolved
-    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="-80" ty="-60" tz="180" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />\n`
+    ? `  <hotspot name="teacher_avatar" type="threejs" url="${escapeXml(avatarUrlResolved)}" depth="0" scale="1" tx="-80" ty="-60" tz="180" hittest="false" visible="false" castshadow="false" receiveshadow="false" convertmaterials="all-to-standard" />\n`
     : '';
   const threeJsHotspotsSection = threeJsHotspotBlocks || teacherAvatarHotspot ? '\n' + (teacherAvatarHotspot + threeJsHotspotBlocks) + '\n' : '';
 

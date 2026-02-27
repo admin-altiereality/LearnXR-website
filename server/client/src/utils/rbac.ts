@@ -49,6 +49,9 @@ export interface UserProfile {
 
   // Guest student (exploratory) - no school code, no approval, one lesson only
   isGuest?: boolean;
+  // Demo mode - signed in with Google, optional location captured for analytics
+  isDemo?: boolean;
+  demoLocation?: { latitude: number; longitude: number; timestamp?: string };
 }
 
 // Route categories for permission checking

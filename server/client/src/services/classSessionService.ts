@@ -12,6 +12,9 @@ import {
   setDoc,
   updateDoc,
   getDoc,
+  getDocs,
+  query,
+  where,
   onSnapshot,
   serverTimestamp,
   Unsubscribe,
@@ -376,6 +379,25 @@ export async function reportStudentView(
   } catch (err) {
     console.error('classSessionService.reportStudentView:', err);
     return false;
+  }
+}
+
+/**
+ * Get active sessions for a school (waiting or active). Used by JoinClassPage for students.
+ */
+export async function getActiveSessionsForSchool(schoolId: string): Promise<ClassSession[]> {
+  try {
+    const sessionsRef = collection(db, COLLECTION_SESSIONS);
+    const q = query(
+      sessionsRef,
+      where('school_id', '==', schoolId),
+      where('status', 'in', ['waiting', 'active'])
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession));
+  } catch (err) {
+    console.error('classSessionService.getActiveSessionsForSchool:', err);
+    return [];
   }
 }
 

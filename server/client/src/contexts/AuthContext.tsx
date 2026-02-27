@@ -43,7 +43,7 @@ interface AuthContextType {
   setSelectedRole: (role: UserRole | null) => void;
   signup: (email: string, password: string, name: string, role?: UserRole) => Promise<any>;
   login: (email: string, password: string) => Promise<any>;
-  loginWithGoogle: (role?: UserRole) => Promise<any>;
+  loginWithGoogle: (role?: UserRole, options?: { isDemo?: boolean }) => Promise<any>;
   loginAsGuestStudent: () => Promise<any>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -112,6 +112,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           managed_class_ids: data.managed_class_ids,
           managed_school_id: data.managed_school_id,
           isGuest: data.isGuest || false,
+          isDemo: data.isDemo || false,
+          demoLocation: data.demoLocation,
         };
       }
       return null;
@@ -206,6 +208,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 managed_class_ids: data.managed_class_ids,
                 managed_school_id: data.managed_school_id,
                 isGuest: data.isGuest || false,
+                isDemo: data.isDemo || false,
+                demoLocation: data.demoLocation,
               };
               setProfile(profileData);
             } else {
@@ -267,11 +271,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           class_ids: data.class_ids,
           teacher_id: data.teacher_id,
           managed_class_ids: data.managed_class_ids,
-          managed_school_id: data.managed_school_id,
-          isGuest: data.isGuest || false,
-        };
-        setProfile(profileData);
-      }
+        managed_school_id: data.managed_school_id,
+        isGuest: data.isGuest || false,
+        isDemo: data.isDemo || false,
+        demoLocation: data.demoLocation,
+      };
+      setProfile(profileData);
+    }
     }, (error) => {
       console.error('Profile snapshot error:', error);
     });
@@ -325,7 +331,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const loginWithGoogle = async (role?: UserRole) => {
+  const getLocationForDemo = (): Promise<{ latitude: number; longitude: number; timestamp: string } | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve(null);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          timestamp: new Date().toISOString(),
+        }),
+        () => resolve(null),
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+      );
+    });
+  };
+
+  const loginWithGoogle = async (role?: UserRole, options?: { isDemo?: boolean }) => {
     if (!auth) {
       throw new Error('Authentication service is not available');
     }
@@ -351,18 +375,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
       
       const { user: googleUser } = result;
+      const isDemo = options?.isDemo === true;
       
       const userDocRef = doc(db, 'users', googleUser.uid);
       const userDoc = await getDoc(userDocRef);
       
       if (!userDoc.exists()) {
-        // New user - use selected role or default to student
-        // Approval status set only after onboarding; until then null
+        // New user - use selected role or default to student for demo
         const userRole = role || selectedRole || 'student';
         const approvalStatus: ApprovalStatus = null;
         const now = new Date().toISOString();
         
-        const userData = {
+        const userData: Record<string, unknown> = {
           name: googleUser.displayName,
           displayName: googleUser.displayName,
           email: googleUser.email,
@@ -373,12 +397,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           onboardingCompleted: false,
           newsletterSubscription: true,
           userType: userRole,
+          isDemo: isDemo || false,
         };
         
         await setDoc(userDocRef, userData);
         console.log('✅ Created user entry for Google user:', googleUser.uid);
         
-        // Create default subscription document for new Google users
         await createDefaultSubscription(googleUser.uid);
         
         setProfile({
@@ -387,10 +411,40 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         } as UserProfile);
       }
       
-      // Clear selected role after login
+      if (isDemo) {
+        // For both new and existing users: capture location and set isDemo
+        try {
+          const location = await getLocationForDemo();
+          if (location) {
+            await updateDoc(userDocRef, {
+              isDemo: true,
+              demoLocation: location,
+              updatedAt: new Date().toISOString(),
+            });
+            const profileData = await fetchProfile(googleUser.uid);
+            if (profileData) setProfile(profileData);
+          } else {
+            await updateDoc(userDocRef, {
+              isDemo: true,
+              updatedAt: new Date().toISOString(),
+            });
+            const profileData = await fetchProfile(googleUser.uid);
+            if (profileData) setProfile(profileData);
+          }
+        } catch (locErr) {
+          console.warn('Demo location capture failed:', locErr);
+          await updateDoc(userDocRef, {
+            isDemo: true,
+            updatedAt: new Date().toISOString(),
+          });
+          const profileData = await fetchProfile(googleUser.uid);
+          if (profileData) setProfile(profileData);
+        }
+      }
+      
       setSelectedRole(null);
       
-      toast.success('Logged in successfully with Google!');
+      toast.success(isDemo ? 'Demo started! Explore with Google sign-in.' : 'Logged in successfully with Google!');
       return googleUser;
     } catch (error: any) {
       console.error("Google login error:", error);

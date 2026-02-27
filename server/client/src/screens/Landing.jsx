@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
@@ -341,14 +341,6 @@ const Landing = () => {
                   <TrademarkSymbol className="text-white" />
                 </span>
               </h1>
-              <div className="flex flex-col sm:flex-row gap-4 sm:gap-10 mt-6 sm:mt-8 text-center">
-                <Link to="/individual" className="text-white text-base sm:text-xl hover:text-purple-400 transition-colors font-medium touch-manipulation">
-                  LearnXR for Individuals
-                </Link>
-                <Link to="/school" className="text-white text-base sm:text-xl hover:text-purple-400 transition-colors font-medium touch-manipulation">
-                  LearnXR Labs for Schools
-                </Link>
-              </div>
             </div>
             <motion.p
               className="text-white text-base sm:text-xl font-medium tracking-wide px-2 pb-4 sm:pb-0"
