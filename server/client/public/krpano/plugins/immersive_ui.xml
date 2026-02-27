@@ -79,6 +79,32 @@
     refs.state = S;
     refs.buttonRegions = [];
 
+    var LAYOUTS = {
+      lecture: {
+        label: "Lecture Hall",
+        panel:  { tx: 0,    ty: 10,  tz: 250 },
+        avatar: { tx: -80,  ty: -60, tz: 180 },
+        asset:  { tx: 60,   ty: -30, tz: 150 },
+        spread: { x: 40, z: 50 }
+      },
+      podium: {
+        label: "Podium",
+        panel:  { tx: 80,   ty: 10,  tz: 220 },
+        avatar: { tx: -20,  ty: -60, tz: 150 },
+        asset:  { tx: -70,  ty: -30, tz: 180 },
+        spread: { x: 40, z: 50 }
+      },
+      museum: {
+        label: "Museum",
+        panel:  { tx: -100, ty: 10,  tz: 230 },
+        avatar: { tx: 80,   ty: -60, tz: 200 },
+        asset:  { tx: 0,    ty: -25, tz: 130 },
+        spread: { x: 45, z: 40 }
+      }
+    };
+    refs.currentLayout = "lecture";
+    refs.layouts = LAYOUTS;
+
     function phaseKey(p) {
       if (!p) return "intro";
       var lp = p.toLowerCase();
@@ -768,6 +794,45 @@
       refs.buttonRegions.push({ x: doneX, y: doneY, w: doneW, h: doneH, action: "continue" });
     }
 
+    function drawLayoutToggle() {
+      var tabW = 130, tabH = 34, gap = 8, tabR = 17;
+      var keys = ["lecture", "podium", "museum"];
+      var labels = ["\u{1F3DB} Lecture", "\u{1F3A4} Podium", "\u{1F3DB} Museum"];
+      var totalW = keys.length * tabW + (keys.length - 1) * gap;
+      var startX = CW - totalW - 44;
+      var Y = 56;
+
+      for (var i = 0; i < keys.length; i++) {
+        var tx = startX + i * (tabW + gap);
+        var isActive = refs.currentLayout === keys[i];
+
+        roundRect(tx, Y, tabW, tabH, tabR);
+        if (isActive) {
+          ctx.fillStyle = "rgba(16, 185, 129, 0.3)";
+          ctx.fill();
+          roundRect(tx, Y, tabW, tabH, tabR);
+          ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = "rgba(51, 65, 85, 0.3)";
+          ctx.fill();
+          roundRect(tx, Y, tabW, tabH, tabR);
+          ctx.strokeStyle = "rgba(71, 85, 105, 0.2)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = isActive ? "#34d399" : "#94a3b8";
+        ctx.font = "600 15px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(labels[i], tx + tabW / 2, Y + tabH / 2);
+
+        refs.buttonRegions.push({ x: tx, y: Y, w: tabW, h: tabH, action: "layoutToggle:" + keys[i] });
+      }
+    }
+
     // ===== MAIN DRAW =====
     function drawPanel() {
       var pk = phaseKey(S.phase);
@@ -788,6 +853,8 @@
         }
       }
 
+      drawLayoutToggle();
+
       texture.needsUpdate = true;
     }
 
@@ -804,8 +871,9 @@
       }
     } catch(e) {}
 
-    var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
-    var panelW = 40 / ws, panelH = 25 / ws;
+    var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.88, side: THREE.DoubleSide });
+    // Panel size: 80% of previous 120x75 worldscale-aware dimensions
+    var panelW = 9.6 / ws, panelH = 6 / ws;
     var geo = new THREE.PlaneGeometry(panelW, panelH);
     var mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.y = Math.PI;
@@ -814,6 +882,27 @@
     if (typeof caller.updateboundingbox === "function") caller.updateboundingbox();
 
     refs.panel = { canvas: canvas, texture: texture, draw: drawPanel, mesh: mesh };
+
+    // Visibility: only show immersive UI in headset modes we care about
+    // (Meta Quest browser, or mobile-based cardboard / fake mobilevr splitscreen).
+    function updateVisibility() {
+      try {
+        var showFlag = (window.__showImmersiveUI === true);
+        var wv = krpano.webvr;
+        var enabled = !!(wv && (wv.isenabled === true || wv.isenabled === "true" || wv.isenabled === "1"));
+        mesh.visible = !!(showFlag && enabled);
+      } catch(e) {
+        mesh.visible = false;
+      }
+    }
+
+    updateVisibility();
+    refs.updateVisibility = updateVisibility;
+    try {
+      if (!refs.visibilityTimer) {
+        refs.visibilityTimer = setInterval(updateVisibility, 800);
+      }
+    } catch(e) {}
 
     // ===== ANIMATION LOOP =====
     function needsAnim() {
@@ -851,33 +940,37 @@
   ]]></action>
 
   <!-- ===== UPDATE ===== -->
-  <action name="immersive_ui_update" type="Javascript"
-          args="phase,script,ttsStatus,question,options,showQuiz,showResult,scoreLabel,selectedAnswer,waitingForUser,isPlayingAudio,currentMcqIndex,totalMcqs,correctAnswer,explanation"><![CDATA[
+  <action name="immersive_ui_update" type="js"><![CDATA[
     var refs = krpano.immersive_ui_refs;
     if (!refs || !refs.panel) return;
+    var d = window.__krpanoUIState;
+    if (!d) return;
 
     var S = refs.state;
-    S.phase = phase || "intro";
-    S.script = script || "";
-    S.ttsStatus = ttsStatus || "idle";
-    S.question = question || "";
-    S.options = (options && String(options)) ? String(options).split("||") : [];
-    S.showQuiz = (showQuiz === "true" && (phase === "quiz" || S.phase.toLowerCase().indexOf("quiz") >= 0));
-    S.showResult = showResult === "true";
-    S.scoreLabel = scoreLabel || "";
-    S.selectedAnswer = parseInt(selectedAnswer, 10);
+    S.phase = d.phase || "intro";
+    S.script = d.script || "";
+    S.ttsStatus = d.ttsStatus || "idle";
+    S.question = d.question || "";
+    S.options = (d.options && String(d.options)) ? String(d.options).split("||") : [];
+    S.showQuiz = (d.showQuiz === true && (d.phase === "quiz" || S.phase.toLowerCase().indexOf("quiz") >= 0));
+    S.showResult = d.showResult === true;
+    S.scoreLabel = d.scoreLabel || "";
+    S.selectedAnswer = parseInt(d.selectedAnswer, 10);
     if (isNaN(S.selectedAnswer)) S.selectedAnswer = -1;
-    S.waitingForUser = waitingForUser === "true";
-    S.isPlayingAudio = isPlayingAudio === "true";
-    S.currentMcqIndex = parseInt(currentMcqIndex, 10) || 0;
-    S.totalMcqs = parseInt(totalMcqs, 10) || 0;
-    S.correctAnswer = parseInt(correctAnswer, 10);
+    S.waitingForUser = d.waitingForUser === true;
+    S.isPlayingAudio = d.isPlayingAudio === true;
+    S.currentMcqIndex = parseInt(d.currentMcqIndex, 10) || 0;
+    S.totalMcqs = parseInt(d.totalMcqs, 10) || 0;
+    S.correctAnswer = parseInt(d.correctAnswer, 10);
     if (isNaN(S.correctAnswer)) S.correctAnswer = -1;
-    S.explanation = explanation || "";
+    S.explanation = d.explanation || "";
 
     if (refs.panel.draw) refs.panel.draw();
 
     if (refs.startAnim) refs.startAnim();
+
+    // Trigger ambient light pulse on phase change
+    if (window.__ambienceLightPulse) window.__ambienceLightPulse();
   ]]></action>
 
   <!-- ===== PANEL CLICK (raycasting) ===== -->
@@ -909,13 +1002,70 @@
       for (var i = 0; i < regions.length; i++) {
         var r = regions[i];
         if (cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h) {
-          if (window.__krpanoUIAction) {
-            window.__krpanoUIAction(r.action);
+          var act = r.action;
+          if (act && act.indexOf("layoutToggle:") === 0) {
+            var lname = act.split(":")[1];
+            window.__krpanoLayoutToSet = lname;
+            krpano.call("immersive_ui_set_layout()");
+            if (window.__xrHaptic) window.__xrHaptic("layout");
+          } else if (window.__krpanoUIAction) {
+            window.__krpanoUIAction(act);
+            if (window.__xrHaptic) {
+              var htype = act === "mcqSubmit" ? "confirm" : act === "continue" ? "select" : "select";
+              window.__xrHaptic(htype);
+            }
           }
           break;
         }
       }
     }
+  ]]></action>
+
+  <!-- ===== SET LAYOUT (with smooth transitions) ===== -->
+  <action name="immersive_ui_set_layout" type="js"><![CDATA[
+    var refs = krpano.immersive_ui_refs;
+    if (!refs || !refs.layouts) return;
+    var layoutName = (window.__krpanoLayoutToSet || "lecture");
+    var layout = refs.layouts[layoutName];
+    if (!layout) return;
+    refs.currentLayout = layoutName;
+
+    var TWEEN_SPEED = 0.6;
+    var TWEEN_TYPE = "easeInOutQuad";
+
+    // Smooth tween for panel
+    var p = layout.panel;
+    krpano.call("tween(hotspot[iu_panel_3d].tx," + p.tx + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+    krpano.call("tween(hotspot[iu_panel_3d].ty," + p.ty + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+    krpano.call("tween(hotspot[iu_panel_3d].tz," + p.tz + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+
+    // Smooth tween for avatar
+    try {
+      var a = layout.avatar;
+      krpano.call("tween(hotspot[teacher_avatar].tx," + a.tx + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+      krpano.call("tween(hotspot[teacher_avatar].ty," + a.ty + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+      krpano.call("tween(hotspot[teacher_avatar].tz," + a.tz + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+    } catch(e) {}
+
+    // Smooth tween for assets
+    var ab = layout.asset;
+    var sp = layout.spread;
+    for (var i = 0; i < 10; i++) {
+      var hsName = "asset_" + i;
+      try {
+        var hs = krpano.get("hotspot[" + hsName + "]");
+        if (hs) {
+          var atx = ab.tx + (i % 3 - 1) * sp.x;
+          var aty = ab.ty;
+          var atz = ab.tz + Math.floor(i / 3) * sp.z;
+          krpano.call("tween(hotspot[" + hsName + "].tx," + atx + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+          krpano.call("tween(hotspot[" + hsName + "].ty," + aty + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+          krpano.call("tween(hotspot[" + hsName + "].tz," + atz + "," + TWEEN_SPEED + "," + TWEEN_TYPE + ")");
+        }
+      } catch(e) { break; }
+    }
+
+    if (refs.panel && refs.panel.draw) refs.panel.draw();
   ]]></action>
 
 </krpano>
