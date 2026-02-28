@@ -9,18 +9,16 @@ import {
     signInWithPopup,
     signOut
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { createContext, ReactNode, useContext, useEffect, useState, useCallback } from 'react';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { auth, db } from '../config/firebase';
 import { createDefaultSubscription } from '../services/subscriptionService';
-import { 
-  UserRole, 
-  ApprovalStatus, 
-  UserProfile,
-  requiresApproval,
-  APPROVAL_REQUIRED_ROLES,
-  isGuestUser
+import {
+    ApprovalStatus,
+    isGuestUser,
+    UserProfile,
+    UserRole
 } from '../utils/rbac';
 
 export type ModalType = 'subscription' | 'upgrade' | null;
@@ -32,7 +30,7 @@ export interface ModalContextType {
 }
 
 // Re-export types from rbac for convenience
-export type { UserRole, ApprovalStatus, UserProfile };
+export type { ApprovalStatus, UserProfile, UserRole };
 
 interface AuthContextType {
   user: FirebaseUser | null;

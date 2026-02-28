@@ -242,7 +242,7 @@ const PrincipalDashboard = () => {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-          <Card className="border border-border bg-card">
+          <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
@@ -261,7 +261,7 @@ const PrincipalDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border border-border bg-card">
+          <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
@@ -280,7 +280,7 @@ const PrincipalDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border border-border bg-card">
+          <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
@@ -293,7 +293,7 @@ const PrincipalDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border border-border bg-card">
+          <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
@@ -306,7 +306,7 @@ const PrincipalDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="border border-border bg-card">
+          <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
@@ -323,7 +323,7 @@ const PrincipalDashboard = () => {
 
         {/* Approval Cards Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <Card className={`border bg-card ${pendingStudents.length > 0 ? 'border-amber-500/40' : 'border-border'}`}>
+          <Card className={pendingStudents.length > 0 ? 'border-amber-500/40' : ''}>
             <CardContent className="p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -361,7 +361,7 @@ const PrincipalDashboard = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className={`border bg-card ${pendingTeachers.length > 0 ? 'border-amber-500/40' : 'border-border'}`}>
+          <Card className={pendingTeachers.length > 0 ? 'border-amber-500/40' : ''}>
             <CardContent className="p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -403,7 +403,7 @@ const PrincipalDashboard = () => {
 
         {/* Teacher Management - quick access for Principal */}
         <div className="mb-8">
-          <Card className="border border-border bg-card">
+          <Card>
             <CardContent className="p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
@@ -432,10 +432,12 @@ const PrincipalDashboard = () => {
         <div className="mb-8">
           <h2 className="text-xl font-semibold text-foreground mb-4">Teachers ({teachers.length})</h2>
           {teachers.length === 0 ? (
-            <div className="rounded-2xl border border-border bg-card p-8 text-center">
-              <FaChalkboardTeacher className="text-4xl text-muted-foreground/80 mx-auto mb-4" />
-              <p className="text-muted-foreground">No teachers in your school yet</p>
-            </div>
+            <Card>
+              <CardContent className="p-8 text-center">
+                <FaChalkboardTeacher className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No teachers in your school yet</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {teachers.map((teacher) => {
@@ -447,22 +449,16 @@ const PrincipalDashboard = () => {
                 return (
                   <div
                     key={teacher.uid}
-                    className="rounded-xl border border-border bg-card p-4 hover:bg-accent/50 transition-colors"
+                    className="rounded-xl border border-border bg-card p-4 hover:bg-accent/30 transition-colors"
                   >
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="text-foreground font-medium">
                         {teacher.name || teacher.displayName || 'Unknown Teacher'}
                       </h3>
                       {teacher.approvalStatus && (
-                        <span className={`px-1.5 py-0.5 text-xs rounded-full ${
-                          teacher.approvalStatus === 'approved' 
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : teacher.approvalStatus === 'pending'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                        }`}>
+                        <Badge variant={teacher.approvalStatus === 'approved' ? 'default' : teacher.approvalStatus === 'pending' ? 'secondary' : 'destructive'} className="text-xs">
                           {teacher.approvalStatus}
-                        </span>
+                        </Badge>
                       )}
                     </div>
                     <p className="text-muted-foreground text-sm mb-3">{teacher.email}</p>
@@ -470,7 +466,7 @@ const PrincipalDashboard = () => {
                       <span className="text-muted-foreground">
                         {teacherClasses} classes
                       </span>
-                      <span className="text-blue-400">
+                      <span className="text-primary">
                         {teacherStudents} students
                       </span>
                     </div>
@@ -485,10 +481,12 @@ const PrincipalDashboard = () => {
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-4">Recent School Activity</h2>
           {scores.length === 0 ? (
-            <div className="rounded-2xl border border-border bg-card p-8 text-center">
-              <FaChartLine className="text-4xl text-muted-foreground/80 mx-auto mb-4" />
-              <p className="text-muted-foreground">No activity yet</p>
-            </div>
+            <Card>
+              <CardContent className="p-8 text-center">
+                <FaChartLine className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No activity yet</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-3">
               {scores.slice(0, 10).map((score) => {
@@ -496,7 +494,7 @@ const PrincipalDashboard = () => {
                 return (
                   <div
                     key={score.id}
-                    className="rounded-xl border border-border bg-card p-4 hover:bg-accent/50 transition-colors"
+                    className="rounded-xl border border-border bg-card p-4 hover:bg-accent/30 transition-colors"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
@@ -505,15 +503,9 @@ const PrincipalDashboard = () => {
                             {student?.name || student?.displayName || 'Unknown Student'}
                           </h3>
                           {student?.approvalStatus && (
-                            <span className={`px-1.5 py-0.5 text-xs rounded-full ${
-                              student.approvalStatus === 'approved' 
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                : student.approvalStatus === 'pending'
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                            }`}>
+                            <Badge variant={student.approvalStatus === 'approved' ? 'default' : student.approvalStatus === 'pending' ? 'secondary' : 'destructive'} className="text-xs">
                               {student.approvalStatus}
-                            </span>
+                            </Badge>
                           )}
                         </div>
                         <p className="text-muted-foreground text-sm mt-1">
@@ -525,8 +517,8 @@ const PrincipalDashboard = () => {
                       </div>
                       <div className="ml-4 text-right">
                         <div className={`text-2xl font-bold ${
-                          score.score.percentage >= 70 ? 'text-emerald-400' :
-                          score.score.percentage >= 50 ? 'text-amber-400' : 'text-red-400'
+                          score.score.percentage >= 70 ? 'text-primary' :
+                          score.score.percentage >= 50 ? 'text-amber-500' : 'text-destructive'
                         }`}>
                           {score.score.percentage}%
                         </div>

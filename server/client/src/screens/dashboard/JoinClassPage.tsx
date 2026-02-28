@@ -105,9 +105,15 @@ const JoinClassPage = () => {
   if (!user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4 py-24">
-        <Card className="max-w-md w-full rounded-xl border-border">
+        <Card className="max-w-md w-full rounded-xl border border-border bg-card shadow-sm">
           <CardContent className="p-8 text-center">
-            <p className="text-foreground mb-6">Sign in to see active classes and join.</p>
+            <div className="flex justify-center mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
+                <FaVideo className="h-6 w-6 text-primary" />
+              </div>
+            </div>
+            <p className="text-foreground font-medium mb-1">Sign in to join a class</p>
+            <p className="text-sm text-muted-foreground mb-6">View active classes from your school and join with one click.</p>
             <Button asChild>
               <Link to="/login">Sign in</Link>
             </Button>
@@ -121,10 +127,12 @@ const JoinClassPage = () => {
     return (
       <div className="min-h-screen bg-background pt-24 pb-12">
         <div className="max-w-2xl mx-auto px-4">
-          <Card className="rounded-xl border-border">
+          <Card className="rounded-xl border border-border bg-card shadow-sm">
             <CardContent className="p-8 text-center">
-              <p className="text-foreground">Only students can join a class from this page.</p>
-              <Button asChild className="mt-4">
+              <FaChalkboardTeacher className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-foreground font-medium">Only students can join a class from this page.</p>
+              <p className="text-sm text-muted-foreground mt-1">Teachers and admins manage classes from their dashboards.</p>
+              <Button asChild className="mt-4" variant="outline">
                 <Link to="/">Go home</Link>
               </Button>
             </CardContent>
@@ -137,20 +145,22 @@ const JoinClassPage = () => {
   if (!schoolId) {
     return (
       <div className="min-h-screen bg-background pt-24 pb-12">
-        <div className="max-w-2xl mx-auto px-4">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6">
           <header className="mb-6">
-            <h1 className="text-2xl font-bold text-foreground" style={learnXRFontStyle}>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2" style={learnXRFontStyle}>
+              <FaVideo className="text-primary" />
               Join a class
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
               See active classes from your school and join with one click.
             </p>
           </header>
-          <Card className="rounded-xl border-border">
+          <Card className="rounded-xl border border-border bg-card shadow-sm">
             <CardContent className="p-8 text-center">
-              <p className="text-foreground">Sign in and join a school to see active classes.</p>
-              <p className="text-sm text-muted-foreground mt-2">If you belong to a school, ask your teacher to add you to a class.</p>
-              <Button asChild className="mt-4">
+              <FaUsers className="h-12 w-12 text-muted-foreground/80 mx-auto mb-4" />
+              <p className="text-foreground font-medium">Join a school to see active classes</p>
+              <p className="text-sm text-muted-foreground mt-2">If you belong to a school, ask your teacher to add you to a class, or enter your school code during sign-up.</p>
+              <Button asChild className="mt-6" variant="outline">
                 <Link to="/dashboard/student">My dashboard</Link>
               </Button>
             </CardContent>
@@ -163,31 +173,37 @@ const JoinClassPage = () => {
   return (
     <div className="min-h-screen bg-background pt-24 pb-12">
       <div className="max-w-2xl mx-auto px-4 sm:px-6">
-        <header className="mb-6">
+        <header className="mb-8">
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2" style={learnXRFontStyle}>
-            <FaVideo className="text-primary" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
+              <FaVideo className="h-5 w-5 text-primary" />
+            </div>
             Join a class
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <p className="text-muted-foreground text-sm mt-2">
             Active classes from your school. Click Join to enter — no code needed.
           </p>
         </header>
 
         {loading ? (
-          <Card className="rounded-xl border-border">
-            <CardContent className="py-12 text-center text-muted-foreground">
-              Loading active classes…
+          <Card className="rounded-xl border border-border bg-card shadow-sm">
+            <CardContent className="py-16 text-center">
+              <p className="text-muted-foreground">Loading active classes…</p>
             </CardContent>
           </Card>
         ) : sessions.length === 0 ? (
-          <Card className="rounded-xl border-border">
-            <CardContent className="p-8 text-center">
-              <FaChalkboardTeacher className="text-4xl text-muted-foreground mx-auto mb-3" />
-              <p className="text-foreground font-medium">No active classes right now</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                When a teacher starts a class session, it will appear here. You can also join with a code from your dashboard.
+          <Card className="rounded-xl border border-border bg-card shadow-sm">
+            <CardContent className="p-8 sm:p-10 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted/50 border border-border">
+                  <FaChalkboardTeacher className="h-7 w-7 text-muted-foreground" />
+                </div>
+              </div>
+              <p className="text-foreground font-semibold text-lg">No active classes right now</p>
+              <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
+                When a teacher starts a class session, it will appear here. You can also join with a session code from your dashboard.
               </p>
-              <Button asChild variant="outline" className="mt-4">
+              <Button asChild variant="outline" className="mt-6">
                 <Link to="/dashboard/student">My dashboard</Link>
               </Button>
             </CardContent>
@@ -198,33 +214,36 @@ const JoinClassPage = () => {
               const isJoined = joinedSessionId === session.id;
               const isJoining = sessionLoading && joiningCode === session.session_code;
               return (
-                <Card key={session.id} className="rounded-xl border-border hover:border-primary/30 transition-colors">
-                  <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="min-w-0">
+                <Card key={session.id} className="rounded-xl border border-border bg-card shadow-sm hover:border-primary/30 hover:shadow-md transition-all">
+                  <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-foreground truncate">
                         {session.className || session.class_id}
                       </p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                      <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-1">
                         <FaChalkboardTeacher className="w-3.5 h-3.5 shrink-0" />
                         {session.teacherName}
                       </p>
                       {session.launched_lesson && (
-                        <p className="text-xs text-primary mt-1">
+                        <p className="text-xs text-primary mt-1.5 font-medium">
                           Lesson: {session.launched_lesson.chapter_id} → {session.launched_lesson.topic_id}
                         </p>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
-                        Code: {session.session_code}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs text-muted-foreground font-mono hidden sm:inline bg-muted/50 px-2 py-1 rounded">
+                        {session.session_code}
                       </span>
                       {isJoined ? (
-                        <Button size="sm" variant="secondary" asChild>
-                          <Link to="/dashboard/student">In class →</Link>
+                        <Button size="default" variant="secondary" asChild className="gap-1.5">
+                          <Link to="/dashboard/student">
+                            In class
+                            <FaArrowRight className="w-3.5 h-3.5" />
+                          </Link>
                         </Button>
                       ) : (
                         <Button
-                          size="sm"
+                          size="default"
                           onClick={() => handleJoin(session.session_code)}
                           disabled={isJoining}
                         >
@@ -239,8 +258,8 @@ const JoinClassPage = () => {
           </div>
         )}
 
-        <p className="text-center mt-6">
-          <Link to="/dashboard/student" className="text-sm text-primary hover:underline">
+        <p className="text-center mt-8">
+          <Link to="/dashboard/student" className="text-sm text-primary font-medium hover:underline inline-flex items-center gap-1">
             ← Back to dashboard
           </Link>
         </p>

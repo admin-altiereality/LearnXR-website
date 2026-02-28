@@ -54,7 +54,6 @@ import {
   FaUserMinus,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { motion } from 'framer-motion';
 import {
   Dialog,
   DialogContent,
@@ -108,11 +107,9 @@ const CircularProgress = ({
   return (
     <div className="relative h-28 w-28">
       <div className="absolute inset-0 rounded-full bg-gradient-to-b from-muted/60 via-card to-background" />
-      <motion.div
+      <div
         className="absolute inset-0 rounded-full"
         style={{ background: `conic-gradient(${color} ${angle}, var(--border) ${angle})` }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: 14, ease: 'linear', repeat: Infinity }}
       />
       <div className="absolute inset-2 rounded-full bg-card border border-border shadow-sm" />
       <div className="absolute inset-[18%] rounded-full bg-card flex flex-col items-center justify-center text-center px-2">
@@ -846,50 +843,45 @@ const TeacherDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-card/90 backdrop-blur">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(99,102,241,0.15),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(16,185,129,0.12),transparent_30%)]" />
-            <div className="p-6 sm:p-8 relative">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center shadow-inner">
-                    <FaChalkboardTeacher className="text-primary text-xl" />
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-bold mb-1 font-display" style={learnXRFontStyle}>
-                      <span className="text-foreground">Learn</span>
-                      <span className="text-primary">XR</span>
-                      <TrademarkSymbol />
-                    </h1>
-                    <h2 className="text-xl font-semibold text-foreground">Teacher Dashboard</h2>
-                    <div className="flex items-center gap-3 mt-1 flex-wrap">
-                      <p className="text-muted-foreground text-sm">Precision insights for every class you lead.</p>
-                      {schoolCode && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30">
-                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">School Code</span>
-                          <span className="font-mono font-bold text-primary text-base tracking-wider">{schoolCode}</span>
-                        </div>
-                      )}
+        <div className="mb-8 pb-6 border-b border-border">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
+                <FaChalkboardTeacher className="text-primary text-xl" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
+                  <span className="text-foreground">Learn</span>
+                  <span className="text-primary">XR</span>
+                  <TrademarkSymbol />
+                </h1>
+                <h2 className="text-xl font-semibold text-foreground">Teacher Dashboard</h2>
+                <div className="flex items-center gap-3 mt-1 flex-wrap">
+                  <p className="text-muted-foreground text-sm">Precision insights for every class you lead.</p>
+                  {schoolCode && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">School Code</span>
+                      <span className="font-mono font-bold text-primary text-base tracking-wider">{schoolCode}</span>
                     </div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary" className="text-xs">Realtime data</Badge>
-                  <Badge variant="secondary" className="text-xs">Collaboration ready</Badge>
-                  <Badge variant="secondary" className="text-xs">AI assisted</Badge>
+                  )}
                 </div>
               </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary" className="text-xs">Realtime data</Badge>
+              <Badge variant="secondary" className="text-xs">Collaboration ready</Badge>
+              <Badge variant="secondary" className="text-xs">AI assisted</Badge>
             </div>
           </div>
         </div>
 
         {/* Class Session - Launch lesson to connected headsets */}
-        <section className="mb-8 md:mb-10" aria-labelledby="class-launch-heading">
+        <section className="mb-8" aria-labelledby="class-launch-heading">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h2 id="class-launch-heading" className="text-xl sm:text-2xl font-semibold text-foreground flex items-center gap-2">
+            <h2 id="class-launch-heading" className="text-xl font-semibold text-foreground flex items-center gap-2">
               <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10 border border-primary/20">
                 <FaVideo className="text-primary w-5 h-5" />
               </span>
@@ -939,7 +931,7 @@ const TeacherDashboard = () => {
                         <div className="flex flex-col gap-2 min-w-0">
                           <p className="text-muted-foreground text-xs sm:text-sm">Session active · Students join with this code</p>
                           <div
-                            className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-primary/10 border border-primary/30 w-fit cursor-pointer hover:bg-primary/15 transition-colors active:scale-[0.99]"
+                            className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 rounded-xl bg-primary/10 border border-primary/30 w-fit cursor-pointer hover:bg-primary/15 transition-colors active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             onClick={copySessionCode}
                             role="button"
                             tabIndex={0}
@@ -1020,7 +1012,7 @@ const TeacherDashboard = () => {
                                   className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition-all ${
                                     isSelected
                                       ? 'border-primary bg-primary/10 text-primary ring-2 ring-primary/20'
-                                      : 'border-border bg-card hover:bg-accent/50 hover:border-primary/40'
+                                      : 'border-border bg-card hover:bg-accent/30 hover:border-primary/40'
                                   }`}
                                 >
                                   <FaVideo className="w-3.5 h-3.5 shrink-0 opacity-70" />
@@ -1140,7 +1132,7 @@ const TeacherDashboard = () => {
 
                     {/* ——— RIGHT: Live preview panel (sticky on desktop) ——— */}
                     <div className="lg:sticky lg:top-4 order-1 lg:order-2 h-fit">
-                      <div className="rounded-2xl border border-border bg-card shadow-lg overflow-hidden flex flex-col min-h-[240px] sm:min-h-[280px] ring-1 ring-black/5">
+                      <div className="rounded-xl border border-border bg-card shadow-panel overflow-hidden flex flex-col min-h-[240px] sm:min-h-[280px]">
                         {/* Preview header */}
                         <div className="flex items-center justify-between gap-3 px-4 py-3.5 border-b border-border bg-muted/40">
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -1470,9 +1462,9 @@ const TeacherDashboard = () => {
               Class Evaluation
             </h2>
             <div className="flex flex-wrap items-center gap-4 mb-4">
-              <label className="text-muted-foreground text-sm">Class</label>
+              <label htmlFor="class-evaluation-select" className="text-muted-foreground text-sm">Class</label>
               <Select value={evaluationClassId ?? ''} onValueChange={(v) => setEvaluationClassId(v || null)}>
-                <SelectTrigger className="w-[280px] bg-card border-border">
+                <SelectTrigger id="class-evaluation-select" className="w-[280px] bg-card border-border">
                   <SelectValue placeholder="Select a class" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1536,11 +1528,11 @@ const TeacherDashboard = () => {
           </div>
         )}
 
-        {/* Subject-wise Performance (cards) */}
+        {/* Performance by Subject (cards) */}
         <div className="mb-8">
           <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
             <FaChartBar className="text-primary" />
-            Subject-wise Performance
+            Performance by Subject
           </h2>
           {subjectPerformance.length === 0 ? (
             <Card className="border-border bg-card">

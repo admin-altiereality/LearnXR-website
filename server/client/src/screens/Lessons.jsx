@@ -21,7 +21,7 @@ import {
     GraduationCap,
     Grid3X3,
     HelpCircle,
-    KeyRound,
+    Key,
     List,
     Loader2,
     Mic,
@@ -37,12 +37,11 @@ import {
     XCircle
 } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { LanguageToggle } from '../Components/LanguageSelector';
 import { Button } from '../Components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../Components/ui/card';
-import { Label } from '../Components/ui/label';
 import { Input } from '../Components/ui/input';
 import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Components/ui/select';
@@ -59,7 +58,7 @@ import {
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
 
-// Student demo view (guest or student with isDemo): only lessons marked as demo by superadmin appear; first is unlocked, rest blurred
+// Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
 const GUEST_DEMO_CHAPTERS_LIMIT = 200; // Max chapters to scan for demo topics (client-side filter)
 
 // Content indicators (simple badges) - Memoized; theme tokens
@@ -485,8 +484,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const isStudent = profile?.role === 'student';
   const isTeacher = profile?.role === 'teacher';
   const isGuest = !!(profile?.isGuest === true && profile?.role === 'student');
-  // Student demo view: guest OR student who logged in with "Try demo" (isDemo) — only show lessons marked as demo by superadmin
-  const isStudentDemoView = isGuest || (isStudent && profile?.isDemo === true);
 
   // Guest: logout then navigate so user can sign up or log in with a full account
   const handleGuestSignup = useCallback(async () => {
@@ -675,23 +672,23 @@ const Lessons = ({ setBackgroundSkybox }) => {
     
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
     
-    // Guest or student demo view: fetch a bounded set of chapters; we will filter to demo-only topics in groupedTopicsByChapter
-    if (isStudentDemoView) {
+    // Guest: fetch a bounded set of chapters; we will filter to demo-only topics in groupedTopicsByChapter
+    if (isGuest) {
       effectiveCurriculum = null;
       effectiveClass = null;
     }
     
-    // Wait for classes to load if user is student/teacher (not in demo view) and classes are expected
-    if ((isStudent || isTeacher) && !isStudentDemoView && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
+    // Wait for classes to load if user is student/teacher (not guest) and classes are expected
+    if ((isStudent || isTeacher) && !isGuest && profile?.class_ids?.length > 0 && isStudent && studentClasses.length === 0) {
       console.log('⏳ Lessons: Waiting for student classes to load', { role: 'student', profileClassIds: profile?.class_ids?.length });
       return;
     }
-    if ((isStudent || isTeacher) && !isStudentDemoView && profile?.managed_class_ids?.length > 0 && isTeacher && teacherClasses.length === 0) {
+    if ((isStudent || isTeacher) && profile?.managed_class_ids?.length > 0 && isTeacher && teacherClasses.length === 0) {
       console.log('⏳ Lessons: Waiting for teacher classes to load', { role: 'teacher', profileClassIds: profile?.managed_class_ids?.length });
       return;
     }
     
-    if ((isStudent || isTeacher) && !isStudentDemoView && userClasses.length > 0) {
+    if ((isStudent || isTeacher) && !isGuest && userClasses.length > 0) {
       // Use the first class's curriculum and class number
       const firstClass = userClasses[0];
       if (!effectiveCurriculum && firstClass.curriculum) {
@@ -716,8 +713,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
       constraints.push(where('subject', '==', selectedSubject));
     }
     
-    // For students and teachers (not in demo view): require both curriculum and class to be set
-    if ((isStudent || isTeacher) && !isStudentDemoView && (!effectiveCurriculum || !effectiveClass)) {
+    // For students and teachers (not guest): require both curriculum and class to be set
+    if ((isStudent || isTeacher) && !isGuest && (!effectiveCurriculum || !effectiveClass)) {
       console.log(`⚠️ ${isStudent ? 'Student' : 'Teacher'} lessons: Missing curriculum or class filter`, {
         effectiveCurriculum,
         effectiveClass,
@@ -731,10 +728,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
     
     // Note: We filter by topic-level approval in groupedTopicsByChapter
-    // For guest/demo view: fetch bounded set of chapters (no curriculum/class filter), then filter to demo-only topics client-side
+    // For guest: fetch bounded set of chapters (no curriculum/class filter), then filter to demo-only topics client-side
     const chaptersRef = collection(db, 'curriculum_chapters');
     let chaptersQuery;
-    if (isStudentDemoView) {
+    if (isGuest) {
       chaptersQuery = query(chaptersRef, limit(GUEST_DEMO_CHAPTERS_LIMIT));
     } else if (constraints.length > 0) {
       chaptersQuery = query(chaptersRef, ...constraints);
@@ -800,7 +797,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     );
     
     return () => unsubscribe();
-  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isStudentDemoView, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
+  }, [selectedCurriculum, selectedClass, selectedSubject, selectedLanguage, isStudent, isTeacher, isGuest, studentClasses, teacherClasses, profile?.class_ids, profile?.managed_class_ids]);
 
   // Fetch user's completed lessons
   useEffect(() => {
@@ -889,22 +886,22 @@ const Lessons = ({ setBackgroundSkybox }) => {
     // Extract all topics from chapters
     const allTopics = [];
     
-    // For students and teachers (not in demo view): get class numbers and curriculum from their classes
+    // For students and teachers (not guest): get class numbers and curriculum from their classes
     const userClasses = isStudent ? studentClasses : (isTeacher ? teacherClasses : []);
-    const userClassNumbers = !isStudentDemoView && (isStudent || isTeacher) && userClasses.length > 0
+    const userClassNumbers = !isGuest && (isStudent || isTeacher) && userClasses.length > 0
       ? userClasses.map(c => {
           const match = c.class_name?.match(/\d+/);
           return match ? parseInt(match[0]) : null;
         }).filter(Boolean)
       : [];
     
-    const userCurricula = !isStudentDemoView && (isStudent || isTeacher) && userClasses.length > 0
+    const userCurricula = !isGuest && (isStudent || isTeacher) && userClasses.length > 0
       ? [...new Set(userClasses.map(c => c.curriculum?.toUpperCase().trim()).filter(Boolean))]
       : [];
     
     chapters.forEach(chapter => {
-      // For students and teachers (not in demo view): filter by their class numbers AND curriculum
-      if (!isStudentDemoView && (isStudent || isTeacher)) {
+      // For students and teachers (not guest): filter by their class numbers AND curriculum
+      if (!isGuest && (isStudent || isTeacher)) {
         // If user has classes, only show chapters matching their classes
         if (userClassNumbers.length > 0) {
           if (!userClassNumbers.includes(chapter.class)) {
@@ -928,8 +925,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
         chapter.topics.forEach(topic => {
           // For /lessons page:
           // - Admins/superadmins can see ALL topics (for approval management)
-          // - Student demo view (guest or student with isDemo): only topics marked as demo by superadmin AND approved
-          // - Students/teachers (full view): APPROVED topics (by class/curriculum)
+          // - Guest: only topics marked as demo AND approved
+          // - Students/teachers: APPROVED topics (by class/curriculum)
           const approval = topic.approval || {};
           const isTopicApproved = approval.approved === true || approval.approved === 'true' || topic.approved === true;
           const isChapterApproved = chapter.approved === true;
@@ -943,8 +940,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
               topic,
               chapter,
             });
-          } else if (isStudentDemoView) {
-            // Student demo view: only show lessons marked as demo by superadmin and approved; rest stay hidden (not in list)
+          } else if (isGuest) {
+            // Guest: only show topics marked as demo and approved
             if (isDemoTopic && shouldShowTopic) {
               allTopics.push({
                 topic,
@@ -1030,7 +1027,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     });
     
     return sortedGroups;
-  }, [chapters, canApprove, isStudent, isTeacher, isStudentDemoView, studentClasses, teacherClasses]);
+  }, [chapters, canApprove, isStudent, isTeacher, isGuest, studentClasses, teacherClasses]);
   
   // Flatten grouped topics into lesson items for display
   const lessonItems = useMemo(() => {
@@ -1083,12 +1080,12 @@ const Lessons = ({ setBackgroundSkybox }) => {
     return result;
   }, [lessonItems, searchQuery, selectedLanguage]);
 
-  // Student demo view: only the first lesson is unlocked; rest remain blurred; key = chapterId_topicId
+  // Guest: only the first lesson is unlocked; key = chapterId_topicId
   const guestUnlockedLessonKey = useMemo(() => {
-    if (!isStudentDemoView || lessonItems.length === 0) return null;
+    if (!isGuest || lessonItems.length === 0) return null;
     const first = lessonItems[0];
     return `${first.chapter.id}_${first.topic.topic_id}`;
-  }, [isStudentDemoView, lessonItems]);
+  }, [isGuest, lessonItems]);
 
   const toggleChapter = useCallback((chapterId) => {
     setExpandedChapters(prev => {
@@ -2200,55 +2197,58 @@ const Lessons = ({ setBackgroundSkybox }) => {
         {/* Join class session - students only */}
         {isStudent && (
           <Card className="mb-6 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
               <div className="flex items-center gap-2">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
-                  <KeyRound className="h-4 w-4 text-primary" aria-hidden />
+                  <Users className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <CardTitle className="text-base font-semibold text-foreground">Join a class session</CardTitle>
-                  <CardDescription className="text-sm text-muted-foreground mt-0.5">
-                    Enter the code shared by your teacher to join their live session.
+                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                    Enter the code your teacher shared to join the live session
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="px-4 pb-4 sm:px-6">
               {!joinedSessionId ? (
-                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <Label htmlFor="lessons-join-code" className="text-sm font-medium text-foreground">
-                      Class code
-                    </Label>
-                    <Input
-                      id="lessons-join-code"
-                      type="text"
-                      value={sessionCodeInput}
-                      onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
-                      placeholder="e.g. ABC123"
-                      className="w-full sm:max-w-[10rem] font-mono text-base uppercase tracking-wider bg-background border-border focus-visible:ring-primary/30"
-                      maxLength={8}
-                      aria-describedby="lessons-join-code-hint"
-                    />
-                    <p id="lessons-join-code-hint" className="text-xs text-muted-foreground">
-                      Ask your teacher for the session code if you don&apos;t have it.
-                    </p>
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="relative flex-1 min-w-0">
+                      <label htmlFor="lessons-join-code" className="sr-only">Class session code</label>
+                      <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        id="lessons-join-code"
+                        type="text"
+                        value={sessionCodeInput}
+                        onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
+                        placeholder="e.g. ABC123"
+                        className="pl-9 w-full sm:w-40 font-mono text-sm uppercase tracking-wider bg-background border-border rounded-lg"
+                        maxLength={8}
+                      />
+                    </div>
+                    <Button
+                      size="default"
+                      className="shrink-0"
+                      onClick={async () => {
+                        const ok = await joinSession(sessionCodeInput.trim());
+                        if (ok) setSessionCodeInput('');
+                      }}
+                      disabled={sessionJoinLoading || !sessionCodeInput.trim()}
+                    >
+                      {sessionJoinLoading ? 'Joining…' : 'Join session'}
+                    </Button>
                   </div>
-                  <Button
-                    className="sm:self-end shrink-0"
-                    onClick={async () => {
-                      const ok = await joinSession(sessionCodeInput.trim());
-                      if (ok) setSessionCodeInput('');
-                    }}
-                    disabled={sessionJoinLoading || !sessionCodeInput.trim()}
-                  >
-                    {sessionJoinLoading ? 'Joining…' : 'Join session'}
-                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Prefer to pick from active classes?{' '}
+                    <Link to="/join-class" className="text-primary font-medium hover:underline">View active classes</Link>
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
-                  <p className="text-sm font-medium text-primary">
-                    You&apos;re in the session. Waiting for your teacher to launch a lesson or scene…
+                  <p className="text-sm font-medium text-primary flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    Joined. Waiting for teacher to launch a lesson or scene…
                   </p>
                   <Button size="sm" variant="outline" onClick={leaveSessionAsStudent} className="shrink-0">
                     Leave session
@@ -2403,10 +2403,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
             <CardContent className="flex flex-col items-center justify-center py-20">
               <BookOpen className="w-16 h-16 text-muted-foreground mb-4" />
               <h3 className="text-lg font-semibold text-foreground mb-2">
-                {isStudentDemoView ? 'No Demo Lessons Available' : 'No Lessons Found'}
+                {isGuest ? 'No Demo Lessons Available' : 'No Lessons Found'}
               </h3>
               <p className="text-sm text-muted-foreground text-center max-w-sm">
-                {isStudentDemoView
+                {isGuest
                   ? 'Demo lessons are marked by your administrator. Sign up or log in with a full account to see more lessons.'
                   : 'Try adjusting your filters'}
               </p>
@@ -2444,7 +2444,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {groupItems.map((lessonItem, index) => {
                       const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
-                      const isLockedForGuest = isStudentDemoView && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                      const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
                       return (
                       <div
                         key={`${itemKey}_${index}`}
@@ -2498,7 +2498,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   {/* Topic Items */}
                   {groupItems.map((lessonItem, index) => {
                     const itemKey = `${lessonItem.chapter.id}_${lessonItem.topic.topic_id}`;
-                    const isLockedForGuest = isStudentDemoView && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
+                    const isLockedForGuest = isGuest && guestUnlockedLessonKey !== null && guestUnlockedLessonKey !== itemKey;
                     return (
                     <LessonListItem
                       key={`${itemKey}_${index}`}
