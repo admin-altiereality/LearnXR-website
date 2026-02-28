@@ -5,6 +5,7 @@
 import { Request, Response } from 'express';
 import { Router } from 'express';
 import axios from 'axios';
+import { isProxyAssetUrlAllowed } from '../utils/proxyAssetValidation';
 
 const router = Router();
 
@@ -52,6 +53,10 @@ router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void>
   const targetUrl = decodeProxyAssetEncoded(encoded);
   if (!targetUrl) {
     res.status(400).json({ error: 'Invalid encoded URL in path', requestId });
+    return;
+  }
+  if (!isProxyAssetUrlAllowed(targetUrl)) {
+    res.status(400).json({ error: 'URL not allowed for proxy', requestId });
     return;
   }
   try {
@@ -126,8 +131,6 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
       });
     }
 
-    console.log(`[${requestId}] Proxying asset request:`, url.substring(0, 120) + (url.length > 120 ? '...' : ''));
-
     // Decode until stable so single- or double-encoded query params (e.g. signed URLs with &) work
     let decodedUrl = url;
     let prev = '';
@@ -139,7 +142,13 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
         break;
       }
     }
-    console.log(`[${requestId}] Decoded URL:`, decodedUrl.substring(0, 120) + (decodedUrl.length > 120 ? '...' : ''));
+    if (!isProxyAssetUrlAllowed(decodedUrl)) {
+      return res.status(400).json({
+        error: 'URL not allowed for proxy',
+        requestId
+      });
+    }
+    console.log(`[${requestId}] Proxying asset request:`, decodedUrl.substring(0, 120) + (decodedUrl.length > 120 ? '...' : ''));
 
     // Use app origin as Referer so origins that check it (e.g. Meshy CDN) allow the request
     const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
@@ -250,7 +259,6 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
     
     return res.status(500).json({ 
       error: 'Internal server error during asset proxy',
-      details: error.message,
       requestId 
     });
   }

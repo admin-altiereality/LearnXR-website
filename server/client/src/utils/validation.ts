@@ -40,6 +40,19 @@ export function sanitizeString(input: string): string {
 }
 
 /**
+ * Escape string for safe use in innerHTML (prevents XSS)
+ */
+export function escapeForHtml(str: string): string {
+  if (str == null || typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * Validate URL format
  */
 export function validateUrl(url: string): boolean {

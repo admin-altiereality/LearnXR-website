@@ -196,7 +196,7 @@ router.post('/message', validateFullAccess, async (req: Request, res: Response):
     
     res.status(500).json({ 
       error: error.message || 'Failed to send message',
-      details: error.stack
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -256,7 +256,7 @@ router.post('/tts/generate', validateFullAccess, async (req: Request, res: Respo
     
     res.status(500).json({ 
       error: error.message || 'Failed to generate speech',
-      details: error.stack
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -590,10 +590,10 @@ router.get('/list', validateReadAccess, async (req: Request, res: Response): Pro
     res.status(500).json({ 
       error: error.message || 'Failed to list assistants',
       assistants: [], // Return empty array on error
-      debug: {
+      debug: process.env.NODE_ENV === 'development' ? {
         error: error.message,
         stack: error.stack
-      }
+      } : undefined
     });
   }
 });

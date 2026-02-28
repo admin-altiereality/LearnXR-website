@@ -381,7 +381,7 @@ export class StorageTestUtility {
         <div>Available: ${results.storage.available ? '✅' : '❌'}</div>
         <div>Initialized: ${results.storage.initialized ? '✅' : '❌'}</div>
         <div>Test Access: ${results.storage.testAccess ? '✅' : '❌'}</div>
-        ${results.storage.error ? `<div class="text-red-400">Error: ${results.storage.error}</div>` : ''}
+        ${results.storage.error ? `<div class="text-red-400">Error: ${String(results.storage.error).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')}</div>` : ''}
       </div>
     `;
     
@@ -400,7 +400,7 @@ export class StorageTestUtility {
         <div>
           <div class="font-semibold text-yellow-400">Recommendations</div>
           <ul class="list-disc list-inside space-y-1">
-            ${results.recommendations.map(rec => `<li class="text-yellow-300">${rec}</li>`).join('')}
+            ${results.recommendations.map(rec => `<li class="text-yellow-300">${String(rec).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')}</li>`).join('')}
           </ul>
         </div>
       `;

@@ -359,7 +359,7 @@ router.post('/tts/generate', async (req, res) => {
     
     res.status(500).json({ 
       error: error.message || 'Failed to generate speech',
-      details: error.stack
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -641,10 +641,10 @@ router.get('/list', async (req, res) => {
     res.status(500).json({ 
       error: error.message || 'Failed to list assistants',
       assistants: [], // Return empty array on error
-      debug: {
+      debug: process.env.NODE_ENV === 'development' ? {
         error: error.message,
         stack: error.stack
-      }
+      } : undefined
     });
   }
 });
