@@ -7,6 +7,8 @@ const ALLOWED_HOST_PATTERNS = [
   /^assets\.meshy\.ai$/i,
   /^[a-z0-9-]+\.meshy\.ai$/i,
   /^cdn\.meshy\.ai$/i,
+  /^images\.blockadelabs\.com$/i,
+  /^[a-z0-9-]+\.blockadelabs\.com$/i,
   /^storage\.googleapis\.com$/i,
   /^firebasestorage\.googleapis\.com$/i,
   /^[a-z0-9-]+\.firebasestorage\.app$/i,

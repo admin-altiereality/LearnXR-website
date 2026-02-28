@@ -11,8 +11,8 @@ const RAZORPAY_TEAM_YEARLY = import.meta.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID |
 const RAZORPAY_ENTERPRISE_MONTHLY = import.meta.env.VITE_RAZORPAY_ENTERPRISE_MONTHLY_PLAN_ID || '';
 const RAZORPAY_ENTERPRISE_YEARLY = import.meta.env.VITE_RAZORPAY_ENTERPRISE_YEARLY_PLAN_ID || '';
 
-// Validate Razorpay plan IDs on load (only in browser)
-if (typeof window !== 'undefined') {
+// Validate Razorpay plan IDs on load (only in browser, only in development - app uses Paddle in production)
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   const missingPlans: string[] = [];
   if (!RAZORPAY_PRO_MONTHLY) missingPlans.push('Pro Monthly');
   if (!RAZORPAY_PRO_YEARLY) missingPlans.push('Pro Yearly');
@@ -20,12 +20,9 @@ if (typeof window !== 'undefined') {
   if (!RAZORPAY_TEAM_YEARLY) missingPlans.push('Team Yearly');
   if (!RAZORPAY_ENTERPRISE_MONTHLY) missingPlans.push('Enterprise Monthly');
   if (!RAZORPAY_ENTERPRISE_YEARLY) missingPlans.push('Enterprise Yearly');
-  
   if (missingPlans.length > 0) {
     console.warn('⚠️ Missing Razorpay Plan IDs:', missingPlans.join(', '));
     console.warn('Please ensure all VITE_RAZORPAY_*_PLAN_ID environment variables are set in .env file');
-  } else {
-    console.log('✅ All Razorpay plan IDs loaded successfully');
   }
 }
 

@@ -12,6 +12,7 @@ import { db } from '../../config/firebase';
 import type { StudentScore, LessonLaunch, Class } from '../../types/lms';
 import { Link } from 'react-router-dom';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
+import { SchoolCodeBlock } from '../../Components/SchoolCodeBlock';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
 import { Badge } from '../../Components/ui/badge';
@@ -678,10 +679,7 @@ const SchoolDashboard = () => {
                 <div className="flex items-center gap-3 mt-1 flex-wrap">
                   <p className="text-muted-foreground text-sm">Monitor lesson launches, quiz scores, and curriculum completion</p>
                   {schoolCode && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30">
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">School Code</span>
-                      <span className="font-mono font-bold text-primary text-base tracking-wider">{schoolCode}</span>
-                    </div>
+                    <SchoolCodeBlock code={schoolCode} variant="dashboard" />
                   )}
                 </div>
               </div>

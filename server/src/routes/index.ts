@@ -74,9 +74,12 @@ router.get('/proxy-asset/:encoded/model.glb', async (req, res) => {
       Readable.fromWeb(response.body as any).pipe(res);
     }
     console.log('✅ Asset proxy (path) successful');
-  } catch (error) {
-    console.error('❌ Asset proxy (path) error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (error: any) {
+    const upstreamStatus = error?.response?.status;
+    const code = error?.code;
+    const msg = error?.message || 'Unknown error';
+    console.error('Asset proxy (path) 500: upstreamStatus=%s code=%s message=%s', upstreamStatus, code, msg);
+    res.status(500).json({ error: 'Failed to fetch asset' });
   }
 });
 

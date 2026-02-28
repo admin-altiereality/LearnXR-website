@@ -1730,7 +1730,8 @@ const VRLessonPlayerInner = () => {
 
   // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
   // Krpano is the active view whenever we have a skybox (skybox-only or skybox+GLB); sync uses this.
-  // Note: Console warning "Unknown action: 90" may come from a krpano plugin (e.g. view/fov handling) and is under investigation.
+  // Known quirk: Console may show "Unknown action: 90" from the cursor3d plugin's lookto(h, v, 90, ...) call
+  // (90 is FOV in degrees). This is a krpano internal interpretation and does not affect behavior.
   const useKrpanoView = !!(skyboxData?.imageUrl || skyboxData?.file_url);
   // Track whether krpano WebVR is currently enabled so we can hide HTML overlays in true VR mode
   const [isInKrpanoVR, setIsInKrpanoVR] = useState(false);

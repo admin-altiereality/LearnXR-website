@@ -20,6 +20,7 @@ import { StudentScreen360Preview } from '../../Components/StudentScreen360Previe
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
 import { Link, useNavigate } from 'react-router-dom';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
+import { SchoolCodeBlock } from '../../Components/SchoolCodeBlock';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
 import { Badge } from '../../Components/ui/badge';
@@ -862,10 +863,7 @@ const TeacherDashboard = () => {
                 <div className="flex items-center gap-3 mt-1 flex-wrap">
                   <p className="text-muted-foreground text-sm">Precision insights for every class you lead.</p>
                   {schoolCode && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30">
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">School Code</span>
-                      <span className="font-mono font-bold text-primary text-base tracking-wider">{schoolCode}</span>
-                    </div>
+                    <SchoolCodeBlock code={schoolCode} variant="dashboard" />
                   )}
                 </div>
               </div>

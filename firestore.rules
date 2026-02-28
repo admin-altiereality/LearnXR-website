@@ -469,6 +469,13 @@ service cloud.firestore {
         (!isCoreAsset(resource.data) || isSuperadmin());
     }
     
+    // Text to 3D collection (alternative name used by getLessonBundle)
+    match /text_to_3d/{assetId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isStaffContentEditor();
+      allow delete: if isAdminOrSuperadmin() && (!isCoreAsset(resource.data) || isSuperadmin());
+    }
+    
     // Avatar to 3D Assets collection - read access for authenticated users
     match /avatar_to_3d_assets/{assetId} {
       allow read: if isAuthenticated();

@@ -32,7 +32,7 @@ export class RazorpayService {
     }
     
     this.isInitialized = true;
-    this.loadRazorpayScript();
+    // Lazy-load script on first checkout to avoid preload warnings and speed initial load
   }
 
   private loadRazorpayScript(): void {
@@ -72,6 +72,9 @@ export class RazorpayService {
     if (!this.isInitialized) {
       throw new Error('Razorpay not initialized');
     }
+    
+    // Load script on first use (lazy) to avoid preload warnings
+    this.loadRazorpayScript();
     
     // Wait for script to load
     let attempts = 0;
