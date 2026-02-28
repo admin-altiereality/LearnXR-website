@@ -8,6 +8,7 @@ import {onRequest} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { initializeAdmin } from './utils/services';
 import { pathNormalization } from './middleware/pathNormalization';
 import { requestLogging } from './middleware/logging';
@@ -77,8 +78,16 @@ const getApp = (): express.Application => {
 
     app.use(cors(corsOptions));
     app.options('*', cors(corsOptions));
-    
-    app.use(express.json());
+
+    // Security headers
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      next();
+    });
+
+    app.use(express.json({ limit: '1mb' }));
     
     // Custom middleware
     app.use(pathNormalization);
@@ -88,6 +97,16 @@ const getApp = (): express.Application => {
     // Import routes only when app is created, not at module load time
     const linkedinRoutes = require('./routes/linkedin').default;
     const authRoutes = require('./routes/auth').default;
+
+    // Stricter rate limit for auth routes (10 req/15 min per IP)
+    const authLimiter = rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 10,
+      message: { error: 'Too many auth attempts, please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    app.use('/auth', authLimiter);
 
     // Mount public routes FIRST (before authentication)
     app.use('/linkedin', linkedinRoutes);

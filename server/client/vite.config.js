@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
-      sourcemap: true, // Enable sourcemaps for production debugging
+      sourcemap: mode !== 'production', // Disable in prod to avoid exposing source
       // Add timestamp to force cache busting
       rollupOptions: {
         output: {
