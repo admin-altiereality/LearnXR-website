@@ -13,7 +13,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'fire
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
-import { FaArrowRight, FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher } from 'react-icons/fa';
+import { FaArrowRight, FaBook, FaChartLine, FaCheckCircle, FaChalkboardTeacher, FaClock, FaGraduationCap, FaKey } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Badge } from '../../Components/ui/badge';
@@ -21,6 +21,7 @@ import { Progress } from '../../Components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '../../Components/ui/avatar';
 import { Button } from '../../Components/ui/button';
 import { Input } from '../../Components/ui/input';
+import { Label } from '../../Components/ui/label';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
@@ -413,47 +414,51 @@ const StudentDashboard = () => {
 
         {/* Join class session - students only */}
         {!isGuest && (
-          <Card className="mb-8 rounded-xl border-primary/30 border bg-card shadow-sm overflow-hidden">
-            <CardHeader className="pb-2">
+          <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <FaChalkboardTeacher className="text-primary text-lg" />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+                  <FaKey className="h-4 w-4 text-primary" aria-hidden />
                 </div>
                 <div>
-                  <CardTitle className="text-lg">Join a class session</CardTitle>
-                  <CardDescription className="text-sm mt-0.5">
-                    Enter the code your teacher shared, or see active classes from your school.
+                  <CardTitle className="text-base font-semibold text-foreground">Join a class session</CardTitle>
+                  <CardDescription className="text-sm text-muted-foreground mt-0.5">
+                    Enter the code shared by your teacher to join their live session.
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
               {!joinedSessionId ? (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
-                    <div className="flex-1 min-w-0">
-                      <label htmlFor="session-code" className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                        Session code
-                      </label>
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <Label htmlFor="student-join-code" className="text-sm font-medium text-foreground">
+                        Class code
+                      </Label>
                       <Input
-                        id="session-code"
+                        id="student-join-code"
                         type="text"
                         value={sessionCodeInput}
                         onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
                         placeholder="e.g. ABC123"
-                        className="w-full sm:w-36 font-mono uppercase tracking-wider bg-background border-border"
+                        className="w-full sm:max-w-[10rem] font-mono text-base uppercase tracking-wider bg-background border-border focus-visible:ring-primary/30"
                         maxLength={8}
+                        aria-describedby="student-join-code-hint"
                       />
+                      <p id="student-join-code-hint" className="text-xs text-muted-foreground">
+                        Ask your teacher for the session code if you don&apos;t have it.
+                      </p>
                     </div>
                     <Button
-                      className="shrink-0"
+                      className="sm:self-end shrink-0"
                       onClick={async () => {
                         const ok = await joinSession(sessionCodeInput.trim());
                         if (ok) setSessionCodeInput('');
                       }}
                       disabled={sessionJoinLoading || !sessionCodeInput.trim()}
                     >
-                      {sessionJoinLoading ? 'Joining...' : 'Join session'}
+                      {sessionJoinLoading ? 'Joining…' : 'Join session'}
                     </Button>
                   </div>
                   <Link
@@ -465,9 +470,11 @@ const StudentDashboard = () => {
                   </Link>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
-                  <span className="text-sm text-primary font-medium">You&apos;re in a session. Waiting for your teacher to launch a lesson...</span>
-                  <Button size="sm" variant="outline" onClick={leaveSessionAsStudent}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
+                  <p className="text-sm font-medium text-primary">
+                    You&apos;re in the session. Waiting for your teacher to launch a lesson…
+                  </p>
+                  <Button size="sm" variant="outline" onClick={leaveSessionAsStudent} className="shrink-0">
                     Leave session
                   </Button>
                 </div>
