@@ -41,6 +41,7 @@ import { SeparateGenerationProgress } from './SeparateGenerationProgress';
 import { TeacherAvatar } from './TeacherAvatar';
 import { FloatingMessageBox } from './FloatingMessageBox';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { escapeForHtml } from '../utils/validation';
 import api from '../config/axios';
 import LessonMCQPanel from './LessonMCQPanel';
 import { LessonModeOverlay } from './LessonModeOverlay';
@@ -1579,7 +1580,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
       errorMessage.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
       errorMessage.innerHTML = `
         <div class="font-bold mb-2">❌ Diagnostic Error</div>
-        <div class="text-sm">${error.message}</div>
+        <div class="text-sm">${escapeForHtml(String(error?.message || 'Unknown error'))}</div>
       `;
       document.body.appendChild(errorMessage);
       setTimeout(() => document.body.removeChild(errorMessage), 5000);
@@ -2419,7 +2420,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             // Show success notification
             const successMsg = document.createElement('div');
             successMsg.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-            successMsg.innerHTML = `✅ Skybox saved to history! (ID: ${generationId})`;
+            successMsg.innerHTML = `✅ Skybox saved to history! (ID: ${escapeForHtml(String(generationId || ''))})`;
             document.body.appendChild(successMsg);
             setTimeout(() => document.body.removeChild(successMsg), 3000);
           } else {
@@ -2451,7 +2452,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
           errorMsg.innerHTML = `
             <div class="font-bold mb-2">❌ Failed to Save to History</div>
-            <div class="text-sm">Error: ${error?.message || 'Unknown error'}</div>
+            <div class="text-sm">Error: ${escapeForHtml(String(error?.message || 'Unknown error'))}</div>
             <div class="text-xs mt-2">Check console for details. Collection: skyboxes</div>
           `;
           document.body.appendChild(errorMsg);
@@ -2673,8 +2674,8 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
             warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
             warningMsg.innerHTML = `
               <div class="font-bold mb-2">⚠️ 3D Asset Generation Failed</div>
-              <div class="text-sm">${assetResult?.error || assetError?.message || 'No assets were generated. Skybox is still available.'}</div>
-              ${assetResult?.errors && assetResult.errors.length > 0 ? `<div class="text-xs mt-2">Errors: ${assetResult.errors.join(', ')}</div>` : ''}
+              <div class="text-sm">${escapeForHtml(String(assetResult?.error || assetError?.message || 'No assets were generated. Skybox is still available.'))}</div>
+              ${assetResult?.errors && assetResult.errors.length > 0 ? `<div class="text-xs mt-2">Errors: ${escapeForHtml(assetResult.errors.join(', '))}</div>` : ''}
             `;
             document.body.appendChild(warningMsg);
             setTimeout(() => document.body.removeChild(warningMsg), 8000);
@@ -2707,7 +2708,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           warningMsg.className = 'fixed top-4 right-4 bg-amber-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
           warningMsg.innerHTML = `
             <div class="font-bold mb-2">⚠️ Skybox Generated</div>
-            <div class="text-sm">3D asset generation skipped: ${reasons.join(', ')}</div>
+            <div class="text-sm">3D asset generation skipped: ${escapeForHtml(reasons.join(', '))}</div>
             <div class="text-xs mt-2">Your skybox environment is ready to use.</div>
           `;
           document.body.appendChild(warningMsg);
@@ -4334,7 +4335,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                   errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
                                   errorMsg.innerHTML = `
                                     <div class="font-bold mb-2">❌ 3D Asset Generation Failed</div>
-                                    <div class="text-sm">${errorMessage}</div>
+                                    <div class="text-sm">${escapeForHtml(String(errorMessage))}</div>
                                     <div class="text-xs mt-2 text-red-200">Check browser console for detailed logs</div>
                                   `;
                                   document.body.appendChild(errorMsg);
@@ -4355,7 +4356,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                                 errorMsg.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md';
                                 errorMsg.innerHTML = `
                                   <div class="font-bold mb-2">❌ 3D Asset Generation Error</div>
-                                  <div class="text-sm">${errorMessage}</div>
+                                  <div class="text-sm">${escapeForHtml(String(errorMessage))}</div>
                                   <div class="text-xs mt-2 text-red-200">Check browser console for details</div>
                                 `;
                                 document.body.appendChild(errorMsg);

@@ -13,6 +13,9 @@ build/
 # Environment files
 .env
 .env.local
+.env.production
+.env.backup
+.env.backup2
 .secret-temp
 .env.*.local
 # But allow template files

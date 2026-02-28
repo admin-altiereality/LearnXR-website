@@ -1,6 +1,8 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import path from 'path';
 import { router as apiRouter } from './routes/index';
 import paymentRoutes from './routes/payment';
@@ -26,8 +28,15 @@ console.log('Environment variables loaded:', {
 // Razorpay removed - all payments use Paddle
 
 const app = express();
+app.disable('x-powered-by');
 const buildPath = path.resolve(process.cwd(), 'client/dist');
 const isDevelopment = process.env.NODE_ENV === 'development';
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false, // CSP may break inline scripts; configure separately if needed
+  crossOriginEmbedderPolicy: false,
+}));
 
 // CORS configuration (allow Firebase preview channels e.g. in3devoneuralai--manav-xxx.web.app)
 const corsOptions = {
@@ -35,6 +44,7 @@ const corsOptions = {
     if (!origin) return cb(null, true);
     const allowed = [
       'https://in3d.evoneural.ai',
+      'https://learnxr-evoneuralai.web.app',
       'http://localhost:3000',
       'http://localhost:5173',
       'http://localhost:5002'
@@ -42,7 +52,7 @@ const corsOptions = {
     if (allowed.includes(origin)) return cb(null, true);
     if (/^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.web\.app$/.test(origin)) return cb(null, true);
     if (origin.endsWith('.web.app') || origin.endsWith('.firebaseapp.com')) return cb(null, true);
-    cb(null, true);
+    cb(new Error('Origin not allowed'), false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -53,15 +63,42 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Debug middleware
+// Global rate limiting (100 req/15 min per IP)
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', globalLimiter);
+
+// Debug middleware (development only; sanitize sensitive data)
 app.use((req, res, next) => {
-  console.log('Incoming request:', {
-    method: req.method,
-    path: req.path,
-    originalUrl: req.originalUrl,
-    body: req.body,
-    headers: req.headers
-  });
+  if (isDevelopment) {
+    const sanitize = (obj: unknown): unknown => {
+      if (obj === null || obj === undefined) return obj;
+      if (typeof obj === 'object' && obj !== null) {
+        const out: Record<string, unknown> = {};
+        const sensitive = ['password', 'token', 'apiKey', 'authorization', 'secret', 'key'];
+        for (const [k, v] of Object.entries(obj)) {
+          if (sensitive.some(s => k.toLowerCase().includes(s))) {
+            out[k] = '[REDACTED]';
+          } else {
+            out[k] = typeof v === 'object' && v !== null ? sanitize(v) : v;
+          }
+        }
+        return out;
+      }
+      return obj;
+    };
+    console.log('Incoming request:', {
+      method: req.method,
+      path: req.path,
+      originalUrl: req.originalUrl,
+      body: sanitize(req.body),
+    });
+  }
   next();
 });
 
@@ -131,12 +168,14 @@ if (!isDevelopment) {
   });
 }
 
-// Error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+// Centralized error handler (never expose stack traces to client in production)
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('app error:', err);
+  const isDev = process.env.NODE_ENV === 'development';
   res.status(500).json({
     status: 'error',
-    message: err.message || 'Internal app error'
+    message: isDev ? (err.message || 'Internal app error') : 'An error occurred',
+    ...(isDev && err.stack ? { details: err.stack } : {})
   });
 });
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import { Readable } from 'stream';
+import { isProxyAssetUrlAllowed } from '../utils/proxyAssetValidation';
 import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
@@ -46,6 +47,9 @@ router.get('/proxy-asset/:encoded/model.glb', async (req, res) => {
     const targetUrl = decodeProxyAssetEncoded(req.params.encoded);
     if (!targetUrl) {
       return res.status(400).json({ error: 'Invalid encoded URL in path' });
+    }
+    if (!isProxyAssetUrlAllowed(targetUrl)) {
+      return res.status(400).json({ error: 'URL not allowed for proxy' });
     }
     console.log('🔗 Proxying asset (path-based):', targetUrl.slice(0, 100) + (targetUrl.length > 100 ? '...' : ''));
     const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
@@ -101,6 +105,10 @@ router.get('/proxy-asset', async (req, res) => {
       } catch {
         break;
       }
+    }
+
+    if (!isProxyAssetUrlAllowed(targetUrl)) {
+      return res.status(400).json({ error: 'URL not allowed for proxy' });
     }
 
     console.log('🔗 Proxying asset request:', targetUrl.slice(0, 100) + (targetUrl.length > 100 ? '...' : ''));

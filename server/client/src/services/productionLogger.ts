@@ -65,7 +65,7 @@ class ProductionLogger {
 
   private sanitizeMetadata(metadata: Record<string, any>): Record<string, any> {
     const sanitized: Record<string, any> = {};
-    const sensitiveKeys = ['password', 'token', 'apiKey', 'secret', 'authorization', 'auth'];
+    const sensitiveKeys = ['password', 'token', 'apiKey', 'secret', 'authorization', 'auth', 'key'];
     
     for (const [key, value] of Object.entries(metadata)) {
       const lowerKey = key.toLowerCase();

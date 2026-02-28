@@ -2,6 +2,7 @@
  * Secret backend login - Staff only (Admin, Super Admin, Associate).
  * Not linked from the main app. Only these roles can use this entry point.
  * URL: /secretbackend
+ * Note: Consider adding reCAPTCHA v3 for brute-force protection (rate limiting provides basic mitigation).
  */
 
 import { useEffect, useState } from 'react';

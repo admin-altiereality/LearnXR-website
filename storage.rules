@@ -7,6 +7,11 @@ service firebase.storage {
       return request.auth != null;
     }
     
+    // Max file size: 100MB (Storage rules cannot access Firestore for role checks)
+    function isValidSize() {
+      return request.resource.size < 100 * 1024 * 1024;
+    }
+    
     // Note: Storage rules cannot access Firestore documents directly
     // Core asset protection is enforced in UI + Firestore rules
     // Storage rules allow admin/superadmin to delete, UI will prevent admin from deleting core assets
@@ -16,63 +21,63 @@ service firebase.storage {
     // UI will prevent admin from deleting core assets
     match /lesson_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // Meshy assets storage
     match /meshy_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // Text-to-3D assets storage
     match /text_to_3d_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // Avatar-to-3D assets storage
     match /avatar_to_3d_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // Chapter images storage
     match /chapter_images/{imageId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // PDFs storage
     match /pdfs/{pdfId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated(); // UI enforces superadmin-only check
     }
 
     // Chapter PDFs (source documents for lessons)
     match /chapter_pdf/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
       allow delete: if isAuthenticated();
     }
     
     // General user uploads (non-lesson content)
     match /uploads/{userId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId && isValidSize();
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
     
     // Default: Allow read for authenticated users
     match /{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated(); // UI enforces role checks
+      allow write: if isAuthenticated() && isValidSize(); // UI enforces role checks
       allow delete: if isAuthenticated(); // UI enforces role checks
     }
   }
