@@ -36,9 +36,9 @@ import {
   FaClock,
   FaFilter,
   FaChartBar,
-  FaUserCheck,
-  FaTimesCircle,
-  FaBell
+  FaBell,
+  FaCheckCircle,
+  FaHourglassHalf,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -690,7 +690,7 @@ const SchoolDashboard = () => {
         </div>
 
         {/* Filters */}
-        <div className="mb-6 flex gap-4 items-center flex-wrap">
+        <div className="mb-8 flex gap-4 items-center flex-wrap">
           <div className="flex items-center gap-2">
             <FaFilter className="text-muted-foreground" />
             <span className="text-muted-foreground text-sm">Filters:</span>
@@ -807,7 +807,7 @@ const SchoolDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
-                  <FaGraduationCap className="text-primary text-xl" />
+                  <FaCheckCircle className="text-primary text-xl" />
                 </div>
                 <div>
                   <p className="text-muted-foreground text-sm">Completed</p>
@@ -837,7 +837,7 @@ const SchoolDashboard = () => {
             <CardContent className="p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
-                  <FaClock className="text-primary text-xl" />
+                  <FaHourglassHalf className="text-primary text-xl" />
                 </div>
                 <div>
                   <p className="text-muted-foreground text-sm">Total Learning Time</p>
@@ -949,46 +949,47 @@ const SchoolDashboard = () => {
 
         {/* Recent Quiz Scores */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Recent Quiz Scores</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-4">Recent Quiz Scores</h2>
           {scores.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaChartLine className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No quiz scores yet</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaChartLine className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No quiz scores yet</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-3">
               {scores.slice(0, 10).map((score) => {
                 const student = students.find(s => s.uid === score.student_id);
                 return (
-                  <div
-                    key={score.id}
-                    className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-white font-medium">
-                          {student?.name || student?.displayName || 'Unknown Student'}
-                        </h3>
-                        <p className="text-white/50 text-sm mt-1">
-                          {score.subject} - {score.curriculum} Class {score.class_name}
-                        </p>
-                        <p className="text-white/30 text-xs mt-1">
-                          Chapter: {score.chapter_id} • Attempt #{score.attempt_number}
-                        </p>
-                      </div>
-                      <div className="ml-4 text-right">
-                        <div className={`text-2xl font-bold ${
-                          score.score.percentage >= 70 ? 'text-emerald-400' :
-                          score.score.percentage >= 50 ? 'text-amber-400' : 'text-red-400'
-                        }`}>
-                          {score.score.percentage}%
+                  <Card key={score.id} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h3 className="text-foreground font-medium">
+                            {student?.name || student?.displayName || 'Unknown Student'}
+                          </h3>
+                          <p className="text-muted-foreground text-sm mt-1">
+                            {score.subject} - {score.curriculum} Class {score.class_name}
+                          </p>
+                          <p className="text-muted-foreground/70 text-xs mt-1">
+                            Chapter: {score.chapter_id} • Attempt #{score.attempt_number}
+                          </p>
                         </div>
-                        <p className="text-white/50 text-sm">
-                          {score.score.correct}/{score.score.total}
-                        </p>
+                        <div className="ml-4 text-right">
+                          <div className={`text-2xl font-bold ${
+                            score.score.percentage >= 70 ? 'text-primary' :
+                            score.score.percentage >= 50 ? 'text-amber-500' : 'text-destructive'
+                          }`}>
+                            {score.score.percentage}%
+                          </div>
+                          <p className="text-muted-foreground text-sm">
+                            {score.score.correct}/{score.score.total}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
@@ -997,21 +998,23 @@ const SchoolDashboard = () => {
 
         {/* Student Performance Overview */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-            <FaChartBar className="text-cyan-400" />
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <FaChartBar className="text-primary" />
             Student Performance Overview
           </h2>
           {studentPerformance.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaUsers className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No student performance data available</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaUsers className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No student performance data available</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-4">
               {/* Top Performers */}
               <div>
-                <h3 className="text-lg font-medium text-white mb-3 flex items-center gap-2">
-                  <FaTrophy className="text-amber-400" />
+                <h3 className="text-lg font-medium text-foreground mb-3 flex items-center gap-2">
+                  <FaTrophy className="text-primary" />
                   Top Performers
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1019,28 +1022,27 @@ const SchoolDashboard = () => {
                     .sort((a, b) => b.averageScore - a.averageScore)
                     .slice(0, 6)
                     .map((student) => (
-                      <div
-                        key={student.studentId}
-                        className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-white font-medium truncate">{student.studentName}</h4>
-                          <span className="text-emerald-400 font-bold">{student.averageScore}%</span>
-                        </div>
-                        <p className="text-white/50 text-xs mb-2">{student.className}</p>
-                        <div className="flex items-center justify-between text-xs text-white/60">
-                          <span>Quizzes: {student.totalQuizzes}</span>
-                          <span>Completion: {student.completionRate}%</span>
-                        </div>
-                      </div>
+                      <Card key={student.studentId} className="border border-primary/30 bg-primary/5">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-foreground font-medium truncate" title={student.studentName}>{student.studentName}</h4>
+                            <span className="text-primary font-bold">{student.averageScore}%</span>
+                          </div>
+                          <p className="text-muted-foreground text-xs mb-2">{student.className}</p>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Quizzes: {student.totalQuizzes}</span>
+                            <span>Completion: {student.completionRate}%</span>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))}
                 </div>
               </div>
 
               {/* Students Needing Attention */}
               <div>
-                <h3 className="text-lg font-medium text-white mb-3 flex items-center gap-2">
-                  <FaExclamationTriangle className="text-red-400" />
+                <h3 className="text-lg font-medium text-foreground mb-3 flex items-center gap-2">
+                  <FaExclamationTriangle className="text-destructive" />
                   Students Needing Attention
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1049,40 +1051,39 @@ const SchoolDashboard = () => {
                     .sort((a, b) => a.averageScore - b.averageScore)
                     .slice(0, 6)
                     .map((student) => (
-                      <div
-                        key={student.studentId}
-                        className="rounded-xl border border-red-500/20 bg-red-500/5 p-4"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-white font-medium truncate">{student.studentName}</h4>
-                          <span className="text-red-400 font-bold">{student.averageScore}%</span>
-                        </div>
-                        <p className="text-white/50 text-xs mb-2">{student.className}</p>
-                        <div className="flex items-center justify-between text-xs text-white/60">
-                          <span>Quizzes: {student.totalQuizzes}</span>
-                          <span>Completion: {student.completionRate}%</span>
-                        </div>
-                      </div>
+                      <Card key={student.studentId} className="border border-destructive/30 bg-destructive/5">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-foreground font-medium truncate" title={student.studentName}>{student.studentName}</h4>
+                            <span className="text-destructive font-bold">{student.averageScore}%</span>
+                          </div>
+                          <p className="text-muted-foreground text-xs mb-2">{student.className}</p>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Quizzes: {student.totalQuizzes}</span>
+                            <span>Completion: {student.completionRate}%</span>
+                          </div>
+                        </CardContent>
+                      </Card>
                     ))}
                 </div>
               </div>
 
               {/* All Students Table */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+              <Card className="border border-border bg-card overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-white/5">
+                    <thead className="bg-muted/50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Student</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Class</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Avg Score</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Quizzes</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Completion</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-white/70 uppercase">Time Spent</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Student</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Class</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Avg Score</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Quizzes</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Completion</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Time Spent</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/10">
+                    <tbody className="divide-y divide-border">
                       {studentPerformance
                         .filter(sp => {
                           if (selectedClassFilter !== 'all') {
@@ -1095,33 +1096,27 @@ const SchoolDashboard = () => {
                         .map((student) => {
                           const studentData = students.find(s => s.uid === student.studentId);
                           return (
-                          <tr key={student.studentId} className="hover:bg-white/5">
-                            <td className="px-4 py-3 text-white">{student.studentName}</td>
+                          <tr key={student.studentId} className="hover:bg-accent/30">
+                            <td className="px-4 py-3 text-foreground">{student.studentName}</td>
                             <td className="px-4 py-3">
                               {studentData?.approvalStatus && (
-                                <span className={`px-1.5 py-0.5 text-xs rounded-full ${
-                                  studentData.approvalStatus === 'approved' 
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                    : studentData.approvalStatus === 'pending'
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                    : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                                }`}>
+                                <Badge variant={studentData.approvalStatus === 'approved' ? 'default' : studentData.approvalStatus === 'pending' ? 'secondary' : 'destructive'} className="text-xs">
                                   {studentData.approvalStatus}
-                                </span>
+                                </Badge>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-white/70">{student.className}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{student.className}</td>
                             <td className="px-4 py-3">
                               <span className={`font-medium ${
-                                student.averageScore >= 70 ? 'text-emerald-400' :
-                                student.averageScore >= 50 ? 'text-amber-400' : 'text-red-400'
+                                student.averageScore >= 70 ? 'text-primary' :
+                                student.averageScore >= 50 ? 'text-amber-500' : 'text-destructive'
                               }`}>
                                 {student.averageScore}%
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-white/70">{student.totalQuizzes}</td>
-                            <td className="px-4 py-3 text-white/70">{student.completionRate}%</td>
-                            <td className="px-4 py-3 text-white/70">
+                            <td className="px-4 py-3 text-muted-foreground">{student.totalQuizzes}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{student.completionRate}%</td>
+                            <td className="px-4 py-3 text-muted-foreground">
                               {Math.round(student.totalTimeSpent / 60)} min
                             </td>
                           </tr>
@@ -1129,67 +1124,62 @@ const SchoolDashboard = () => {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </Card>
             </div>
           )}
         </div>
 
         {/* Teacher Performance Overview */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-            <FaChalkboardTeacher className="text-blue-400" />
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <FaChalkboardTeacher className="text-primary" />
             Teacher Performance Overview
           </h2>
           {teacherPerformance.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaChalkboardTeacher className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No teacher performance data available</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaChalkboardTeacher className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No teacher performance data available</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
               {teacherPerformance.map((teacher) => {
                 const teacherData = teachers.find(t => t.uid === teacher.teacherId);
                 return (
-                <div
-                  key={teacher.teacherId}
-                  className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4"
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-white font-medium truncate">{teacher.teacherName}</h4>
-                      {teacherData?.approvalStatus && (
-                        <span className={`px-1.5 py-0.5 text-xs rounded-full ${
-                          teacherData.approvalStatus === 'approved' 
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : teacherData.approvalStatus === 'pending'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                        }`}>
-                          {teacherData.approvalStatus}
-                        </span>
-                      )}
+                <Card key={teacher.teacherId} className="border border-primary/30 bg-primary/5">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-foreground font-medium truncate" title={teacher.teacherName}>{teacher.teacherName}</h4>
+                        {teacherData?.approvalStatus && (
+                          <Badge variant={teacherData.approvalStatus === 'approved' ? 'default' : teacherData.approvalStatus === 'pending' ? 'secondary' : 'destructive'} className="text-xs">
+                            {teacherData.approvalStatus}
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-primary font-bold">{teacher.averageStudentScore}%</span>
                     </div>
-                    <span className="text-blue-400 font-bold">{teacher.averageStudentScore}%</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between text-white/70">
-                      <span>Classes Managed</span>
-                      <span className="text-white">{teacher.classesManaged}</span>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between text-muted-foreground">
+                        <span>Classes Managed</span>
+                        <span className="text-foreground">{teacher.classesManaged}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-muted-foreground">
+                        <span>Students Taught</span>
+                        <span className="text-foreground">{teacher.studentsTaught}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-muted-foreground">
+                        <span>Total Approvals</span>
+                        <span className="text-foreground">{teacher.totalApprovals}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-muted-foreground">
+                        <span>Recent Activity (7d)</span>
+                        <span className="text-primary">{teacher.recentActivity}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-white/70">
-                      <span>Students Taught</span>
-                      <span className="text-white">{teacher.studentsTaught}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-white/70">
-                      <span>Total Approvals</span>
-                      <span className="text-white">{teacher.totalApprovals}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-white/70">
-                      <span>Recent Activity (7d)</span>
-                      <span className="text-emerald-400">{teacher.recentActivity}</span>
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               )})}
             </div>
           )}
@@ -1197,59 +1187,52 @@ const SchoolDashboard = () => {
 
         {/* Class Performance Comparison */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-            <FaBook className="text-purple-400" />
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <FaBook className="text-primary" />
             Class Performance Comparison
           </h2>
           {classPerformance.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaBook className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No class performance data available</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaBook className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No class performance data available</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {classPerformance
                 .sort((a, b) => b.averageScore - a.averageScore)
                 .map((classItem) => (
-                  <div
-                    key={classItem.classId}
-                    className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4"
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-white font-medium">{classItem.className}</h4>
-                      <span className={`font-bold ${
-                        classItem.averageScore >= 70 ? 'text-emerald-400' :
-                        classItem.averageScore >= 50 ? 'text-amber-400' : 'text-red-400'
-                      }`}>
-                        {classItem.averageScore}%
-                      </span>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex items-center justify-between text-white/70">
-                        <span>Students</span>
-                        <span className="text-white">{classItem.studentCount}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-white/70">
-                        <span>Completion Rate</span>
-                        <span className="text-white">{classItem.completionRate}%</span>
-                      </div>
-                      <div className="flex items-center justify-between text-white/70">
-                        <span>Lessons</span>
-                        <span className="text-white">
-                          {classItem.completedLessons} / {classItem.totalLessons}
+                  <Card key={classItem.classId} className="border border-primary/30 bg-primary/5">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-foreground font-medium" title={classItem.className}>{classItem.className}</h4>
+                        <span className={`font-bold ${
+                          classItem.averageScore >= 70 ? 'text-primary' :
+                          classItem.averageScore >= 50 ? 'text-amber-500' : 'text-destructive'
+                        }`}>
+                          {classItem.averageScore}%
                         </span>
                       </div>
-                      <div className="w-full bg-white/10 rounded-full h-2 mt-3">
-                        <div
-                          className={`h-2 rounded-full ${
-                            classItem.completionRate >= 70 ? 'bg-emerald-500' :
-                            classItem.completionRate >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                          }`}
-                          style={{ width: `${classItem.completionRate}%` }}
-                        />
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span>Students</span>
+                          <span className="text-foreground">{classItem.studentCount}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span>Completion Rate</span>
+                          <span className="text-foreground">{classItem.completionRate}%</span>
+                        </div>
+                        <div className="flex items-center justify-between text-muted-foreground">
+                          <span>Lessons</span>
+                          <span className="text-foreground">
+                            {classItem.completedLessons} / {classItem.totalLessons}
+                          </span>
+                        </div>
+                        <Progress value={classItem.completionRate} className="h-2 mt-3" />
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
             </div>
           )}
@@ -1257,47 +1240,44 @@ const SchoolDashboard = () => {
 
         {/* Recent Lesson Launches */}
         <div>
-          <h2 className="text-xl font-semibold text-white mb-4">Recent Lesson Launches</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-4">Recent Lesson Launches</h2>
           {launches.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-              <FaGraduationCap className="text-4xl text-white/30 mx-auto mb-4" />
-              <p className="text-white/50">No lesson launches yet</p>
-            </div>
+            <Card className="border border-border bg-card">
+              <CardContent className="p-8 text-center">
+                <FaGraduationCap className="text-4xl text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No lesson launches yet</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-3">
               {launches.slice(0, 10).map((launch) => {
                 const student = students.find(s => s.uid === launch.student_id);
                 return (
-                  <div
-                    key={launch.id}
-                    className="rounded-xl border border-white/10 bg-white/[0.02] p-4 hover:bg-white/[0.05] transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h3 className="text-white font-medium">
-                          {student?.name || student?.displayName || 'Unknown Student'}
-                        </h3>
-                        <p className="text-white/50 text-sm mt-1">
-                          {launch.curriculum} Class {launch.class_name} • {launch.subject}
-                        </p>
-                        <p className="text-white/30 text-xs mt-1">
-                          Chapter: {launch.chapter_id} • Topic: {launch.topic_id}
-                        </p>
+                  <Card key={launch.id} className="border border-border bg-card hover:bg-accent/30 transition-colors">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h3 className="text-foreground font-medium">
+                            {student?.name || student?.displayName || 'Unknown Student'}
+                          </h3>
+                          <p className="text-muted-foreground text-sm mt-1">
+                            {launch.curriculum} Class {launch.class_name} • {launch.subject}
+                          </p>
+                          <p className="text-muted-foreground/70 text-xs mt-1">
+                            Chapter: {launch.chapter_id} • Topic: {launch.topic_id}
+                          </p>
+                        </div>
+                        <div className="ml-4 text-right">
+                          <Badge variant={launch.completion_status === 'completed' ? 'default' : 'secondary'} className="text-sm">
+                            {launch.completion_status === 'completed' ? 'Completed' : 'In Progress'}
+                          </Badge>
+                          <p className="text-muted-foreground text-xs mt-1">
+                            {launch.launched_at?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
+                          </p>
+                        </div>
                       </div>
-                      <div className="ml-4 text-right">
-                        <span className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                          launch.completion_status === 'completed' 
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                        }`}>
-                          {launch.completion_status === 'completed' ? 'Completed' : 'In Progress'}
-                        </span>
-                        <p className="text-white/50 text-xs mt-1">
-                          {launch.launched_at?.toDate?.()?.toLocaleDateString() || 'Unknown date'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>

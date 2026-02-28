@@ -13,7 +13,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'fire
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
-import { FaArrowRight, FaBook, FaChartLine, FaCheckCircle, FaChalkboardTeacher, FaClock, FaGraduationCap, FaKey } from 'react-icons/fa';
+import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher, FaUsers, FaKey } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Badge } from '../../Components/ui/badge';
@@ -21,7 +21,6 @@ import { Progress } from '../../Components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '../../Components/ui/avatar';
 import { Button } from '../../Components/ui/button';
 import { Input } from '../../Components/ui/input';
-import { Label } from '../../Components/ui/label';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
@@ -386,7 +385,7 @@ const StudentDashboard = () => {
               <Avatar className="h-24 w-24 rounded-2xl border-2 border-primary/30 ring-2 ring-primary/10">
                 <AvatarImage src={isGuest ? GUEST_AVATAR_URL : undefined} alt="AI learning companion" />
                 <AvatarFallback className="rounded-2xl bg-primary/20 text-primary text-2xl">
-                  {isGuest ? '👋' : (profile?.name?.charAt(0) || profile?.displayName?.charAt(0) || '?')}
+                  {isGuest ? 'G' : (profile?.name?.charAt(0) || profile?.displayName?.charAt(0) || '?')}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 text-center sm:text-left">
@@ -415,43 +414,39 @@ const StudentDashboard = () => {
         {/* Join class session - students only */}
         {!isGuest && (
           <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
               <div className="flex items-center gap-2">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
-                  <FaKey className="h-4 w-4 text-primary" aria-hidden />
+                  <FaUsers className="h-4 w-4 text-primary" />
                 </div>
                 <div>
                   <CardTitle className="text-base font-semibold text-foreground">Join a class session</CardTitle>
-                  <CardDescription className="text-sm text-muted-foreground mt-0.5">
-                    Enter the code shared by your teacher to join their live session.
+                  <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                    Enter the code your teacher shared to join the live session
                   </CardDescription>
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="pt-0">
+            <CardContent className="px-4 pb-4 sm:px-6">
               {!joinedSessionId ? (
                 <div className="space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                    <div className="flex-1 min-w-0 space-y-2">
-                      <Label htmlFor="student-join-code" className="text-sm font-medium text-foreground">
-                        Class code
-                      </Label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="relative flex-1 min-w-0">
+                      <label htmlFor="student-join-code" className="sr-only">Class session code</label>
+                      <FaKey className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                       <Input
                         id="student-join-code"
                         type="text"
                         value={sessionCodeInput}
                         onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
                         placeholder="e.g. ABC123"
-                        className="w-full sm:max-w-[10rem] font-mono text-base uppercase tracking-wider bg-background border-border focus-visible:ring-primary/30"
+                        className="pl-9 w-full sm:w-40 font-mono text-sm uppercase tracking-wider bg-background border-border rounded-lg"
                         maxLength={8}
-                        aria-describedby="student-join-code-hint"
                       />
-                      <p id="student-join-code-hint" className="text-xs text-muted-foreground">
-                        Ask your teacher for the session code if you don&apos;t have it.
-                      </p>
                     </div>
                     <Button
-                      className="sm:self-end shrink-0"
+                      size="default"
+                      className="shrink-0"
                       onClick={async () => {
                         const ok = await joinSession(sessionCodeInput.trim());
                         if (ok) setSessionCodeInput('');
@@ -461,18 +456,16 @@ const StudentDashboard = () => {
                       {sessionJoinLoading ? 'Joining…' : 'Join session'}
                     </Button>
                   </div>
-                  <Link
-                    to="/join-class"
-                    className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline font-medium"
-                  >
-                    See active classes from my school
-                    <FaArrowRight className="w-3.5 h-3.5" />
-                  </Link>
+                  <p className="text-xs text-muted-foreground">
+                    Prefer to pick from active classes?{' '}
+                    <Link to="/join-class" className="text-primary font-medium hover:underline">View active classes</Link>
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
-                  <p className="text-sm font-medium text-primary">
-                    You&apos;re in the session. Waiting for your teacher to launch a lesson…
+                  <p className="text-sm font-medium text-primary flex items-center gap-2">
+                    <FaCheckCircle className="h-4 w-4 shrink-0" />
+                    Joined. Waiting for teacher to launch a lesson…
                   </p>
                   <Button size="sm" variant="outline" onClick={leaveSessionAsStudent} className="shrink-0">
                     Leave session
@@ -686,7 +679,10 @@ const StudentDashboard = () => {
 
         {/* Recent Lesson Launches */}
         <div className="mb-8">
-          <h2 className="text-xl font-semibold text-foreground mb-4">Recent Lessons</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+            <FaBook className="text-primary" />
+            Recent Lessons
+          </h2>
           {lessonLaunches.length === 0 ? (
             <Card className="border border-border bg-card">
               <CardContent className="p-8 text-center">

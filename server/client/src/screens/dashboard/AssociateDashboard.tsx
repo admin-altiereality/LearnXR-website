@@ -13,16 +13,19 @@ import { Button } from '../../Components/ui/button';
 
 const AssociateDashboard = () => {
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-4xl mx-auto space-y-8">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-primary/10 border border-primary/30">
-            <FaTachometerAlt className="h-8 w-8 text-primary" />
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
+            <FaTachometerAlt className="text-primary text-xl" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold text-foreground" style={learnXRFontStyle}>
-              Associate Dashboard
+            <h1 className="text-3xl font-bold mb-1" style={learnXRFontStyle}>
+              <span className="text-foreground">Learn</span>
+              <span className="text-primary">XR</span>
+              <TrademarkSymbol />
             </h1>
+            <h2 className="text-xl font-semibold text-foreground">Associate Dashboard</h2>
             <p className="text-muted-foreground text-sm mt-0.5">
               Refine lesson content and submit changes for approval
             </p>
@@ -41,10 +44,10 @@ const AssociateDashboard = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button asChild className="w-full" variant="default">
-                <Link to="/studio/content">
+              <Button asChild className="w-full gap-2" variant="default">
+                <Link to="/studio/content" className="flex items-center justify-center gap-2">
+                  <FaBookOpen className="h-4 w-4 shrink-0" />
                   Open Content Library
-                  <FaBookOpen className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             </CardContent>
@@ -61,10 +64,10 @@ const AssociateDashboard = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button asChild className="w-full" variant="outline">
-                <Link to="/lessons">
+              <Button asChild className="w-full gap-2" variant="outline">
+                <Link to="/lessons" className="flex items-center justify-center gap-2">
+                  <FaBookOpen className="h-4 w-4 shrink-0" />
                   Go to Lessons
-                  <FaBookOpen className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             </CardContent>
@@ -83,12 +86,6 @@ const AssociateDashboard = () => {
           </CardHeader>
         </Card>
 
-        <p className="text-center text-sm text-muted-foreground" style={learnXRFontStyle}>
-          <span className="text-foreground">Learn</span>
-          <span className="text-primary">XR</span>
-          <TrademarkSymbol className="ml-0.5 inline" />
-          {' '}– Associate
-        </p>
       </div>
     </div>
   );

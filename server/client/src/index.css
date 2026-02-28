@@ -46,6 +46,15 @@
     --sidebar-ring: 263 70% 50%;
     --sidebar-width: 16rem;
     --sidebar-width-icon: 3rem;
+    /* Spacing (8px system) */
+    --space-section: 2rem;
+    --space-card: 1.5rem;
+    --space-card-tight: 1rem;
+    --space-inline: 0.5rem;
+    /* Shadow tiers */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.12);
+    --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.2);
   }
   .light {
     color-scheme: light;
@@ -120,18 +129,18 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(14, 165, 233, 0.5), rgba(139, 92, 246, 0.5));
+  background: oklch(0.55 0.22 285 / 0.5);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(14, 165, 233, 0.7), rgba(139, 92, 246, 0.7));
+  background: oklch(0.55 0.22 285 / 0.65);
 }
 
-/* Firefox scrollbar */
+/* Firefox scrollbar - uses primary hue */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(139, 92, 246, 0.5) rgba(0, 0, 0, 0.2);
+  scrollbar-color: oklch(0.55 0.22 285 / 0.5) rgba(0, 0, 0, 0.2);
 }
 
 @keyframes shimmer {
