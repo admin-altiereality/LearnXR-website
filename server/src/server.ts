@@ -1,3 +1,5 @@
+import compression from 'compression';
+import connectTimeout from 'connect-timeout';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -61,7 +63,19 @@ const corsOptions = {
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(compression());
+app.use(connectTimeout('30s'));
+app.use(express.json({ limit: '1mb' }));
+
+// Stricter rate limit for auth routes (10 req/15 min per IP)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many auth attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/auth', authLimiter);
 
 // Global rate limiting (100 req/15 min per IP)
 const globalLimiter = rateLimit({
@@ -104,7 +118,7 @@ app.use((req, res, next) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: Date.now() });
 });
 
 // API routes (must come before static file serving)
@@ -181,7 +195,7 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
 
 const PORT = process.env.SERVER_PORT || process.env.PORT || 5002;
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server is running at http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🔧 API endpoints: http://localhost:${PORT}/api`);
@@ -191,4 +205,19 @@ app.listen(PORT, () => {
     console.log(`📁 Static files served from: ${buildPath}`);
   }
 });
+
+// Graceful shutdown
+const shutdown = () => {
+  console.log('Received shutdown signal, closing server...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 

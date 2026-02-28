@@ -486,7 +486,7 @@ router.post('/tts/regenerate-topic', async (req, res) => {
     }
 
     const chapterData = chapterSnap.data();
-    const topics = Array.isArray(chapterData?.topics) ? [...chapterData.topics] : [];
+    const topics = chapterData && Array.isArray(chapterData.topics) ? [...chapterData.topics] : [];
     const topicIndex = topics.findIndex(
       (t: { topic_id?: string; id?: string }) =>
         (t.topic_id && t.topic_id === topicId) || (t.id && t.id === topicId)
