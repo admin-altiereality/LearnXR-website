@@ -21,6 +21,7 @@ import {
     GraduationCap,
     Grid3X3,
     HelpCircle,
+    KeyRound,
     List,
     Loader2,
     Mic,
@@ -40,7 +41,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { LanguageToggle } from '../Components/LanguageSelector';
 import { Button } from '../Components/ui/button';
-import { Card, CardContent } from '../Components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../Components/ui/card';
+import { Label } from '../Components/ui/label';
 import { Input } from '../Components/ui/input';
 import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Components/ui/select';
@@ -2197,34 +2199,58 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
         {/* Join class session - students only */}
         {isStudent && (
-          <Card className="mb-6 rounded-xl border-primary/30 border bg-card">
-            <CardContent className="p-4">
+          <Card className="mb-6 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+                  <KeyRound className="h-4 w-4 text-primary" aria-hidden />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold text-foreground">Join a class session</CardTitle>
+                  <CardDescription className="text-sm text-muted-foreground mt-0.5">
+                    Enter the code shared by your teacher to join their live session.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
               {!joinedSessionId ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Join class session (enter code from your teacher):</span>
-                  <Input
-                    type="text"
-                    value={sessionCodeInput}
-                    onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
-                    placeholder="e.g. ABC123"
-                    className="w-28 font-mono uppercase tracking-wider bg-background border-border"
-                    maxLength={8}
-                  />
+                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <Label htmlFor="lessons-join-code" className="text-sm font-medium text-foreground">
+                      Class code
+                    </Label>
+                    <Input
+                      id="lessons-join-code"
+                      type="text"
+                      value={sessionCodeInput}
+                      onChange={(e) => setSessionCodeInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. ABC123"
+                      className="w-full sm:max-w-[10rem] font-mono text-base uppercase tracking-wider bg-background border-border focus-visible:ring-primary/30"
+                      maxLength={8}
+                      aria-describedby="lessons-join-code-hint"
+                    />
+                    <p id="lessons-join-code-hint" className="text-xs text-muted-foreground">
+                      Ask your teacher for the session code if you don&apos;t have it.
+                    </p>
+                  </div>
                   <Button
-                    size="sm"
+                    className="sm:self-end shrink-0"
                     onClick={async () => {
                       const ok = await joinSession(sessionCodeInput.trim());
                       if (ok) setSessionCodeInput('');
                     }}
                     disabled={sessionJoinLoading || !sessionCodeInput.trim()}
                   >
-                    {sessionJoinLoading ? 'Joining…' : 'Join'}
+                    {sessionJoinLoading ? 'Joining…' : 'Join session'}
                   </Button>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm text-primary font-medium">Joined. Waiting for teacher to launch a lesson or scene…</span>
-                  <Button size="sm" variant="outline" onClick={leaveSessionAsStudent}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
+                  <p className="text-sm font-medium text-primary">
+                    You&apos;re in the session. Waiting for your teacher to launch a lesson or scene…
+                  </p>
+                  <Button size="sm" variant="outline" onClick={leaveSessionAsStudent} className="shrink-0">
                     Leave session
                   </Button>
                 </div>

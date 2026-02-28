@@ -5,10 +5,8 @@ import {
     FaArrowRight,
     FaChalkboardTeacher,
     FaGoogle,
-    FaMoon,
     FaRocket,
     FaSchool,
-    FaSun,
     FaUserGraduate
 } from 'react-icons/fa';
 import { Link, useNavigate } from 'react-router-dom';
@@ -32,7 +30,7 @@ export const Login = () => {
   const [step, setStep] = useState('role-select');
   const { loginWithGoogle, user, profile, selectedRole, setSelectedRole } = useAuth();
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
+  const { setTheme } = useTheme();
 
   const roleOptions = [
     {
@@ -122,17 +120,13 @@ export const Login = () => {
     return () => document.body.classList.remove('overflow-hidden');
   }, []);
 
+  // Login page is dark mode only
+  useEffect(() => {
+    setTheme('dark');
+  }, [setTheme]);
+
   return (
     <FuturisticBackground className="h-[100dvh] max-h-[100dvh] w-screen overflow-hidden flex flex-col">
-      <button
-        type="button"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        className="invisible pointer-events-none fixed top-2 right-2 sm:top-4 sm:right-4 z-[100] flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border border-border bg-card/90 backdrop-blur-md text-foreground hover:bg-accent hover:border-primary/50 transition-colors shadow-lg"
-        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-      >
-        {theme === 'dark' ? <FaSun className="h-4 w-4 sm:h-5 sm:w-5" /> : <FaMoon className="h-4 w-4 sm:h-5 sm:w-5" />}
-      </button>
       <div className="relative z-10 flex flex-1 min-h-0 w-full overflow-hidden py-2 sm:py-3">
         <div className="flex flex-col items-center justify-center flex-1 min-h-0 w-full px-3 sm:px-6">
       <div className="w-full max-w-lg flex flex-col flex-1 min-h-0 gap-1.5 sm:gap-2 justify-center max-h-[96dvh]">
