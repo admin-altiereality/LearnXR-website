@@ -46,20 +46,33 @@ router.options(pathProxyGlbRegex, (req: Request, res: Response) => {
 
 router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
-  // Use normalized path first, then original (path normalization may strip /api)
-  const pathStr = req.path || (req as any).originalPath || req.url || '';
-  const pathMatch = pathStr.match(pathProxyGlbExtract);
-  const encoded = pathMatch ? pathMatch[1] : '';
-  const targetUrl = decodeProxyAssetEncoded(encoded);
-  if (!targetUrl) {
-    res.status(400).json({ error: 'Invalid encoded URL in path', requestId });
-    return;
-  }
-  if (!isProxyAssetUrlAllowed(targetUrl)) {
-    res.status(400).json({ error: 'URL not allowed for proxy', requestId });
-    return;
-  }
+
+  const send502 = (details: string) => {
+    if (!res.headersSent) {
+      res.status(502).json({
+        error: 'Upstream asset unavailable',
+        details,
+        requestId,
+        code: 'UPSTREAM_ERROR',
+      });
+    }
+  };
+
   try {
+    // Use normalized path first, then original (path normalization may strip /api)
+    const pathStr = req.path || (req as any).originalPath || req.url || '';
+    const pathMatch = pathStr.match(pathProxyGlbExtract);
+    const encoded = pathMatch ? pathMatch[1] : '';
+    const targetUrl = decodeProxyAssetEncoded(encoded);
+    if (!targetUrl) {
+      res.status(400).json({ error: 'Invalid encoded URL in path', requestId });
+      return;
+    }
+    if (!isProxyAssetUrlAllowed(targetUrl)) {
+      res.status(400).json({ error: 'URL not allowed for proxy', requestId });
+      return;
+    }
+
     console.log(`[${requestId}] Proxying asset (path-based):`, targetUrl.substring(0, 120) + (targetUrl.length > 120 ? '...' : ''));
     const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
     const fetchHeaders: Record<string, string> = {
@@ -68,29 +81,39 @@ router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void>
       'Accept-Encoding': 'identity',
       'Referer': origin + '/',
     };
-    const response = await axios.get(targetUrl, {
-      responseType: 'stream',
-      headers: fetchHeaders,
-      timeout: 30000,
-      maxRedirects: 5,
-      validateStatus: (status) => status < 500,
-    });
+
+    let response;
+    try {
+      response = await axios.get(targetUrl, {
+        responseType: 'stream',
+        headers: fetchHeaders,
+        timeout: 30000,
+        maxRedirects: 5,
+        validateStatus: () => true, // accept all statuses so we can handle 4xx/5xx without throw
+      });
+    } catch (axiosErr: any) {
+      const upstreamStatus = axiosErr?.response?.status;
+      const code = axiosErr?.code;
+      const msg = axiosErr?.message || 'Unknown error';
+      console.error(`[${requestId}] Asset proxy (path) upstream request failed: status=${upstreamStatus} code=${code} message=${msg}`);
+      send502(upstreamStatus ? `Upstream returned ${upstreamStatus}` : msg);
+      return;
+    }
+
     if (response.status >= 400) {
       console.error(`[${requestId}] Asset proxy (path) upstream returned:`, response.status, response.statusText);
       const message = response.status === 404
         ? 'Upstream URL returned 404; signed asset URLs may have expired.'
-        : `Failed to fetch asset: ${response.status} ${response.statusText}`;
-      res.status(response.status).json({
-        error: message,
-        requestId,
-        code: 'UPSTREAM_ERROR',
-      });
+        : `Upstream returned ${response.status}`;
+      send502(message);
       return;
     }
     if (!response.data) {
-      res.status(500).json({ error: 'No data received', requestId });
+      console.error(`[${requestId}] Asset proxy (path) upstream returned no data`);
+      send502('No data received');
       return;
     }
+
     let contentType = response.headers['content-type'] || '';
     if (!contentType) contentType = 'model/gltf-binary';
     else if (contentType === 'application/octet-stream') contentType = 'model/gltf-binary';
@@ -99,14 +122,22 @@ router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void>
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Cache-Control', 'public, max-age=3600');
+
+    response.data.on('error', (err: Error) => {
+      console.error(`[${requestId}] Asset proxy (path) stream error:`, err?.message || err);
+      try { res.destroy(); } catch (_) { /* ignore */ }
+    });
+    res.on('error', (err: Error) => {
+      console.error(`[${requestId}] Asset proxy (path) response stream error:`, err?.message || err);
+    });
     response.data.pipe(res);
     console.log(`[${requestId}] Asset proxy (path) successful`);
   } catch (error: any) {
-    console.error(`[${requestId}] Asset proxy (path) error:`, error);
-    res.status(500).json({
-      error: error?.response ? `Failed to fetch asset: ${error.response.status}` : 'Internal server error',
-      requestId,
-    });
+    const upstreamStatus = error?.response?.status;
+    const code = error?.code;
+    const msg = error?.message || 'Unknown error';
+    console.error(`[${requestId}] Asset proxy (path) error: status=${upstreamStatus} code=${code} message=${msg}`);
+    send502(upstreamStatus ? `Upstream returned ${upstreamStatus}` : msg);
   }
 });
 
@@ -164,68 +195,30 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
       headers: fetchHeaders,
       timeout: 30000,
       maxRedirects: 5,
-      validateStatus: (status) => status < 500, // Don't throw on 4xx errors
+      validateStatus: () => true, // accept all so we handle 4xx/5xx without throw; always return 502 for upstream errors
     });
 
-    // Check if the response is an error (4xx status)
+    // Upstream 4xx/5xx: return 502 so client never sees 500 from our proxy
     if (response.status >= 400) {
-      console.error(`[${requestId}] Asset proxy failed with status ${response.status}:`, response.statusText);
-      
-      // Check content type to determine if we should try to parse as text/JSON
-      const contentType = response.headers['content-type'] || '';
-      const isTextContent = contentType.includes('text/') || contentType.includes('application/json');
-      
-      // Try to get error message from response (only for text/JSON content)
-      let errorMessage = `Failed to fetch asset: ${response.status} ${response.statusText}`;
-      if (isTextContent) {
-        try {
-          const errorData = await new Promise<string>((resolve) => {
-            let data = '';
-            response.data.on('data', (chunk: Buffer) => { 
-              // Only read first 1000 bytes to avoid memory issues
-              if (data.length < 1000) {
-                data += chunk.toString('utf8', 0, Math.min(chunk.length, 1000 - data.length));
-              }
-            });
-            response.data.on('end', () => resolve(data));
-          });
-          
-          // Try to parse as JSON if it looks like JSON
-          if (errorData.trim().startsWith('{') || errorData.trim().startsWith('[')) {
-            try {
-              const parsed = JSON.parse(errorData);
-              if (parsed.error || parsed.message) {
-                errorMessage += ` - ${parsed.error || parsed.message}`;
-              }
-            } catch {
-              // Not valid JSON, use as-is if it's reasonable length
-              if (errorData.length < 200) {
-                errorMessage += ` - ${errorData}`;
-              }
-            }
-          } else if (errorData.length < 200) {
-            errorMessage += ` - ${errorData}`;
-          }
-        } catch (e) {
-          // Ignore error reading error response
-          console.warn(`[${requestId}] Could not read error response:`, e);
-        }
-      } else {
-        // Binary content (image, etc.) - don't try to parse, just return generic error
-        console.warn(`[${requestId}] Error response is binary (${contentType}), not parsing`);
+      console.error(`[${requestId}] Asset proxy upstream returned ${response.status}:`, response.statusText);
+      if (!res.headersSent) {
+        return res.status(502).json({
+          error: 'Upstream asset unavailable',
+          details: response.status === 404
+            ? 'Upstream URL returned 404; signed asset URLs may have expired.'
+            : `Upstream returned ${response.status}`,
+          requestId,
+          code: 'UPSTREAM_ERROR',
+        });
       }
-      
-      return res.status(response.status).json({ 
-        error: errorMessage,
-        requestId,
-        originalUrl: decodedUrl.substring(0, 100) + '...' // Log first 100 chars for debugging
-      });
+      return;
     }
 
     if (!response.data) {
-      console.error(`[${requestId}] Asset proxy failed: No data received`);
-      return res.status(500).json({ 
-        error: 'Failed to fetch asset: No data received',
+      console.error(`[${requestId}] Asset proxy upstream returned no data`);
+      return res.status(502).json({ 
+        error: 'Upstream asset unavailable',
+        details: 'No data received',
         requestId 
       });
     }
@@ -248,18 +241,14 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
     console.log(`[${requestId}] Asset proxy successful`);
     return;
   } catch (error: any) {
-    console.error(`[${requestId}] Asset proxy error:`, error);
-    
-    if (error.response) {
-      return res.status(error.response.status).json({ 
-        error: `Failed to fetch asset: ${error.response.status} ${error.response.statusText}`,
-        requestId 
-      });
-    }
-    
-    return res.status(500).json({ 
-      error: 'Internal server error during asset proxy',
-      requestId 
+    const upstreamStatus = error?.response?.status;
+    console.error(`[${requestId}] Asset proxy error:`, error?.message || error, 'upstreamStatus=', upstreamStatus);
+    if (res.headersSent) return;
+    const details = error?.response ? `Upstream returned ${error.response.status}` : (error?.message || 'Request failed');
+    return res.status(502).json({
+      error: 'Upstream asset unavailable',
+      details,
+      requestId,
     });
   }
 });

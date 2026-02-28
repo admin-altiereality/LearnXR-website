@@ -44,7 +44,7 @@ const getApp = (): express.Application => {
     const isAllowedOrigin = (origin: string | undefined): boolean => {
       if (!origin) return true;
       const o = origin.toLowerCase();
-      return o.includes('.web.app') || o.includes('.firebaseapp.com') || o.includes('localhost') || o.includes('127.0.0.1');
+      return o.includes('.web.app') || o.includes('.firebaseapp.com') || o.includes('localhost') || o.includes('127.0.0.1') || o.includes('altiereality.com');
     };
     app.use((req: Request, res: Response, next: NextFunction) => {
       const origin = req.headers.origin;

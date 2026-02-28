@@ -23,7 +23,11 @@ router.get('/styles', validateReadAccess, async (req: Request, res: Response) =>
   try {
     console.log(`[${requestId}] Fetching skybox styles, page: ${page}, limit: ${limit}`);
     
-    initializeServices();
+    try {
+      initializeServices();
+    } catch (initErr: any) {
+      console.warn(`[${requestId}] initializeServices failed (non-fatal):`, initErr?.message || initErr);
+    }
     
     // Try BlockadeLabs API first
     if (BLOCKADE_API_KEY) {
@@ -77,31 +81,46 @@ router.get('/styles', validateReadAccess, async (req: Request, res: Response) =>
         console.error(`[${requestId}] BlockadeLabs API error:`, error.message || error);
         // Continue to Firestore fallback
       }
+    } else {
+      console.log(`[${requestId}] BlockadeLabs skipped (no BLOCKADE_API_KEY), using Firestore cache`);
     }
     
     // Fallback: Get styles from Firebase cache
-    const db = admin.firestore();
-    const stylesRef = db.collection('skyboxStyles');
-    const snapshot = await stylesRef
-      .orderBy('cachedAt', 'desc')
-      .limit(limit)
-      .get();
-    
-    const styles = snapshot.docs.map((doc: any) => {
-      const data = doc.data();
-      return {
-        id: data.id || data.style_id || doc.id,
-        style_id: data.id || data.style_id || doc.id,
-        ...data
-      };
-    });
-    
-    console.log(`[${requestId}] Successfully fetched ${styles.length} styles from Firebase cache`);
+    let styles: any[];
+    try {
+      const db = admin.firestore();
+      const stylesRef = db.collection('skyboxStyles');
+      const snapshot = await stylesRef
+        .orderBy('cachedAt', 'desc')
+        .limit(limit)
+        .get();
+      
+      styles = snapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        return {
+          id: data.id || data.style_id || doc.id,
+          style_id: data.id || data.style_id || doc.id,
+          ...data
+        };
+      });
+      
+      console.log(`[${requestId}] Fetched ${styles.length} styles from Firebase cache`);
+    } catch (cacheErr: any) {
+      console.error(`[${requestId}] Firestore cache error:`, cacheErr?.message || cacheErr);
+      const { statusCode, response } = errorResponse(
+        'Skybox styles temporarily unavailable',
+        'Skybox styles cache is unavailable. Please try again later.',
+        ErrorCode.STYLES_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
     
     if (styles.length === 0) {
       const { statusCode, response } = errorResponse(
         'Skybox styles are not available',
-        'Skybox styles are not available. Please check API configuration.',
+        'Skybox styles are not available. Please check API configuration (BLOCKADE_API_KEY) or ensure cache has been populated.',
         ErrorCode.STYLES_UNAVAILABLE,
         HTTP_STATUS.SERVICE_UNAVAILABLE,
         { requestId }

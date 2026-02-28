@@ -34,12 +34,16 @@ import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
 import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 import { Sheet, SheetContent } from './ui/sheet';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { SchoolCodeBlock } from './SchoolCodeBlock';
+import { FaCopy } from 'react-icons/fa';
+import { toast } from 'react-toastify';
 
 interface NavItem {
   path: string;
@@ -306,14 +310,42 @@ const Sidebar = () => {
           </Link>
         </div>
         {(isSchool || isTeacher) && schoolCode && (
-          <div className={`shrink-0 border-b border-sidebar-border px-2 py-2 ${!expanded ? 'flex justify-center' : ''}`}>
-            <div
-              className={`rounded-md bg-sidebar-primary/15 border border-sidebar-primary/30 ${!expanded ? 'px-1.5 py-1 flex flex-col items-center' : 'px-2 py-1.5'}`}
-              title="School Code – share with teachers/students to join"
-            >
-              {expanded && <span className="text-[10px] text-muted-foreground uppercase tracking-wider">School Code</span>}
-              <span className="font-mono font-bold text-sidebar-primary text-sm tracking-wider">{schoolCode}</span>
-            </div>
+          <div className="shrink-0 border-b border-sidebar-border px-2 py-2">
+            {expanded ? (
+              <SchoolCodeBlock code={schoolCode} variant="sidebar" />
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground hover:bg-sidebar-accent"
+                    title="School code"
+                    aria-label="Show school code"
+                  >
+                    <FaSchool className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="right" className="min-w-[200px] p-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">School code</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-semibold tracking-wider">{schoolCode}</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(schoolCode);
+                          toast.success('School code copied');
+                        } catch {}
+                      }}
+                    >
+                      <FaCopy className="h-3 w-3" /> Copy
+                    </Button>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         )}
         <nav className="flex-1 overflow-y-auto py-2 px-2">
