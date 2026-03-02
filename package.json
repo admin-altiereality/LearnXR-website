@@ -10,7 +10,8 @@
     "build:client": "cd client && npm install && npm run build",
     "build:hosting": "npm --prefix server/client run build",
     "deploy:preview": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy testing",
-    "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav"
+    "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav",
+    "deploy:production:lexrn1": "firebase use lexrn1 && firebase deploy --only hosting -c firebase.lexrn1.json"
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.1",

@@ -237,6 +237,17 @@ const Landing = () => {
     };
   }, []);
 
+  // Lock document scroll so only #main scrolls (removes double scroller)
+  useEffect(() => {
+    const classNames = ['landing-page-active'];
+    document.documentElement.classList.add(...classNames);
+    document.body.classList.add(...classNames);
+    return () => {
+      document.documentElement.classList.remove(...classNames);
+      document.body.classList.remove(...classNames);
+    };
+  }, []);
+
   const handleGetStarted = () => {
     if (authLoading) return;
     if (user) {
@@ -292,12 +303,22 @@ const Landing = () => {
           >
             <nav className="w-full max-w-full flex items-center justify-between px-3 sm:px-8 md:px-12 lg:p-16 z-10">
               <div className="h-9 w-14 sm:h-15 sm:w-20 flex-shrink-0" aria-hidden></div>
-              <button
-                onClick={handleLogin}
-                className="px-4 py-2 sm:px-6 sm:py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
-              >
-                Login
-              </button>
+              <div className="flex items-center gap-3 sm:gap-4">
+                <a
+                  href="https://cal.com/altie-reality/30min"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
+                >
+                  Book a Demo
+                </a>
+                <button
+                  onClick={handleLogin}
+                  className="px-4 py-2 sm:px-6 sm:py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
+                >
+                  Login
+                </button>
+              </div>
             </nav>
 
             <div className="absolute overflow-hidden left-1/2 -translate-x-1/2 top-[18vh] sm:top-[15vh] md:top-[12vh]">
@@ -343,13 +364,29 @@ const Landing = () => {
               </h1>
             </div>
             <motion.p
-              className="text-white text-base sm:text-xl font-medium tracking-wide px-2 pb-4 sm:pb-0"
+              className="text-white text-base sm:text-xl font-medium tracking-wide px-2 pb-2 sm:pb-1"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.8 }}
             >
               Redefining Learning with XR + AI.
             </motion.p>
+            <motion.div
+              className="flex justify-center pb-4 sm:pb-0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1 }}
+            >
+              <a
+                href="https://auth.meta.com/?redirect_uri=https%3A%2F%2Fauth.meta.com%2Foidc%2F%3Fapp_id%3D800455417652954%26nonce%3DAdQi5LEM6riWKxzTZrD0bXJ1x2I%26redirect_uri%3Dhttps%253A%252F%252Fwww.meta.com%252Foidc%252Fcallback%252F%26response_type%3Dcode%26scope%3Dopenid%26state%3DATl_hLfLHREpPWPtt3WGoMCoLcBaqU8PvEZjbeQWIGRgLWgOev5tz_fl9manJNSAPMN2H73Q6rQHFUBhrQhNW23YJhse2Vq9JcBE1I-hrqG5GmgWDwYPYObI0uYjqzKFi5GYf0YAqVx8prXp7SCZPmHJL6MuwRG4a8KtB_14Va6yN6kD7cGeaGX_EOfykGhTVWCH4ycS_xkuvOtMy47LcyVcJy1wqoeYti0XkcQDopwNwcBYegAmmKKkGZ4y-Gy6CrjXel0NT9auT0-XgnM7ipvi8oD4dgsZhmhH2A0RrTmYKbgthvzNX4u4eaPdp3s7ZsapTbT1Qwe7sI1F0VkhDz0iymReBWsFy-kTQZzwnsA2_FWn35R6a2TgkrpFSWlEc9mECl2Wcnzar9H8t8g2T9bvhOrufnfL9xWOB7Z9x9epxZuBAYaCEqjKDRGmpPLQ35BM5D7lxVWAVh2uI8WbelDs4hfZAcWrwCT1PQP8XjxyT6Zy5jsZDYrN7wQWHZEjLq8NPRnsLm50B-rA2X895y1wRE5B0gIXTw&source_app_id=800455417652954&utm_source=meta.com&rcs=ATnXRqGr93UwpI9ZXBhY2ROYeLeHP3u5y1xAGYXxiHBfSMYPM_4CTlbSrsmBVJjcsmam6PW_Ap2ywRC7oBsHqcEDqoxb7tMNsULXx2EmhRzpZY8BwFGtYHXUE3bSo4bRIFOBqLi36jmZ6DCMMGWQxWaCN_xACfcXjvYwD0GybMgRGFZS0pR7dlDFP8s"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-sm sm:text-base touch-manipulation"
+              >
+                <i className="fa-brands fa-meta text-lg sm:text-xl" aria-hidden />
+                <span>Download LearnXR App</span>
+              </a>
+            </motion.div>
           </div>
         </div>
 
@@ -387,15 +424,15 @@ const Landing = () => {
           </div>
         </div>
 
-        {/* Page 3: Content Slider */}
+        {/* Page 3: Content Slider - compact height so images stay sharp (no over-scale blur) */}
         <div
           id="page3"
-          className="w-full max-w-full min-h-screen flex flex-col justify-center items-center px-3 sm:px-6 py-8 sm:py-16 box-border"
+          className="w-full max-w-full flex flex-col justify-center items-center px-3 sm:px-6 py-6 sm:py-10 box-border"
         >
           <p className="text-purple-700 text-xl sm:text-2xl font-semibold tracking-wide text-center">CONTENT</p>
-          <p className="text-white text-2xl sm:text-4xl md:text-5xl lg:text-6xl pb-6 sm:pb-10 font-medium leading-tight text-center">Content covered upto k-12</p>
+          <p className="text-white text-2xl sm:text-4xl md:text-5xl lg:text-6xl pb-4 sm:pb-6 font-medium leading-tight text-center">Content covered upto k-12</p>
 
-          <div className="page3-slider-container w-full max-w-full min-h-[65vmin] sm:min-h-[70vmin] md:h-[100vmin] relative box-border">
+          <div className="page3-slider-container w-full max-w-full relative box-border">
             <div className="left-arrow cursor-pointer touch-manipulation py-4" onClick={prevSlide} aria-label="Previous slide">
               <i className="fa fa-angle-left text-white text-2xl sm:text-3xl"></i>
             </div>
@@ -456,11 +493,21 @@ const Landing = () => {
         >
           <p className="text-white text-xl sm:text-2xl md:text-[3rem] mt-6 sm:mt-10 mb-6 sm:mb-10 font-semibold tracking-wide text-center">IN ASSOCIATION WITH</p>
           <div className="flex flex-wrap w-full justify-center sm:justify-evenly items-center gap-6 sm:gap-4 pb-10">
-            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-1.png" alt="Partner" loading="lazy" />
-            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-2.png" alt="Partner" loading="lazy" />
-            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-3.png" alt="Partner" loading="lazy" />
-            <img className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/client-4.png" alt="Partner" loading="lazy" />
-            <img className="w-[28%] min-w-[80px] max-w-[140px] sm:w-[18%] md:w-[11%] h-auto object-contain" src="/img/sptbilogo.png" alt="SPTBI" loading="lazy" />
+            <div className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] overflow-hidden rounded-2xl">
+              <img className="w-full h-auto object-contain" src="/img/client-1.png" alt="Partner" loading="lazy" />
+            </div>
+            <div className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] overflow-hidden rounded-2xl">
+              <img className="w-full h-auto object-contain" src="/img/client-2.png" alt="Partner" loading="lazy" />
+            </div>
+            <div className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] overflow-hidden rounded-2xl">
+              <img className="w-full h-auto object-contain" src="/img/client-3.png" alt="Partner" loading="lazy" />
+            </div>
+            <div className="w-[28%] min-w-[80px] max-w-[120px] sm:w-[18%] md:w-[11%] overflow-hidden rounded-2xl">
+              <img className="w-full h-auto object-contain" src="/img/client-4.png" alt="Partner" loading="lazy" />
+            </div>
+            <div className="w-[28%] min-w-[80px] max-w-[140px] sm:w-[18%] md:w-[11%] overflow-hidden rounded-2xl">
+              <img className="w-full h-auto object-contain" src="/img/sptbilogo.png" alt="SPTBI" loading="lazy" />
+            </div>
           </div>
         </div>
 
