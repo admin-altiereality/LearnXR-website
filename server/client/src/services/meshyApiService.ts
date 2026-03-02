@@ -2,6 +2,7 @@
 // Updated to match official Meshy API documentation: https://docs.meshy.ai/en/api/text-to-3d
 
 import { getProxyAssetUrl } from '../utils/apiConfig';
+import { auth } from '../config/firebase';
 
 export interface MeshyGenerationRequest {
   prompt: string;
@@ -123,6 +124,52 @@ export interface MeshyUsage {
   quota_remaining: number;
   quota_limit: number;
   reset_date: string;
+}
+
+/** Meshy v1 rigging task create request */
+export interface MeshyRiggingRequest {
+  input_task_id?: string;
+  model_url?: string;
+  height_meters?: number;
+}
+
+/** Meshy v1 rigging task result (from GET /rigging/:id) */
+export interface MeshyRiggingTaskResult {
+  id: string;
+  type: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
+  progress: number;
+  result?: {
+    rigged_character_glb_url?: string;
+    rigged_character_fbx_url?: string;
+    basic_animations?: {
+      walking_glb_url?: string;
+      running_glb_url?: string;
+      [key: string]: string | undefined;
+    };
+  };
+  task_error?: { message: string };
+}
+
+/** Meshy v1 animation task create request */
+export interface MeshyAnimationRequest {
+  rig_task_id: string;
+  action_id: number;
+  post_process?: { operation_type?: string; fps?: number };
+}
+
+/** Meshy v1 animation task result (from GET /animations/:id) */
+export interface MeshyAnimationTaskResult {
+  id: string;
+  type: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
+  progress: number;
+  result?: {
+    animation_glb_url?: string;
+    animation_fbx_url?: string;
+    [key: string]: string | undefined;
+  };
+  task_error?: { message: string };
 }
 
 // Get the correct API base URL
@@ -1060,6 +1107,86 @@ export class MeshyApiService {
     // If all strategies failed, throw the last error
     console.error('❌ All download strategies failed');
     throw lastError || new Error('Failed to download asset');
+  }
+
+  /**
+   * Meshy v1: Create rigging task (via Firebase proxy). Requires Firebase Auth.
+   */
+  async createRiggingTask(params: MeshyRiggingRequest): Promise<{ result: string }> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Authentication required for rigging');
+    const token = await user.getIdToken();
+    const url = `${this.proxyBaseUrl}/meshy/rigging`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data?.data?.result) return { result: data.data.result };
+    if (data?.result) return { result: data.result };
+    if (!res.ok) throw new Error(data?.message || data?.error?.message || `Rigging failed: ${res.status}`);
+    throw new Error('Invalid rigging response: no task ID');
+  }
+
+  /**
+   * Meshy v1: Get rigging task status and result (via Firebase proxy).
+   */
+  async getRiggingTask(taskId: string): Promise<MeshyRiggingTaskResult> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Authentication required');
+    const token = await user.getIdToken();
+    const url = `${this.proxyBaseUrl}/meshy/rigging/${encodeURIComponent(taskId)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(this.timeout),
+    });
+    const data = await res.json().catch(() => ({}));
+    const raw = data?.data ?? data;
+    if (!res.ok) throw new Error(raw?.task_error?.message || data?.message || `Rigging status failed: ${res.status}`);
+    return raw as MeshyRiggingTaskResult;
+  }
+
+  /**
+   * Meshy v1: Create animation task (via Firebase proxy).
+   */
+  async createAnimationTask(params: MeshyAnimationRequest): Promise<{ result: string }> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Authentication required for animation');
+    const token = await user.getIdToken();
+    const url = `${this.proxyBaseUrl}/meshy/animations`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data?.data?.result) return { result: data.data.result };
+    if (data?.result) return { result: data.result };
+    if (!res.ok) throw new Error(data?.message || data?.error?.message || `Animation failed: ${res.status}`);
+    throw new Error('Invalid animation response: no task ID');
+  }
+
+  /**
+   * Meshy v1: Get animation task status and result (via Firebase proxy).
+   */
+  async getAnimationTask(taskId: string): Promise<MeshyAnimationTaskResult> {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Authentication required');
+    const token = await user.getIdToken();
+    const url = `${this.proxyBaseUrl}/meshy/animations/${encodeURIComponent(taskId)}`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(this.timeout),
+    });
+    const data = await res.json().catch(() => ({}));
+    const raw = data?.data ?? data;
+    if (!res.ok) throw new Error(raw?.task_error?.message || data?.message || `Animation status failed: ${res.status}`);
+    return raw as MeshyAnimationTaskResult;
   }
 }
 

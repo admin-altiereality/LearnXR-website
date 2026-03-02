@@ -13,6 +13,7 @@ import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils
 const router = Router();
 
 const MESHY_API_BASE_URL = 'https://api.meshy.ai/openapi/v2';
+const MESHY_API_V1_BASE_URL = 'https://api.meshy.ai/openapi/v1';
 
 // Helper to handle CORS
 const setCorsHeaders = (res: Response) => {
@@ -279,6 +280,254 @@ router.post('/cancel/:taskId', validateFullAccess, async (req: Request, res: Res
 
     const { statusCode, response: errorResp } = errorResponse(
       'Cancellation failed',
+      error.message || 'Internal server error',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    return res.status(statusCode).json(errorResp);
+  }
+});
+
+// ─── Meshy v1: Auto-Rigging & Animation API ─────────────────────────────────
+
+/**
+ * Create a rigging task
+ * POST /meshy/rigging
+ * Body: { input_task_id?: string, model_url?: string, height_meters?: number }
+ */
+router.post('/rigging', validateFullAccess, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+  try {
+    initializeServices();
+    if (!MESHY_API_KEY) {
+      const { statusCode, response } = errorResponse(
+        'Service configuration error',
+        'Meshy API is not configured. Please contact support.',
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    const { input_task_id, model_url, height_meters } = req.body;
+    if (!input_task_id && !model_url) {
+      const { statusCode, response } = errorResponse(
+        'Validation error',
+        'Either input_task_id or model_url is required',
+        ErrorCode.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS.BAD_REQUEST,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    const payload: Record<string, unknown> = {};
+    if (input_task_id) payload.input_task_id = input_task_id;
+    if (model_url) payload.model_url = model_url;
+    if (height_meters != null && typeof height_meters === 'number') payload.height_meters = height_meters;
+
+    const response = await axios.post(`${MESHY_API_V1_BASE_URL}/rigging`, payload, {
+      headers: { 'Authorization': `Bearer ${MESHY_API_KEY}`, 'Content-Type': 'application/json' },
+      timeout: 60000
+    });
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(response.data, { requestId, message: 'Rigging task created' }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Meshy rigging create error:`, error?.response?.data ?? error?.message);
+    setCorsHeaders(res);
+    if (error.response) {
+      const { statusCode, response: errorResp } = errorResponse(
+        'External API error',
+        error.response.data?.error?.message || error.response.data?.message || 'Meshy rigging error',
+        ErrorCode.EXTERNAL_API_ERROR,
+        error.response.status || HTTP_STATUS.BAD_GATEWAY,
+        { requestId, details: error.response.data }
+      );
+      return res.status(statusCode).json(errorResp);
+    }
+    const { statusCode, response: errorResp } = errorResponse(
+      'Rigging failed',
+      error.message || 'Internal server error',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    return res.status(statusCode).json(errorResp);
+  }
+});
+
+/**
+ * Get rigging task status and result
+ * GET /meshy/rigging/:id
+ */
+router.get('/rigging/:id', validateFullAccess, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+  const { id } = req.params;
+  try {
+    initializeServices();
+    if (!MESHY_API_KEY) {
+      const { statusCode, response } = errorResponse(
+        'Service configuration error',
+        'Meshy API is not configured. Please contact support.',
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    if (!id) {
+      const { statusCode, response } = errorResponse(
+        'Validation error',
+        'Rigging task ID is required',
+        ErrorCode.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS.BAD_REQUEST,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    const response = await axios.get(`${MESHY_API_V1_BASE_URL}/rigging/${id}`, {
+      headers: { 'Authorization': `Bearer ${MESHY_API_KEY}`, 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+    setCorsHeaders(res);
+    return res.json(successResponse(response.data, { requestId, message: 'Rigging task retrieved' }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Meshy rigging get error:`, error?.response?.data ?? error?.message);
+    setCorsHeaders(res);
+    if (error.response) {
+      const { statusCode, response: errorResp } = errorResponse(
+        'External API error',
+        error.response.data?.error?.message || error.response.data?.message || 'Meshy rigging error',
+        ErrorCode.EXTERNAL_API_ERROR,
+        error.response.status || HTTP_STATUS.BAD_GATEWAY,
+        { requestId, details: error.response.data }
+      );
+      return res.status(statusCode).json(errorResp);
+    }
+    const { statusCode, response: errorResp } = errorResponse(
+      'Rigging status check failed',
+      error.message || 'Internal server error',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    return res.status(statusCode).json(errorResp);
+  }
+});
+
+/**
+ * Create an animation task
+ * POST /meshy/animations
+ * Body: { rig_task_id: string, action_id: number, post_process?: object }
+ */
+router.post('/animations', validateFullAccess, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+  try {
+    initializeServices();
+    if (!MESHY_API_KEY) {
+      const { statusCode, response } = errorResponse(
+        'Service configuration error',
+        'Meshy API is not configured. Please contact support.',
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    const { rig_task_id, action_id, post_process } = req.body;
+    if (!rig_task_id || typeof action_id !== 'number') {
+      const { statusCode, response } = errorResponse(
+        'Validation error',
+        'rig_task_id and action_id (number) are required',
+        ErrorCode.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS.BAD_REQUEST,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    const payload: Record<string, unknown> = { rig_task_id, action_id };
+    if (post_process && typeof post_process === 'object') payload.post_process = post_process;
+
+    const response = await axios.post(`${MESHY_API_V1_BASE_URL}/animations`, payload, {
+      headers: { 'Authorization': `Bearer ${MESHY_API_KEY}`, 'Content-Type': 'application/json' },
+      timeout: 60000
+    });
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(response.data, { requestId, message: 'Animation task created' }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Meshy animation create error:`, error?.response?.data ?? error?.message);
+    setCorsHeaders(res);
+    if (error.response) {
+      const { statusCode, response: errorResp } = errorResponse(
+        'External API error',
+        error.response.data?.error?.message || error.response.data?.message || 'Meshy animation error',
+        ErrorCode.EXTERNAL_API_ERROR,
+        error.response.status || HTTP_STATUS.BAD_GATEWAY,
+        { requestId, details: error.response.data }
+      );
+      return res.status(statusCode).json(errorResp);
+    }
+    const { statusCode, response: errorResp } = errorResponse(
+      'Animation failed',
+      error.message || 'Internal server error',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    return res.status(statusCode).json(errorResp);
+  }
+});
+
+/**
+ * Get animation task status and result
+ * GET /meshy/animations/:id
+ */
+router.get('/animations/:id', validateFullAccess, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+  const { id } = req.params;
+  try {
+    initializeServices();
+    if (!MESHY_API_KEY) {
+      const { statusCode, response } = errorResponse(
+        'Service configuration error',
+        'Meshy API is not configured. Please contact support.',
+        ErrorCode.SERVICE_UNAVAILABLE,
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    if (!id) {
+      const { statusCode, response } = errorResponse(
+        'Validation error',
+        'Animation task ID is required',
+        ErrorCode.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS.BAD_REQUEST,
+        { requestId }
+      );
+      return res.status(statusCode).json(response);
+    }
+    const response = await axios.get(`${MESHY_API_V1_BASE_URL}/animations/${id}`, {
+      headers: { 'Authorization': `Bearer ${MESHY_API_KEY}`, 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+    setCorsHeaders(res);
+    return res.json(successResponse(response.data, { requestId, message: 'Animation task retrieved' }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Meshy animation get error:`, error?.response?.data ?? error?.message);
+    setCorsHeaders(res);
+    if (error.response) {
+      const { statusCode, response: errorResp } = errorResponse(
+        'External API error',
+        error.response.data?.error?.message || error.response.data?.message || 'Meshy animation error',
+        ErrorCode.EXTERNAL_API_ERROR,
+        error.response.status || HTTP_STATUS.BAD_GATEWAY,
+        { requestId, details: error.response.data }
+      );
+      return res.status(statusCode).json(errorResp);
+    }
+    const { statusCode, response: errorResp } = errorResponse(
+      'Animation status check failed',
       error.message || 'Internal server error',
       ErrorCode.INTERNAL_ERROR,
       HTTP_STATUS.INTERNAL_SERVER_ERROR,

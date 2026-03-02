@@ -264,6 +264,8 @@ const XRLessonPlayerV3: React.FC = () => {
   const sceneLayoutRef = useRef<SceneLayoutSystem | null>(null);
   const [placementStrategy, setPlacementStrategy] = useState<PlacementStrategy>('curved-arc');
   const assetPlacementsRef = useRef<AssetPlacement[]>([]);
+  const animationMixersRef = useRef<THREE.AnimationMixer[]>([]);
+  const lastAnimationTimeRef = useRef<number>(0);
   
   // Debug logger with category support - enhanced with timestamps and structured output
   const addDebug = useCallback((msg: string, category?: keyof typeof DEBUG_CATEGORIES) => {
@@ -786,10 +788,10 @@ const XRLessonPlayerV3: React.FC = () => {
         const bundleAssets = (lessonData as any).assets3d;
         addDebug(`Using ${bundleAssets.length} 3D assets from bundle`);
         
-        // Convert bundle assets to MeshyAsset format
+        // Convert bundle assets to MeshyAsset format (prefer animated_glb_url when present)
         const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
           id: asset.id || '',
-          glbUrl: asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
+          glbUrl: asset.animated_glb_url || asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
           name: asset.name || asset.prompt || 'Asset',
           thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
         })).filter((asset: MeshyAsset) => asset.glbUrl); // Only include assets with URLs
@@ -848,8 +850,8 @@ const XRLessonPlayerV3: React.FC = () => {
           const assetDoc = await getDoc(doc(db, 'meshy_assets', assetId));
           if (assetDoc.exists()) {
             const data = assetDoc.data();
-            // Prioritize stored_glb_url (our Firebase Storage), then model_urls.glb
-            const glbUrl = data.stored_glb_url || data.model_urls?.glb || data.glb_url;
+            // Prefer animated_glb_url (Meshy rigged+animated), then stored_glb_url, model_urls.glb, glb_url
+            const glbUrl = data.animated_glb_url || data.stored_glb_url || data.model_urls?.glb || data.glb_url;
             if (glbUrl) {
               assetResults.push({
                 id: assetId,
@@ -1974,8 +1976,14 @@ const XRLessonPlayerV3: React.FC = () => {
     
     // Animation loop (XR-compatible) - only if renderer exists
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
-      rendererRef.current.setAnimationLoop(() => {
+      lastAnimationTimeRef.current = performance.now() / 1000;
+      rendererRef.current.setAnimationLoop((time: number) => {
         try {
+          const now = time / 1000;
+          const delta = lastAnimationTimeRef.current ? Math.min(now - lastAnimationTimeRef.current, 0.1) : 0;
+          lastAnimationTimeRef.current = now;
+          animationMixersRef.current.forEach((mixer) => mixer.update(delta));
+
           // Update billboards to face camera
           if (scriptPanelRef.current && cameraRef.current) {
             scriptPanelRef.current.lookAt(cameraRef.current.position);
@@ -2382,6 +2390,7 @@ const XRLessonPlayerV3: React.FC = () => {
     addDebug('GLTFLoader ready (supports .gltf and .glb)');
     
     // Position assets directly in front of user (centered)
+    animationMixersRef.current = []; // Clear mixers when reloading assets
     const loadAssets = async () => {
       // CRITICAL: Always log to both console and debug panel
       console.log(`[XRLessonPlayerV3] ========== STARTING ASSET LOADING ==========`);
@@ -2655,7 +2664,15 @@ const XRLessonPlayerV3: React.FC = () => {
               }
             }
           });
-          
+
+          // Play GLB animations (e.g. Meshy rigged+animated assets)
+          if (gltf.animations && gltf.animations.length > 0) {
+            const mixer = new THREE.AnimationMixer(gltf.scene);
+            gltf.animations.forEach((clip: THREE.AnimationClip) => mixer.clipAction(clip).play());
+            animationMixersRef.current.push(mixer);
+            addDebug(`Animation: ${gltf.animations.length} clip(s) playing`);
+          }
+
           // Wrap in a group for interaction
           const assetGroup = new THREE.Group();
           assetGroup.name = `assetGroup_${asset.id}`;

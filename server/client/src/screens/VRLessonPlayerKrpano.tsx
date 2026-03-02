@@ -1480,7 +1480,7 @@ const VRLessonPlayerInner = () => {
     if (assetUrl && isGlbOrGltfUrl(assetUrl)) rawGlbUrls.push(assetUrl);
     if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d)) {
       for (const a of extraLessonData.assets3d) {
-        const glb = (a as { glb_url?: string }).glb_url || (a as { stored_glb_url?: string }).stored_glb_url || (a as { model_urls?: { glb?: string } }).model_urls?.glb;
+        const glb = (a as { animated_glb_url?: string }).animated_glb_url || (a as { glb_url?: string }).glb_url || (a as { stored_glb_url?: string }).stored_glb_url || (a as { model_urls?: { glb?: string } }).model_urls?.glb;
         if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
       }
     }
@@ -2247,7 +2247,7 @@ const VRLessonPlayerInner = () => {
           chapter_id: activeLesson?.chapter?.chapter_id || '',
           topic_id: activeLesson?.topic?.topic_id || '',
           name: asset.name || asset.prompt || 'Asset',
-          glb_url: asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
+          glb_url: asset.animated_glb_url || asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
           thumbnail_url: asset.thumbnail_url || asset.thumbnailUrl || '',
           fbx_url: asset.fbx_url || asset.model_urls?.fbx,
           usdz_url: asset.usdz_url || asset.model_urls?.usdz,

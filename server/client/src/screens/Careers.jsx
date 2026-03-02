@@ -1,16 +1,15 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { 
-  FaBriefcase, 
-  FaCode, 
-  FaPalette, 
-  FaBrain, 
-  FaHandshake,
-  FaExternalLinkAlt,
-  FaMapMarkerAlt,
-  FaClock,
-  FaUsers,
-  FaArrowRight
+import React from 'react';
+import {
+    FaBrain,
+    FaBriefcase,
+    FaClock,
+    FaCode,
+    FaExternalLinkAlt,
+    FaHandshake,
+    FaMapMarkerAlt,
+    FaPalette,
+    FaUsers
 } from 'react-icons/fa';
 import FuturisticBackground from '../Components/FuturisticBackground';
 

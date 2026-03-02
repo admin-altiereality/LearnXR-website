@@ -178,6 +178,11 @@ export interface MeshyAsset {
     source?: 'meshy_assets' | 'image3dasset';
     [key: string]: unknown;
   };
+  /** Meshy v1 rigging + animation: optional animated GLB URL (prefer over glb_url when present) */
+  animated_glb_url?: string;
+  rig_task_id?: string;
+  animation_task_id?: string;
+  animation_action_id?: number;
 }
 
 /**

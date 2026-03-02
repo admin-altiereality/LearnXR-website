@@ -80,6 +80,13 @@ export interface TextTo3dAsset extends BaseAsset {
   meshy_asset_id?: string;
   art_style?: 'realistic' | 'sculpture';
   ai_model?: 'meshy-4' | 'meshy-5';
+  glb_url?: string;
+  model_urls?: { glb?: string; fbx?: string; usdz?: string };
+  /** Meshy v1: animated GLB URL (prefer over glb_url when present) */
+  animated_glb_url?: string;
+  rig_task_id?: string;
+  animation_task_id?: string;
+  animation_action_id?: number;
 }
 
 /**

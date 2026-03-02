@@ -1,18 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import * as THREE from 'three';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import * as THREE from 'three';
 import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
 import LinkedInActivity from '../Components/LinkedInActivity';
+import { useAuth } from '../contexts/AuthContext';
 
 // Import shaders as raw strings
-import vertexShader from '../shaders/vertex.glsl?raw';
-import fragmentShader from '../shaders/fragment.glsl?raw';
-import atmosphereVertexShader from '../shaders/atmosphereVertex.glsl?raw';
 import atmosphereFragmentShader from '../shaders/atmosphereFragment.glsl?raw';
+import atmosphereVertexShader from '../shaders/atmosphereVertex.glsl?raw';
+import fragmentShader from '../shaders/fragment.glsl?raw';
+import vertexShader from '../shaders/vertex.glsl?raw';
 
 const Landing = () => {
   const navigate = useNavigate();

@@ -34,7 +34,9 @@ import {
   Package,
   CheckCircle,
   Trash2,
+  Activity,
 } from 'lucide-react';
+import { meshyRiggingAnimationService, MESHY_ANIMATION_LIBRARY } from '../../../services/meshyRiggingAnimationService';
 
 interface TextTo3DUnifiedProps {
   chapterId: string;
@@ -93,6 +95,12 @@ export const TextTo3DUnified = ({
   const [generationProgress, setGenerationProgress] = useState<{ [assetId: string]: GenerationProgress }>({});
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
+
+  // Rig & Animate state (Meshy v1)
+  const [animatingAssetId, setAnimatingAssetId] = useState<string | null>(null);
+  const [animateProgress, setAnimateProgress] = useState<{ stage: string; progress: number; message: string } | null>(null);
+  const [showAnimationPicker, setShowAnimationPicker] = useState(false);
+  const [selectedActionId, setSelectedActionId] = useState<number>(0);
 
   // Load Text-to-3D assets
   useEffect(() => {
@@ -474,6 +482,60 @@ export const TextTo3DUnified = ({
     }
   };
 
+  /** Get GLB URL from asset (for rig & animate). Best for humanoid textured models. */
+  const getGlbUrl = (asset: TextTo3dAsset): string | null => {
+    const url = asset.glb_url || asset.model_urls?.glb;
+    return (url && typeof url === 'string' && url.trim()) ? url.trim() : null;
+  };
+
+  /** Run rig + animate workflow and update Firestore. */
+  const handleApplyAnimation = async (asset: TextTo3dAsset, source: 'text_to_3d' | 'avatar_to_3d') => {
+    const glbUrl = getGlbUrl(asset);
+    if (!glbUrl) {
+      toast.error('No GLB URL available for this asset');
+      return;
+    }
+    setAnimatingAssetId(asset.id);
+    setAnimateProgress({ stage: 'rigging', progress: 0, message: 'Starting...' });
+    setShowAnimationPicker(false);
+    try {
+      const collectionName = source === 'text_to_3d' ? 'text_to_3d_assets' : 'avatar_to_3d_assets';
+      const result = await meshyRiggingAnimationService.rigAndAnimateAsset({
+        assetId: asset.id,
+        glbUrl,
+        actionId: selectedActionId,
+        collectionName,
+        meshyAssetId: asset.meshy_asset_id,
+        onProgress: (stage, progress, message) => setAnimateProgress({ stage, progress, message }),
+      });
+      if (result.success) {
+        toast.success('Animation applied. Asset will show animated in lessons.');
+        setAnimateProgress(null);
+        const bundleData = await getLessonBundle({ chapterId, lang: language, topicId });
+        if (activeSection === 'text-to-3d' && bundleData?.textTo3dAssets) {
+          setTextTo3dAssets(bundleData.textTo3dAssets.map((a: any) => ({ ...a, source: 'text_to_3d' })));
+          const updated = bundleData.textTo3dAssets.find((a: any) => a.id === asset.id);
+          if (updated) setSelectedTextTo3d({ ...updated, source: 'text_to_3d' });
+        }
+        if (activeSection === 'script-to-3d' && bundleData?.textTo3dAssets) {
+          const avatarAssets = await avatarTo3dService.getAssetsForTopic(chapterId, topicId, language);
+          setScriptTo3dAssets(avatarAssets.map(a => ({ ...a, source: 'avatar_to_3d' })));
+          const updated = avatarAssets.find(a => a.id === asset.id);
+          if (updated) setSelectedScriptTo3d({ ...updated, source: 'avatar_to_3d' });
+        }
+        onAssetGenerated?.();
+      } else {
+        toast.error(result.error || 'Animation failed');
+        setAnimateProgress(null);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Animation failed');
+      setAnimateProgress(null);
+    } finally {
+      setAnimatingAssetId(null);
+    }
+  };
+
   // Script-to-3D: Add manual (Generate 3D Asset)
   const handleAddManual = async () => {
     if (!manualPrompt?.trim() || !user?.uid) {
@@ -764,6 +826,70 @@ export const TextTo3DUnified = ({
                           <span className="text-sm font-medium text-primary">Asset Generated</span>
                         </div>
                         <p className="text-xs text-primary">Available in 3D Assets section above</p>
+                      </div>
+                    )}
+
+                    {/* Rig & Animate (Meshy v1): only for approved assets with GLB. Best for humanoid models. */}
+                    {currentSelected.approval_status && getGlbUrl(currentSelected) && (
+                      <div className="p-3 rounded-lg bg-muted/50 border border-border mt-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Activity className="w-4 h-4 text-foreground" />
+                          <span className="text-sm font-medium text-foreground">Animate</span>
+                          {currentSelected.animated_glb_url && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-emerald-500/10 text-emerald-400">Animated</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">Best for humanoid characters. Non-humanoid or untextured models may fail.</p>
+                        {animatingAssetId === currentSelected.id && animateProgress ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-foreground">{animateProgress.message}</p>
+                            <div className="w-full bg-muted rounded-full h-2">
+                              <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${animateProgress.progress}%` }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {showAnimationPicker ? (
+                              <div className="space-y-2">
+                                <label className="text-xs text-muted-foreground">Animation</label>
+                                <select
+                                  value={selectedActionId}
+                                  onChange={(e) => setSelectedActionId(Number(e.target.value))}
+                                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                                >
+                                  {MESHY_ANIMATION_LIBRARY.map((a) => (
+                                    <option key={a.id} value={a.id}>{a.name} ({a.category})</option>
+                                  ))}
+                                </select>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleApplyAnimation(currentSelected, 'text_to_3d')}
+                                    disabled={animatingAssetId !== null}
+                                    className="flex-1 px-3 py-2 rounded-lg bg-primary/20 text-primary border border-primary/30 text-sm font-medium hover:bg-primary/30 disabled:opacity-50 flex items-center justify-center gap-2"
+                                  >
+                                    {animatingAssetId === currentSelected.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                    Apply animation
+                                  </button>
+                                  <button
+                                    onClick={() => setShowAnimationPicker(false)}
+                                    className="px-3 py-2 rounded-lg bg-muted text-muted-foreground text-sm hover:bg-muted/80"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setShowAnimationPicker(true)}
+                                disabled={animatingAssetId !== null}
+                                className="px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 text-sm font-medium hover:bg-primary/20 disabled:opacity-50 flex items-center gap-2"
+                              >
+                                <Activity className="w-4 h-4" />
+                                {currentSelected.animated_glb_url ? 'Change animation' : 'Rig & Animate'}
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1062,6 +1188,70 @@ export const TextTo3DUnified = ({
                           <span className="text-sm font-medium text-primary">Asset Generated</span>
                         </div>
                         <p className="text-xs text-primary">Available in 3D Assets section above</p>
+                      </div>
+                    )}
+
+                    {/* Rig & Animate for Script-to-3D */}
+                    {currentSelected.approval_status && getGlbUrl(currentSelected) && (
+                      <div className="p-3 rounded-lg bg-muted/50 border border-border mt-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Activity className="w-4 h-4 text-foreground" />
+                          <span className="text-sm font-medium text-foreground">Animate</span>
+                          {currentSelected.animated_glb_url && (
+                            <span className="px-2 py-0.5 text-xs rounded bg-emerald-500/10 text-emerald-400">Animated</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">Best for humanoid characters. Non-humanoid or untextured models may fail.</p>
+                        {animatingAssetId === currentSelected.id && animateProgress ? (
+                          <div className="space-y-2">
+                            <p className="text-xs text-foreground">{animateProgress.message}</p>
+                            <div className="w-full bg-muted rounded-full h-2">
+                              <div className="bg-purple-500 h-2 rounded-full transition-all" style={{ width: `${animateProgress.progress}%` }} />
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {showAnimationPicker ? (
+                              <div className="space-y-2">
+                                <label className="text-xs text-muted-foreground">Animation</label>
+                                <select
+                                  value={selectedActionId}
+                                  onChange={(e) => setSelectedActionId(Number(e.target.value))}
+                                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                                >
+                                  {MESHY_ANIMATION_LIBRARY.map((a) => (
+                                    <option key={a.id} value={a.id}>{a.name} ({a.category})</option>
+                                  ))}
+                                </select>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleApplyAnimation(currentSelected, 'avatar_to_3d')}
+                                    disabled={animatingAssetId !== null}
+                                    className="flex-1 px-3 py-2 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/30 text-sm font-medium hover:bg-purple-500/30 disabled:opacity-50 flex items-center justify-center gap-2"
+                                  >
+                                    {animatingAssetId === currentSelected.id ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                                    Apply animation
+                                  </button>
+                                  <button
+                                    onClick={() => setShowAnimationPicker(false)}
+                                    className="px-3 py-2 rounded-lg bg-muted text-muted-foreground text-sm hover:bg-muted/80"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setShowAnimationPicker(true)}
+                                disabled={animatingAssetId !== null}
+                                className="px-3 py-2 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 text-sm font-medium hover:bg-purple-500/20 disabled:opacity-50 flex items-center gap-2"
+                              >
+                                <Activity className="w-4 h-4" />
+                                {currentSelected.animated_glb_url ? 'Change animation' : 'Rig & Animate'}
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
