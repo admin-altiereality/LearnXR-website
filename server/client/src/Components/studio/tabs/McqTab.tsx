@@ -10,7 +10,6 @@ import { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { MCQ, MCQFormState, ChapterMCQ, LanguageCode } from '../../../types/curriculum';
 import { getChapterMCQsByLanguage } from '../../../lib/firestore/queries';
-import { LanguageToggle } from '../../../Components/LanguageSelector';
 import { generateMcqs as generateMcqsApi } from '../../../services/mcqGenerationService';
 import {
   HelpCircle,
@@ -37,7 +36,6 @@ interface McqTabProps {
   chapterId?: string;
   topicId?: string;
   language?: LanguageCode;
-  onLanguageChange?: (language: LanguageCode) => void;
   /** For AI generation: learning objective or script text */
   learningObjective?: string;
   subject?: string;
@@ -63,30 +61,17 @@ export const McqTab = ({
   chapterId,
   topicId,
   language = 'en',
-  onLanguageChange,
   learningObjective,
   subject,
   classLevel,
   curriculum,
   canDeleteContent = true,
 }: McqTabProps) => {
+  const effectiveLang = language ?? 'en';
   const [expandedMcq, setExpandedMcq] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [localMcqs, setLocalMcqs] = useState<ChapterMCQ[]>([]);
-  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
-  
-  // Sync with parent language prop
-  useEffect(() => {
-    setSelectedLanguage(language);
-  }, [language]);
-  
-  const handleLanguageChange = (lang: LanguageCode) => {
-    setSelectedLanguage(lang);
-    if (onLanguageChange) {
-      onLanguageChange(lang);
-    }
-  };
   
   // Fetch MCQs from chapter_mcqs collection if chapterId and topicId are provided
   useEffect(() => {
@@ -95,7 +80,7 @@ export const McqTab = ({
       
       setLoading(true);
       try {
-        const mcqsData = await getChapterMCQsByLanguage(chapterId, topicId, selectedLanguage);
+        const mcqsData = await getChapterMCQsByLanguage(chapterId, topicId, effectiveLang);
         setLocalMcqs(mcqsData);
         
         // Convert ChapterMCQ to MCQFormState for backwards compatibility
@@ -112,8 +97,8 @@ export const McqTab = ({
           onMcqsChange(formState);
         }
       } catch (error) {
-        console.error(`Error loading ${selectedLanguage} MCQs from chapter_mcqs collection:`, error);
-        toast.error(`Failed to load ${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs`);
+        console.error(`Error loading ${effectiveLang} MCQs from chapter_mcqs collection:`, error);
+        toast.error(`Failed to load ${effectiveLang === 'en' ? 'English' : 'Hindi'} MCQs`);
       } finally {
         setLoading(false);
       }
@@ -123,19 +108,19 @@ export const McqTab = ({
     if (chapterId && topicId && mcqs.length === 0) {
       loadMcqsFromCollection();
     }
-  }, [chapterId, topicId, selectedLanguage]);
+  }, [chapterId, topicId, effectiveLang]);
   
   const handleRefresh = async () => {
     if (!chapterId || !topicId) return;
     
     setLoading(true);
     try {
-      const mcqsData = await getChapterMCQsByLanguage(chapterId, topicId, selectedLanguage);
+      const mcqsData = await getChapterMCQsByLanguage(chapterId, topicId, effectiveLang);
       setLocalMcqs(mcqsData);
-      toast.success(`${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs refreshed`);
+      toast.success(`${effectiveLang === 'en' ? 'English' : 'Hindi'} MCQs refreshed`);
     } catch (error) {
-      console.error(`Error refreshing ${selectedLanguage} MCQs:`, error);
-      toast.error(`Failed to refresh ${selectedLanguage === 'en' ? 'English' : 'Hindi'} MCQs`);
+      console.error(`Error refreshing ${effectiveLang} MCQs:`, error);
+      toast.error(`Failed to refresh ${effectiveLang === 'en' ? 'English' : 'Hindi'} MCQs`);
     } finally {
       setLoading(false);
     }
@@ -157,7 +142,7 @@ export const McqTab = ({
         curriculum,
         learningObjective: learningObjective?.trim() || (subject ? `Assess key concepts in ${subject}` : undefined),
         count: 5,
-        language: selectedLanguage,
+        language: effectiveLang,
       });
       const newFormState: MCQFormState[] = generated.map((m) => ({
         question: m.question,
@@ -272,21 +257,12 @@ export const McqTab = ({
           <div>
             <h2 className="text-lg font-semibold text-foreground">Multiple Choice Questions</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {visibleMcqs.length} {selectedLanguage === 'en' ? 'English' : 'Hindi'} question{visibleMcqs.length !== 1 ? 's' : ''} 
+              {visibleMcqs.length} {effectiveLang === 'en' ? 'English' : 'Hindi'} question{visibleMcqs.length !== 1 ? 's' : ''} 
               <span className="text-primary/60 ml-1">(from chapter_mcqs)</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Language Toggle */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Language:</span>
-              <LanguageToggle
-                value={selectedLanguage}
-                onChange={handleLanguageChange}
-                size="sm"
-                showFlags={true}
-              />
-            </div>
+            <span className="text-xs text-muted-foreground">Editing: {effectiveLang === 'en' ? 'English' : 'Hindi'}</span>
             {chapterId && topicId && (
               <button
                 onClick={handleRefresh}

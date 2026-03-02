@@ -12,7 +12,6 @@ import {
   SelectValue,
 } from '@/Components/ui/select';
 import { cn } from '@/lib/utils';
-import { LanguageToggle } from '../../../Components/LanguageSelector';
 import {
   getChapterNameByLanguage,
   getTopicNameByLanguage,
@@ -53,7 +52,6 @@ interface OverviewTabProps {
   chapterId?: string;
   topicId?: string;
   language?: LanguageCode;
-  selectedLanguage?: LanguageCode;
 }
 
 const sceneTypes = [
@@ -72,9 +70,9 @@ export const OverviewTab = ({
   contentAvailability,
   chapterId,
   topicId,
-  selectedLanguage: propLanguage,
+  language = 'en',
 }: OverviewTabProps) => {
-  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(propLanguage || 'en');
+  const effectiveLang = language ?? 'en';
   const [chapterData, setChapterData] = useState<CurriculumChapter | null>(null);
   const [, setLoading] = useState(false);
   const [bundleAvailability, setBundleAvailability] = useState<ContentAvailability>({
@@ -96,13 +94,6 @@ export const OverviewTab = ({
           sceneStatus: 'pending',
           loading: true,
         });
-  
-  // Sync with prop language
-  useEffect(() => {
-    if (propLanguage) {
-      setSelectedLanguage(propLanguage);
-    }
-  }, [propLanguage]);
 
   // Load chapter data and bundle-based content availability
   // This MUST run first and block rendering until complete
@@ -129,7 +120,7 @@ export const OverviewTab = ({
         const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId,
-          lang: selectedLanguage,
+          lang: effectiveLang,
           topicId,
         });
         
@@ -203,7 +194,7 @@ export const OverviewTab = ({
         });
         
         console.log('📊 [OverviewTab] Bundle-based content availability:', {
-          language: selectedLanguage,
+          language: effectiveLang,
           mcqs: {
             total: safeMcqs.length,
             withOptions: mcqsWithOptions.length,
@@ -248,7 +239,7 @@ export const OverviewTab = ({
     };
     
     loadData();
-  }, [chapterId, topicId, selectedLanguage, sceneFormState.status, sceneFormState.skybox_url]);
+  }, [chapterId, topicId, effectiveLang, sceneFormState.status, sceneFormState.skybox_url]);
   
   // BLOCK RENDERING until availability check completes
   if (bundleAvailability.loading) {
@@ -277,15 +268,9 @@ export const OverviewTab = ({
   return (
     <div className="p-6 max-w-4xl">
       <div className="space-y-6">
-        {/* Language Toggle */}
         <div className="flex items-center justify-between mb-4">
           <Label className="text-muted-foreground">Content Language</Label>
-          <LanguageToggle
-            value={selectedLanguage}
-            onChange={setSelectedLanguage}
-            size="sm"
-            showFlags={true}
-          />
+          <span className="text-sm text-muted-foreground">Editing: {effectiveLang === 'en' ? 'English' : 'Hindi'}</span>
         </div>
         
         {/* Chapter Name */}
@@ -328,13 +313,13 @@ export const OverviewTab = ({
                 <span>🇬🇧</span> English
               </div>
               <Input
-                value={selectedLanguage === 'en' ? (topicNameEn || topicFormState.topic_name || '') : topicNameEn || ''}
+                value={effectiveLang === 'en' ? (topicNameEn || topicFormState.topic_name || '') : topicNameEn || ''}
                 onChange={(e) => {
-                  if (selectedLanguage === 'en') {
+                  if (effectiveLang === 'en') {
                     onTopicChange('topic_name', e.target.value);
                   }
                 }}
-                disabled={isReadOnly || selectedLanguage !== 'en'}
+                disabled={isReadOnly || effectiveLang !== 'en'}
                 placeholder="Enter topic name (English)..."
                 className="h-11"
               />
@@ -344,13 +329,13 @@ export const OverviewTab = ({
                 <span>🇮🇳</span> Hindi
               </div>
               <Input
-                value={selectedLanguage === 'hi' ? (topicNameHi || '') : topicNameHi || ''}
+                value={effectiveLang === 'hi' ? (topicNameHi || '') : topicNameHi || ''}
                 onChange={(e) => {
-                  if (selectedLanguage === 'hi') {
+                  if (effectiveLang === 'hi') {
                     onTopicChange('topic_name', e.target.value);
                   }
                 }}
-                disabled={isReadOnly || selectedLanguage !== 'hi'}
+                disabled={isReadOnly || effectiveLang !== 'hi'}
                 placeholder="Enter topic name (Hindi)..."
                 className="h-11"
               />
@@ -416,13 +401,13 @@ export const OverviewTab = ({
                 <span>🇬🇧</span> English
               </div>
               <textarea
-                value={selectedLanguage === 'en' ? (learningObjectiveEn || sceneFormState.learning_objective || '') : learningObjectiveEn || ''}
+                value={effectiveLang === 'en' ? (learningObjectiveEn || sceneFormState.learning_objective || '') : learningObjectiveEn || ''}
                 onChange={(e) => {
-                  if (selectedLanguage === 'en') {
+                  if (effectiveLang === 'en') {
                     onSceneChange('learning_objective', e.target.value);
                   }
                 }}
-                disabled={isReadOnly || selectedLanguage !== 'en'}
+                disabled={isReadOnly || effectiveLang !== 'en'}
                 placeholder="What should students learn from this topic? (English)"
                 rows={4}
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
@@ -433,13 +418,13 @@ export const OverviewTab = ({
                 <span>🇮🇳</span> Hindi
               </div>
               <textarea
-                value={selectedLanguage === 'hi' ? (learningObjectiveHi || '') : learningObjectiveHi || ''}
+                value={effectiveLang === 'hi' ? (learningObjectiveHi || '') : learningObjectiveHi || ''}
                 onChange={(e) => {
-                  if (selectedLanguage === 'hi') {
+                  if (effectiveLang === 'hi') {
                     onSceneChange('learning_objective', e.target.value);
                   }
                 }}
-                disabled={isReadOnly || selectedLanguage !== 'hi'}
+                disabled={isReadOnly || effectiveLang !== 'hi'}
                 placeholder="What should students learn from this topic? (Hindi)"
                 rows={4}
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
@@ -461,7 +446,7 @@ export const OverviewTab = ({
                 </div>
                 <div>
                   <CardTitle className="text-base">Content Availability</CardTitle>
-                  <p className="text-xs text-muted-foreground">Language: {selectedLanguage === 'en' ? 'English 🇬🇧' : 'Hindi 🇮🇳'}</p>
+                  <p className="text-xs text-muted-foreground">Language: {effectiveLang === 'en' ? 'English 🇬🇧' : 'Hindi 🇮🇳'}</p>
                 </div>
               </div>
               {availability.loading && (

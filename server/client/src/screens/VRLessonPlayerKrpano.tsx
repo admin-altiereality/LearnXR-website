@@ -1115,6 +1115,8 @@ const VRLessonPlayerInner = () => {
   // UI State
   const [showDragHint, setShowDragHint] = useState(true);
   const [sceneReady, setSceneReady] = useState(false);
+  /** When true, krpano threejs 3D assets have had time to load (or there are none). Used so Start Lesson waits for 3D on Quest/Web. */
+  const [krpano3dAssetsReady, setKrpano3dAssetsReady] = useState(true);
 
   // LMS Tracking State
   const [currentLaunchId, setCurrentLaunchId] = useState<string | null>(null);
@@ -1216,8 +1218,7 @@ const VRLessonPlayerInner = () => {
   
   const currentMcq = mcqs[currentMcqIndex];
 
-  // All content ready: skybox (or no skybox), 3D assets (or none), and TTS must be ready.
-  // When we have skybox we use krpano (3D loads inside krpano) so don't wait for assetLoading. Only wait for asset when GLB-only (model-only R3F path).
+  // All content ready: skybox, 3D assets (in krpano), TTS, and script data must be loaded before Start Lesson (Quest + Web).
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
@@ -1226,8 +1227,9 @@ const VRLessonPlayerInner = () => {
     const ttsReady =
       ttsStatus !== 'loading' &&
       (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
-    return skyboxReady && assetReady && ttsReady;
-  }, [skyboxData, skyboxLoading, sceneReady, ttsStatus, ttsData.length, assetUrl, assetLoading]);
+    const scriptDataReady = !effectiveLesson || !!effectiveLesson.topic;
+    return skyboxReady && assetReady && ttsReady && scriptDataReady && krpano3dAssetsReady;
+  }, [skyboxData, skyboxLoading, sceneReady, ttsStatus, ttsData.length, assetUrl, assetLoading, effectiveLesson, krpano3dAssetsReady]);
   
   // Debug log for MCQs
   useEffect(() => {
@@ -1495,6 +1497,10 @@ const VRLessonPlayerInner = () => {
       isFirebaseStorage(url) ? url : getProxyAssetUrlForThreejs(url)
     );
 
+    if (threeJsAssetUrls.length > 0) {
+      setKrpano3dAssetsReady(false);
+    }
+
     loadKrpanoScript()
       .then(() => {
         if (cancelled) return;
@@ -1617,12 +1623,20 @@ const VRLessonPlayerInner = () => {
                 }
               };
               setSceneReady(true);
+              if (threeJsAssetUrls.length > 0) {
+                setTimeout(() => {
+                  if (!cancelled) setKrpano3dAssetsReady(true);
+                }, 3000);
+              } else {
+                setKrpano3dAssetsReady(true);
+              }
             }
           },
           onerror: (msg) => {
             if (!cancelled) {
               setSkyboxError(msg || 'Failed to load 360° viewer');
               setSceneReady(true);
+              setKrpano3dAssetsReady(true);
             }
           },
         });
@@ -1631,6 +1645,7 @@ const VRLessonPlayerInner = () => {
         krpanoFallbackTimerRef.current = setTimeout(() => {
           if (!cancelled) {
             setSceneReady((prev) => (prev ? prev : true));
+            setKrpano3dAssetsReady(true);
           }
           krpanoFallbackTimerRef.current = null;
         }, 12000);
@@ -1639,11 +1654,13 @@ const VRLessonPlayerInner = () => {
         if (!cancelled) {
           setSkyboxError(err?.message || 'Failed to load 360° viewer');
           setSceneReady(true);
+          setKrpano3dAssetsReady(true);
         }
       });
 
     return () => {
       cancelled = true;
+      setKrpano3dAssetsReady(true);
       useKrpanoTTSRef.current = false;
       if (krpanoFallbackTimerRef.current) {
         clearTimeout(krpanoFallbackTimerRef.current);

@@ -167,6 +167,7 @@ export const TopicEditor = ({
             contentAvailability={contentAvailability}
             chapterId={chapterId}
             topicId={topic.id}
+            language={language}
           />
           </TabsContent>
         

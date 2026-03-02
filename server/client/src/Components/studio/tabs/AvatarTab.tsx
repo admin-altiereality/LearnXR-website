@@ -12,7 +12,6 @@ import { getChapterTTS, getChapterTTSByLanguage, extractTopicScriptsForLanguage 
 import type { CurriculumChapter, Topic as FirebaseTopic } from '../../../types/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import { LanguageToggle } from '../../../Components/LanguageSelector';
 import {
   MessageSquare,
   BookOpen,
@@ -36,7 +35,6 @@ interface AvatarTabProps {
   chapterId?: string;
   topicId?: string;
   language?: LanguageCode;
-  onLanguageChange?: (language: LanguageCode) => void;
   /** When Associate: pass so draft overlay is applied when fetching bundle */
   userId?: string;
   userRole?: string;
@@ -49,10 +47,10 @@ export const AvatarTab = ({
   chapterId,
   topicId,
   language = 'en',
-  onLanguageChange,
   userId,
   userRole,
 }: AvatarTabProps) => {
+  const effectiveLang = language ?? 'en';
   // TTS audio from chapter_tts collection
   const [ttsData, setTtsData] = useState<ChapterTTS[]>([]);
   const [loadingTTS, setLoadingTTS] = useState(false);
@@ -63,28 +61,8 @@ export const AvatarTab = ({
     explanation: string;
     outro: string;
   } | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
   const [regeneratingAudios, setRegeneratingAudios] = useState(false);
   const [regeneratingType, setRegeneratingType] = useState<'intro' | 'explanation' | 'outro' | null>(null);
-  
-  // Sync with parent language prop and reload data when it changes
-  useEffect(() => {
-    if (language !== selectedLanguage) {
-      console.log(`[AvatarTab] Syncing language from parent: ${language} (was ${selectedLanguage})`);
-      setSelectedLanguage(language);
-      // Data will reload automatically via useEffect dependencies on selectedLanguage
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language]);
-  
-  const handleLanguageChange = (lang: LanguageCode) => {
-    console.log(`[AvatarTab] Language changed to: ${lang}`);
-    setSelectedLanguage(lang);
-    if (onLanguageChange) {
-      onLanguageChange(lang);
-    }
-    // Scripts and TTS will reload automatically via useEffect dependencies
-  };
   
   // Load language-specific scripts when chapter/topic/language change (do not depend on onSceneChange to avoid request loop)
   useEffect(() => {
@@ -96,7 +74,7 @@ export const AvatarTab = ({
         const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId,
-          lang: selectedLanguage,
+          lang: effectiveLang,
           topicId,
           userId: userRole === 'associate' ? userId : undefined,
           userRole: userRole === 'associate' ? 'associate' : undefined,
@@ -110,7 +88,7 @@ export const AvatarTab = ({
         onSceneChange('avatar_outro', scripts.outro || '');
       } catch (error) {
         if (cancelled) return;
-        console.error(`[AvatarTab] Error loading ${selectedLanguage} scripts:`, error);
+        console.error(`[AvatarTab] Error loading ${effectiveLang} scripts:`, error);
         try {
           const chapterRef = doc(db, 'curriculum_chapters', chapterId);
           const chapterSnap = await getDoc(chapterRef);
@@ -119,7 +97,7 @@ export const AvatarTab = ({
             const chapterData = chapterSnap.data() as CurriculumChapter;
             const topic = chapterData.topics?.find(t => t.topic_id === topicId);
             if (topic) {
-              const scripts = extractTopicScriptsForLanguage(topic, selectedLanguage);
+              const scripts = extractTopicScriptsForLanguage(topic, effectiveLang);
               setLanguageScripts(scripts);
               onSceneChange('avatar_intro', scripts.intro || '');
               onSceneChange('avatar_explanation', scripts.explanation || '');
@@ -136,7 +114,7 @@ export const AvatarTab = ({
     return () => { cancelled = true; };
     // Intentionally omit onSceneChange to avoid re-running on every parent re-render (would cause constant bundle requests)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterId, topicId, selectedLanguage, userId, userRole]);
+  }, [chapterId, topicId, effectiveLang, userId, userRole]);
   
   // Load TTS data from bundle (language-specific)
   useEffect(() => {
@@ -145,27 +123,27 @@ export const AvatarTab = ({
       
       setLoadingTTS(true);
       try {
-        console.log(`[AvatarTab] Loading ${selectedLanguage} TTS for topic ${topicId}...`);
+        console.log(`[AvatarTab] Loading ${effectiveLang} TTS for topic ${topicId}...`);
         
         // Use bundle to get TTS (consistent with other tabs)
         const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
           chapterId,
-          lang: selectedLanguage,
+          lang: effectiveLang,
           topicId,
           userId: userRole === 'associate' ? userId : undefined,
           userRole: userRole === 'associate' ? 'associate' : undefined,
         });
         
         setTtsData(bundle.tts || []);
-        console.log(`[AvatarTab] ✅ Loaded ${bundle.tts.length} ${selectedLanguage} TTS files from bundle`);
+        console.log(`[AvatarTab] ✅ Loaded ${bundle.tts.length} ${effectiveLang} TTS files from bundle`);
       } catch (error) {
-        console.error(`[AvatarTab] Error loading ${selectedLanguage} TTS from bundle:`, error);
+        console.error(`[AvatarTab] Error loading ${effectiveLang} TTS from bundle:`, error);
         // Fallback to direct query
         try {
-          const data = await getChapterTTSByLanguage(chapterId, topicId, selectedLanguage);
+          const data = await getChapterTTSByLanguage(chapterId, topicId, effectiveLang);
           setTtsData(data);
-          console.log(`[AvatarTab] Fallback: Loaded ${data.length} ${selectedLanguage} TTS files`);
+          console.log(`[AvatarTab] Fallback: Loaded ${data.length} ${effectiveLang} TTS files`);
         } catch (fallbackError) {
           console.error(`[AvatarTab] Fallback also failed:`, fallbackError);
           setTtsData([]);
@@ -176,7 +154,7 @@ export const AvatarTab = ({
     };
     
     loadTTSData();
-  }, [chapterId, topicId, selectedLanguage]);
+  }, [chapterId, topicId, effectiveLang]);
   
   const handleRefreshTTS = async () => {
     if (!chapterId || !topicId) return;
@@ -187,23 +165,23 @@ export const AvatarTab = ({
       const { getLessonBundle } = await import('../../../services/firestore/getLessonBundle');
       const bundle = await getLessonBundle({
         chapterId,
-        lang: selectedLanguage,
+        lang: effectiveLang,
         topicId,
         userId: userRole === 'associate' ? userId : undefined,
         userRole: userRole === 'associate' ? 'associate' : undefined,
       });
       
       setTtsData(bundle.tts || []);
-      toast.success(`${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS data refreshed`);
+      toast.success(`${effectiveLang === 'en' ? 'English' : 'Hindi'} TTS data refreshed`);
     } catch (error) {
-      console.error(`[AvatarTab] Error refreshing ${selectedLanguage} TTS:`, error);
+      console.error(`[AvatarTab] Error refreshing ${effectiveLang} TTS:`, error);
       // Fallback to direct query
       try {
-        const data = await getChapterTTSByLanguage(chapterId, topicId, selectedLanguage);
+        const data = await getChapterTTSByLanguage(chapterId, topicId, effectiveLang);
         setTtsData(data);
-        toast.success(`${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS data refreshed`);
+        toast.success(`${effectiveLang === 'en' ? 'English' : 'Hindi'} TTS data refreshed`);
       } catch (fallbackError) {
-        toast.error(`Failed to refresh ${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS`);
+        toast.error(`Failed to refresh ${effectiveLang === 'en' ? 'English' : 'Hindi'} TTS`);
       }
     } finally {
       setLoadingTTS(false);
@@ -237,7 +215,7 @@ export const AvatarTab = ({
         body: JSON.stringify({
           chapterId,
           topicId,
-          language: selectedLanguage,
+          language: effectiveLang,
           scripts: { intro: scripts.intro, explanation: scripts.explanation, outro: scripts.outro },
           ...(isAssociate ? { draftOnly: true } : {}),
         }),
@@ -260,15 +238,15 @@ export const AvatarTab = ({
         }
         const merged = Array.from(byType.values());
         store.setDraftTts(merged);
-        setTtsData(merged.map((t) => ({ id: t.id!, chapter_id: chapterId!, topic_id: topicId!, script_type: t.script_type, script_text: '', audio_url: t.audio_url, language: t.language || selectedLanguage, voice_name: t.voice_name, status: 'complete' as const })));
+        setTtsData(merged.map((t) => ({ id: t.id!, chapter_id: chapterId!, topic_id: topicId!, script_type: t.script_type, script_text: '', audio_url: t.audio_url, language: t.language || effectiveLang, voice_name: t.voice_name, status: 'complete' as const })));
       } else {
         await handleRefreshTTS();
       }
-      toast.success(data.message ?? `${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audios regenerated`);
+      toast.success(data.message ?? `${effectiveLang === 'en' ? 'English' : 'Hindi'} TTS audios regenerated`);
     } catch (err) {
       console.error('[AvatarTab] Regenerate audios error:', err);
       const isNetwork = err instanceof TypeError && (err.message === 'Failed to fetch' || err.message.includes('NetworkError'));
-      toast.error(isNetwork ? 'Network error. Is the API server running (e.g. localhost:5002)?' : `Failed to regenerate ${selectedLanguage === 'en' ? 'English' : 'Hindi'} audios.`);
+      toast.error(isNetwork ? 'Network error. Is the API server running (e.g. localhost:5002)?' : `Failed to regenerate ${effectiveLang === 'en' ? 'English' : 'Hindi'} audios.`);
     } finally {
       setRegeneratingAudios(false);
     }
@@ -299,7 +277,7 @@ export const AvatarTab = ({
         body: JSON.stringify({
           chapterId,
           topicId,
-          language: selectedLanguage,
+          language: effectiveLang,
           scripts: { intro: scripts.intro, explanation: scripts.explanation, outro: scripts.outro },
           regenerateOnly: scriptType,
           ...(isAssociate ? { draftOnly: true } : {}),
@@ -323,7 +301,7 @@ export const AvatarTab = ({
         }
         const merged = Array.from(byType.values());
         store.setDraftTts(merged);
-        setTtsData(merged.map((t) => ({ id: t.id!, chapter_id: chapterId!, topic_id: topicId!, script_type: t.script_type, script_text: '', audio_url: t.audio_url, language: t.language || selectedLanguage, voice_name: t.voice_name, status: 'complete' as const })));
+        setTtsData(merged.map((t) => ({ id: t.id!, chapter_id: chapterId!, topic_id: topicId!, script_type: t.script_type, script_text: '', audio_url: t.audio_url, language: t.language || effectiveLang, voice_name: t.voice_name, status: 'complete' as const })));
       } else {
         await handleRefreshTTS();
       }
@@ -425,32 +403,23 @@ export const AvatarTab = ({
             <p className="text-sm text-muted-foreground mt-1">
               Write the dialogue for the teaching avatar in each phase of the lesson
               <span className="text-primary/60 ml-1">
-                ({selectedLanguage === 'en' ? 'English' : 'Hindi'})
+                ({effectiveLang === 'en' ? 'English' : 'Hindi'})
               </span>
               {ttsData.length > 0 && (
                 <span className="text-primary/60 ml-1">
-                  • {ttsData.length} {selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audio{ttsData.length !== 1 ? 's' : ''} from chapter_tts
+                  • {ttsData.length} {effectiveLang === 'en' ? 'English' : 'Hindi'} TTS audio{ttsData.length !== 1 ? 's' : ''} from chapter_tts
                 </span>
               )}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Language Toggle */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Language:</span>
-              <LanguageToggle
-                value={selectedLanguage}
-                onChange={handleLanguageChange}
-                size="sm"
-                showFlags={true}
-              />
-            </div>
+            <span className="text-xs text-muted-foreground">Editing: {effectiveLang === 'en' ? 'English' : 'Hindi'}</span>
             {chapterId && topicId && (
               <>
                 <button
                   onClick={handleRegenerateAudios}
                   disabled={isReadOnly || loadingTTS || regeneratingAudios}
-                  title={`Regenerate ${selectedLanguage === 'en' ? 'English' : 'Hindi'} TTS audios from current scripts`}
+                  title={`Regenerate ${effectiveLang === 'en' ? 'English' : 'Hindi'} TTS audios from current scripts`}
                   className="flex items-center gap-2 px-3 py-2 text-sm font-medium
                            text-primary hover:text-cyan-300 bg-muted hover:bg-muted/80
                            rounded-lg border border-cyan-500/30 hover:border-cyan-500/50

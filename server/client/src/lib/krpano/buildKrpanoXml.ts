@@ -186,14 +186,16 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
-  // 3D model hotspots (type="threejs") - classroom layout: to the right of avatar, raised as if on a desk.
+  // 3D model hotspots (type="threejs") - spaced apart so they do not overlap or touch (Quest + Web).
   const threeJsHotspotBlocks = safe3dUrls
     .map((url, i) => {
       const safeUrl = escapeXml(url);
       const name = `asset_${i}`;
-      const tx = 60 + (i % 3 - 1) * 40;
-      const ty = -30;
-      const tz = 150 + Math.floor(i / 3) * 50;
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      const tx = 40 + (col - 1) * 90;
+      const ty = -20 - row * 25;
+      const tz = 180 + row * 90;
       return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="${ty}" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
     })
     .join('\n');

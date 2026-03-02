@@ -12,7 +12,7 @@ import {
     Send,
     Trash2
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button } from '@/Components/ui/button';
@@ -89,6 +89,9 @@ const ChapterEditor = () => {
   // Zustand draft store — single source of truth for lesson edits
   const draftStore = useLessonDraftStore();
   const isDraftDirty = useLessonDraftStore((s) => s.isDirty());
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveHandlerRef = useRef<(opts?: { skipSuccessToast?: boolean }) => Promise<void>>(() => Promise.resolve());
+  const savingRef = useRef(false);
 
   // Persist draft before leave so Associate can return and continue (and optionally warn)
   useEffect(() => {
@@ -478,8 +481,21 @@ const ChapterEditor = () => {
           setMcqFormState(restoredMcqs.map((m) => ({ ...m })));
           console.log('📦 Draft store restored from local storage');
         } else {
-          draftStore.loadLesson(draftSnapshot, meta);
-          console.log('📦 Draft store loaded with standardized snapshot');
+          // Sync scene_skybox with same values used for setSceneFormState so store and form start identical (fixes save-draft losing scene/skybox)
+          const skyboxId = bundle.skybox?.id ?? sceneData?.skybox_id ?? '';
+          const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || sceneData?.skybox_url || '';
+          const syncedSceneSkybox = {
+            ...draftSnapshot.scene_skybox,
+            in3d_prompt: sceneData?.in3d_prompt ?? draftSnapshot.scene_skybox?.in3d_prompt,
+            camera_guidance: sceneData?.camera_guidance ?? draftSnapshot.scene_skybox?.camera_guidance,
+            skybox_id: skyboxId || draftSnapshot.scene_skybox?.skybox_id,
+            skybox_url: skyboxUrl || draftSnapshot.scene_skybox?.skybox_url,
+            asset_list: sceneData?.asset_list ?? overlayedTopic?.asset_list ?? draftSnapshot.scene_skybox?.asset_list,
+            sharedAssets: sceneData?.sharedAssets ?? (overlayedTopic as any)?.sharedAssets ?? draftSnapshot.scene_skybox?.sharedAssets,
+          };
+          const snapshotWithSyncedScene = { ...draftSnapshot, scene_skybox: syncedSceneSkybox };
+          draftStore.loadLesson(snapshotWithSyncedScene, meta);
+          console.log('📦 Draft store loaded with standardized snapshot (scene_skybox synced with form source)');
         }
       } catch (storeError) {
         console.warn('Draft store load failed (non-blocking):', storeError);
@@ -603,7 +619,7 @@ const ChapterEditor = () => {
   };
   
   // Save handler — writes to curriculum_chapters/{chapterId}/versions ONLY (main doc untouched until Superadmin approves)
-  const handleSave = async () => {
+  const handleSave = async (opts?: { skipSuccessToast?: boolean }) => {
     if (!chapterId || !selectedVersionId || !selectedTopic || !user?.email) {
       toast.error('Missing required data');
       return;
@@ -709,7 +725,9 @@ const ChapterEditor = () => {
         return;
       }
 
-      toast.success('Draft saved. Your changes are stored and will remain for approval.');
+      if (!opts?.skipSuccessToast) {
+        toast.success('Draft saved. Your changes are stored and will remain for approval.');
+      }
     } catch (error) {
       console.error('Error saving changes:', error);
       toast.error('Failed to save changes');
@@ -727,7 +745,7 @@ const ChapterEditor = () => {
     }
     setSubmittingForApproval(true);
     try {
-      if (topicDirty || sceneDirty || mcqDirty) {
+      if (isDirty) {
         await handleSave();
       }
       await createEditRequest({
@@ -806,10 +824,10 @@ const ChapterEditor = () => {
     setPublishing(true);
     try {
       // Save any pending changes first
-      if (topicDirty || sceneDirty || mcqDirty) {
+      if (isDirty) {
         await handleSave();
       }
-      
+
       const result = await publishScene({
         chapterId,
         versionId: selectedVersionId,
@@ -847,9 +865,39 @@ const ChapterEditor = () => {
     }
   };
   
-  const isDirty = topicDirty || sceneDirty || mcqDirty;
+  const isDirty = topicDirty || sceneDirty || mcqDirty || isDraftDirty;
   const viewOnlyDraft = !!viewDraftForUserId;
   const effectiveReadOnly = isReadOnly || viewOnlyDraft;
+
+  // Keep refs updated so timer callback can invoke latest handleSave and avoid double-save
+  saveHandlerRef.current = handleSave;
+  savingRef.current = saving;
+
+  // Debounced auto-save: when any section (scene/skybox, avatar, TTS, 3D assets, etc.) is dirty, save after 2s idle
+  useEffect(() => {
+    if (!isDirty || saving || effectiveReadOnly || !chapterId || !selectedVersionId || !selectedTopic) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      return;
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      if (savingRef.current) return;
+      const store = useLessonDraftStore.getState();
+      if (!store.isDirty()) return;
+      saveHandlerRef.current?.({ skipSuccessToast: true }).then(() => {
+        toast.success('Draft auto-saved');
+      }).catch(() => {});
+    }, 2000);
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [isDirty, saving, effectiveReadOnly, chapterId, selectedVersionId, selectedTopic]);
 
   if (loading) {
     return (
@@ -1033,33 +1081,7 @@ const ChapterEditor = () => {
                   size="md"
                 />
               )}
-              {/* Launch krpano – opens lesson in krpano 360° player */}
-              {selectedTopic && chapterId && (
-                <LaunchLessonButton
-                  chapterId={chapterId}
-                  chapterName={chapter.chapter_name}
-                  chapterNumber={chapter.chapter_number}
-                  curriculum={navState?.curriculumId || chapter.curriculum_id || 'CBSE'}
-                  className={navState?.classId || chapter.class_id || '8'}
-                  subject={navState?.subjectId || chapter.subject_id || 'Science'}
-                  topicId={selectedTopic.id}
-                  topicName={(topicFormState.topic_name ?? selectedTopic.topic_name) ?? ''}
-                  topicPriority={selectedTopic.topic_priority}
-                  learningObjective={sceneFormState.learning_objective as string}
-                  in3dPrompt={sceneFormState.in3d_prompt as string}
-                  avatarIntro={sceneFormState.avatar_intro as string}
-                  avatarExplanation={sceneFormState.avatar_explanation as string}
-                  avatarOutro={sceneFormState.avatar_outro as string}
-                  skyboxId={sceneFormState.skybox_id as string}
-                  skyboxUrl={sceneFormState.skybox_url as string}
-                  assetList={sceneFormState.asset_list as string[]}
-                  language={selectedLanguage}
-                  size="md"
-                  launchTarget="vrlessonplayer-krpano"
-                  label="Launch krpano"
-                />
-              )}
-              
+
               {/* Delete Lesson Button (Superadmin only) */}
               {canDeleteLesson(profile) && (
                 <Button variant="destructive" onClick={() => setShowDeleteLessonModal(true)}>
