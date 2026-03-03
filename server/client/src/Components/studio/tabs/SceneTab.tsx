@@ -20,6 +20,9 @@ import { AssetViewerWithSkybox } from '../../AssetViewerWithSkybox';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { uploadSkyboxImage } from '../../../services/skyboxImageService';
+import { generateStreetViewSkybox } from '../../../services/streetViewSkyboxService';
+import { fetchPlaceSuggestions, fetchPlaceDetails, StreetViewPlacePrediction } from '../../../services/streetViewPlacesService';
+import { StreetViewMapPicker } from '../StreetViewMapPicker';
 import { useAuth } from '../../../contexts/AuthContext';
 import {
   Sparkles,
@@ -93,6 +96,23 @@ export const SceneTab = ({
   const [view360, setView360] = useState(true); // Default to 360° view like /main
   const [imageLoaded, setImageLoaded] = useState(false);
   const [viewer360Error, setViewer360Error] = useState(false);
+  
+  // Skybox source: upload (equirectangular / AI) vs Google Street View
+  const [skyboxSource, setSkyboxSource] = useState<'upload' | 'streetview'>('upload');
+  const [streetViewMode, setStreetViewMode] = useState<'location' | 'pano'>('location');
+  const [streetViewLat, setStreetViewLat] = useState<string>('');
+  const [streetViewLng, setStreetViewLng] = useState<string>('');
+  const [streetViewHeading, setStreetViewHeading] = useState<number>(0);
+  const [streetViewPitch, setStreetViewPitch] = useState<number>(0);
+  const [streetViewFov, setStreetViewFov] = useState<number>(90);
+  const [streetViewSize, setStreetViewSize] = useState<string>('1024x1024');
+  const [fetchingStreetView, setFetchingStreetView] = useState(false);
+  const [streetViewPlaceQuery, setStreetViewPlaceQuery] = useState('');
+  const [streetViewSuggestions, setStreetViewSuggestions] = useState<StreetViewPlacePrediction[]>([]);
+  const [streetViewSuggestionsOpen, setStreetViewSuggestionsOpen] = useState(false);
+  const [streetViewSelectedPlaceName, setStreetViewSelectedPlaceName] = useState<string | null>(null);
+  const [streetViewMapOpen, setStreetViewMapOpen] = useState(false);
+  const [streetViewPanoId, setStreetViewPanoId] = useState('');
   
   // Skybox image upload state
   const [uploadingSkybox, setUploadingSkybox] = useState(false);
@@ -294,6 +314,82 @@ export const SceneTab = ({
       return;
     }
     fileInputRef.current?.click();
+  };
+
+  // Fetch Google Street View and set as skybox
+  const handleFetchStreetViewSkybox = async () => {
+    if (!user?.uid) {
+      toast.error('User not authenticated');
+      return;
+    }
+    if (isReadOnly) {
+      toast.error('Read-only mode: Cannot set skybox');
+      return;
+    }
+    if (!chapterId?.trim() || !topicId?.trim()) {
+      toast.error('Chapter and topic are required. Save or select a topic first.');
+      return;
+    }
+
+    let params: any = {
+      heading: streetViewHeading,
+      pitch: streetViewPitch,
+      fov: streetViewFov,
+      size: streetViewSize,
+      chapterId,
+      topicId,
+      userId: user.uid,
+    };
+
+    if (streetViewMode === 'pano') {
+      const pano = streetViewPanoId.trim();
+      if (!pano) {
+        toast.error('Please enter a panorama ID (pano)');
+        return;
+      }
+      params = { ...params, panoId: pano };
+    } else {
+      const lat = parseFloat(streetViewLat);
+      const lng = parseFloat(streetViewLng);
+      if (Number.isNaN(lat) || Number.isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        toast.error('Please select a valid location (via search, map, or coordinates)');
+        return;
+      }
+      params = { ...params, location: { lat, lng } };
+    }
+    setFetchingStreetView(true);
+    try {
+      const result = await generateStreetViewSkybox(params);
+      if (result.success) {
+        onSceneChange('skybox_id', result.skyboxId);
+        onSceneChange('skybox_url', result.imageUrl);
+        setSkyboxData({
+          id: result.skyboxId,
+          imageUrl: result.imageUrl,
+          file_url: result.imageUrl,
+          promptUsed: 'Google Street View',
+          styleId: undefined,
+          styleName: undefined,
+          status: 'complete',
+        });
+        setImageLoadError(false);
+        setImageLoaded(false);
+        setViewer360Error(false);
+        const glbUrls = await getSkyboxGLBUrls(chapterId, topicId);
+        setSkyboxGLBUrls(glbUrls);
+        if (glbUrls.length > 0) {
+          setSelectedSkyboxGLB(glbUrls[0]);
+        }
+        toast.success('Street View skybox set successfully');
+      } else {
+        toast.error(result.error || 'Failed to fetch Street View skybox');
+      }
+    } catch (err) {
+      console.error('Street View skybox error:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to fetch Street View skybox');
+    } finally {
+      setFetchingStreetView(false);
+    }
   };
   
   // Generate skybox
@@ -763,7 +859,282 @@ export const SceneTab = ({
                 </div>
               )}
               
-              {/* Main Editor */}
+              {/* Skybox source toggle */}
+              <div className="mb-4 flex items-center gap-3">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Skybox source</span>
+                <div className="flex rounded-xl border border-border bg-muted/50 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setSkyboxSource('upload')}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${skyboxSource === 'upload' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Upload / Generate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSkyboxSource('streetview')}
+                    className={`px-4 py-2 text-sm font-medium rounded-lg transition-all flex items-center gap-2 ${skyboxSource === 'streetview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Globe className="w-4 h-4" />
+                    Google Street View
+                  </button>
+                </div>
+              </div>
+
+              {skyboxSource === 'streetview' ? (
+                /* Google Street View panel */
+                <div className="bg-black/60 backdrop-blur-md rounded-2xl border border-border p-5 space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Globe className="w-5 h-5 text-primary" />
+                    Street View source
+                  </div>
+
+                  {/* Mode toggle: location vs pano */}
+                  <div className="inline-flex rounded-xl border border-border bg-muted/50 p-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setStreetViewMode('location')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                        streetViewMode === 'location'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      By place / map
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStreetViewMode('pano')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                        streetViewMode === 'pano'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      By panorama ID
+                    </button>
+                  </div>
+
+                  {streetViewMode === 'location' ? (
+                    <>
+                      {/* Place search + map refine */}
+                      <div className="space-y-2">
+                        <label className="block text-xs text-muted-foreground mb-1">Search location</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={streetViewPlaceQuery}
+                            onChange={async (e) => {
+                              const value = e.target.value;
+                              setStreetViewPlaceQuery(value);
+                              if (!value.trim()) {
+                                setStreetViewSuggestions([]);
+                                setStreetViewSuggestionsOpen(false);
+                                return;
+                              }
+                              const result = await fetchPlaceSuggestions(value);
+                              if (result.success) {
+                                setStreetViewSuggestions(result.predictions || []);
+                                setStreetViewSuggestionsOpen(true);
+                              } else {
+                                toast.error(result.error || 'Failed to fetch place suggestions');
+                              }
+                            }}
+                            placeholder="City, address, or landmark"
+                            className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                          />
+                          {streetViewSuggestionsOpen && streetViewSuggestions.length > 0 && (
+                            <div className="absolute z-40 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-border bg-popover shadow-lg text-sm">
+                              {streetViewSuggestions.map((p) => (
+                                <button
+                                  key={p.place_id}
+                                  type="button"
+                                  className="block w-full text-left px-3 py-2 hover:bg-muted"
+                                  onClick={async () => {
+                                    setStreetViewPlaceQuery(p.description);
+                                    setStreetViewSuggestionsOpen(false);
+                                    const details = await fetchPlaceDetails(p.place_id);
+                                    if (!details.success || details.lat == null || details.lng == null) {
+                                      toast.error(details.error || 'Failed to load place details');
+                                      return;
+                                    }
+                                    setStreetViewLat(String(details.lat));
+                                    setStreetViewLng(String(details.lng));
+                                    setStreetViewSelectedPlaceName(details.formatted_address || p.description);
+                                  }}
+                                >
+                                  {p.description}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {streetViewSelectedPlaceName && (
+                          <p className="text-xs text-muted-foreground">
+                            Selected:{' '}
+                            <span className="font-medium text-foreground">{streetViewSelectedPlaceName}</span>
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setStreetViewMapOpen(true)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-border bg-muted hover:bg-muted/80"
+                          >
+                            <Globe className="w-3.5 h-3.5" />
+                            Refine on map
+                          </button>
+                          <span className="text-[11px] text-muted-foreground">
+                            Current: {streetViewLat && streetViewLng ? `${streetViewLat}, ${streetViewLng}` : 'not set'}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs text-muted-foreground mb-1">Panorama ID (pano)</label>
+                      <input
+                        type="text"
+                        value={streetViewPanoId}
+                        onChange={(e) => setStreetViewPanoId(e.target.value)}
+                        placeholder="Paste Google Street View pano ID"
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Use when you have a specific Google Street View panorama ID (from Maps URL). Location search is
+                        ignored in this mode.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Advanced coordinates (optional) */}
+                  {streetViewMode === 'location' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      <div>
+                        <label className="block text-[11px] text-muted-foreground mb-1">Latitude (-90 to 90)</label>
+                        <input
+                          type="number"
+                          step="any"
+                          min={-90}
+                          max={90}
+                          value={streetViewLat}
+                          onChange={(e) => setStreetViewLat(e.target.value)}
+                          placeholder="e.g. 28.6139"
+                          className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-xs text-foreground"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-muted-foreground mb-1">Longitude (-180 to 180)</label>
+                        <input
+                          type="number"
+                          step="any"
+                          min={-180}
+                          max={180}
+                          value={streetViewLng}
+                          onChange={(e) => setStreetViewLng(e.target.value)}
+                          placeholder="e.g. 77.2090"
+                          className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-xs text-foreground"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Heading (0–360)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={360}
+                        value={streetViewHeading}
+                        onChange={(e) => setStreetViewHeading(Number(e.target.value) || 0)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Pitch (-90–90)</label>
+                      <input
+                        type="number"
+                        min={-90}
+                        max={90}
+                        value={streetViewPitch}
+                        onChange={(e) => setStreetViewPitch(Number(e.target.value) || 0)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">FOV (10–120)</label>
+                      <input
+                        type="number"
+                        min={10}
+                        max={120}
+                        value={streetViewFov}
+                        onChange={(e) => setStreetViewFov(Number(e.target.value) || 90)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Tile size</label>
+                      <select
+                        value={streetViewSize}
+                        onChange={(e) => setStreetViewSize(e.target.value)}
+                        className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground"
+                      >
+                        <option value="640x640">640×640</option>
+                        <option value="1024x1024">1024×1024</option>
+                        <option value="2048x2048">2048×2048</option>
+                        <option value="4096x4096">4096×4096</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleFetchStreetViewSkybox}
+                    disabled={
+                      isReadOnly ||
+                      fetchingStreetView ||
+                      !chapterId?.trim() ||
+                      !topicId?.trim() ||
+                      (streetViewMode === 'location' &&
+                        (Number.isNaN(parseFloat(streetViewLat)) ||
+                          Number.isNaN(parseFloat(streetViewLng)) ||
+                          parseFloat(streetViewLat) < -90 ||
+                          parseFloat(streetViewLat) > 90 ||
+                          parseFloat(streetViewLng) < -180 ||
+                          parseFloat(streetViewLng) > 180)) ||
+                      (streetViewMode === 'pano' && !streetViewPanoId.trim())
+                    }
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-foreground font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {fetchingStreetView ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Fetching & stitching...
+                      </>
+                    ) : (
+                      <>
+                        <Globe className="w-5 h-5" />
+                        Fetch & set as skybox
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-muted-foreground">
+                    Imagery is fetched via the backend and stitched into a 360° equirectangular skybox. No API key is exposed in the browser.
+                  </p>
+                  <StreetViewMapPicker
+                    open={streetViewMapOpen}
+                    onOpenChange={setStreetViewMapOpen}
+                    initialCenter={
+                      streetViewLat && streetViewLng
+                        ? { lat: parseFloat(streetViewLat), lng: parseFloat(streetViewLng) }
+                        : undefined
+                    }
+                    onSelectLocation={(lat, lng) => {
+                      setStreetViewLat(String(lat));
+                      setStreetViewLng(String(lng));
+                    }}
+                  />
+                </div>
+              ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 {/* LEFT: Prompt Input */}
                 <div className="lg:col-span-2">
@@ -888,6 +1259,7 @@ Example: A mystical ancient library with towering bookshelves reaching into dark
                   </button>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </div>

@@ -32,4 +32,9 @@ export const env = envsafe({
     allowEmpty: true,
     default: "",
   }),
+  GOOGLE_STREETVIEW_API_KEY: str({
+    desc: "Google Street View Static API key (server-side only)",
+    allowEmpty: true,
+    default: "",
+  }),
 });

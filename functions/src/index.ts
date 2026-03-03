@@ -4,15 +4,15 @@
  * All routes are in separate modules loaded lazily
  */
 
-import {onRequest} from "firebase-functions/v2/https";
-import {defineSecret} from "firebase-functions/params";
-import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import express, { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
-import { initializeAdmin } from './utils/services';
-import { pathNormalization } from './middleware/pathNormalization';
-import { requestLogging } from './middleware/logging';
+import { defineSecret } from "firebase-functions/params";
+import { onRequest } from "firebase-functions/v2/https";
 import { authenticateUser } from './middleware/auth';
+import { requestLogging } from './middleware/logging';
+import { pathNormalization } from './middleware/pathNormalization';
+import { initializeAdmin } from './utils/services';
 
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set
@@ -25,6 +25,7 @@ const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
+const streetViewApiKey = defineSecret("GOOGLE_STREETVIEW_API_KEY");
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
@@ -131,6 +132,7 @@ const getApp = (): express.Application => {
     const lmsRoutes = require('./routes/lms').default;
     const aiEducationRoutes = require('./routes/aiEducation').default;
     const assessmentRoutes = require('./routes/assessment').default;
+    const streetviewRoutes = require('./routes/streetview').default;
     const pdfRoutes = require('./routes/pdf').default;
 
     // Mount protected routes AFTER authentication
@@ -151,6 +153,7 @@ const getApp = (): express.Application => {
     app.use('/lms', lmsRoutes);
     app.use('/ai-education', aiEducationRoutes);
     app.use('/assessment', assessmentRoutes);
+    app.use('/streetview', streetviewRoutes);
     app.use('/pdf', pdfRoutes);
     app.use('/api/pdf', pdfRoutes);
 
@@ -181,7 +184,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN]
+    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -194,6 +197,7 @@ export const api = onRequest(
     let openaiAvatarKey: string | undefined;
     let linkedinToken: string | undefined;
     let linkedinURN: string | undefined;
+    let streetViewKey: string | undefined;
     
     try {
       blockadeKey = blockadelabsApiKey.value();
@@ -249,6 +253,15 @@ export const api = onRequest(
       console.warn('⚠️ LINKEDIN_COMPANY_URN not found:', err?.message || err);
     }
 
+    try {
+      streetViewKey = streetViewApiKey.value();
+      if (streetViewKey) {
+        streetViewKey = streetViewKey.trim();
+      }
+    } catch (err: any) {
+      console.warn('⚠️ GOOGLE_STREETVIEW_API_KEY not found in secrets:', err?.message || err);
+    }
+
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (meshyKey) {
@@ -282,6 +295,13 @@ export const api = onRequest(
       console.warn('⚠️ LINKEDIN_COMPANY_URN not set - LinkedIn API will not work');
     }
 
+    if (streetViewKey) {
+      process.env.GOOGLE_STREETVIEW_API_KEY = streetViewKey;
+      console.log('🔑 Google Street View API key set, length:', streetViewKey.length);
+    } else {
+      console.warn('⚠️ GOOGLE_STREETVIEW_API_KEY not set - Street View skybox will not work');
+    }
+
     console.log('Secrets loaded:', {
       hasBlockade: !!blockadeKey,
       blockadeLength: blockadeKey?.length || 0,
@@ -293,7 +313,8 @@ export const api = onRequest(
       openaiAvatarKeyLength: openaiAvatarKey?.length || 0,
       hasLinkedInToken: !!linkedinToken,
       linkedinTokenLength: linkedinToken?.length || 0,
-      hasLinkedInURN: !!linkedinURN
+      hasLinkedInURN: !!linkedinURN,
+      hasStreetViewKey: !!streetViewKey
     });
     
     // Initialize services with secrets directly

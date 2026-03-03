@@ -14,6 +14,7 @@ import aiEducationRoutes from './aiEducation';
 import assessmentRoutes from './assessment';
 import authRoutes from './auth';
 import classSessionRoutes from './classSessions';
+import streetviewRoutes from './streetview';
 
 const router = express.Router();
 
@@ -218,6 +219,9 @@ console.log('Assessment routes mounted at /assessment');
 console.log('Mounting Auth routes...');
 router.use('/auth', authRoutes);
 console.log('Auth routes mounted at /auth');
+
+router.use('/streetview', streetviewRoutes);
+console.log('Street View routes mounted at /streetview');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

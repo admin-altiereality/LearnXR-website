@@ -3,7 +3,7 @@
  * ULTRA-PERMISSIVE for payment endpoints - checks raw URL
  */
 
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import * as admin from 'firebase-admin';
 
 // Public endpoints that don't require authentication
@@ -31,7 +31,10 @@ const PUBLIC_PATHS = [
   '/assistant/tts/generate',  // Allow TTS generation without auth
   '/assistant/lipsync/generate',  // Allow viseme generation without auth
   '/assistant/list',  // Allow listing assistants without auth
-  '/linkedin/posts'  // Allow LinkedIn posts without auth (public company activity)
+  '/linkedin/posts',  // Allow LinkedIn posts without auth (public company activity)
+  '/streetview/generate-skybox', // Allow Street View skybox generation without auth
+  '/streetview/places-autocomplete',
+  '/streetview/place-details',
 ];
 
 const isPublicEndpoint = (req: Request): boolean => {
@@ -224,6 +227,13 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
   // Always allow OPTIONS requests (CORS preflight)
   if (req.method === 'OPTIONS') {
     console.log(`[${requestId}] [AUTH] ✅ Allowing OPTIONS request (CORS preflight)`);
+    return next();
+  }
+
+  // Allow all Street View proxy endpoints without auth (place search, details, generate-skybox)
+  const urlStringForStreetView = ((req.originalUrl || '') + (req.url || '') + (req.path || '')).toLowerCase();
+  if (urlStringForStreetView.includes('streetview')) {
+    console.log(`[${requestId}] [AUTH] ✅ Allowing Street View endpoint (no auth required)`);
     return next();
   }
   
