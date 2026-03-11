@@ -44,13 +44,14 @@ const getApp = (): express.Application => {
     // CORS: set headers early for all responses so preflight and errors still get them.
     const isAllowedOrigin = (origin: string | undefined): boolean => {
       if (!origin) return true;
+      if (origin === 'null') return true; // Android WebView sends literal "null"
       const o = origin.toLowerCase();
       return o.includes('.web.app') || o.includes('.firebaseapp.com') || o.includes('localhost') || o.includes('127.0.0.1') || o.includes('altiereality.com');
     };
     app.use((req: Request, res: Response, next: NextFunction) => {
       const origin = req.headers.origin;
       if (isAllowedOrigin(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+        res.setHeader('Access-Control-Allow-Origin', origin ?? 'null');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-In3d-Key');
@@ -80,16 +81,31 @@ const getApp = (): express.Application => {
     app.use(cors(corsOptions));
     app.options('*', cors(corsOptions));
 
-    // Security headers
+    // Security headers -- NOTE: X-Content-Type-Options: nosniff is intentionally
+    // omitted because it triggers ORB (Opaque Response Blocking) in Android WebView
+    // for cross-origin API calls from the hosted web app.
     app.use((req: Request, res: Response, next: NextFunction) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
       next();
     });
 
     app.use(express.json({ limit: '1mb' }));
-    
+
+    // Strip /api prefix from path for Firebase Hosting function rewrite compatibility.
+    // When accessed via Hosting (e.g. /api/auth/custom-token), the full path arrives
+    // at Cloud Run; when accessed via cloudfunctions.net/api/auth/custom-token, Cloud
+    // Functions strips the function name automatically. This middleware handles the
+    // Hosting case so Express routes match in both scenarios.
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+      if (req.url.startsWith('/api/')) {
+        req.url = req.url.slice(4);
+      } else if (req.url === '/api') {
+        req.url = '/';
+      }
+      next();
+    });
+
     // Custom middleware
     app.use(pathNormalization);
     app.use(requestLogging);
@@ -98,11 +114,12 @@ const getApp = (): express.Application => {
     // Import routes only when app is created, not at module load time
     const linkedinRoutes = require('./routes/linkedin').default;
     const authRoutes = require('./routes/auth').default;
+    const authTokenRoutes = require('./routes/authToken').default;
 
-    // Stricter rate limit for auth routes (10 req/15 min per IP)
+    // Rate limit for auth routes (50 req/15 min per IP; lenient enough for WebView retries)
     const authLimiter = rateLimit({
       windowMs: 15 * 60 * 1000,
-      max: 10,
+      max: 50,
       message: { error: 'Too many auth attempts, please try again later.' },
       standardHeaders: true,
       legacyHeaders: false,
@@ -111,6 +128,7 @@ const getApp = (): express.Application => {
 
     // Mount public routes FIRST (before authentication)
     app.use('/linkedin', linkedinRoutes);
+    app.use('/auth', authTokenRoutes); // custom-token exchange for standalone VR player (GET)
     app.use('/auth', authRoutes);
 
     // Apply authentication middleware
@@ -134,6 +152,7 @@ const getApp = (): express.Application => {
     const assessmentRoutes = require('./routes/assessment').default;
     const streetviewRoutes = require('./routes/streetview').default;
     const pdfRoutes = require('./routes/pdf').default;
+    const lessonBundleRoutes = require('./routes/lessonBundle').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -156,6 +175,7 @@ const getApp = (): express.Application => {
     app.use('/streetview', streetviewRoutes);
     app.use('/pdf', pdfRoutes);
     app.use('/api/pdf', pdfRoutes);
+    app.use('/lesson-bundle', lessonBundleRoutes);
 
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {

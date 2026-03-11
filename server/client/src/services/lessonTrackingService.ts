@@ -22,7 +22,8 @@ export async function trackLessonLaunch(
   topicId: string,
   curriculum: string,
   className: string,
-  subject: string
+  subject: string,
+  platform?: 'web' | 'mobile_vr' | 'vr'
 ): Promise<string | null> {
   if (!profile) return null;
   if (profile.role !== 'student') return null; // Only students get launch records; teachers/admins skip silently
@@ -38,10 +39,10 @@ export async function trackLessonLaunch(
     const launchId = `${profile.uid}_${chapterId}_${topicId}_${Date.now()}`;
     const launchRef = doc(db, 'lesson_launches', launchId);
 
-    const launch: Omit<LessonLaunch, 'id'> = {
+    const launch: Omit<LessonLaunch, 'id'> & { platform?: string } = {
       student_id: profile.uid,
       school_id: profile.school_id,
-      class_id: profile.class_ids?.[0] || null, // Use first class if multiple
+      class_id: profile.class_ids?.[0] || null,
       chapter_id: chapterId,
       topic_id: topicId,
       curriculum,
@@ -49,6 +50,7 @@ export async function trackLessonLaunch(
       subject,
       launched_at: serverTimestamp() as any,
       completion_status: 'in_progress',
+      ...(platform ? { platform } : {}),
     };
 
     await setDoc(launchRef, launch);
@@ -107,7 +109,8 @@ export async function saveQuizScore(
   attemptNumber: number = 1,
   timeTakenSeconds?: number,
   launchId?: string,
-  topicObjective?: string
+  topicObjective?: string,
+  platform?: 'web' | 'mobile_vr' | 'vr'
 ): Promise<string | null> {
   if (!profile) return null;
   if (profile.role !== 'student') return null;
@@ -123,10 +126,10 @@ export async function saveQuizScore(
     const scoreId = `${profile.uid}_${chapterId}_${topicId}_${attemptNumber}`;
     const scoreRef = doc(db, 'student_scores', scoreId);
 
-    const scoreData: Omit<StudentScore, 'id'> = {
+    const scoreData: Omit<StudentScore, 'id'> & { platform?: string } = {
       student_id: profile.uid,
       school_id: profile.school_id,
-      class_id: profile.class_ids?.[0] || null, // Use first class if multiple
+      class_id: profile.class_ids?.[0] || null,
       chapter_id: chapterId,
       topic_id: topicId,
       curriculum,
@@ -138,6 +141,7 @@ export async function saveQuizScore(
       completed_at: serverTimestamp() as any,
       time_taken_seconds: timeTakenSeconds,
       ...(topicObjective != null && topicObjective !== '' ? { topic_objective: topicObjective } : {}),
+      ...(platform ? { platform } : {}),
     };
 
     await setDoc(scoreRef, scoreData, { merge: true });
@@ -165,17 +169,15 @@ export async function getOrCreateLessonLaunch(
   topicId: string,
   curriculum: string,
   className: string,
-  subject: string
+  subject: string,
+  platform?: 'web' | 'mobile_vr' | 'vr'
 ): Promise<string | null> {
   if (!profile || profile.role !== 'student') {
     return null;
   }
 
-  // Check if there's an existing in_progress launch for this lesson
   try {
-    // For now, create a new launch each time
-    // In the future, we could check for existing in_progress launches
-    return await trackLessonLaunch(profile, chapterId, topicId, curriculum, className, subject);
+    return await trackLessonLaunch(profile, chapterId, topicId, curriculum, className, subject, platform);
   } catch (error) {
     console.error('Error getting/creating lesson launch:', error);
     return null;

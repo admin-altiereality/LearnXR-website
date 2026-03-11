@@ -58,7 +58,7 @@ import {
 } from './ui/dialog';
 import { Button } from './ui/button';
 
-const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
+const MainSection = ({ setBackgroundSkybox, backgroundSkybox, disableTeacherAvatar = false }) => {
   console.log('MainSection component rendered');
 
   // -------------------------
@@ -348,6 +348,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
   const [assistantsLoading, setAssistantsLoading] = useState(true);
   const [showAssistantsList, setShowAssistantsList] = useState(false);
   const [assistantsDebugInfo, setAssistantsDebugInfo] = useState(null);
+  const [assistantListError, setAssistantListError] = useState(null);
   
   const CURRICULUMS = ['NCERT', 'CBSE', 'ICSE', 'State Board', 'RBSE'];
   const CLASSES = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
@@ -375,8 +376,9 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
     const fetchAvailableAssistants = async () => {
       try {
         setAssistantsLoading(true);
+        setAssistantListError(null);
         console.log('🔍 Fetching available assistants from API...');
-        
+
         const response = await api.get('/assistant/list', {
           params: { useAvatarKey: true }
         });
@@ -438,12 +440,24 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
           }
         }
       } catch (error) {
-        console.error('❌ Error fetching available assistants:', error);
+        const status = error.response?.status;
+        const code = error.response?.data?.code;
+        let message = 'Could not load assistants. Check your connection and try again.';
+        if (status === 401) {
+          message = 'Please sign in again to load assistants.';
+        } else if (status === 503 || code === 'OPENAI_KEY_NOT_CONFIGURED') {
+          message = 'Assistant service is not configured. Please try again later.';
+        } else if (status === 429 || code === 'OPENAI_QUOTA') {
+          message = 'Too many requests. Please try again in a moment.';
+        } else if (status >= 500 || !error.response) {
+          message = 'Could not load assistants. Check your connection and try again.';
+        }
+        console.warn('❌ Assistants fetch failed:', { status, code, message });
         if (error instanceof Error) {
           console.error('   Error message:', error.message);
           console.error('   Error stack:', error.stack);
         }
-        // On error, show empty array and reset config
+        setAssistantListError(message);
         setAvailableAssistants([]);
         setAvatarConfig({
           curriculum: '',
@@ -2988,42 +3002,43 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
         </div>
       )}
       
-      {/* Layer 2: Teacher Avatar - 3D Model (Absolute positioned, behind generation panel) */}
-      {/* z-[20] ensures it's above asset viewer (z-[10]) and background (z-[2], z-[3]) but below generation panel (z-[30]) */}
-      <div className="fixed inset-0 z-[20] pointer-events-none">
-        <div className="absolute top-1/2 right-4 md:right-8 lg:right-12 xl:right-16 2xl:right-20 -translate-y-1/2 w-[200px] h-[300px] sm:w-[250px] sm:h-[375px] md:w-[300px] md:h-[450px] pointer-events-auto">
-          <TeacherAvatar
-            ref={avatarRef}
-            className="w-full h-full"
-            avatarModelUrl="/models/avatar3.glb"
-            curriculum={avatarConfig.curriculum}
-            class={avatarConfig.class}
-            subject={avatarConfig.subject}
-            useAvatarKey={true}
-            onReady={() => {
-              console.log('✅ Teacher avatar ready');
-              setIsAvatarReady(true);
-            }}
-            onMessage={(message) => {
-              setAvatarMessages(prev => [...prev, { role: 'user', content: message }]);
-            }}
-            onResponse={(response) => {
-              console.log('📬 onResponse called in MainSection with:', response);
-              console.log('📬 Current avatarMessages before update:', avatarMessages);
-              if (!response || typeof response !== 'string') {
-                console.error('❌ Invalid response received:', response);
-                return;
-              }
-              setAvatarMessages(prev => {
-                const newMessages = [...prev, { role: 'assistant', content: response }];
-                console.log('📬 New avatarMessages after update:', newMessages);
-                return newMessages;
-              });
-              setIsAvatarLoading(false);
-            }}
-          />
+      {/* Layer 2: Teacher Avatar - disabled for mobile standalone while the avatar asset path is stabilized. */}
+      {!disableTeacherAvatar && (
+        <div className="fixed inset-0 z-[20] pointer-events-none">
+          <div className="absolute top-1/2 right-4 md:right-8 lg:right-12 xl:right-16 2xl:right-20 -translate-y-1/2 w-[200px] h-[300px] sm:w-[250px] sm:h-[375px] md:w-[300px] md:h-[450px] pointer-events-auto">
+            <TeacherAvatar
+              ref={avatarRef}
+              className="w-full h-full"
+              avatarModelUrl="/models/avatar3.glb"
+              curriculum={avatarConfig.curriculum}
+              class={avatarConfig.class}
+              subject={avatarConfig.subject}
+              useAvatarKey={true}
+              onReady={() => {
+                console.log('✅ Teacher avatar ready');
+                setIsAvatarReady(true);
+              }}
+              onMessage={(message) => {
+                setAvatarMessages(prev => [...prev, { role: 'user', content: message }]);
+              }}
+              onResponse={(response) => {
+                console.log('📬 onResponse called in MainSection with:', response);
+                console.log('📬 Current avatarMessages before update:', avatarMessages);
+                if (!response || typeof response !== 'string') {
+                  console.error('❌ Invalid response received:', response);
+                  return;
+                }
+                setAvatarMessages(prev => {
+                  const newMessages = [...prev, { role: 'assistant', content: response }];
+                  console.log('📬 New avatarMessages after update:', newMessages);
+                  return newMessages;
+                });
+                setIsAvatarLoading(false);
+              }}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* AI Teacher Support Panel - Top right corner (merged with Create page) */}
       <div className="fixed top-4 right-4 md:right-8 z-[25]">
@@ -3066,7 +3081,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                 </div>
                 <div className="flex flex-col">
                   <span className="text-xs tracking-[0.2em] text-foreground uppercase font-semibold">
-                    IN3D ENVIRONMENT STUDIO
+                    LearnXR AI TEACHER STUDIO
                   </span>
                   {!isMinimized && (
                     <span className="text-[10px] text-muted-foreground mt-0.5 font-medium">
@@ -4516,7 +4531,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                           </div>
                         ) : availableAssistants.length === 0 ? (
                           <div className="text-[8px] text-yellow-400 text-center py-2">
-                            No assistants available. Check API key configuration.
+                            {assistantListError || 'No assistants available. Check API key configuration.'}
                           </div>
                         ) : (
                           <>
@@ -4812,8 +4827,14 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox }) => {
                   <svg className="w-16 h-16 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <p className="text-gray-400 text-sm mb-2 font-semibold">No assistants found</p>
-                  <p className="text-gray-500 text-xs mb-4">No assistants match the expected naming pattern</p>
+                  {assistantListError ? (
+                    <p className="text-amber-400 text-sm mb-2 font-semibold">{assistantListError}</p>
+                  ) : (
+                    <>
+                      <p className="text-gray-400 text-sm mb-2 font-semibold">No assistants found</p>
+                      <p className="text-gray-500 text-xs mb-4">No assistants match the expected naming pattern</p>
+                    </>
+                  )}
                   
                   {assistantsDebugInfo && assistantsDebugInfo.rawCount > 0 && (
                     <div className="mt-4 p-4 bg-yellow-900/20 border border-yellow-700/30 rounded-lg text-left max-w-2xl w-full">

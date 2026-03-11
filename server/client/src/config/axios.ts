@@ -81,6 +81,14 @@ const requestStartTimes = new Map<string, number>();
 
 // Add request interceptor to include Firebase auth token
 api.interceptors.request.use(async (config) => {
+  // Dynamically override baseURL when running inside a WebView that sets
+  // window.__LEARNXR_API_BASE_URL (e.g. MainStandalone with same-origin /api).
+  // This must run before the request is sent because the axios instance was
+  // created with a static baseURL at module-load time.
+  if (typeof window !== 'undefined' && (window as any).__LEARNXR_API_BASE_URL) {
+    config.baseURL = (window as any).__LEARNXR_API_BASE_URL;
+  }
+
   const requestId = `${config.method}_${config.url}`;
   requestStartTimes.set(requestId, Date.now());
   
@@ -171,30 +179,31 @@ api.interceptors.request.use(async (config) => {
     
     if (user) {
       try {
-        // Get token - force refresh if it's a protected endpoint to ensure validity
         const forceRefresh = config.url?.includes('assistant') || config.url?.includes('skybox');
-        const token = await user.getIdToken(forceRefresh);
+        let token: string | undefined;
+        try {
+          token = await user.getIdToken(forceRefresh);
+        } catch (refreshErr: any) {
+          // Force-refresh can fail in WebView (auth/network-request-failed).
+          // Fall back to the cached token which is still valid if the user
+          // signed in recently (e.g. via signInWithCustomToken in MainStandalone).
+          if (forceRefresh) {
+            console.warn('⚠️ Token force-refresh failed, using cached token for:', config.url);
+            token = await user.getIdToken(false);
+          } else {
+            throw refreshErr;
+          }
+        }
         
         if (token && token.length > 0) {
           config.headers.Authorization = `Bearer ${token}`;
-          if (config.url?.includes('assistant') || config.url?.includes('skybox')) {
-            console.log('✅ Auth token attached:', config.url);
-            console.log('   User:', user.uid, 'Email:', user.email);
-            console.log('   Token length:', token.length, 'First 20 chars:', token.substring(0, 20) + '...');
-          }
         } else {
           console.error('❌ Got empty token for:', config.url);
-          console.error('   User:', user.uid, 'Email:', user.email);
         }
       } catch (tokenError: any) {
         console.error('❌ Error getting auth token:', config.url);
-        console.error('   User:', user.uid, 'Email:', user.email);
         console.error('   Error code:', tokenError.code);
         console.error('   Error message:', tokenError.message);
-        console.error('   Full error:', tokenError);
-        
-        // If token error, the request will likely fail - but let it proceed
-        // The server will return 401 which we can handle
       }
     } else {
       // Log warning for protected endpoints
@@ -259,33 +268,42 @@ api.interceptors.response.use(
     const startTime = requestStartTimes.get(requestId);
     const duration = startTime ? Date.now() - startTime : undefined;
     requestStartTimes.delete(requestId);
-    // Handle 401 errors - might need to refresh token
+    const url = error.config?.url || 'unknown';
+
+    // 401 retry for assistant URLs: refresh token once and retry
+    if (error.response?.status === 401 && typeof url === 'string' && url.includes('assistant')) {
+      const user = auth.currentUser;
+      const alreadyRetried = (error.config as any).__assistant401Retried;
+      if (user && !alreadyRetried && error.config) {
+        try {
+          const token = await user.getIdToken(true);
+          (error.config as any).__assistant401Retried = true;
+          if (token && error.config.headers) {
+            error.config.headers.Authorization = `Bearer ${token}`;
+            return api.request(error.config);
+          }
+        } catch (tokenError) {
+          // Fall through to normal error handling
+        }
+      }
+    }
+
+    // Handle 401 errors - log for debugging
     if (error.response?.status === 401) {
-      const url = error.config?.url || 'unknown';
       console.error('❌ 401 Unauthorized for:', url);
       console.error('   Request headers:', error.config?.headers);
       console.error('   Has Authorization header:', !!error.config?.headers?.Authorization);
       console.error('   Auth header value:', error.config?.headers?.Authorization ? 'Bearer ***' : 'MISSING');
       console.error('   Error response:', error.response?.data);
-      
-      // Check if user is authenticated
       const user = auth.currentUser;
       if (!user) {
         console.error('   ⚠️ No authenticated user found. User needs to log in.');
       } else {
         console.error('   User exists:', user.uid, user.email);
-        // Try to get a fresh token
-        try {
-          const token = await user.getIdToken(true);
-          console.log('   ✅ Got fresh token, length:', token.length);
-        } catch (tokenError) {
-          console.error('   ❌ Failed to get fresh token:', tokenError);
-        }
       }
     }
-    
+
     const method = error.config?.method?.toUpperCase() || 'GET';
-    const url = error.config?.url || 'unknown';
     const status = error.response?.status;
 
     // Skip noisy logging for 404 on optional endpoints (e.g. evaluation not deployed)

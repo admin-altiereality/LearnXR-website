@@ -1,7 +1,7 @@
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
@@ -43,7 +43,11 @@ if (!app.options.apiKey) {
 
 // Initialize core services immediately
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Use WebView-friendly Firestore settings (long polling, no fetch streams)
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false,
+});
 
 // Initialize Storage with error handling
 let storage: ReturnType<typeof getStorage> | null = null;

@@ -76,11 +76,14 @@ import ContentLibrary from './screens/studio/ContentLibrary';
 import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
 import VRLessonPlayer from './screens/VRLessonPlayer';
 import VRLessonPlayerKrpano from './screens/VRLessonPlayerKrpano';
+import VRPlayerStandalone from './screens/VRPlayerStandalone';
+import StudioStandalone from './screens/StudioStandalone';
+import MainStandalone from './screens/MainStandalone';
 import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 // Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/xrlessonplayer', '/learnxr/lesson', '/main'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main'];
   
   // Hide footer completely on immersive experiences and main (environment studio) page
   if (hideFooterRoutes.includes(location.pathname) || 
@@ -105,7 +108,7 @@ const ConditionalSidebar = () => {
   const hideSidebarRoutes = [
     '/login', '/signup', '/forgot-password', 
     '/onboarding', '/approval-pending',
-    '/vrlessonplayer', '/vrlessonplayer-krpano', '/xrlessonplayer', '/learnxr/lesson'
+    '/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson'
   ];
   
   // Hide sidebar on auth pages, onboarding, and immersive experiences
@@ -288,10 +291,10 @@ const GlobalLoadingIndicator = () => {
 // Component to conditionally show skybox background only on specific pages
 const ConditionalBackground = ({ backgroundSkybox, backgroundKey }) => {
   const location = useLocation();
-  const isMainPage = location.pathname === '/main';
+  const isMainPage = location.pathname === '/main' || location.pathname === '/main-standalone';
   const isHistoryPage = location.pathname === '/history';
   
-  // Only show background on /main and /history pages
+  // Only show background on /main, /main-standalone, and /history pages
   const shouldShowBackground = (isMainPage || isHistoryPage) && backgroundSkybox;
   
   if (!shouldShowBackground) {
@@ -314,7 +317,7 @@ const ConditionalBackground = ({ backgroundSkybox, backgroundKey }) => {
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
   const isLandingPage = location.pathname === '/';
-  const isMainPage = location.pathname === '/main';
+  const isMainPage = location.pathname === '/main' || location.pathname === '/main-standalone';
   const isHistoryPage = location.pathname === '/history';
   
   // Pages where background should be shown
@@ -457,6 +460,9 @@ function App() {
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/help" element={<HelpChat />} />
+                      <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
+                      <Route path="/studio-standalone" element={<StudioStandalone />} />
+                      <Route path="/main-standalone" element={<MainStandalone />} />
                       
                       {/* Onboarding for new authenticated users */}
                       <Route path="/onboarding" element={
@@ -492,13 +498,13 @@ function App() {
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
                               className="w-full px-6"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       {/* Explore routes - Teachers, Schools, Admin only */}
@@ -816,6 +822,9 @@ function App() {
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/help" element={<HelpChat />} />
+                      <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
+                      <Route path="/studio-standalone" element={<StudioStandalone />} />
+                      <Route path="/main-standalone" element={<MainStandalone />} />
                       
                       {/* Onboarding for new authenticated users */}
                       <Route path="/onboarding" element={
@@ -851,13 +860,13 @@ function App() {
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <TeacherGuard>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
                               className="w-full absolute inset-0 min-h-screen"
                             />
-                          </TeacherGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/explore" element={

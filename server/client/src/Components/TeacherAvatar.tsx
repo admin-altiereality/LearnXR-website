@@ -1516,11 +1516,20 @@ export const TeacherAvatar = React.forwardRef<
         setError(null); // Clear any previous errors
       } catch (error: any) {
         console.error('❌ Failed to create thread:', error);
-        const errorMessage = error.message || 'Failed to initialize teacher avatar. Please check your connection.';
+        const status = error.response?.status;
+        const code = error.response?.data?.code;
+        let errorMessage = error.response?.data?.message || error.message || 'Failed to initialize teacher avatar. Please check your connection.';
+        if (status === 401) {
+          errorMessage = 'Session expired. Please refresh or sign in again.';
+        } else if (status === 503 || code === 'OPENAI_KEY_NOT_CONFIGURED') {
+          errorMessage = 'Assistant service unavailable. Please try again later.';
+        } else if (status >= 500) {
+          errorMessage = 'Assistant service unavailable. Please try again later.';
+        }
         setError(errorMessage);
       }
     };
-    
+
     initThread();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalThreadId]);
@@ -1637,12 +1646,14 @@ export const TeacherAvatar = React.forwardRef<
         
         // Handle specific error statuses with user-friendly messages
         if (errorResponse.status === 401) {
-          errorMessage = errorData?.message || errorData?.error || 'OpenAI API authentication failed. Please check your API key configuration.';
+          errorMessage = 'Please sign in again.';
+        } else if (errorResponse.status === 503 || errorData?.code === 'OPENAI_KEY_NOT_CONFIGURED') {
+          errorMessage = 'Assistant service unavailable. Please try again later.';
         } else if (errorResponse.status === 500) {
-          errorMessage = errorData?.message || errorData?.error || 'Server error occurred. Please try again later.';
+          errorMessage = errorData?.message || errorData?.error || 'Assistant service unavailable. Please try again later.';
           setError(errorMessage);
         }
-        
+
         throw new Error(errorMessage);
       }
       

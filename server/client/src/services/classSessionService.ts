@@ -136,16 +136,36 @@ export async function launchScene(
 
 /**
  * Update teacher view (hlookat, vlookat, fov) for student sync in Krpano. Only session owner can call.
+ * Caches UID validation per session to avoid repeated getDoc on every view change.
  */
+const _teacherViewValidCache = new Map<string, boolean>();
+
 export async function updateTeacherView(
   sessionId: string,
   teacherUid: string,
   view: { hlookat: number; vlookat: number; fov?: number }
 ): Promise<boolean> {
   try {
+    const cacheKey = `${sessionId}:${teacherUid}`;
     const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
-    const snap = await getDoc(sessionRef);
-    if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
+
+    if (!_teacherViewValidCache.has(cacheKey)) {
+      const snap = await getDoc(sessionRef);
+      if (!snap.exists()) {
+        console.warn('updateTeacherView: session not found', sessionId);
+        _teacherViewValidCache.set(cacheKey, false);
+        return false;
+      }
+      if (snap.data()?.teacher_uid !== teacherUid) {
+        console.warn('updateTeacherView: UID mismatch', { expected: snap.data()?.teacher_uid, got: teacherUid });
+        _teacherViewValidCache.set(cacheKey, false);
+        return false;
+      }
+      _teacherViewValidCache.set(cacheKey, true);
+    }
+
+    if (!_teacherViewValidCache.get(cacheKey)) return false;
+
     await updateDoc(sessionRef, {
       teacher_view: view,
       updated_at: serverTimestamp(),

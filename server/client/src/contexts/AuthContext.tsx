@@ -5,6 +5,7 @@ import {
     onAuthStateChanged,
     sendPasswordResetEmail,
     signInAnonymously,
+    signInWithCustomToken,
     signInWithEmailAndPassword,
     signInWithPopup,
     signOut
@@ -13,6 +14,7 @@ import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { auth, db } from '../config/firebase';
+import { getApiBaseUrl } from '../utils/apiConfig';
 import { createDefaultSubscription } from '../services/subscriptionService';
 import {
     ApprovalStatus,
@@ -75,6 +77,39 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [profileLoading, setProfileLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [activeModal, setActiveModal] = useState<ModalType>(null);
+
+  // When opened from mobile app WebView with idToken in hash or query, sign in so Firestore/skybox/meshy work.
+  // Skip on /studio-standalone and /vrplayer-standalone -- those pages handle auth themselves.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes('studio-standalone') || path.includes('vrplayer-standalone') || path.includes('main-standalone')) return;
+    const hashMatch = window.location.hash.match(/[#&]idToken=([^&]+)/);
+    const queryMatch = window.location.search.match(/[?&]idToken=([^&]+)/);
+    const raw = hashMatch?.[1] || queryMatch?.[1];
+    const idToken = raw ? decodeURIComponent(raw) : null;
+    if (!idToken) return;
+    (async () => {
+      try {
+        const base = getApiBaseUrl().replace(/\/$/, '');
+        const res = await fetch(`${base}/auth/custom-token`, {
+          method: 'GET',
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        if (res.ok) {
+          const { customToken } = await res.json();
+          if (customToken) {
+            await signInWithCustomToken(auth, customToken);
+            const search = window.location.search.replace(/[?&]idToken=[^&]+/g, '').replace(/^&/, '?').replace(/^\?$/, '');
+            const hash = window.location.hash.replace(/[#&]idToken=[^&]+/g, '').replace(/^&/, '#').replace(/^#$/, '');
+            window.history.replaceState(null, '', window.location.pathname + search + hash);
+          }
+        }
+      } catch (e) {
+        console.warn('WebView idToken sign-in failed:', e);
+      }
+    })();
+  }, []);
 
   // Fetch user profile from Firestore
   const fetchProfile = useCallback(async (uid: string): Promise<UserProfile | null> => {

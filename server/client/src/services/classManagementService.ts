@@ -44,14 +44,19 @@ export async function createClass(
     ? profile.managed_school_id 
     : (profile.school_id || profile.managed_school_id);
   
-  // For non-admin roles, verify they're creating for their own school
-  if (profile.role !== 'admin' && profile.role !== 'superadmin') {
+  // For all roles except superadmin, verify they're creating for their own school
+  // Superadmin can create classes for any school
+  if (profile.role !== 'superadmin') {
     if (!mySchoolId) {
       toast.error('Unable to determine your school. Please contact support.');
       return null;
     }
     if (mySchoolId !== classData.school_id) {
-      toast.error('You can only create classes for your own school');
+      if (profile.role === 'admin') {
+        toast.error('Admins can only create classes for their own school');
+      } else {
+        toast.error('You can only create classes for your own school');
+      }
       return null;
     }
   }
@@ -61,20 +66,29 @@ export async function createClass(
     
     // If class_teacher_id is provided, add it to teacher_ids and set as class_teacher_id
     const teacherIds = classData.class_teacher_id ? [classData.class_teacher_id] : [];
-    
+
+    // Build base class data with only required fields
     const newClass: Omit<Class, 'id'> = {
       school_id: classData.school_id,
       class_name: classData.class_name,
       curriculum: classData.curriculum,
-      subject: classData.subject,
       teacher_ids: teacherIds,
-      class_teacher_id: classData.class_teacher_id,
       student_ids: [],
-      academic_year: classData.academic_year,
       createdAt: serverTimestamp() as any,
       updatedAt: serverTimestamp() as any,
       createdBy: profile.uid,
     };
+
+    // Only add optional fields when they are defined to avoid writing `undefined` to Firestore
+    if (classData.subject) {
+      newClass.subject = classData.subject;
+    }
+    if (classData.academic_year) {
+      newClass.academic_year = classData.academic_year;
+    }
+    if (classData.class_teacher_id) {
+      newClass.class_teacher_id = classData.class_teacher_id;
+    }
 
     await setDoc(classRef, newClass);
     

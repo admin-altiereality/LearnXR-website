@@ -156,11 +156,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
+  const gyro2PluginUrl = pluginUrl(origin, basePath, 'gyro2.js');
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n`
     : '';
+  const gyroBlock = `  <plugin name="gyro" url="${escapeXml(gyro2PluginUrl)}" keep="true" keepaliveduration="60" />\n`;
 
   // Three.js plugin + controls3d + drag3d when we have 3D assets, avatar, or WebVR (immersive UI)
   const threeJsPluginUrl = pluginUrl(origin, basePath, 'threejs_krpanoplugin.js');
@@ -221,7 +223,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const onviewchangeJs = 'js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <krpano version="1.23" onstart="" bgcolor="0x050810">
-${includeWebVr}${threeJsBlock}
+${includeWebVr}${threeJsBlock}${gyroBlock}
   <view hlookat="${hlookat}" vlookat="${vlookat}" fov="${fov}" fovmin="1" fovmax="179" />
   <events onviewchange="${onviewchangeJs}" />
   <action name="sync_view_to_js">js( window.__krpanoOnViewChange &amp;&amp; window.__krpanoOnViewChange(get(view.hlookat), get(view.vlookat), get(view.fov)) );</action>

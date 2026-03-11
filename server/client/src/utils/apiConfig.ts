@@ -4,10 +4,22 @@
  */
 
 /**
+ * When opened from the app with ?apiBase=..., we set this so all API calls use the same backend.
+ */
+declare global {
+  interface Window {
+    __LEARNXR_API_BASE_URL?: string;
+  }
+}
+
+/**
  * Get the API base URL from environment variables or fallback to defaults
  * @returns The API base URL string
  */
 export const getApiBaseUrl = (): string => {
+  if (typeof window !== 'undefined' && window.__LEARNXR_API_BASE_URL) {
+    return window.__LEARNXR_API_BASE_URL;
+  }
   // Check if we're actually running on localhost in the browser
   // This is more reliable than import.meta.env.DEV which can be true in preview builds
   const isLocalhost = typeof window !== 'undefined' && 

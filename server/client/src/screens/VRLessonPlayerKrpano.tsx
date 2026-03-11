@@ -22,7 +22,8 @@ import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
 import { reportSessionProgress, updateTeacherView, reportStudentView } from '../services/classSessionService';
 import type { SessionLessonPhase, SessionQuizAnswer } from '../types/lms';
-import { db } from '../config/firebase';
+import { auth, db } from '../config/firebase';
+import { signInWithCustomToken } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { trackLessonLaunch, saveQuizScore, updateLessonLaunch } from '../services/lessonTrackingService';
 import { isGuestUser } from '../utils/rbac';
@@ -838,17 +839,140 @@ const VRLessonPlayerInner = () => {
   /** Set to true to show the teacher avatar panel in the scene (hidden for now to avoid console output). */
   const SHOW_TEACHER_AVATAR = false;
 
-  // Load extra lesson data from sessionStorage on mount
+  // Load extra lesson data from sessionStorage or URL params (deep link from app)
   useEffect(() => {
     const initializeData = async () => {
       setInitPhase('loading-storage');
       
       try {
+        // If opened from mobile WebView with idToken in hash, sign in so Firestore/asset loads work
+        if (typeof window !== 'undefined' && window.location.hash) {
+          const hashMatch = window.location.hash.match(/[#&]idToken=([^&]+)/);
+          const idToken = hashMatch ? decodeURIComponent(hashMatch[1]) : null;
+          if (idToken) {
+            try {
+              const base = getApiBaseUrl().replace(/\/$/, '');
+              const res = await fetch(`${base}/auth/custom-token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken }),
+              });
+              if (res.ok) {
+                const { customToken } = await res.json();
+                if (customToken) {
+                  await signInWithCustomToken(auth, customToken);
+                  const cleanUrl = window.location.pathname + window.location.search;
+                  window.history.replaceState(null, '', cleanUrl);
+                }
+              }
+            } catch (e) {
+              console.warn('WebView idToken sign-in failed:', e);
+            }
+          }
+        }
+
         // Give a small delay for context to propagate
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Check sessionStorage
-        const stored = sessionStorage.getItem('activeLesson');
+        // Check sessionStorage first
+        let stored = sessionStorage.getItem('activeLesson');
+        
+        // If no stored lesson, check URL params (e.g. from Flutter app deep link)
+        if (!stored && typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          const sessionId = params.get('sessionId');
+          let chapterId = params.get('chapterId');
+          let topicId = params.get('topicId');
+          const lang = params.get('lang') || 'en';
+          if (sessionId) sessionStorage.setItem('learnxr_class_session_id', sessionId);
+          if (sessionId && (!chapterId || !topicId)) {
+            try {
+              const sessionSnap = await getDoc(doc(db, 'class_sessions', sessionId));
+              const sessionData = sessionSnap.data();
+              const launched = sessionData?.launched_lesson;
+              if (launched) {
+                chapterId = chapterId || launched.chapter_id;
+                topicId = topicId || launched.topic_id;
+              }
+            } catch (e) {
+              console.warn('Could not load session for URL sessionId:', e);
+            }
+          }
+          if (chapterId && topicId) {
+            try {
+              const bundle = await getLessonBundle({ chapterId, topicId, lang });
+              const fullData = bundle.chapter;
+              const topic = fullData.topics?.find((t: any) => t.topic_id === topicId) || fullData.topics?.[0];
+              if (!topic) { setInitPhase('ready'); setDataInitialized(true); return; }
+              const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+              let assetUrls = topic.asset_urls || [];
+              const assetIds = topic.asset_ids || [];
+              (Array.isArray(bundle.assets3d) ? bundle.assets3d : []).forEach((asset: any) => {
+                if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
+                  assetUrls.push(asset.glb_url);
+                  assetIds.push(asset.id || `asset_${assetUrls.length}`);
+                }
+              });
+              const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+              const mcqs = safeMcqs.map((m: any) => ({
+                id: m.id || `mcq_${Math.random()}`,
+                question: m.question || m.question_text || '',
+                options: Array.isArray(m.options) ? m.options : [],
+                correct_option_index: m.correct_option_index ?? 0,
+                explanation: m.explanation || '',
+              }));
+              const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+              const ttsAudio = safeTts
+                .map((tts: any) => ({
+                  id: tts.id || '',
+                  script_type: tts.script_type || tts.section || 'full',
+                  audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+                  language: tts.language || tts.lang || lang,
+                }))
+                .filter((tts: any) => (tts.language || 'en').toLowerCase() === lang.toLowerCase());
+              const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+              const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
+              const fullLessonData = {
+                chapter: {
+                  chapter_id: String(chapterId),
+                  chapter_name: fullData.chapter_name || 'Untitled Chapter',
+                  chapter_number: Number(fullData.chapter_number) || 1,
+                  curriculum: String(fullData.curriculum || ''),
+                  class_name: String(fullData.class_name ?? ''),
+                  subject: String(fullData.subject ?? ''),
+                },
+                topic: {
+                  topic_id: String(topicId),
+                  topic_name: topic.topic_name || 'Untitled Topic',
+                  topic_priority: Number(topic.topic_priority) || 1,
+                  learning_objective: topic.learning_objective || '',
+                  skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
+                  skybox_url: skyboxUrl,
+                  skybox_glb_url: skyboxGlb,
+                  avatar_intro: scripts.intro || '',
+                  avatar_explanation: scripts.explanation || '',
+                  avatar_outro: scripts.outro || '',
+                  asset_urls: assetUrls,
+                  asset_ids: assetIds,
+                  mcq_ids: topic.mcq_ids || [],
+                  mcqs,
+                  tts_ids: topic.tts_ids || [],
+                  ttsAudio,
+                  language: lang,
+                },
+                image3dasset: fullData.image3dasset ?? null,
+                assets3d: Array.isArray(bundle.assets3d) ? bundle.assets3d : [],
+                startedAt: new Date().toISOString(),
+                language: lang,
+                ttsAudio,
+              };
+              sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+              stored = sessionStorage.getItem('activeLesson');
+            } catch (urlErr) {
+              console.warn('URL params lesson load failed:', urlErr);
+            }
+          }
+        }
         
         if (stored) {
           setInitPhase('validating');
@@ -2129,7 +2253,8 @@ const VRLessonPlayerInner = () => {
         effectiveLesson.topic.topic_id || '',
         effectiveLesson.chapter.curriculum || 'CBSE',
         effectiveLesson.chapter.class_name?.toString() || '',
-        effectiveLesson.chapter.subject || ''
+        effectiveLesson.chapter.subject || '',
+        'web'
       );
       if (launchId) {
         setCurrentLaunchId(launchId);
@@ -2844,7 +2969,8 @@ const VRLessonPlayerInner = () => {
         attemptNumber,
         durationSeconds,
         currentLaunchId || undefined,
-        activeLesson.topic?.learning_objective
+        activeLesson.topic?.learning_objective,
+        'web'
       );
 
       if (scoreId) {

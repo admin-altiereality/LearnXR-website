@@ -81,8 +81,8 @@ const ClassManagement = () => {
   const profileSchoolId = profile?.role === 'principal'
     ? profile.managed_school_id
     : (profile?.school_id || profile?.managed_school_id);
-  const isAdminOrSuperadmin = profile?.role === 'admin' || profile?.role === 'superadmin';
-  const schoolId = profileSchoolId ?? (isAdminOrSuperadmin ? selectedSchoolId : null);
+  const isSuperadmin = profile?.role === 'superadmin';
+  const schoolId = profileSchoolId ?? (isSuperadmin ? selectedSchoolId : null);
 
   useEffect(() => {
     if (!profile) return;
@@ -194,11 +194,11 @@ const ClassManagement = () => {
     };
   }, [profile, schoolId]);
 
-  // Load all schools for admin/superadmin school selector
+  // Load all schools for superadmin school selector
   useEffect(() => {
-    if (!profile || !isAdminOrSuperadmin) return;
+    if (!profile || !isSuperadmin) return;
     getAllSchools(profile).then(setAllSchools);
-  }, [profile, isAdminOrSuperadmin]);
+  }, [profile, isSuperadmin]);
 
   // Load school for boardAffiliation (curriculum)
   useEffect(() => {
@@ -255,11 +255,7 @@ const ClassManagement = () => {
   const handleCreateClass = async () => {
     if (!profile) return;
 
-    // Get school_id based on role
-    const schoolId = profile.role === 'principal' 
-      ? profile.managed_school_id 
-      : (profile.school_id || profile.managed_school_id);
-
+    // Use effective schoolId for this user (including superadmin-selected school)
     if (!schoolId) {
       toast.error('Unable to determine your school. Please ensure you have a school assigned. Contact your administrator if this issue persists.');
       return;
@@ -273,12 +269,17 @@ const ClassManagement = () => {
     const class_name = `Class ${newClassData.class_number}`;
     const curriculum = school?.boardAffiliation || newClassData.curriculum || 'CBSE';
 
+    // When no specific subject is chosen, treat as an \"All Subjects\" class
+    const subject = newClassData.subject && newClassData.subject.trim() !== ''
+      ? newClassData.subject
+      : 'All Subjects';
+
     const classId = await createClass(profile, {
       school_id: schoolId,
       class_name,
       curriculum,
-      subject: newClassData.subject || undefined,
-      academic_year: newClassData.academic_year || undefined,
+      subject,
+      academic_year: newClassData.academic_year,
       class_teacher_id: newClassData.class_teacher_id || undefined,
     });
 
@@ -346,8 +347,8 @@ const ClassManagement = () => {
     );
   }
 
-  // Admin/superadmin without a profile school must select a school first
-  if (!schoolId && isAdminOrSuperadmin) {
+  // Superadmin without a profile school must select a school first
+  if (!schoolId && isSuperadmin) {
     return (
       <div className="min-h-screen bg-background pt-24 pb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">

@@ -169,9 +169,9 @@ const Sidebar = () => {
     // Lessons - everyone can see
     items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
 
-    // Personalized Learning (AI) - students only
+    // AI Tutor (Personalized Learning) - students only; routes to /personalized-learning
     if (isStudent) {
-      items.push({ path: '/personalized-learning', label: 'Personalized Learning', icon: FaLightbulb });
+      items.push({ path: '/personalized-learning', label: 'AI Tutor', icon: FaLightbulb });
     }
 
     // AI Teacher Support merged into Create page (top-right panel) - no separate nav item
@@ -264,10 +264,17 @@ const Sidebar = () => {
 
   const sidebarWidth = isCollapsed ? 'var(--sidebar-width-icon)' : 'var(--sidebar-width)';
 
-  const NavContent = ({ forceExpanded = false }: { forceExpanded?: boolean }) => {
+  const NavContent = ({
+    forceExpanded = false,
+    onNavClick,
+  }: {
+    forceExpanded?: boolean;
+    /** When set (e.g. mobile drawer), nav items use this to navigate and close drawer instead of Link */
+    onNavClick?: (path: string) => void;
+  }) => {
     const expanded = forceExpanded || !isCollapsed;
     const navLinkClass = (active: boolean) =>
-      `flex items-center gap-2 px-2 py-2 rounded-lg text-sm font-medium transition-colors group relative ${
+      `flex items-center gap-2 px-2 py-2 rounded-lg text-sm font-medium transition-colors group relative w-full ${
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
@@ -278,17 +285,39 @@ const Sidebar = () => {
       label: string,
       Icon: React.ComponentType<{ className?: string }>,
       active: boolean
-    ) => (
-      <Link to={to} className={navLinkClass(active)} title={!expanded ? label : undefined}>
-        <Icon className="h-4 w-4 shrink-0" />
-        {expanded && <span className="truncate">{label}</span>}
-        {!expanded && (
-          <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
-            {label}
-          </span>
-        )}
-      </Link>
-    );
+    ) => {
+      if (onNavClick) {
+        return (
+          <button
+            type="button"
+            onClick={() => {
+              onNavClick(to);
+            }}
+            className={navLinkClass(active)}
+            title={!expanded ? label : undefined}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {expanded && <span className="truncate">{label}</span>}
+            {!expanded && (
+              <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
+                {label}
+              </span>
+            )}
+          </button>
+        );
+      }
+      return (
+        <Link to={to} className={navLinkClass(active)} title={!expanded ? label : undefined}>
+          <Icon className="h-4 w-4 shrink-0" />
+          {expanded && <span className="truncate">{label}</span>}
+          {!expanded && (
+            <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
+              {label}
+            </span>
+          )}
+        </Link>
+      );
+    };
 
     return (
       <div className="flex h-full flex-col">
@@ -448,7 +477,13 @@ const Sidebar = () => {
             </span>
           </div>
           <div className="flex flex-1 flex-col overflow-hidden py-2">
-            <NavContent forceExpanded />
+            <NavContent
+              forceExpanded
+              onNavClick={(path) => {
+                navigate(path);
+                setIsMobileOpen(false);
+              }}
+            />
           </div>
         </SheetContent>
       </Sheet>
