@@ -22,6 +22,16 @@ window.addEventListener('error', (event) => {
     event.preventDefault();
     return;
   }
+
+  // Ignore completely empty error events that don't carry any useful context
+  if (!event.message && !event.filename && !event.error) {
+    console.debug?.('Global error ignored (no message/filename/error)', {
+      timestamp: new Date().toISOString(),
+      url: window.location.href,
+    });
+    return;
+  }
+
   const errorDetails = {
     message: event.message,
     filename: event.filename,
@@ -52,7 +62,7 @@ window.addEventListener('error', (event) => {
     console.error('  3. Hoisting issue');
     console.error('  4. Module import order problem');
   }
-
+ 
   // Log to production logger
   productionLogger.critical(
     `Global Error: ${event.message}`,

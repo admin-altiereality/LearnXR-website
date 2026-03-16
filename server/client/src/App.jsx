@@ -63,6 +63,7 @@ import SchoolManagement from './screens/admin/SchoolManagement';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import PersonalizedLearning from './screens/ai/PersonalizedLearning';
 import ApiDocumentation from './screens/ApiDocumentation';
+import WebAppShowcase from './screens/WebAppShowcase';
 import AssociateDashboard from './screens/dashboard/AssociateDashboard';
 import JoinClassPage from './screens/dashboard/JoinClassPage';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
@@ -460,6 +461,7 @@ function App() {
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/help" element={<HelpChat />} />
+                      <Route path="/web-preview" element={<WebAppShowcase />} />
                       <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
                       <Route path="/studio-standalone" element={<StudioStandalone />} />
                       <Route path="/main-standalone" element={<MainStandalone />} />

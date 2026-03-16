@@ -104,6 +104,16 @@ export const Login = () => {
     }
   };
 
+  const handleNextPreview = () => {
+    if (!previewImages.length) return;
+    setActivePreviewIndex((prev) => (prev + 1) % previewImages.length);
+  };
+
+  const handlePrevPreview = () => {
+    if (!previewImages.length) return;
+    setActivePreviewIndex((prev) => (prev - 1 + previewImages.length) % previewImages.length);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
@@ -268,6 +278,15 @@ export const Login = () => {
                         <FaArrowRight className="text-muted-foreground shrink-0 w-4 h-4" aria-hidden />
                       )}
                     </motion.button>
+                    <p className="mt-1 text-[11px] sm:text-xs text-muted-foreground text-center">
+                      Want to see more?{' '}
+                      <Link
+                        to="/web-preview"
+                        className="text-primary hover:text-primary/90 underline-offset-2 hover:underline"
+                      >
+                        Explore the LearnXR web app
+                      </Link>
+                    </p>
                     </div>
                   </div>
                   <div className="relative z-10 bg-muted/30 backdrop-blur-sm border-t border-border rounded-b-2xl sm:rounded-b-3xl p-1.5 sm:p-2 shrink-0">
