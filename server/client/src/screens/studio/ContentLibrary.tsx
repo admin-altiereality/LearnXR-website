@@ -1,54 +1,56 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import {
+    BookOpen,
+    Filter,
+    FolderOpen,
+    Loader2,
+    RefreshCw,
+    Search,
+    X,
+    ChevronLeft,
+    ChevronRight
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import {
-  getCurriculums,
-  getClasses,
-  getSubjects,
-  getChapters,
-  GetChaptersResult,
-} from '../../lib/firestore/queries';
 import { ChapterTable } from '../../Components/studio/ChapterTable';
-import {
-  Chapter,
-  Curriculum,
-  Class,
-  Subject,
-  ContentFilters,
-  LanguageCode,
-} from '../../types/curriculum';
-import { chapterHasContentForLanguage } from '../../lib/firebase/utils/languageAvailability';
-import type { CurriculumChapter } from '../../types/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
-import {
-  Search,
-  Filter,
-  BookOpen,
-  Loader2,
-  FolderOpen,
-  RefreshCw,
-  Menu,
-  X,
-} from 'lucide-react';
 import { Button } from '../../Components/ui/button';
-import { PrismFluxLoader } from '../../Components/ui/prism-flux-loader';
+import { Card, CardContent } from '../../Components/ui/card';
 import { Input } from '../../Components/ui/input';
 import { Label } from '../../Components/ui/label';
+import { PrismFluxLoader } from '../../Components/ui/prism-flux-loader';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from '../../Components/ui/select';
-import { Card, CardContent } from '../../Components/ui/card';
+import { db } from '../../config/firebase';
+import { chapterHasContentForLanguage } from '../../lib/firebase/utils/languageAvailability';
+import {
+    getChapters,
+    GetChaptersResult,
+    getClasses,
+    getCurriculums,
+    getSubjects,
+} from '../../lib/firestore/queries';
+import {
+    Chapter,
+    Class,
+    ContentFilters,
+    Curriculum,
+    LanguageCode,
+    Subject,
+} from '../../types/curriculum';
+import type { CurriculumChapter } from '../../types/firebase';
 
 const ContentLibrary = () => {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
   
   // Filter options
   const [curriculums, setCurriculums] = useState<Curriculum[]>([]);
@@ -275,10 +277,11 @@ const ContentLibrary = () => {
       <div className="flex">
         {/* Filters sidebar - no overlay, homogeneous with app sidebar */}
         <aside
-          className={`w-72 min-h-screen bg-card border-r border-border p-5
-            fixed sm:sticky top-0 left-0 z-30 transition-transform duration-300 flex-shrink-0
-            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
-          style={{ minWidth: '288px' }}
+          className={`min-h-screen bg-card border-r border-border p-5
+            fixed sm:sticky top-0 left-0 z-30 transition-all duration-300 flex-shrink-0 flex flex-col
+            ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}
+            ${isFilterCollapsed ? 'w-0 sm:p-0 sm:border-r-0 overflow-hidden opacity-0 sm:opacity-0' : 'w-72 sm:opacity-100'}`}
+          style={isFilterCollapsed ? { minWidth: 0 } : { minWidth: '288px' }}
         >
           <div className="space-y-5">
             <div className="flex items-center justify-between mb-6">
@@ -286,15 +289,26 @@ const ContentLibrary = () => {
                 <Filter className="w-4 h-4 text-primary" />
                 <span className="font-semibold text-sm text-foreground uppercase tracking-wider">Filters</span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="sm:hidden h-8 w-8 text-muted-foreground"
-                onClick={() => setMobileMenuOpen(false)}
-                aria-label="Close filters"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="hidden sm:flex h-8 w-8 text-muted-foreground hover:bg-muted"
+                  onClick={() => setIsFilterCollapsed(true)}
+                  aria-label="Collapse filters"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="sm:hidden h-8 w-8 text-muted-foreground"
+                  onClick={() => setMobileMenuOpen(false)}
+                  aria-label="Close filters"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
 
             {loadingFilters && (
@@ -412,16 +426,27 @@ const ContentLibrary = () => {
         )}
 
         {/* Main content - in-flow title bar, no fixed header (theme-aware for dark mode) */}
-        <main className="flex-1 min-w-0 p-4 sm:p-6 bg-background text-foreground">
+        <main className={`flex-1 min-w-0 p-4 sm:p-6 bg-background text-foreground transition-all duration-300 w-full`}>
           {/* Page title and actions - in flow, does not overlay sidebar */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 pb-4 border-b border-border">
             <div className="flex items-center gap-3 min-w-0">
+              {isFilterCollapsed && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="hidden sm:flex h-9 w-9 text-muted-foreground shrink-0 border-border bg-card"
+                  onClick={() => setIsFilterCollapsed(false)}
+                  aria-label="Expand filters"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              )}
               <div className="shrink-0 p-2 rounded-lg bg-primary/10 border border-border">
                 <BookOpen className="w-5 h-5 text-primary" />
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg font-semibold text-foreground tracking-tight">Content Studio</h1>
-                <p className="text-xs text-muted-foreground">Curriculum Editor</p>
+                <p className="text-xs text-muted-foreground truncate">Curriculum Editor</p>
               </div>
             </div>
             <div className="flex items-center gap-2">

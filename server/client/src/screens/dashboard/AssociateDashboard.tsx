@@ -13,8 +13,8 @@ import { Button } from '../../Components/ui/button';
 
 const AssociateDashboard = () => {
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+    <div className="min-h-screen bg-background overflow-x-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 break-words">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-xl bg-primary/10 border border-border flex items-center justify-center">
             <FaTachometerAlt className="text-primary text-xl" />
@@ -26,7 +26,7 @@ const AssociateDashboard = () => {
               <TrademarkSymbol />
             </h1>
             <h2 className="text-xl font-semibold text-foreground">Associate Dashboard</h2>
-            <p className="text-muted-foreground text-sm mt-0.5">
+            <p className="text-muted-foreground text-sm mt-0.5 max-w-full">
               Refine lesson content and submit changes for approval
             </p>
           </div>

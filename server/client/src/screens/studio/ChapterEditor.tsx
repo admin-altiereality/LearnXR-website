@@ -177,6 +177,7 @@ const ChapterEditor = () => {
   const [pendingEditRequest, setPendingEditRequest] = useState(false);
   const [submittingForApproval, setSubmittingForApproval] = useState(false);
   const [lastRejectionReason, setLastRejectionReason] = useState<string | null>(null);
+  const [isTopicsCollapsed, setIsTopicsCollapsed] = useState(false);
   
   // Content availability state
   const [currentBundle, setCurrentBundle] = useState<any>(null); // Store current bundle for passing to tabs
@@ -1097,7 +1098,11 @@ const ChapterEditor = () => {
       {/* Main Content */}
       <div className="flex">
         {/* Left Panel: Topic List */}
-        <aside className="w-80 min-h-[calc(100vh-65px)] bg-card border-r border-border">
+        <aside
+          className={`${
+            isTopicsCollapsed ? 'w-14' : 'w-80'
+          } min-h-[calc(100vh-65px)] bg-card border-r border-border transition-[width] duration-200 ease-in-out`}
+        >
           <TopicList
             topics={topics}
             selectedTopic={selectedTopic}
@@ -1110,11 +1115,13 @@ const ChapterEditor = () => {
                 getTopics(chapterId, selectedVersionId).then(setTopics).catch(console.error);
               }
             }}
+            collapsed={isTopicsCollapsed}
+            onToggleCollapse={() => setIsTopicsCollapsed((prev) => !prev)}
           />
         </aside>
         
         {/* Right Panel: Topic Editor */}
-        <main className="flex-1 min-h-[calc(100vh-65px)]">
+        <main className="flex-1 min-h-[calc(100vh-65px)] transition-[width] duration-200 ease-in-out">
           {selectedTopic ? (
             <TopicEditor
               topic={selectedTopic}

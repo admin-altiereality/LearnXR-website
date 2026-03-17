@@ -32,6 +32,8 @@ export interface LogEntry {
   sessionId?: string;
 }
 
+const N8N_LOG_WEBHOOK_URL = import.meta.env.VITE_N8N_LOG_WEBHOOK_URL as string | undefined;
+
 class ProductionLogger {
   private sessionId: string;
   private isProduction: boolean;
@@ -152,10 +154,49 @@ class ProductionLogger {
       const payload = this.stripUndefined(raw) as Record<string, unknown>;
       if (Object.keys(payload).length === 0) return;
       await addDoc(collection(db, 'production_logs'), payload);
+
+      // Optionally mirror logs to n8n for advanced analytics/learning
+      if (N8N_LOG_WEBHOOK_URL) {
+        // Fire-and-forget; n8n failures should never block app flow
+        this.sendToN8n(entry).catch(() => {
+          // Swallow errors – Firestore is the primary log sink
+        });
+      }
     } catch (error) {
       // Fallback to console if Firestore fails
       console.error('Failed to save log to Firestore:', error);
       console.error('Original log entry:', entry);
+    }
+  }
+
+  private async sendToN8n(entry: LogEntry): Promise<void> {
+    if (!N8N_LOG_WEBHOOK_URL) return;
+
+    try {
+      const basePayload = this.stripUndefined(entry) as Record<string, unknown>;
+      const payload = {
+        source: 'learnxr-frontend',
+        mode: import.meta.env.MODE,
+        timestamp: new Date().toISOString(),
+        ...basePayload,
+      };
+
+      // Use fetch; ignore response body – this is best-effort telemetry
+      await fetch(N8N_LOG_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+    } catch (err) {
+      // Never throw – n8n logging is auxiliary
+      if (import.meta.env.DEV) {
+        // Extra visibility in dev only
+        // eslint-disable-next-line no-console
+        console.warn('Failed to send log to n8n:', err);
+      }
     }
   }
 

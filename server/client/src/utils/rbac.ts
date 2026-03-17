@@ -160,6 +160,7 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   // Studio / Chapter Editor - school, admin, superadmin only (no student, teacher, principal)
   '/studio/content': 'studio',
   '/studio': 'studio',
+  '/studio/n8n-lesson-builder': 'studio',
   
   // Developer / API Keys - admin, superadmin only
   '/developer': 'developer',

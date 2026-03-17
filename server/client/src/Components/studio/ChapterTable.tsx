@@ -293,39 +293,40 @@ export const ChapterTable = ({
   
   const groups = groupedChapters();
 
-  const tableGrid = 'grid grid-cols-[56px_minmax(0,1fr)_110px_140px_80px_110px_160px] gap-2 sm:gap-4 px-4 sm:px-6';
+  const tableGrid = 'grid grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_220px] gap-2 md:gap-4 px-4 sm:px-6 w-full min-w-[900px]';
 
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden relative">
-      {/* Table Header - aligned columns, clear hierarchy */}
-      <header className={`${tableGrid} py-3 bg-muted/50 border-b border-border items-center min-h-[44px]`}>
-        <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <Hash className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span>#</span>
-        </div>
-        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span>Topic Name</span>
-        </div>
-        <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <span>Status</span>
-        </div>
-        <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <span>Content</span>
-        </div>
-        <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <span>Version</span>
-        </div>
-        <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <span>Updated</span>
-        </div>
-        <div className="flex items-center justify-end text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <span>Actions</span>
-        </div>
-      </header>
-      
-      {/* Table Body - Grouped by Chapter */}
-      <div className="divide-y divide-border">
+    <div className="bg-card rounded-xl border border-border relative overflow-hidden flex flex-col">
+      <div className="w-full overflow-x-auto pb-4">
+        {/* Table Header - aligned columns, clear hierarchy */}
+        <header className={`${tableGrid} py-3 bg-muted/50 border-b border-border items-center min-h-[44px]`}>
+          <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <Hash className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span>#</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span>Topic Name</span>
+          </div>
+          <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span>Status</span>
+          </div>
+          <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span>Content</span>
+          </div>
+          <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span>Version</span>
+          </div>
+          <div className="flex items-center text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span>Updated</span>
+          </div>
+          <div className="flex items-center justify-end text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            <span>Actions</span>
+          </div>
+        </header>
+        
+        {/* Table Body - Grouped by Chapter */}
+        <div className="divide-y divide-border">
         {groups.map((group) => {
           const groupKey = `${group.curriculum}_${group.class}_${group.subject}_${group.chapterNumber}`;
           const isExpanded = expandedGroups.has(groupKey);
@@ -381,7 +382,7 @@ export const ChapterTable = ({
                         type="button"
                         size="sm"
                         variant={isApproved ? 'destructive' : 'default'}
-                        className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs h-8"
+                        className="gap-1.5 transition-opacity text-xs h-8 sm:opacity-0 sm:group-hover:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleChapterApprovalToggle(firstChapter.id, isApproved);
@@ -402,7 +403,7 @@ export const ChapterTable = ({
                     <Button
                       type="button"
                       size="sm"
-                      className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs h-8"
+                      className="gap-1.5 transition-opacity text-xs h-8 sm:opacity-0 sm:group-hover:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation();
                         const firstTopic = group.topics[0];
@@ -574,6 +575,7 @@ export const ChapterTable = ({
             </div>
           );
         })}
+        </div>
       </div>
       
       {/* Loading overlay - clear layer, no overlap with content */}

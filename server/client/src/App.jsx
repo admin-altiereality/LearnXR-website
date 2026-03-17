@@ -72,6 +72,7 @@ import StudentDashboard from './screens/dashboard/StudentDashboard';
 import TeacherDashboard from './screens/dashboard/TeacherDashboard';
 import DeveloperSettings from './screens/DeveloperSettings';
 import N8nWorkflows from './screens/N8nWorkflows';
+import N8nLessonBuilder from './screens/studio/N8nLessonBuilder';
 import ChapterEditor from './screens/studio/ChapterEditor';
 import ContentLibrary from './screens/studio/ContentLibrary';
 import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
@@ -666,6 +667,13 @@ function App() {
                           </AdminGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/studio/n8n-lesson-builder" element={
+                        <ProtectedRoute>
+                          <StudioGuard>
+                            <N8nLessonBuilder />
+                          </StudioGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* VR Lesson Player - All authenticated users */}
                       <Route path="/vrlessonplayer" element={
@@ -1127,6 +1135,13 @@ function App() {
                           <AdminGuard>
                             <FirestoreDebugScreen />
                           </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/studio/n8n-lesson-builder" element={
+                        <ProtectedRoute>
+                          <StudioGuard>
+                            <N8nLessonBuilder />
+                          </StudioGuard>
                         </ProtectedRoute>
                       } />
                       

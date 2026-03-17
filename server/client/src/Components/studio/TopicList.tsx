@@ -9,6 +9,8 @@ import {
   HelpCircle,
   Loader2,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Badge } from '@/Components/ui/badge';
 import { Button } from '@/Components/ui/button';
@@ -25,6 +27,8 @@ interface TopicListProps {
   loading?: boolean;
   chapterId: string;
   onApprovalChange?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const TopicList = ({
@@ -34,6 +38,8 @@ export const TopicList = ({
   loading,
   chapterId,
   onApprovalChange,
+  collapsed = false,
+  onToggleCollapse,
 }: TopicListProps) => {
   const { profile } = useAuth();
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
@@ -126,19 +132,44 @@ export const TopicList = ({
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-border">
-        <div className="flex items-center justify-between">
+      <div className="px-3 py-3 border-b border-border">
+        <div
+          className={cn(
+            'flex items-center gap-2',
+            collapsed ? 'justify-center' : 'justify-between'
+          )}
+        >
           <div className="flex items-center gap-2 text-muted-foreground">
             <Layers className="w-4 h-4" />
-            <span className="font-medium text-sm">Topics</span>
+            {!collapsed && <span className="font-medium text-sm">Topics</span>}
           </div>
-          <span className="text-xs text-muted-foreground">
-            {topics.length} items
-          </span>
+          <div className="flex items-center gap-1">
+            {!collapsed && (
+              <span className="text-xs text-muted-foreground">
+                {topics.length} items
+              </span>
+            )}
+            {onToggleCollapse && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={onToggleCollapse}
+                aria-label={collapsed ? 'Expand topics' : 'Collapse topics'}
+              >
+                {collapsed ? (
+                  <ChevronRight className="w-4 h-4" />
+                ) : (
+                  <ChevronLeft className="w-4 h-4" />
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
       
       {/* Topic List */}
+      {!collapsed && (
       <div className="flex-1 overflow-y-auto py-2">
         {loading && topics.length === 0 ? (
           <div className="flex items-center justify-center py-8">
@@ -268,6 +299,7 @@ export const TopicList = ({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };

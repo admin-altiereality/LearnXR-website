@@ -44,6 +44,7 @@ import {
 import { SchoolCodeBlock } from './SchoolCodeBlock';
 import { FaCopy } from 'react-icons/fa';
 import { toast } from 'react-toastify';
+import { canEditLesson, hasMinimumRole } from '../utils/rbac';
 
 interface NavItem {
   path: string;
@@ -203,6 +204,11 @@ const Sidebar = () => {
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
       items.push({ path: '/system-status', label: 'System', icon: FaServer });
+    }
+
+    // Studio tools - n8n Lesson Builder for studio roles (admin, superadmin, associate)
+    if (profile && (canEditLesson(profile) || hasMinimumRole(profile, 'associate'))) {
+      items.push({ path: '/studio/n8n-lesson-builder', label: 'n8n Lesson Builder', icon: FaFlask });
     }
 
     // Principal can also access class management, student approvals, and teacher approvals
