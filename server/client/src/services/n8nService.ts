@@ -62,7 +62,8 @@ export interface N8nExecutionListItem {
 const WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL as string | undefined;
 const N8N_API_URL = import.meta.env.VITE_N8N_API_URL as string | undefined;
 const N8N_API_KEY = import.meta.env.VITE_N8N_API_KEY as string | undefined;
-const API_PROXY_URL = import.meta.env.VITE_API_PROXY_URL as string | undefined;
+const API_PROXY_URL =
+  (import.meta.env.VITE_API_PROXY_URL as string | undefined) || '/api';
 
 export const canPollExecution = Boolean(API_PROXY_URL || (N8N_API_URL && N8N_API_KEY));
 

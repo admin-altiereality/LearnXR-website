@@ -4,6 +4,7 @@ import { isProxyAssetUrlAllowed } from '../utils/proxyAssetValidation';
 import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
+import n8nRoutes from './n8n';
 // Subscription removed
 import userRoutes from './user';
 import aiDetectionRoutes from './aiDetection';
@@ -222,6 +223,11 @@ console.log('Auth routes mounted at /auth');
 
 router.use('/streetview', streetviewRoutes);
 console.log('Street View routes mounted at /streetview');
+
+// Mount n8n proxy & upload routes
+console.log('Mounting n8n routes...');
+router.use('/n8n', n8nRoutes);
+console.log('n8n routes mounted at /n8n');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

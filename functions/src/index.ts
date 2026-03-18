@@ -153,6 +153,7 @@ const getApp = (): express.Application => {
     const streetviewRoutes = require('./routes/streetview').default;
     const pdfRoutes = require('./routes/pdf').default;
     const lessonBundleRoutes = require('./routes/lessonBundle').default;
+    const n8nRoutes = require('./routes/n8n').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -176,6 +177,7 @@ const getApp = (): express.Application => {
     app.use('/pdf', pdfRoutes);
     app.use('/api/pdf', pdfRoutes);
     app.use('/lesson-bundle', lessonBundleRoutes);
+    app.use('/n8n', n8nRoutes);
 
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {

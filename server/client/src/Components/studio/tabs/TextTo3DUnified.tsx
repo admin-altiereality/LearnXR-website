@@ -61,6 +61,39 @@ interface TextTo3dAsset {
   [key: string]: any;
 }
 
+type ManualPromptStatus = 'idle' | 'creating' | 'queued' | 'generating' | 'success' | 'error' | 'existing';
+
+interface ManualPromptRow {
+  id: string;
+  prompt: string;
+  status: ManualPromptStatus;
+  error?: string;
+  assetId?: string;
+}
+
+const createManualPromptRow = (prompt = ''): ManualPromptRow => ({
+  id: `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  prompt,
+  status: 'idle',
+});
+
+async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < tasks.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await tasks[currentIndex]();
+    }
+  };
+
+  const workerCount = Math.min(limit, tasks.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 export const TextTo3DUnified = ({ 
   chapterId, 
   topicId, 
@@ -86,12 +119,14 @@ export const TextTo3DUnified = ({
   const [detecting, setDetecting] = useState(false);
   const [detectionProgress, setDetectionProgress] = useState(0);
   const [detectionMessage, setDetectionMessage] = useState('');
-  const [manualPrompt, setManualPrompt] = useState('');
+  const [manualPromptRows, setManualPromptRows] = useState<ManualPromptRow[]>(() => [
+    createManualPromptRow(),
+  ]);
   const [showManualEntry, setShowManualEntry] = useState(false);
-  const [addingManual, setAddingManual] = useState(false);
+  const [manualBatchRunning, setManualBatchRunning] = useState(false);
   
   // Generation state (shared)
-  const [generatingAssetId, setGeneratingAssetId] = useState<string | null>(null);
+  const [generatingAssetIds, setGeneratingAssetIds] = useState<Record<string, boolean>>({});
   const [generationProgress, setGenerationProgress] = useState<{ [assetId: string]: GenerationProgress }>({});
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
@@ -302,14 +337,20 @@ export const TextTo3DUnified = ({
   const handleGenerate3DAsset = async (
     assetId: string, 
     asset: TextTo3dAsset, 
-    source: 'text_to_3d' | 'avatar_to_3d'
+    source: 'text_to_3d' | 'avatar_to_3d',
+    options?: {
+      suppressSuccessToast?: boolean;
+      suppressErrorToast?: boolean;
+    }
   ) => {
     if (!asset.prompt || !chapterId || !topicId || !user?.uid) {
-      toast.error('Missing required information');
-      return;
+      if (!options?.suppressErrorToast) {
+        toast.error('Missing required information');
+      }
+      return { success: false, error: 'Missing required information' };
     }
 
-    setGeneratingAssetId(assetId);
+    setGeneratingAssetIds(prev => ({ ...prev, [assetId]: true }));
     setGenerationProgress(prev => ({
       ...prev,
       [assetId]: { stage: 'generating', progress: 0, message: 'Starting...' }
@@ -369,10 +410,14 @@ export const TextTo3DUnified = ({
           setTimeout(() => onAssetGenerated(), 1000);
         }
 
-        toast.success('3D asset generated! Check the 3D Assets section above.');
+        if (!options?.suppressSuccessToast) {
+          toast.success('3D asset generated! Check the 3D Assets section above.');
+        }
       } else {
         throw new Error(result.error || 'Generation failed');
       }
+
+      return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const assetRef = doc(db, source === 'text_to_3d' ? 'text_to_3d_assets' : 'avatar_to_3d_assets', assetId);
@@ -392,9 +437,16 @@ export const TextTo3DUnified = ({
         ));
       }
 
-      toast.error(`Generation failed: ${errorMessage}`);
+      if (!options?.suppressErrorToast) {
+        toast.error(`Generation failed: ${errorMessage}`);
+      }
+      return { success: false, error: errorMessage };
     } finally {
-      setGeneratingAssetId(null);
+      setGeneratingAssetIds(prev => {
+        const next = { ...prev };
+        delete next[assetId];
+        return next;
+      });
     }
   };
 
@@ -536,68 +588,186 @@ export const TextTo3DUnified = ({
     }
   };
 
-  // Script-to-3D: Add manual (Generate 3D Asset)
+  const updateManualPromptRow = (rowId: string, updates: Partial<ManualPromptRow>) => {
+    setManualPromptRows(prev =>
+      prev.map(row => (row.id === rowId ? { ...row, ...updates } : row))
+    );
+  };
+
+  const handleAddManualPromptRow = () => {
+    setManualPromptRows(prev => [...prev, createManualPromptRow()]);
+  };
+
+  const handleRemoveManualPromptRow = (rowId: string) => {
+    setManualPromptRows(prev => {
+      if (prev.length === 1) {
+        return [{ ...prev[0], prompt: '', status: 'idle', error: undefined, assetId: undefined }];
+      }
+      return prev.filter(row => row.id !== rowId);
+    });
+  };
+
+  // Script-to-3D: Add multiple manual assets with a concurrency limit of 3
   const handleAddManual = async () => {
-    if (!manualPrompt?.trim() || !user?.uid) {
-      toast.error('Please enter a prompt');
+    if (!user?.uid) {
+      toast.error('User not authenticated');
       return;
     }
 
-    setAddingManual(true);
-    try {
-      // Step 1: Create asset with auto-approval (status: 'generating')
-      // This automatically approves and sets status to 'generating' so Meshy can process it
-      // Firestore rules will handle permission checking
-      const assetId = await retryOperation(
-        () => avatarTo3dService.createManualAsset(
-          chapterId, topicId, language, manualPrompt.trim(), explanationScript || undefined, user.uid
-        ),
-        { maxAttempts: 3 }
-      );
+    const validRows = manualPromptRows
+      .map(row => ({ ...row, prompt: row.prompt.trim() }))
+      .filter(row => row.prompt);
 
-      // Step 2: Reload assets to get the newly created asset
+    if (validRows.length === 0) {
+      toast.error('Please add at least one prompt');
+      return;
+    }
+
+    setManualBatchRunning(true);
+    setManualPromptRows(prev =>
+      prev.map(row =>
+        row.prompt.trim()
+          ? { ...row, status: 'queued', error: undefined, assetId: undefined }
+          : row
+      )
+    );
+
+    let generatedCount = 0;
+    let existingCount = 0;
+    let failedCount = 0;
+
+    try {
+      const createdRows: Array<{ rowId: string; assetId: string }> = [];
+
+      for (const row of validRows) {
+        updateManualPromptRow(row.id, { status: 'creating', error: undefined });
+        try {
+          const assetId = await retryOperation(
+            () =>
+              avatarTo3dService.createManualAsset(
+                chapterId,
+                topicId,
+                language,
+                row.prompt,
+                explanationScript || undefined,
+                user.uid
+              ),
+            { maxAttempts: 3 }
+          );
+
+          createdRows.push({ rowId: row.id, assetId });
+          updateManualPromptRow(row.id, { assetId, status: 'queued' });
+        } catch (error: any) {
+          failedCount += 1;
+          logError(error, 'TextTo3DUnified.handleAddManual.createManualAsset');
+          const classification = classifyError(error);
+          updateManualPromptRow(row.id, {
+            status: 'error',
+            error:
+              classification.type === 'permission'
+                ? 'Permission denied. Staff role required.'
+                : classification.userMessage || 'Failed to create asset',
+          });
+        }
+      }
+
+      if (createdRows.length === 0) {
+        throw new Error('No manual assets could be created.');
+      }
+
       const updated = await retryOperation(
         () => avatarTo3dService.getAssetsForTopic(chapterId, topicId, language),
         { maxAttempts: 3 }
       );
-      setScriptTo3dAssets(updated.map(a => ({ ...a, source: 'avatar_to_3d' })));
-      
-      // Step 3: Select the newly added asset and trigger generation
-      const newAsset = updated.find(a => a.id === assetId);
-      if (newAsset) {
-        setSelectedScriptTo3d({ ...newAsset, source: 'avatar_to_3d' });
-        
-        // Step 4: Automatically trigger Meshy 3D generation (with textures)
-        // This will:
-        // - Generate 3D model using Meshy API
-        // - Download GLB, FBX, USDZ files with textures
-        // - Upload to Firebase Storage
-        // - Create meshy_asset document
-        // - Link to topic (makes it available in 3D Assets section)
-        if (newAsset.approval_status && !newAsset.meshy_asset_id) {
-          toast.info('Starting 3D generation with Meshy (this may take a few minutes)...');
-          await handleGenerate3DAsset(assetId, { ...newAsset, source: 'avatar_to_3d' }, 'avatar_to_3d');
-        } else if (newAsset.meshy_asset_id) {
-          toast.success('3D asset already generated!');
-        }
+      const updatedWithSource = updated.map(a => ({ ...a, source: 'avatar_to_3d' as const }));
+      setScriptTo3dAssets(updatedWithSource);
+
+      const firstCreatedAsset = createdRows
+        .map(({ assetId }) => updatedWithSource.find(asset => asset.id === assetId))
+        .find(Boolean);
+      if (firstCreatedAsset) {
+        setSelectedScriptTo3d(firstCreatedAsset);
       }
 
-      // Reset form
-      setManualPrompt('');
-      setShowManualEntry(false);
-      toast.success('3D asset generation started!');
+      const tasks = createdRows.map(({ rowId, assetId }) => async () => {
+        const asset = updatedWithSource.find(item => item.id === assetId);
+        if (!asset) {
+          failedCount += 1;
+          updateManualPromptRow(rowId, {
+            status: 'error',
+            error: 'Created asset could not be reloaded.',
+          });
+          return;
+        }
+
+        if (asset.meshy_asset_id) {
+          existingCount += 1;
+          updateManualPromptRow(rowId, { status: 'existing', assetId });
+          return;
+        }
+
+        if (!asset.approval_status) {
+          failedCount += 1;
+          updateManualPromptRow(rowId, {
+            status: 'error',
+            assetId,
+            error: 'Asset was created but not approved for generation.',
+          });
+          return;
+        }
+
+        updateManualPromptRow(rowId, { status: 'generating', assetId, error: undefined });
+        const result = await handleGenerate3DAsset(assetId, asset, 'avatar_to_3d', {
+          suppressSuccessToast: true,
+          suppressErrorToast: true,
+        });
+
+        if (result?.success) {
+          generatedCount += 1;
+          updateManualPromptRow(rowId, { status: 'success', assetId, error: undefined });
+        } else {
+          failedCount += 1;
+          updateManualPromptRow(rowId, {
+            status: 'error',
+            assetId,
+            error: result?.error || 'Generation failed',
+          });
+        }
+      });
+
+      toast.info(
+        `Starting ${tasks.length} manual Meshy generation${tasks.length > 1 ? 's' : ''} with up to 3 running at once...`
+      );
+
+      await runWithConcurrency(tasks, 3);
+
+      const refreshedAssets = await retryOperation(
+        () => avatarTo3dService.getAssetsForTopic(chapterId, topicId, language),
+        { maxAttempts: 3 }
+      );
+      setScriptTo3dAssets(refreshedAssets.map(a => ({ ...a, source: 'avatar_to_3d' })));
+
+      const summaryParts = [
+        generatedCount > 0 ? `${generatedCount} generated` : '',
+        existingCount > 0 ? `${existingCount} already ready` : '',
+        failedCount > 0 ? `${failedCount} failed` : '',
+      ].filter(Boolean);
+
+      toast.success(
+        summaryParts.length > 0
+          ? `Manual Meshy batch complete: ${summaryParts.join(', ')}.`
+          : 'Manual Meshy batch complete.'
+      );
     } catch (error: any) {
       logError(error, 'TextTo3DUnified.handleAddManual');
       const classification = classifyError(error);
-      
-      // Show user-friendly error message
       if (classification.type === 'permission') {
         toast.error('Permission denied. Staff (Admin, Super Admin, or Associate) role required.');
       } else {
-        toast.error(classification.userMessage || 'Failed to generate 3D asset');
+        toast.error(classification.userMessage || 'Failed to generate 3D assets');
       }
     } finally {
-      setAddingManual(false);
+      setManualBatchRunning(false);
     }
   };
 
@@ -807,10 +977,10 @@ export const TextTo3DUnified = ({
                         <p className="text-xs text-red-300 mb-2">{currentSelected.generation_error}</p>
                         <button
                           onClick={() => handleGenerate3DAsset(currentSelected.id, currentSelected, 'text_to_3d')}
-                          disabled={generatingAssetId === currentSelected.id}
+                          disabled={Boolean(generatingAssetIds[currentSelected.id])}
                           className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-foreground border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
                         >
-                          {generatingAssetId === currentSelected.id ? (
+                          {generatingAssetIds[currentSelected.id] ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             'Retry'
@@ -939,6 +1109,7 @@ export const TextTo3DUnified = ({
               </PermissionGate>
               <button
                 onClick={() => setShowManualEntry(!showManualEntry)}
+                disabled={manualBatchRunning}
                 className="px-4 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center gap-2"
               >
                 <Package className="w-4 h-4" />
@@ -963,15 +1134,87 @@ export const TextTo3DUnified = ({
 
             {showManualEntry && (
               <div className="mt-3 p-3 rounded-lg bg-cyan-500/5 border border-primary/20">
-                <input
-                  type="text"
-                  value={manualPrompt}
-                  onChange={(e) => setManualPrompt(e.target.value)}
-                  placeholder="e.g., A detailed wooden table"
-                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50 mb-2"
-                  disabled={addingManual}
-                  onKeyDown={(e) => e.key === 'Enter' && !addingManual && manualPrompt.trim() && handleAddManual()}
-                />
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Manual Meshy prompts</p>
+                    <p className="text-xs text-muted-foreground">
+                      Add multiple prompt rows. Up to 3 will generate simultaneously.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddManualPromptRow}
+                    disabled={manualBatchRunning}
+                    className="px-3 py-1.5 rounded-lg bg-muted text-foreground border border-border hover:bg-muted/80 disabled:opacity-50 text-xs font-medium"
+                  >
+                    Add prompt row
+                  </button>
+                </div>
+                <div className="space-y-2 mb-3">
+                  {manualPromptRows.map((row, index) => (
+                    <div key={row.id} className="rounded-lg border border-border bg-background/40 p-2">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={row.prompt}
+                            onChange={(e) =>
+                              updateManualPromptRow(row.id, {
+                                prompt: e.target.value,
+                                status: row.status === 'error' ? 'idle' : row.status,
+                                error: undefined,
+                              })
+                            }
+                            placeholder={`Prompt ${index + 1} (e.g., A detailed wooden table)`}
+                            className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                            disabled={manualBatchRunning}
+                            onKeyDown={(e) => {
+                              if (
+                                e.key === 'Enter' &&
+                                !manualBatchRunning &&
+                                manualPromptRows.some(item => item.prompt.trim())
+                              ) {
+                                handleAddManual();
+                              }
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveManualPromptRow(row.id)}
+                          disabled={manualBatchRunning || manualPromptRows.length === 1}
+                          className="px-2.5 py-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50"
+                          aria-label={`Remove prompt ${index + 1}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {(row.status !== 'idle' || row.error) && (
+                        <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                          <span
+                            className={`rounded px-2 py-1 ${
+                              row.status === 'success' || row.status === 'existing'
+                                ? 'bg-emerald-500/10 text-emerald-400'
+                                : row.status === 'error'
+                                ? 'bg-red-500/10 text-red-400'
+                                : row.status === 'generating'
+                                ? 'bg-blue-500/10 text-blue-400'
+                                : 'bg-amber-500/10 text-amber-400'
+                            }`}
+                          >
+                            {row.status === 'creating' && 'Creating asset'}
+                            {row.status === 'queued' && 'Queued'}
+                            {row.status === 'generating' && 'Generating'}
+                            {row.status === 'success' && 'Generated'}
+                            {row.status === 'existing' && 'Already ready'}
+                            {row.status === 'error' && 'Failed'}
+                          </span>
+                          {row.error && <span className="text-red-300 text-right">{row.error}</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
                 <PermissionGate
                   resource="avatar_to_3d_assets"
                   operation="create"
@@ -979,18 +1222,18 @@ export const TextTo3DUnified = ({
                 >
                   <button
                     onClick={handleAddManual}
-                    disabled={addingManual || !manualPrompt.trim()}
+                    disabled={manualBatchRunning || !manualPromptRows.some(row => row.prompt.trim())}
                     className="w-full px-4 py-2 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-cyan-500/20 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {addingManual ? (
+                    {manualBatchRunning ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Generating...</span>
+                        <span>Generating assets...</span>
                       </>
                     ) : (
                       <>
                         <CheckCircle className="w-4 h-4" />
-                        <span>Generate 3D Asset</span>
+                        <span>Generate 3D Assets</span>
                       </>
                     )}
                   </button>
@@ -1169,10 +1412,10 @@ export const TextTo3DUnified = ({
                         <p className="text-xs text-red-300 mb-2">{currentSelected.generation_error}</p>
                         <button
                           onClick={() => handleGenerate3DAsset(currentSelected.id, currentSelected, 'avatar_to_3d')}
-                          disabled={generatingAssetId === currentSelected.id}
+                          disabled={Boolean(generatingAssetIds[currentSelected.id])}
                           className="px-3 py-1.5 text-xs rounded-lg bg-red-500/20 text-foreground border border-red-500/30 hover:bg-red-500/30 disabled:opacity-50"
                         >
-                          {generatingAssetId === currentSelected.id ? (
+                          {generatingAssetIds[currentSelected.id] ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             'Retry'

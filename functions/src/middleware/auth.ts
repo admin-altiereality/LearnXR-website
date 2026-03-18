@@ -35,6 +35,8 @@ const PUBLIC_PATHS = [
   '/streetview/generate-skybox', // Allow Street View skybox generation without auth
   '/streetview/places-autocomplete',
   '/streetview/place-details',
+  '/n8n',
+  '/n8n/executions',
 ];
 
 const isPublicEndpoint = (req: Request): boolean => {
