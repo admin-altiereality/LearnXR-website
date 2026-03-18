@@ -34,7 +34,13 @@ import { PrismFluxLoader } from '../ui/prism-flux-loader';
 
 interface ChapterTableProps {
   chapters: Chapter[];
-  onOpenChapter: (chapter: Chapter) => void;
+  onOpenChapter: (
+    chapter: Chapter,
+    chapterGroup?: {
+      chapterIds: string[];
+      groupKey: string;
+    }
+  ) => void;
   loading?: boolean;
   onApprovalChange?: () => void; // Callback to refresh data after approval change
 }
@@ -407,7 +413,12 @@ export const ChapterTable = ({
                       onClick={(e) => {
                         e.stopPropagation();
                         const firstTopic = group.topics[0];
-                        if (firstTopic) onOpenChapter(firstTopic.chapter);
+                        if (firstTopic) {
+                          onOpenChapter(firstTopic.chapter, {
+                            chapterIds: Array.from(new Set(group.topics.map(({ chapter }) => chapter.id))),
+                            groupKey,
+                          });
+                        }
                       }}
                     >
                       <Play className="w-3.5 h-3.5" />

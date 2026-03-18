@@ -48,7 +48,7 @@ import {
     getChapterWithDetails,
     getCurrentScene,
     getEditHistory,
-    getTopics
+    getTopicsForChapterGroup
 } from '../../lib/firestore/queries';
 import { publishScene } from '../../lib/firestore/updateHelpers';
 import {
@@ -125,6 +125,8 @@ const ChapterEditor = () => {
     classId?: string;
     subjectId?: string;
     language?: LanguageCode;
+    chapterGroupChapterIds?: string[];
+    chapterGroupKey?: string;
     /** When set (e.g. from Lesson Edit Requests), load chapter with this user's draft so Super Admin can view/approve */
     viewDraftForUserId?: string;
   } | null;
@@ -190,6 +192,22 @@ const ChapterEditor = () => {
     imageCount: 0,
     loading: false,
   });
+
+  const getTopicChapterId = useCallback(
+    (topic?: Partial<Topic> | null) => topic?.sourceChapterId || chapterId || '',
+    [chapterId]
+  );
+
+  const isSameTopicRef = useCallback(
+    (left?: Partial<Topic> | null, right?: Partial<Topic> | null) =>
+      !!left &&
+      !!right &&
+      left.id === right.id &&
+      getTopicChapterId(left) === getTopicChapterId(right),
+    [getTopicChapterId]
+  );
+
+  const selectedTopicChapterId = getTopicChapterId(selectedTopic);
   
   // Load chapter and versions
   useEffect(() => {
@@ -210,19 +228,6 @@ const ChapterEditor = () => {
                          (profile?.role === 'admin' || profile?.role === 'superadmin' || profile?.role === 'associate');
           setIsReadOnly(!canEdit);
         }
-        // Associate: check for existing pending edit request and latest rejected reason
-        if (profile?.role === 'associate' && user?.uid && chapterId) {
-          const [pending, latest] = await Promise.all([
-            getPendingRequestForChapter(chapterId, user.uid),
-            getLatestEditRequestForChapter(chapterId, user.uid),
-          ]);
-          setPendingEditRequest(!!pending);
-          if (latest?.status === 'rejected' && latest.rejectionReason) {
-            setLastRejectionReason(latest.rejectionReason);
-          } else {
-            setLastRejectionReason(null);
-          }
-        }
       } catch (error) {
         console.error('Error loading chapter:', error);
         toast.error('Failed to load chapter');
@@ -233,6 +238,29 @@ const ChapterEditor = () => {
     
     loadChapter();
   }, [chapterId, profile?.role, user?.uid]);
+
+  useEffect(() => {
+    if (profile?.role !== 'associate' || !user?.uid || !selectedTopicChapterId) return;
+
+    const loadEditRequestState = async () => {
+      try {
+        const [pending, latest] = await Promise.all([
+          getPendingRequestForChapter(selectedTopicChapterId, user.uid),
+          getLatestEditRequestForChapter(selectedTopicChapterId, user.uid),
+        ]);
+        setPendingEditRequest(!!pending);
+        if (latest?.status === 'rejected' && latest.rejectionReason) {
+          setLastRejectionReason(latest.rejectionReason);
+        } else {
+          setLastRejectionReason(null);
+        }
+      } catch (error) {
+        console.warn('Failed to load edit request state:', error);
+      }
+    };
+
+    loadEditRequestState();
+  }, [profile?.role, selectedTopicChapterId, user?.uid]);
   
   // Load topics when version changes
   useEffect(() => {
@@ -240,12 +268,20 @@ const ChapterEditor = () => {
     
     const loadTopics = async () => {
       try {
-        const topicsData = await getTopics(chapterId, selectedVersionId);
+        const topicsData = await getTopicsForChapterGroup(
+          chapterId,
+          selectedVersionId,
+          navState?.chapterGroupChapterIds
+        );
         setTopics(topicsData);
-        
-        // Auto-select first topic if none selected
-        if (topicsData.length > 0 && !selectedTopic) {
-          handleSelectTopic(topicsData[0]);
+
+        const nextSelectedTopic =
+          topicsData.find((topic) => isSameTopicRef(topic, selectedTopic)) || topicsData[0] || null;
+
+        if (nextSelectedTopic) {
+          handleSelectTopic(nextSelectedTopic);
+        } else {
+          setSelectedTopic(null);
         }
       } catch (error) {
         console.error('Error loading topics:', error);
@@ -318,7 +354,8 @@ const ChapterEditor = () => {
   
   // Load scene data when topic changes - using unified bundle
   const loadTopicData = useCallback(async (topic: Topic) => {
-    if (!chapterId || !selectedVersionId) return;
+    const topicChapterId = getTopicChapterId(topic);
+    if (!topicChapterId || !selectedVersionId) return;
     
     setLoadingTopic(true);
     try {
@@ -329,7 +366,7 @@ const ChapterEditor = () => {
       const bundleUserId = viewDraftForUserId ?? (profile?.role === 'associate' ? user?.uid : undefined);
       const bundleUserRole = viewDraftForUserId ? 'associate' : (profile?.role === 'associate' ? 'associate' : undefined);
       const bundle = await getLessonBundle({
-        chapterId,
+        chapterId: topicChapterId,
         lang: selectedLanguage,
         topicId: topic.id, // Pass specific topic ID
         userId: bundleUserId,
@@ -352,7 +389,7 @@ const ChapterEditor = () => {
       setCurrentBundle(bundle);
       
       // Load scene (still use getCurrentScene for scene-specific data)
-      const sceneData = await getCurrentScene(chapterId, selectedVersionId, topic.id);
+      const sceneData = await getCurrentScene(topicChapterId, selectedVersionId, topic.id);
       console.log('📋 Loaded scene data:', {
         skybox_url: sceneData?.skybox_url || bundle.skybox?.imageUrl,
         skybox_id: sceneData?.skybox_id || bundle.skybox?.id,
@@ -405,7 +442,7 @@ const ChapterEditor = () => {
       setMcqFormState(mcqsFromBundle.map((m) => ({ ...m })));
       
       // Check for flattened MCQs (for legacy support)
-      const flatInfo = await checkForFlattenedMCQs(chapterId, selectedVersionId, topic.id);
+      const flatInfo = await checkForFlattenedMCQs(topicChapterId, selectedVersionId, topic.id);
       setFlattenedMcqInfo(flatInfo);
       
       // Load content availability using bundle data (more accurate)
@@ -439,14 +476,14 @@ const ChapterEditor = () => {
       try {
         const draftSnapshot = buildDraftSnapshotFromBundle(bundle, topic.id);
         const meta = {
-          chapterId,
+          chapterId: topicChapterId,
           topicId: topic.id,
           versionId: selectedVersionId,
           lang: selectedLanguage,
         };
         const isAssociateEditing = profile?.role === 'associate' && user?.uid && !viewDraftForUserId;
-        const stored = isAssociateEditing ? getStoredDraft(chapterId, topic.id, user.uid) : null;
-        if (stored && stored.meta.chapterId === chapterId && stored.meta.topicId === topic.id) {
+        const stored = isAssociateEditing ? getStoredDraft(topicChapterId, topic.id, user.uid) : null;
+        if (stored && stored.meta.chapterId === topicChapterId && stored.meta.topicId === topic.id) {
           draftStore.loadLessonFromStored(stored);
           // Sync form state from stored snapshot so UI matches
           const o = stored.snapshot.overview;
@@ -507,18 +544,18 @@ const ChapterEditor = () => {
     } finally {
       setLoadingTopic(false);
     }
-  }, [chapterId, selectedVersionId, selectedLanguage, loadContentAvailability, user?.uid, profile?.role, viewDraftForUserId]);
+  }, [getTopicChapterId, selectedVersionId, selectedLanguage, loadContentAvailability, user?.uid, profile?.role, viewDraftForUserId]);
   
   // MCQs are now loaded via the bundle in loadTopicData - no separate function needed
   
   // Load edit history (legacy) and lesson versions when History tab is opened
   const loadHistory = useCallback(async () => {
-    if (!chapterId || !selectedTopic?.id) return;
+    if (!selectedTopicChapterId || !selectedTopic?.id) return;
     
     try {
       const [history, versions] = await Promise.all([
-        getEditHistory(chapterId, selectedVersionId || '', selectedTopic.id),
-        getVersionsFromChapter(chapterId, selectedTopic.id),
+        getEditHistory(selectedTopicChapterId, selectedVersionId || '', selectedTopic.id),
+        getVersionsFromChapter(selectedTopicChapterId, selectedTopic.id),
       ]);
       setEditHistory(history);
       setLessonVersions(versions);
@@ -526,7 +563,7 @@ const ChapterEditor = () => {
       console.error('Error loading history:', error);
       setLessonVersions([]);
     }
-  }, [chapterId, selectedVersionId, selectedTopic]);
+  }, [selectedTopicChapterId, selectedVersionId, selectedTopic]);
   
   // Handle tab change - lazy load data
   useEffect(() => {
@@ -621,7 +658,7 @@ const ChapterEditor = () => {
   
   // Save handler — writes to curriculum_chapters/{chapterId}/versions ONLY (main doc untouched until Superadmin approves)
   const handleSave = async (opts?: { skipSuccessToast?: boolean }) => {
-    if (!chapterId || !selectedVersionId || !selectedTopic || !user?.email) {
+    if (!selectedTopicChapterId || !selectedVersionId || !selectedTopic || !user?.email) {
       toast.error('Missing required data');
       return;
     }
@@ -632,7 +669,7 @@ const ChapterEditor = () => {
       if (topicDirty) {
         setTopics((prev) =>
           prev.map((t) =>
-            t.id === selectedTopic.id ? { ...t, ...topicFormState } : t
+            isSameTopicRef(t, selectedTopic) ? { ...t, ...topicFormState } : t
           )
         );
         setSelectedTopic((prev) => prev ? { ...prev, ...topicFormState } : null);
@@ -651,7 +688,7 @@ const ChapterEditor = () => {
       try {
         const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
         const bundle = await getLessonBundle({
-          chapterId,
+          chapterId: selectedTopicChapterId,
           lang: selectedLanguage,
           topicId: selectedTopic.id,
           userId: profile?.role === 'associate' ? user?.uid : undefined,
@@ -681,7 +718,7 @@ const ChapterEditor = () => {
         const changeSummaryNew = appendTtsToChangeSummary(baseSummary, originalSnapshot, draftForDiff);
 
         const newSnapshot = buildSnapshotFromBundle(bundle, selectedTopic.id);
-        const prevVersion = await getLatestVersionFromChapter(chapterId, selectedTopic.id);
+        const prevVersion = await getLatestVersionFromChapter(selectedTopicChapterId, selectedTopic.id);
         const legacyChangedSections =
           changes.length === 0
             ? getChangedSections(prevVersion?.bundleSnapshotJSON ?? null, newSnapshot)
@@ -692,7 +729,7 @@ const ChapterEditor = () => {
             : { changed_fields: {} as Record<string, string[]>, diff: {} as Record<string, { old: string; new: string }> };
 
         await createVersionInChapter({
-          chapterId,
+          chapterId: selectedTopicChapterId,
           topicId: selectedTopic.id,
           createdBy: user.uid,
           createdByEmail: user.email ?? undefined,
@@ -718,7 +755,7 @@ const ChapterEditor = () => {
         }
         if (user?.uid) draftStore.clearLocalDraftForCurrent(user.uid);
 
-        const versions = await getVersionsFromChapter(chapterId, selectedTopic.id);
+        const versions = await getVersionsFromChapter(selectedTopicChapterId, selectedTopic.id);
         setLessonVersions(versions);
       } catch (versionError) {
         console.warn('Version creation failed:', versionError);
@@ -739,7 +776,7 @@ const ChapterEditor = () => {
   
   // Submit for approval (Associate only). Saves any unsaved changes first, then creates the request.
   const handleSubmitForApproval = async () => {
-    if (!chapterId || !user?.uid || !chapter) return;
+    if (!selectedTopicChapterId || !user?.uid || !chapter) return;
     if (pendingEditRequest) {
       toast.info('You already have a pending approval request for this chapter.');
       return;
@@ -750,7 +787,7 @@ const ChapterEditor = () => {
         await handleSave();
       }
       await createEditRequest({
-        chapterId,
+        chapterId: selectedTopicChapterId,
         requestedBy: user.uid,
         requestedByEmail: user.email ?? undefined,
         chapterName: getChapterNameByLanguage(chapter as unknown as CurriculumChapter, selectedLanguage) || chapter.chapter_name,
@@ -776,7 +813,8 @@ const ChapterEditor = () => {
 
   // Delete lesson handler (superadmin only)
   const handleDeleteLesson = async () => {
-    if (!chapterId || !profile || !canDeleteLesson(profile)) {
+    const deleteChapterId = selectedTopicChapterId || chapterId;
+    if (!deleteChapterId || !profile || !canDeleteLesson(profile)) {
       toast.error('Only superadmin can delete lessons');
       return;
     }
@@ -787,7 +825,7 @@ const ChapterEditor = () => {
       const { deleteDoc } = await import('firebase/firestore');
       
       // Delete the chapter document
-      const chapterRef = doc(db, 'curriculum_chapters', chapterId);
+      const chapterRef = doc(db, 'curriculum_chapters', deleteChapterId);
       await deleteDoc(chapterRef);
       
       // Also delete all related resources (MCQs, TTS, images, assets, etc.)
@@ -807,7 +845,7 @@ const ChapterEditor = () => {
   
   // Publish handler
   const handlePublish = async () => {
-    if (!chapterId || !selectedVersionId || !selectedTopic || !user?.email) {
+    if (!selectedTopicChapterId || !selectedVersionId || !selectedTopic || !user?.email) {
       toast.error('Missing required data');
       return;
     }
@@ -830,7 +868,7 @@ const ChapterEditor = () => {
       }
 
       const result = await publishScene({
-        chapterId,
+        chapterId: selectedTopicChapterId,
         versionId: selectedVersionId,
         topicId: selectedTopic.id,
         userId: user.email,
@@ -853,11 +891,11 @@ const ChapterEditor = () => {
   
   // Normalize flattened MCQs
   const handleNormalizeMCQs = async () => {
-    if (!chapterId || !selectedVersionId || !selectedTopic || !user?.email) return;
+    if (!selectedTopicChapterId || !selectedVersionId || !selectedTopic || !user?.email) return;
     
     try {
       // Get the topic document with flattened MCQs
-      await fetch(`/chapters/${chapterId}/versions/${selectedVersionId}/topics/${selectedTopic.id}`);
+      await fetch(`/chapters/${selectedTopicChapterId}/versions/${selectedVersionId}/topics/${selectedTopic.id}`);
       // For now, we'll just show the button - actual implementation would need the raw topic data
       toast.info('MCQ normalization would convert legacy format to subcollection');
     } catch (error) {
@@ -876,7 +914,7 @@ const ChapterEditor = () => {
 
   // Debounced auto-save: when any section (scene/skybox, avatar, TTS, 3D assets, etc.) is dirty, save after 2s idle
   useEffect(() => {
-    if (!isDirty || saving || effectiveReadOnly || !chapterId || !selectedVersionId || !selectedTopic) {
+    if (!isDirty || saving || effectiveReadOnly || !selectedTopicChapterId || !selectedVersionId || !selectedTopic) {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
         autoSaveTimerRef.current = null;
@@ -898,7 +936,7 @@ const ChapterEditor = () => {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [isDirty, saving, effectiveReadOnly, chapterId, selectedVersionId, selectedTopic]);
+  }, [isDirty, saving, effectiveReadOnly, selectedTopicChapterId, selectedVersionId, selectedTopic]);
 
   if (loading) {
     return (
@@ -1059,14 +1097,14 @@ const ChapterEditor = () => {
               )}
               
               {/* Launch Lesson Button */}
-              {selectedTopic && chapterId && (
+              {selectedTopic && selectedTopicChapterId && (
                 <LaunchLessonButton
-                  chapterId={chapterId}
-                  chapterName={chapter.chapter_name}
-                  chapterNumber={chapter.chapter_number}
-                  curriculum={navState?.curriculumId || chapter.curriculum_id || 'CBSE'}
-                  className={navState?.classId || chapter.class_id || '8'}
-                  subject={navState?.subjectId || chapter.subject_id || 'Science'}
+                  chapterId={selectedTopicChapterId}
+                  chapterName={currentBundle?.chapter?.chapter_name || chapter.chapter_name}
+                  chapterNumber={currentBundle?.chapter?.chapter_number || chapter.chapter_number}
+                  curriculum={navState?.curriculumId || currentBundle?.chapter?.curriculum || chapter.curriculum_id || 'CBSE'}
+                  className={navState?.classId || String(currentBundle?.chapter?.class ?? chapter.class_id ?? '8')}
+                  subject={navState?.subjectId || currentBundle?.chapter?.subject || chapter.subject_id || 'Science'}
                   topicId={selectedTopic.id}
                   topicName={(topicFormState.topic_name ?? selectedTopic.topic_name) ?? ''}
                   topicPriority={selectedTopic.topic_priority}
@@ -1112,7 +1150,11 @@ const ChapterEditor = () => {
             onApprovalChange={() => {
               // Reload topics after approval change
               if (chapterId && selectedVersionId) {
-                getTopics(chapterId, selectedVersionId).then(setTopics).catch(console.error);
+                getTopicsForChapterGroup(
+                  chapterId,
+                  selectedVersionId,
+                  navState?.chapterGroupChapterIds
+                ).then(setTopics).catch(console.error);
               }
             }}
             collapsed={isTopicsCollapsed}
@@ -1139,7 +1181,7 @@ const ChapterEditor = () => {
               onTabChange={setActiveTab}
               isReadOnly={effectiveReadOnly}
               loading={loadingTopic}
-              chapterId={chapterId!}
+              chapterId={selectedTopicChapterId}
               versionId={selectedVersionId}
               flattenedMcqInfo={flattenedMcqInfo}
               onNormalizeMCQs={handleNormalizeMCQs}

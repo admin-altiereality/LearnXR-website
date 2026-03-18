@@ -365,6 +365,9 @@ export interface Topic {
   has_scene: boolean;
   has_mcqs: boolean;
   last_updated?: string;
+  sourceChapterId?: string;
+  sourceChapterName?: string;
+  sourceChapterUpdatedAt?: string;
 }
 
 export interface Scene {

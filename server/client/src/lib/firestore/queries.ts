@@ -357,6 +357,95 @@ export const getActiveVersion = async (
 // Topics are stored inline in the chapter document
 // ============================================
 
+type TopicWithApproval = Topic & { topic_id?: string; approval?: unknown };
+
+const normalizeTopicApproval = (approval: any) => {
+  if (approval && approval.approvedAt && approval.approvedAt.toDate) {
+    return {
+      ...approval,
+      approvedAt: approval.approvedAt.toDate().toISOString(),
+    };
+  }
+  return approval;
+};
+
+const mapFirebaseTopicToTopic = (
+  topic: FirebaseTopic,
+  index: number,
+  chapterDoc: { id: string; data: CurriculumChapter }
+): TopicWithApproval => {
+  const approval = normalizeTopicApproval(topic.approval);
+
+  return {
+    id: topic.topic_id || `topic_${index}`,
+    topic_name: topic.topic_name || '',
+    topic_priority: topic.topic_priority || index + 1,
+    scene_type: topic.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
+    has_scene: !!(topic.skybox_id || topic.skybox_ids?.length || topic.asset_ids?.length),
+    has_mcqs: false,
+    last_updated: topic.generatedAt,
+    sourceChapterId: chapterDoc.id,
+    sourceChapterName: chapterDoc.data.chapter_name,
+    sourceChapterUpdatedAt: chapterDoc.data.updatedAt,
+    topic_id: topic.topic_id,
+    approval,
+  };
+};
+
+const sortTopicsForSidebar = (topics: Topic[]): Topic[] =>
+  [...topics].sort((a, b) => {
+    if (a.topic_priority !== b.topic_priority) {
+      return a.topic_priority - b.topic_priority;
+    }
+
+    const aUpdated = a.sourceChapterUpdatedAt || a.last_updated || '';
+    const bUpdated = b.sourceChapterUpdatedAt || b.last_updated || '';
+    return bUpdated.localeCompare(aUpdated);
+  });
+
+const getChapterGroupDocs = async (
+  chapterId: string,
+  chapterIds?: string[]
+): Promise<Array<{ id: string; data: CurriculumChapter }>> => {
+  const uniqueChapterIds = Array.from(new Set((chapterIds || []).filter(Boolean)));
+
+  if (uniqueChapterIds.length > 0) {
+    const snapshots = await Promise.all(
+      uniqueChapterIds.map(async (id) => {
+        const snapshot = await getDoc(doc(db, COLLECTION_NAME, id));
+        return snapshot.exists()
+          ? {
+              id: snapshot.id,
+              data: snapshot.data() as CurriculumChapter,
+            }
+          : null;
+      })
+    );
+
+    return snapshots.filter(Boolean) as Array<{ id: string; data: CurriculumChapter }>;
+  }
+
+  const chapterSnapshot = await getDoc(doc(db, COLLECTION_NAME, chapterId));
+  if (!chapterSnapshot.exists()) return [];
+
+  const baseChapter = chapterSnapshot.data() as CurriculumChapter;
+  const siblingQuery = query(
+    collection(db, COLLECTION_NAME),
+    where('curriculum', '==', baseChapter.curriculum),
+    where('class', '==', baseChapter.class),
+    where('subject', '==', baseChapter.subject)
+  );
+
+  const siblingSnapshots = await getDocs(siblingQuery);
+
+  return siblingSnapshots.docs
+    .map((snapshot) => ({
+      id: snapshot.id,
+      data: snapshot.data() as CurriculumChapter,
+    }))
+    .filter(({ data }) => data.chapter_number === baseChapter.chapter_number);
+};
+
 export const getTopics = async (
   chapterId: string,
   versionId: string
@@ -369,37 +458,34 @@ export const getTopics = async (
     
     const data = snapshot.data() as CurriculumChapter;
     const topics = data.topics || [];
-    
-    // Map to Topic interface, preserving all fields including approval
-    return topics.map((t: FirebaseTopic, index: number) => {
-      // Preserve approval field, handling Firestore Timestamp conversion
-      let approval = t.approval;
-      if (approval && approval.approvedAt) {
-        // Convert Firestore Timestamp to plain object if needed
-        if (approval.approvedAt.toDate) {
-          approval = {
-            ...approval,
-            approvedAt: approval.approvedAt.toDate().toISOString(),
-          };
-        }
-      }
-      
-      return {
-        id: t.topic_id || `topic_${index}`,
-        topic_name: t.topic_name || '', // Ensure topic_name is always a string
-        topic_priority: t.topic_priority || index + 1,
-        scene_type: t.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
-        has_scene: !!(t.skybox_id || t.skybox_ids?.length || t.asset_ids?.length),
-        has_mcqs: false, // MCQs would need separate check
-        last_updated: t.generatedAt,
-        // Preserve topic_id and approval for approval functionality
-        topic_id: t.topic_id,
-        approval: approval,
-      } as Topic & { topic_id?: string; approval?: any };
-    });
+
+    return topics.map((topic: FirebaseTopic, index: number) =>
+      mapFirebaseTopicToTopic(topic, index, { id: snapshot.id, data })
+    );
   } catch (error) {
     console.error('Error fetching topics:', error);
     return [];
+  }
+};
+
+export const getTopicsForChapterGroup = async (
+  chapterId: string,
+  versionId: string,
+  chapterIds?: string[]
+): Promise<Topic[]> => {
+  try {
+    const chapterDocs = await getChapterGroupDocs(chapterId, chapterIds);
+
+    const groupedTopics = chapterDocs.flatMap(({ id, data }) =>
+      (data.topics || []).map((topic: FirebaseTopic, index: number) =>
+        mapFirebaseTopicToTopic(topic, index, { id, data })
+      )
+    );
+
+    return sortTopicsForSidebar(groupedTopics);
+  } catch (error) {
+    console.error('Error fetching grouped topics:', error);
+    return getTopics(chapterId, versionId);
   }
 };
 
@@ -419,35 +505,12 @@ export const subscribeToTopics = (
     
     const data = snapshot.data() as CurriculumChapter;
     const topics = data.topics || [];
-    
-    const mappedTopics = topics.map((t: FirebaseTopic, index: number) => {
-      // Preserve approval field, handling Firestore Timestamp conversion
-      let approval = t.approval;
-      if (approval && approval.approvedAt) {
-        // Convert Firestore Timestamp to plain object if needed
-        if (approval.approvedAt.toDate) {
-          approval = {
-            ...approval,
-            approvedAt: approval.approvedAt.toDate().toISOString(),
-          };
-        }
-      }
-      
-      return {
-        id: t.topic_id || `topic_${index}`,
-        topic_name: t.topic_name || '', // Ensure topic_name is always a string
-        topic_priority: t.topic_priority || index + 1,
-        scene_type: t.scene_type as 'interactive' | 'narrative' | 'quiz' | 'exploration',
-        has_scene: !!(t.skybox_id || t.skybox_ids?.length || t.asset_ids?.length),
-        has_mcqs: false,
-        last_updated: t.generatedAt,
-        // Preserve topic_id and approval for approval functionality
-        topic_id: t.topic_id,
-        approval: approval,
-      } as Topic & { topic_id?: string; approval?: any };
-    });
-    
-    callback(mappedTopics);
+
+    callback(
+      topics.map((topic: FirebaseTopic, index: number) =>
+        mapFirebaseTopicToTopic(topic, index, { id: snapshot.id, data })
+      )
+    );
   });
 };
 

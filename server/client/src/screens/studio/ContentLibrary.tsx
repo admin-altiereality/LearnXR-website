@@ -231,13 +231,21 @@ const ContentLibrary = () => {
     return () => clearTimeout(timer);
   }, [filters.search]);
   
-  const handleOpenChapter = (chapter: Chapter) => {
+  const handleOpenChapter = (
+    chapter: Chapter,
+    chapterGroup?: {
+      chapterIds: string[];
+      groupKey: string;
+    }
+  ) => {
     navigate(`/studio/content/${chapter.id}`, {
       state: {
         curriculumId: filters.curriculum,
         classId: filters.classId,
         subjectId: filters.subject,
         language: selectedLanguage,
+        chapterGroupChapterIds: chapterGroup?.chapterIds,
+        chapterGroupKey: chapterGroup?.groupKey,
       },
     });
   };

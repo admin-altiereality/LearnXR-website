@@ -43,6 +43,13 @@ export const TopicList = ({
 }: TopicListProps) => {
   const { profile } = useAuth();
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
+
+  const getTopicChapterId = (topic: Topic) => topic.sourceChapterId || chapterId;
+
+  const isSameTopicRef = (left: Topic | null, right: Topic) => {
+    if (!left) return false;
+    return left.id === right.id && getTopicChapterId(left) === getTopicChapterId(right);
+  };
   
   // Check if user can approve (admin or superadmin)
   const canApprove = profile && (isAdminOnly(profile) || isSuperadmin(profile));
@@ -79,17 +86,18 @@ export const TopicList = ({
     // Topic.id is mapped from topic_id in getTopics(), but we need the original topic_id
     // Check both topic.id and (topic as any).topic_id for compatibility
     const topicId = (topic as any).topic_id || topic.id;
+    const topicChapterId = getTopicChapterId(topic);
     if (!canApprove || !profile || !topicId) return;
     
     const approval = (topic as any).approval || {};
     const currentApproved = approval.approved === true;
-    const approvalKey = `${chapterId}_${topicId}`;
+    const approvalKey = `${topicChapterId}_${topicId}`;
     
     setUpdatingApproval(approvalKey);
     
     try {
       await updateTopicApproval({
-        chapterId,
+        chapterId: topicChapterId,
         topicId: topicId,
         approved: !currentApproved,
         userId: profile.uid,
@@ -186,18 +194,19 @@ export const TopicList = ({
           <div className="space-y-1 px-2">
             {topics.map((topic, index) => {
               const status = getStatusColor(topic);
-              const isSelected = selectedTopic?.id === topic.id;
+              const isSelected = isSameTopicRef(selectedTopic, topic);
               const StatusIcon = status.icon;
               
               const topicId = (topic as any).topic_id || topic.id;
+              const topicChapterId = getTopicChapterId(topic);
               const approval = (topic as any).approval || {};
               const isApproved = approval?.approved === true || approval?.approved === 'true';
-              const approvalKey = `${chapterId}_${topicId || ''}`;
+              const approvalKey = `${topicChapterId}_${topicId || ''}`;
               const isUpdating = updatingApproval === approvalKey;
               
               return (
                 <div
-                  key={topic.id}
+                  key={`${topicChapterId}_${topic.id}`}
                   className={cn(
                     'w-full flex items-start gap-3 p-3 rounded-lg transition-all duration-200 group border',
                     isSelected
