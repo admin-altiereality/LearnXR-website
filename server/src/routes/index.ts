@@ -4,6 +4,7 @@ import { isProxyAssetUrlAllowed } from '../utils/proxyAssetValidation';
 import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
+import leadRoutes from './leads';
 import n8nRoutes from './n8n';
 // Subscription removed
 import userRoutes from './user';
@@ -54,7 +55,7 @@ router.get('/proxy-asset/:encoded/model.glb', async (req, res) => {
       return res.status(400).json({ error: 'URL not allowed for proxy' });
     }
     console.log('🔗 Proxying asset (path-based):', targetUrl.slice(0, 100) + (targetUrl.length > 100 ? '...' : ''));
-    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://altiereality.web.app';
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -118,7 +119,7 @@ router.get('/proxy-asset', async (req, res) => {
 
     console.log('🔗 Proxying asset request:', targetUrl.slice(0, 100) + (targetUrl.length > 100 ? '...' : ''));
 
-    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://altiereality.web.app';
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -175,6 +176,11 @@ console.log('Skybox routes mounted at /skybox');
 console.log('Mounting LinkedIn routes...');
 router.use('/api', linkedinRoutes);
 console.log('LinkedIn routes mounted at /api');
+
+// Mount public lead capture route
+console.log('Mounting lead routes...');
+router.use('/leads', leadRoutes);
+console.log('Lead routes mounted at /leads');
 
 // Mount user routes
 console.log('Mounting user routes...');

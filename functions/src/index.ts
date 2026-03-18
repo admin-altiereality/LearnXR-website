@@ -127,7 +127,9 @@ const getApp = (): express.Application => {
     app.use('/auth', authLimiter);
 
     // Mount public routes FIRST (before authentication)
+    const leadRoutes = require('./routes/leads').default;
     app.use('/linkedin', linkedinRoutes);
+    app.use('/leads', leadRoutes);
     app.use('/auth', authTokenRoutes); // custom-token exchange for standalone VR player (GET)
     app.use('/auth', authRoutes);
 

@@ -51,14 +51,14 @@ const getApiBaseUrl = () => {
   
   // Only use local emulator if we're actually on localhost AND in dev mode
   if (isLocalhost && import.meta.env.DEV) {
-    const localUrl = 'http://localhost:5001/in3devoneuralai/us-central1/api';
+    const localUrl = 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
     console.log('🌐 Using local Firebase emulator:', localUrl);
     return localUrl;
   }
   
   // Use Firebase Functions in production/preview (default)
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
   console.log('🌐 Using production Firebase Functions:', productionUrl, {
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',

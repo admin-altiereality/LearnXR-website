@@ -305,7 +305,7 @@ export class StorageTestUtility {
     console.log('🌐 Testing network connectivity to Firebase Storage...');
     
     try {
-      const bucketName = 'in3devoneuralai.appspot.com';
+      const bucketName = 'learnxr-evoneuralai.appspot.com';
       const testUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o`;
       
       const response = await fetch(testUrl, {

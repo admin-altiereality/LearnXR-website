@@ -31,6 +31,7 @@ const PUBLIC_PATHS = [
   '/assistant/tts/generate',  // Allow TTS generation without auth
   '/assistant/lipsync/generate',  // Allow viseme generation without auth
   '/assistant/list',  // Allow listing assistants without auth
+  '/leads',
   '/linkedin/posts',  // Allow LinkedIn posts without auth (public company activity)
   '/streetview/generate-skybox', // Allow Street View skybox generation without auth
   '/streetview/places-autocomplete',
@@ -204,6 +205,18 @@ const isPublicEndpoint = (req: Request): boolean => {
   
   if ((req.method === 'POST' || req.method === 'OPTIONS' || req.method === 'GET') && isAssistantEndpoint) {
     console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING assistant endpoint`);
+    return true;
+  }
+
+  const isLeadEndpoint = uniquePaths.some(path => {
+    return path === '/leads' ||
+           path.endsWith('/leads') ||
+           path.startsWith('/leads/') ||
+           path.includes('/leads');
+  });
+
+  if ((req.method === 'POST' || req.method === 'OPTIONS') && isLeadEndpoint) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING leads endpoint`);
     return true;
   }
   

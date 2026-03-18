@@ -4,6 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as THREE from 'three';
+import LeadCaptureModal from '../Components/LeadCaptureModal';
 import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
 import LinkedInActivity from '../Components/LinkedInActivity';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,6 +23,7 @@ const Landing = () => {
   const cursorRef = useRef(null);
   const sceneRef = useRef(null);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
 
   const contentSlides = [
     {
@@ -248,6 +250,27 @@ const Landing = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (authLoading || user) return;
+
+    try {
+      if (
+        sessionStorage.getItem('learnxr-lead-captured') === '1' ||
+        sessionStorage.getItem('learnxr-lead-popup-dismissed') === '1'
+      ) {
+        return;
+      }
+    } catch {
+      // Ignore storage issues and continue with the timer-based popup.
+    }
+
+    const timer = window.setTimeout(() => {
+      setIsLeadModalOpen(true);
+    }, 30000);
+
+    return () => window.clearTimeout(timer);
+  }, [authLoading, user]);
+
   const handleGetStarted = () => {
     if (authLoading) return;
     if (user) {
@@ -259,6 +282,10 @@ const Landing = () => {
 
   const handleLogin = () => {
     navigate('/login');
+  };
+
+  const handleBookDemo = () => {
+    setIsLeadModalOpen(true);
   };
 
   const nextSlide = () => {
@@ -304,14 +331,12 @@ const Landing = () => {
             <nav className="w-full max-w-full flex items-center justify-between px-3 sm:px-8 md:px-12 lg:p-16 z-10">
               <div className="h-9 w-14 sm:h-15 sm:w-20 flex-shrink-0" aria-hidden></div>
               <div className="flex items-center gap-3 sm:gap-4">
-                <a
-                  href="https://cal.com/altie-reality/30min"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={handleBookDemo}
                   className="px-4 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
                 >
                   Book a Demo
-                </a>
+                </button>
                 <button
                   onClick={handleLogin}
                   className="px-4 py-2 sm:px-6 sm:py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
@@ -578,6 +603,7 @@ const Landing = () => {
           <p className="flex items-center justify-center text-white text-sm sm:text-lg pb-6">&copy; Altie Reality 2020-2025</p>
         </div>
       </div>
+      <LeadCaptureModal open={isLeadModalOpen} onOpenChange={setIsLeadModalOpen} />
     </div>
   );
 };

@@ -229,7 +229,7 @@ const ApiDocumentation: React.FC = () => {
                 <div>
                   <p className="text-xs uppercase tracking-wider text-amber-100/40 font-display mb-2">Local Development</p>
                   <code className="block p-4 bg-[#0a0806] border border-amber-900/30 text-amber-300/90 font-mono text-sm">
-                    http://localhost:5001/in3devoneuralai/us-central1/api
+                    http://localhost:5001/learnxr-evoneuralai/us-central1/api
                   </code>
                 </div>
               </div>

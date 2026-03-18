@@ -74,7 +74,7 @@ router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void>
     }
 
     console.log(`[${requestId}] Proxying asset (path-based):`, targetUrl.substring(0, 120) + (targetUrl.length > 120 ? '...' : ''));
-    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://altiereality.web.app';
     const fetchHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': '*/*',
@@ -182,7 +182,7 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
     console.log(`[${requestId}] Proxying asset request:`, decodedUrl.substring(0, 120) + (decodedUrl.length > 120 ? '...' : ''));
 
     // Use app origin as Referer so origins that check it (e.g. Meshy CDN) allow the request
-    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://learnxr-evoneuralai.web.app';
+    const origin = (req.get('origin') || req.get('referer') || '').replace(/\/$/, '') || 'https://altiereality.web.app';
     const fetchHeaders: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       'Accept': '*/*',

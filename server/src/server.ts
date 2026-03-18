@@ -46,6 +46,7 @@ const corsOptions = {
     if (!origin) return cb(null, true);
     const allowed = [
       'https://in3d.evoneural.ai',
+      'https://altiereality.web.app',
       'https://learnxr-evoneuralai.web.app',
       'http://localhost:3000',
       'http://localhost:5173',
