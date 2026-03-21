@@ -284,7 +284,7 @@ export const Login = () => {
                         to="/web-preview"
                         className="text-primary hover:text-primary/90 underline-offset-2 hover:underline"
                       >
-                        Explore the LearnXR web app
+                        Platform
                       </Link>
                     </p>
                     </div>

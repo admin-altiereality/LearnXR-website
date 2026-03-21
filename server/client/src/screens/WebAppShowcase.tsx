@@ -59,7 +59,7 @@ const WebAppShowcase: React.FC = () => {
           {/* Hero */}
           <header className="space-y-4">
             <p className="text-xs uppercase tracking-[0.2em] text-primary font-semibold">
-              LearnXR Web App
+              Platform
             </p>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground max-w-3xl">
               Explore the LearnXR web experience before you log in.

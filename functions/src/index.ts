@@ -9,10 +9,12 @@ import express, { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { authenticateUser } from './middleware/auth';
 import { requestLogging } from './middleware/logging';
 import { pathNormalization } from './middleware/pathNormalization';
 import { initializeAdmin } from './utils/services';
+import { syncAllQueues } from './services/n8nLessonBuilderQueue';
 
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set
@@ -156,6 +158,7 @@ const getApp = (): express.Application => {
     const pdfRoutes = require('./routes/pdf').default;
     const lessonBundleRoutes = require('./routes/lessonBundle').default;
     const n8nRoutes = require('./routes/n8n').default;
+    const n8nBuilderRoutes = require('./routes/n8nBuilder').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -180,6 +183,7 @@ const getApp = (): express.Application => {
     app.use('/api/pdf', pdfRoutes);
     app.use('/lesson-bundle', lessonBundleRoutes);
     app.use('/n8n', n8nRoutes);
+    app.use('/n8n-builder', n8nBuilderRoutes);
 
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
@@ -359,3 +363,17 @@ export const api = onRequest(
   const expressApp = getApp();
   expressApp(req, res);
 });
+
+export const syncN8nLessonBuilderQueues = onSchedule(
+  {
+    schedule: 'every 1 minutes',
+    region: 'us-central1',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+    invoker: 'public',
+  },
+  async () => {
+    initializeAdmin();
+    await syncAllQueues();
+  },
+);

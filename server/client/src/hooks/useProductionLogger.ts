@@ -48,19 +48,41 @@ export function useProductionLogger() {
     productionLogger.logApiCall(endpoint, method, statusCode, duration, error);
   }, []);
 
+  // Stable references so consumers' useCallback/useEffect deps do not churn every render
+  const debug = useCallback(
+    (message: string, context?: string, metadata?: Record<string, any>) =>
+      productionLogger.debug(message, context, metadata),
+    [],
+  );
+  const info = useCallback(
+    (message: string, context?: string, metadata?: Record<string, any>) =>
+      productionLogger.info(message, context, metadata),
+    [],
+  );
+  const warn = useCallback(
+    (message: string, context?: string, error?: Error | any, metadata?: Record<string, any>) =>
+      productionLogger.warn(message, context, error, metadata),
+    [],
+  );
+  const error = useCallback(
+    (message: string, context?: string, err?: Error | any, metadata?: Record<string, any>) =>
+      productionLogger.error(message, context, err, metadata),
+    [],
+  );
+  const critical = useCallback(
+    (message: string, context?: string, err?: Error | any, metadata?: Record<string, any>) =>
+      productionLogger.critical(message, context, err, metadata),
+    [],
+  );
+
   return {
     log,
     logUserAction,
     logApiCall,
-    debug: (message: string, context?: string, metadata?: Record<string, any>) =>
-      productionLogger.debug(message, context, metadata),
-    info: (message: string, context?: string, metadata?: Record<string, any>) =>
-      productionLogger.info(message, context, metadata),
-    warn: (message: string, context?: string, error?: Error | any, metadata?: Record<string, any>) =>
-      productionLogger.warn(message, context, error, metadata),
-    error: (message: string, context?: string, error?: Error | any, metadata?: Record<string, any>) =>
-      productionLogger.error(message, context, error, metadata),
-    critical: (message: string, context?: string, error?: Error | any, metadata?: Record<string, any>) =>
-      productionLogger.critical(message, context, error, metadata),
+    debug,
+    info,
+    warn,
+    error,
+    critical,
   };
 }

@@ -108,8 +108,9 @@ const ConditionalSidebar = () => {
   
   // Pages where sidebar should be hidden
   const hideSidebarRoutes = [
-    '/login', '/signup', '/forgot-password', 
+    '/login', '/signup', '/forgot-password',
     '/onboarding', '/approval-pending',
+    '/web-preview',
     '/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson'
   ];
   
@@ -318,15 +319,16 @@ const ConditionalBackground = ({ backgroundSkybox, backgroundKey }) => {
 // Component to conditionally render Canvas based on route
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
-  const isLandingPage = location.pathname === '/';
+  const isStandaloneMarketing =
+    location.pathname === '/' || location.pathname === '/web-preview';
   const isMainPage = location.pathname === '/main' || location.pathname === '/main-standalone';
   const isHistoryPage = location.pathname === '/history';
   
   // Pages where background should be shown
   const shouldShowBackground = isMainPage || isHistoryPage;
   
-  // Don't render global Canvas on Landing page since it has its own Canvas components
-  if (isLandingPage) {
+  // Don't wrap landing & public showcase pages — they bring their own full-viewport UI
+  if (isStandaloneMarketing) {
     return children;
   }
   
@@ -832,6 +834,7 @@ function App() {
                       <Route path="/terms-conditions" element={<TermsConditions />} />
                       <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/help" element={<HelpChat />} />
+                      <Route path="/web-preview" element={<WebAppShowcase />} />
                       <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
                       <Route path="/studio-standalone" element={<StudioStandalone />} />
                       <Route path="/main-standalone" element={<MainStandalone />} />

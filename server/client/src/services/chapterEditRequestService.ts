@@ -51,6 +51,44 @@ export interface CreateRequestInput {
   chapterNumber?: number;
 }
 
+export interface FetchEditRequestsOptions {
+  status?: EditRequestStatus | 'all';
+}
+
+function mapEditRequest(
+  id: string,
+  data: Record<string, any>
+): ChapterEditRequest {
+  return {
+    id,
+    chapterId: data.chapterId,
+    requestedBy: data.requestedBy,
+    requestedByEmail: data.requestedByEmail,
+    requestedAt: data.requestedAt ?? null,
+    status: data.status,
+    reviewedBy: data.reviewedBy,
+    reviewedAt: data.reviewedAt ?? null,
+    chapterName: data.chapterName,
+    chapterNumber: data.chapterNumber,
+    rejectionReason: data.rejectionReason ?? null,
+  };
+}
+
+function sortEditRequests(list: ChapterEditRequest[]): ChapterEditRequest[] {
+  return [...list].sort((a, b) => {
+    const requestedAtA = a.requestedAt?.toMillis?.() ?? 0;
+    const requestedAtB = b.requestedAt?.toMillis?.() ?? 0;
+    const reviewedAtA = a.reviewedAt?.toMillis?.() ?? 0;
+    const reviewedAtB = b.reviewedAt?.toMillis?.() ?? 0;
+
+    if (requestedAtA !== requestedAtB) {
+      return requestedAtB - requestedAtA;
+    }
+
+    return reviewedAtB - reviewedAtA;
+  });
+}
+
 /**
  * Create a new edit request (Associate clicks "Submit for approval")
  */
@@ -83,20 +121,7 @@ export async function getPendingRequestForChapter(
   const snap = await getDocs(q);
   if (snap.empty) return null;
   const d = snap.docs[0];
-  const data = d.data();
-  return {
-    id: d.id,
-    chapterId: data.chapterId,
-    requestedBy: data.requestedBy,
-    requestedByEmail: data.requestedByEmail,
-    requestedAt: data.requestedAt ?? null,
-    status: data.status,
-    reviewedBy: data.reviewedBy,
-    reviewedAt: data.reviewedAt ?? null,
-    chapterName: data.chapterName,
-    chapterNumber: data.chapterNumber,
-    rejectionReason: data.rejectionReason ?? null,
-  };
+  return mapEditRequest(d.id, d.data());
 }
 
 /**
@@ -113,62 +138,34 @@ export async function getLatestEditRequestForChapter(
   );
   const snap = await getDocs(q);
   if (snap.empty) return null;
-  const sorted = snap.docs
-    .map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        chapterId: data.chapterId,
-        requestedBy: data.requestedBy,
-        requestedByEmail: data.requestedByEmail,
-        requestedAt: data.requestedAt ?? null,
-        status: data.status,
-        reviewedBy: data.reviewedBy,
-        reviewedAt: data.reviewedAt ?? null,
-        chapterName: data.chapterName,
-        chapterNumber: data.chapterNumber,
-        rejectionReason: data.rejectionReason ?? null,
-      } as ChapterEditRequest;
-    })
-    .sort((a, b) => {
-      const at = a.requestedAt?.toMillis?.() ?? 0;
-      const bt = b.requestedAt?.toMillis?.() ?? 0;
-      return bt - at;
-    });
+  const sorted = sortEditRequests(
+    snap.docs.map((d) => mapEditRequest(d.id, d.data()))
+  );
   return sorted[0] ?? null;
 }
 
 /**
- * Fetch all pending edit requests (for Admin / Super Admin)
+ * Fetch edit requests (for Admin / Super Admin)
  */
+export async function fetchEditRequests(
+  options: FetchEditRequestsOptions = {}
+): Promise<ChapterEditRequest[]> {
+  const status = options.status ?? 'all';
+  const ref = collection(db, COLLECTION);
+  const targetQuery = status === 'all'
+    ? ref
+    : query(ref, where('status', '==', status));
+  const snap = await getDocs(targetQuery);
+  return sortEditRequests(snap.docs.map((d) => mapEditRequest(d.id, d.data())));
+}
+
 export async function fetchPendingEditRequests(): Promise<ChapterEditRequest[]> {
-  const q = query(
-    collection(db, COLLECTION),
-    where('status', '==', 'pending')
-  );
-  const snap = await getDocs(q);
-  const list = snap.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      chapterId: data.chapterId,
-      requestedBy: data.requestedBy,
-      requestedByEmail: data.requestedByEmail,
-      requestedAt: data.requestedAt ?? null,
-      status: data.status,
-      reviewedBy: data.reviewedBy,
-      reviewedAt: data.reviewedAt ?? null,
-      chapterName: data.chapterName,
-      chapterNumber: data.chapterNumber,
-      rejectionReason: data.rejectionReason ?? null,
-    };
-  });
-  list.sort((a, b) => {
-    const at = a.requestedAt?.toMillis?.() ?? 0;
-    const bt = b.requestedAt?.toMillis?.() ?? 0;
-    return bt - at;
-  });
-  return list;
+  return fetchEditRequests({ status: 'pending' });
+}
+
+export interface BulkApproveEditRequestsResult {
+  succeededIds: string[];
+  failed: Array<{ requestId: string; message: string }>;
 }
 
 /**
@@ -232,6 +229,30 @@ export async function approveEditRequest(requestId: string, reviewedBy: string):
   }
 }
 
+export async function approveAllPendingEditRequests(
+  reviewedBy: string
+): Promise<BulkApproveEditRequestsResult> {
+  const pendingRequests = await fetchPendingEditRequests();
+  const result: BulkApproveEditRequestsResult = {
+    succeededIds: [],
+    failed: [],
+  };
+
+  for (const req of pendingRequests) {
+    try {
+      await approveEditRequest(req.id, reviewedBy);
+      result.succeededIds.push(req.id);
+    } catch (error) {
+      result.failed.push({
+        requestId: req.id,
+        message: error instanceof Error ? error.message : 'Failed to approve request',
+      });
+    }
+  }
+
+  return result;
+}
+
 /**
  * Reject an edit request (optional reason shown to associate)
  */
@@ -256,18 +277,5 @@ export async function getEditRequest(requestId: string): Promise<ChapterEditRequ
   const ref = doc(db, COLLECTION, requestId);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
-  const data = snap.data();
-  return {
-    id: snap.id,
-    chapterId: data.chapterId,
-    requestedBy: data.requestedBy,
-    requestedByEmail: data.requestedByEmail,
-    requestedAt: data.requestedAt ?? null,
-    status: data.status,
-    reviewedBy: data.reviewedBy,
-    reviewedAt: data.reviewedAt ?? null,
-    chapterName: data.chapterName,
-    chapterNumber: data.chapterNumber,
-    rejectionReason: data.rejectionReason ?? null,
-  };
+  return mapEditRequest(snap.id, snap.data());
 }

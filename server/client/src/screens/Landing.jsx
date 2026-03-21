@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import * as THREE from 'three';
 import LeadCaptureModal from '../Components/LeadCaptureModal';
 import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
@@ -330,13 +330,19 @@ const Landing = () => {
           >
             <nav className="w-full max-w-full flex items-center justify-between px-3 sm:px-8 md:px-12 lg:p-16 z-10">
               <div className="h-9 w-14 sm:h-15 sm:w-20 flex-shrink-0" aria-hidden></div>
-              <div className="flex items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-wrap justify-end">
                 <button
                   onClick={handleBookDemo}
                   className="px-4 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
                 >
                   Book a Demo
                 </button>
+                <Link
+                  to="/web-preview"
+                  className="px-4 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
+                >
+                  Explore platform
+                </Link>
                 <button
                   onClick={handleLogin}
                   className="px-4 py-2 sm:px-6 sm:py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
