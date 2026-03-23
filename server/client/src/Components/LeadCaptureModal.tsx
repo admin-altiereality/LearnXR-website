@@ -124,7 +124,7 @@ const LeadCaptureModal = ({ open, onOpenChange }: LeadCaptureModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-xl border-white/10 bg-slate-950 text-white sm:rounded-2xl">
+      <DialogContent className="max-w-xl rounded-2xl border-white/10 bg-slate-950 text-white">
         <DialogHeader className="space-y-2">
           <DialogTitle className="text-2xl text-white">Get your LearnXR demo</DialogTitle>
           <DialogDescription className="text-slate-300">
