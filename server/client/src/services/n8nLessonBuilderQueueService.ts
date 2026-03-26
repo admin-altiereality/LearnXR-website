@@ -137,6 +137,15 @@ export async function cancelLessonBuilderQueueJob(jobId: string) {
   return data.jobs;
 }
 
+export async function stopLessonBuilderQueueJob(jobId: string) {
+  const headers = await getAuthHeaders(true);
+  const data = await request<QueueApiResponse>(`/n8n-builder/jobs/${encodeURIComponent(jobId)}/stop`, {
+    method: 'POST',
+    headers,
+  });
+  return data.jobs;
+}
+
 export async function enqueueLessonBuilderJobs(input: EnqueueJobsInput) {
   if (!auth.currentUser) {
     throw new Error('Please sign in to queue lesson builds.');

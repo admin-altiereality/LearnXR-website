@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:lexrn1": "node scripts/check-altiereality-env.js && vite build --mode lexrn1",
     "lint": "eslint .",
     "preview": "vite preview",
     "build:firebase": "npm run build",
@@ -29,6 +30,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@react-three/drei": "^9.88.0",
     "@react-three/fiber": "^8.15.0",
+    "@twilio/conversations": "^2.7.0",
     "@types/three": "^0.159.0",
     "@types/uuid": "^10.0.0",
     "axios": "^1.6.2",

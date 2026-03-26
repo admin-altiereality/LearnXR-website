@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import path from 'path';
 import { router as apiRouter } from './routes/index';
 import paymentRoutes from './routes/payment';
+import twilioWebhookRoutes from './routes/twilioWebhook';
 
 // Load environment variables (cwd .env first, then server/.env so key is found when run from repo root)
 dotenv.config();
@@ -66,6 +67,9 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(compression());
 app.use(connectTimeout('30s'));
+// Twilio webhooks (urlencoded + signature) must run before express.json
+app.use('/api/webhooks/twilio', express.urlencoded({ extended: false }));
+app.use('/api/webhooks/twilio', twilioWebhookRoutes);
 app.use(express.json({ limit: '1mb' }));
 
 // Stricter rate limit for auth routes (10 req/15 min per IP)
@@ -86,7 +90,10 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api', globalLimiter);
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/webhooks/twilio')) return next();
+  return globalLimiter(req, res, next);
+});
 
 // Debug middleware (development only; sanitize sensitive data)
 app.use((req, res, next) => {

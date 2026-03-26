@@ -3,7 +3,16 @@
     "site": "altiereality",
     "public": "server/client/dist",
     "ignore": ["firebase.json", "firebase.*.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [{"source": "**", "destination": "/index.html"}],
+    "rewrites": [
+      {
+        "source": "/api{,/**}",
+        "function": {
+          "functionId": "api",
+          "region": "us-central1"
+        }
+      },
+      {"source": "**", "destination": "/index.html"}
+    ],
     "headers": [
       {
         "source": "**/*.@(js|css|woff2|woff|ttf)",
@@ -18,6 +27,6 @@
         "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
       }
     ],
-    "predeploy": ["npm --prefix \"server/client\" run build"]
+    "predeploy": ["npm --prefix \"server/client\" run build:lexrn1"]
   }
 }

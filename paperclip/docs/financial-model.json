@@ -1,0 +1,162 @@
+{
+  "financialModel": {
+    "currency": "INR",
+    "fiscalYear": "April - March",
+    "projections": {
+      "fiveYear": [
+        {
+          "year": "Y1 (FY 2026-27)",
+          "revenue": {
+            "b2g": 2000000,
+            "b2b": 800000,
+            "b2c": 400000,
+            "total": 3200000
+          },
+          "costs": {
+            "team": 3000000,
+            "infrastructure": 600000,
+            "marketing": 1200000,
+            "sales": 800000,
+            "content": 500000,
+            "compliance": 200000,
+            "admin": 300000,
+            "total": 6600000
+          },
+          "netBurn": -3400000,
+          "cashPosition": {
+            "grantFunding": 3350000,
+            "revenue": 3200000,
+            "totalInflow": 6550000,
+            "yearEndCash": -50000,
+            "note": "Requires ₹50L angel raise by Q2 to maintain runway"
+          },
+          "headcount": 14,
+          "grossMargin": 0.72,
+          "burnRate": 550000
+        },
+        {
+          "year": "Y2 (FY 2027-28)",
+          "revenue": {
+            "b2g": 10000000,
+            "b2b": 5000000,
+            "b2c": 3000000,
+            "total": 18000000
+          },
+          "costs": {
+            "team": 12000000,
+            "infrastructure": 2000000,
+            "marketing": 3000000,
+            "sales": 2000000,
+            "content": 2000000,
+            "compliance": 500000,
+            "admin": 1000000,
+            "total": 22500000
+          },
+          "netBurn": -4500000,
+          "cashPosition": {
+            "preSeedRaise": 20000000,
+            "revenue": 18000000,
+            "totalInflow": 38000000,
+            "yearEndCash": 15500000,
+            "note": "Pre-Seed of ₹2Cr at ₹20Cr valuation in Q1-Q2"
+          },
+          "headcount": 25,
+          "grossMargin": 0.74,
+          "burnRate": 1875000
+        },
+        {
+          "year": "Y3 (FY 2028-29)",
+          "revenue": {
+            "b2g": 50000000,
+            "b2b": 25000000,
+            "b2c": 10000000,
+            "total": 85000000
+          },
+          "costs": { "total": 60000000 },
+          "netBurn": 25000000,
+          "headcount": 50,
+          "grossMargin": 0.76,
+          "note": "Operating profitable. Series A of ₹15-20Cr at ₹100Cr+ valuation."
+        },
+        {
+          "year": "Y4 (FY 2029-30)",
+          "revenue": { "b2g": 120000000, "b2b": 60000000, "b2c": 40000000, "total": 220000000 },
+          "costs": { "total": 150000000 },
+          "netBurn": 70000000,
+          "headcount": 100,
+          "grossMargin": 0.78,
+          "note": "National expansion. 5 states. Series B exploration."
+        },
+        {
+          "year": "Y5 (FY 2030-31)",
+          "revenue": { "b2g": 220000000, "b2b": 130000000, "b2c": 80000000, "total": 430000000 },
+          "costs": { "total": 280000000 },
+          "netBurn": 150000000,
+          "headcount": 200,
+          "grossMargin": 0.80,
+          "note": "₹43Cr revenue. 8+ states. International pilot. ₹500Cr+ valuation."
+        }
+      ]
+    },
+    "budgetAllocation": {
+      "y1": {
+        "total": 6600000,
+        "breakdown": {
+          "team": { "amount": 3000000, "percentage": 45, "note": "Co-founder stipends + first hires" },
+          "marketing": { "amount": 1200000, "percentage": 18, "note": "Content + performance ads + events" },
+          "sales": { "amount": 800000, "percentage": 12, "note": "Travel + demos + pilots" },
+          "infrastructure": { "amount": 600000, "percentage": 9, "note": "Firebase, cloud, AI APIs" },
+          "content": { "amount": 500000, "percentage": 8, "note": "3D assets, AI APIs, freelancers" },
+          "compliance": { "amount": 200000, "percentage": 3, "note": "Legal, CA, certifications" },
+          "admin": { "amount": 300000, "percentage": 5, "note": "Office, travel, misc" }
+        }
+      }
+    },
+    "pricingStrategy": {
+      "b2g": {
+        "govtPilot": { "price": "₹5L - ₹15L", "scope": "50-200 users, 3-6 months, 10-30 lessons", "margin": "65%" },
+        "stateDeployment": { "price": "₹50L - ₹5Cr", "scope": "1000+ users, 12 months, custom content", "margin": "70%" },
+        "annualMaintenance": { "price": "18% of contract value", "scope": "Support, updates, hosting", "margin": "85%" }
+      },
+      "b2b": {
+        "starter": { "price": "₹2L/year", "includes": "Platform license, 50 lessons, 5 teacher accounts, email support", "targetSchoolSize": "<500 students" },
+        "growth": { "price": "₹5L/year", "includes": "Platform + XR Lab setup, 100 lessons, 15 teacher accounts, priority support, quarterly training", "targetSchoolSize": "500-1500 students" },
+        "premium": { "price": "₹10L/year", "includes": "Full platform + hardware + custom content, unlimited teachers, dedicated success manager, monthly training", "targetSchoolSize": "1500+ students" }
+      },
+      "b2c": {
+        "monthly": { "price": 99, "features": "Access to all lessons, progress tracking, 2 languages" },
+        "quarterly": { "price": 249, "features": "All monthly + offline download, all languages, parent dashboard" },
+        "annual": { "price": 799, "features": "All quarterly + premium content, live doubts, certificate" }
+      }
+    },
+    "unitEconomics": {
+      "b2g": {
+        "avgContractValue": 1500000,
+        "cac": 300000,
+        "salesCycle": "6 months",
+        "ltv": 4500000,
+        "ltvCacRatio": 15,
+        "paybackMonths": 12,
+        "note": "Govt contracts are high-LTV due to multi-year renewals and state-wide expansion"
+      },
+      "b2b": {
+        "avgDealSize": 300000,
+        "cac": 15000,
+        "salesCycle": "45 days",
+        "ltv": 900000,
+        "ltvCacRatio": 60,
+        "paybackMonths": 2,
+        "note": "School renewals at 80%+ with annual contracts"
+      },
+      "b2c": {
+        "arpu": 1188,
+        "cac": 200,
+        "avgLifetimeMonths": 8,
+        "ltv": 792,
+        "ltvCacRatio": 3.96,
+        "paybackMonths": 2,
+        "note": "B2C subsidized by B2G/B2B. Volume play for brand + data."
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "learnxr-website-lead": {
+    "description": "LearnXR marketing lead capture (N8N_LEAD_WEBHOOK_PATH)",
+    "webhookPath": "learnxr-website-lead"
+  },
+  "ui-pdf-to-vr-lesson": {
+    "description": "PDF→VR lesson UI (path from n8nUIinterface VITE_N8N_WEBHOOK_URL)",
+    "webhookPath": "b8608c3e"
+  }
+}

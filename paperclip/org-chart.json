@@ -1,0 +1,167 @@
+{
+  "orgChart": {
+    "companyName": "Altie Reality Private Limited",
+    "totalAgents": 14,
+    "structure": "functional",
+    "hierarchy": [
+      {
+        "id": "ceo-gaurav",
+        "name": "Gaurav Purbia",
+        "role": "ceo",
+        "title": "Chief Executive Officer & Founder",
+        "reportsTo": null,
+        "department": "Executive",
+        "icon": "crown",
+        "directReports": [
+          "cto-manav",
+          "cfo-namrata",
+          "cmo-princi",
+          "cbdo-lokesh",
+          "govrel-ritika",
+          "hr-neha"
+        ]
+      },
+      {
+        "id": "cto-manav",
+        "name": "Manav",
+        "role": "cto",
+        "title": "Chief Technology Officer & Co-Founder",
+        "reportsTo": "ceo-gaurav",
+        "department": "Technology",
+        "icon": "cpu",
+        "directReports": [
+          "pm-sneha",
+          "xr-content-aditya",
+          "data-analyst-ishita"
+        ]
+      },
+      {
+        "id": "cfo-namrata",
+        "name": "Namrata",
+        "role": "cfo",
+        "title": "Chief Financial Officer & Co-Founder",
+        "reportsTo": "ceo-gaurav",
+        "department": "Finance",
+        "icon": "indian-rupee",
+        "directReports": []
+      },
+      {
+        "id": "cmo-princi",
+        "name": "Princi",
+        "role": "cmo",
+        "title": "Chief Marketing Officer & Co-Founder",
+        "reportsTo": "ceo-gaurav",
+        "department": "Marketing",
+        "icon": "megaphone",
+        "directReports": [
+          "growth-kunal",
+          "perf-marketing-rohit"
+        ]
+      },
+      {
+        "id": "cbdo-lokesh",
+        "name": "Lokesh",
+        "role": "cbdo",
+        "title": "Chief Business Development Officer & Co-Founder",
+        "reportsTo": "ceo-gaurav",
+        "department": "Business Development",
+        "icon": "target",
+        "directReports": [
+          "enterprise-sales-arjun",
+          "partnerships-siddharth"
+        ]
+      },
+      {
+        "id": "govrel-ritika",
+        "name": "Ritika Sharma",
+        "role": "general",
+        "title": "Head of Government Relations",
+        "reportsTo": "ceo-gaurav",
+        "department": "Government Relations",
+        "icon": "landmark",
+        "directReports": []
+      },
+      {
+        "id": "enterprise-sales-arjun",
+        "name": "Arjun Mehta",
+        "role": "general",
+        "title": "Head of Enterprise Sales",
+        "reportsTo": "cbdo-lokesh",
+        "department": "Sales",
+        "icon": "handshake",
+        "directReports": []
+      },
+      {
+        "id": "growth-kunal",
+        "name": "Kunal Verma",
+        "role": "general",
+        "title": "Growth Hacker",
+        "reportsTo": "cmo-princi",
+        "department": "Growth",
+        "icon": "trending-up",
+        "directReports": []
+      },
+      {
+        "id": "pm-sneha",
+        "name": "Sneha Iyer",
+        "role": "general",
+        "title": "Product Manager",
+        "reportsTo": "cto-manav",
+        "department": "Product",
+        "icon": "layout-dashboard",
+        "directReports": []
+      },
+      {
+        "id": "xr-content-aditya",
+        "name": "Aditya Rao",
+        "role": "general",
+        "title": "XR Content Head",
+        "reportsTo": "cto-manav",
+        "department": "Content",
+        "icon": "box",
+        "directReports": []
+      },
+      {
+        "id": "hr-neha",
+        "name": "Neha Kapoor",
+        "role": "general",
+        "title": "HR & Hiring Lead",
+        "reportsTo": "ceo-gaurav",
+        "department": "Human Resources",
+        "icon": "users",
+        "directReports": []
+      },
+      {
+        "id": "perf-marketing-rohit",
+        "name": "Rohit Jain",
+        "role": "general",
+        "title": "Performance Marketing Lead",
+        "reportsTo": "cmo-princi",
+        "department": "Marketing",
+        "icon": "bar-chart",
+        "directReports": []
+      },
+      {
+        "id": "data-analyst-ishita",
+        "name": "Ishita Gupta",
+        "role": "general",
+        "title": "Data Analyst",
+        "reportsTo": "cto-manav",
+        "department": "Analytics",
+        "icon": "line-chart",
+        "directReports": []
+      },
+      {
+        "id": "partnerships-siddharth",
+        "name": "Siddharth Bansal",
+        "role": "general",
+        "title": "Head of Partnerships & Alliances",
+        "reportsTo": "cbdo-lokesh",
+        "department": "Partnerships",
+        "icon": "globe",
+        "directReports": []
+      }
+    ]
+  },
+  "mermaid": "flowchart TD\n  CEO[Gaurav Purbia - CEO]\n  CTO[Manav - CTO]\n  CFO[Namrata - CFO]\n  CMO[Princi - CMO]\n  CBDO[Lokesh - CBDO]\n  GOVREL[Ritika Sharma - GovRel]\n  HR[Neha Kapoor - HR]\n  PM[Sneha Iyer - PM]\n  XRC[Aditya Rao - XR Content]\n  DA[Ishita Gupta - Data]\n  ES[Arjun Mehta - Enterprise Sales]\n  PA[Siddharth Bansal - Partnerships]\n  GH[Kunal Verma - Growth]\n  MKTG[Rohit Jain - Perf Marketing]\n  CEO --> CTO\n  CEO --> CFO\n  CEO --> CMO\n  CEO --> CBDO\n  CEO --> GOVREL\n  CEO --> HR\n  CTO --> PM\n  CTO --> XRC\n  CTO --> DA\n  CBDO --> ES\n  CBDO --> PA\n  CMO --> GH\n  CMO --> MKTG"
+}

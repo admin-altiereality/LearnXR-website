@@ -42,7 +42,7 @@
         ]
       }
     ],
-    "predeploy": ["npm --prefix \"server/client\" run build"]
+    "predeploy": ["npm --prefix \"server/client\" run build:lexrn1"]
   },
   "functions": [
     {

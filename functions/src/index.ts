@@ -7,7 +7,7 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
-import { defineSecret } from "firebase-functions/params";
+import { defineSecret, defineString } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { authenticateUser } from './middleware/auth';
@@ -28,11 +28,29 @@ const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
 const streetViewApiKey = defineSecret("GOOGLE_STREETVIEW_API_KEY");
+/** Twilio WhatsApp / Conversations (see twilioInbox.ts, twilioWebhook.ts) */
+const twilioAccountSid = defineSecret("TWILIO_ACCOUNT_SID");
+const twilioAuthToken = defineSecret("TWILIO_AUTH_TOKEN");
+const twilioApiKeySid = defineSecret("TWILIO_API_KEY_SID");
+const twilioApiKeySecret = defineSecret("TWILIO_API_KEY_SECRET");
+const twilioConversationsServiceSid = defineSecret("TWILIO_CONVERSATIONS_SERVICE_SID");
+/** Business WhatsApp number (E.164 or whatsapp:…). Used by twilioWebhook legacy n8n forward `To` field. */
+const twilioWhatsappFromParam = defineString("TWILIO_WHATSAPP_FROM", { default: "" });
+/**
+ * Optional: LearnXR forwards Programmable-Messaging-shaped POST here after processing Conversations webhooks.
+ * Leave empty if n8n is already invoked by Twilio Address Configuration (avoid duplicate workflows).
+ */
+const twilioN8nLegacyForwardParam = defineString("TWILIO_N8N_LEGACY_INBOUND_FORWARD_URL", { default: "" });
+// LEARNXR_CLIENT_FIREBASE_SERVICE_ACCOUNT: optional; set as a Cloud Run env var on lexrn1 (or any
+// cross-project API) so ID token verification uses learnxr-evoneuralai. Not a defineSecret — avoids
+// blocking firebase deploy on an interactive Secret Manager prompt when unused (e.g. evoneuralai).
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
 // because the platform returns the crash response).
 let app: express.Application | null = null;
+/** One-time warning when Twilio Secret Manager values are missing after bind (mis-deploy helper). */
+let twilioSecretsIncompleteWarnLogged = false;
 
 const getApp = (): express.Application => {
   if (app) return app;
@@ -110,6 +128,13 @@ const getApp = (): express.Application => {
 
     // Custom middleware
     app.use(pathNormalization);
+    // Twilio webhooks: urlencoded body + signature validation (public, mounted before auth)
+    const twilioWebhookRoutes = require('./routes/twilioWebhook').default;
+    app.use(
+      '/webhooks/twilio',
+      express.urlencoded({ extended: false }),
+      twilioWebhookRoutes,
+    );
     app.use(requestLogging);
     
     // Routes (loaded lazily to avoid deployment timeout)
@@ -185,6 +210,9 @@ const getApp = (): express.Application => {
     app.use('/n8n', n8nRoutes);
     app.use('/n8n-builder', n8nBuilderRoutes);
 
+    const twilioInboxRoutes = require('./routes/twilioInbox').default;
+    app.use('/twilio-inbox', twilioInboxRoutes);
+
     // Error handling middleware
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
       const requestId = (req as any).requestId;
@@ -212,7 +240,20 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey]
+    secrets: [
+      blockadelabsApiKey,
+      meshyApiKey,
+      openaiApiKey,
+      openaiAvatarApiKey,
+      linkedinAccessToken,
+      linkedinCompanyURN,
+      streetViewApiKey,
+      twilioAccountSid,
+      twilioAuthToken,
+      twilioApiKeySid,
+      twilioApiKeySecret,
+      twilioConversationsServiceSid,
+    ]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -226,7 +267,12 @@ export const api = onRequest(
     let linkedinToken: string | undefined;
     let linkedinURN: string | undefined;
     let streetViewKey: string | undefined;
-    
+    let twilioSid: string | undefined;
+    let twilioToken: string | undefined;
+    let twilioKeySid: string | undefined;
+    let twilioKeySecret: string | undefined;
+    let twilioConvServiceSid: string | undefined;
+
     try {
       blockadeKey = blockadelabsApiKey.value();
     } catch (err: any) {
@@ -290,6 +336,42 @@ export const api = onRequest(
       console.warn('⚠️ GOOGLE_STREETVIEW_API_KEY not found in secrets:', err?.message || err);
     }
 
+    const normalizeTwilio = (value: string | undefined): string | undefined => {
+      if (!value) return undefined;
+      let s = value.trim().replace(/^\uFEFF/, '');
+      s = s.replace(/\r?\n/g, '').replace(/\s+/g, '');
+      return s || undefined;
+    };
+
+    try {
+      twilioSid = normalizeTwilio(twilioAccountSid.value());
+    } catch (err: any) {
+      console.warn('⚠️ TWILIO_ACCOUNT_SID not found:', err?.message || err);
+    }
+    try {
+      twilioToken = normalizeTwilio(twilioAuthToken.value());
+    } catch (err: any) {
+      console.warn('⚠️ TWILIO_AUTH_TOKEN not found:', err?.message || err);
+    }
+    try {
+      twilioKeySid = normalizeTwilio(twilioApiKeySid.value());
+    } catch (err: any) {
+      console.warn('⚠️ TWILIO_API_KEY_SID not found:', err?.message || err);
+    }
+    try {
+      twilioKeySecret = normalizeTwilio(twilioApiKeySecret.value());
+    } catch (err: any) {
+      console.warn('⚠️ TWILIO_API_KEY_SECRET not found:', err?.message || err);
+    }
+    try {
+      twilioConvServiceSid = normalizeTwilio(twilioConversationsServiceSid.value());
+    } catch (err: any) {
+      console.warn('⚠️ TWILIO_CONVERSATIONS_SERVICE_SID not found:', err?.message || err);
+    }
+
+    // Cross-project Auth (lexrn1 API + evoneuralai client): mount LEARNXR_CLIENT_FIREBASE_SERVICE_ACCOUNT
+    // on the Cloud Run service in GCP Console, or inject via .env for local emulate — not loaded here.
+
     // Set in process.env for routes that use getSecret()
     if (blockadeKey) process.env.BLOCKADE_API_KEY = blockadeKey;
     if (meshyKey) {
@@ -330,6 +412,27 @@ export const api = onRequest(
       console.warn('⚠️ GOOGLE_STREETVIEW_API_KEY not set - Street View skybox will not work');
     }
 
+    if (twilioSid) process.env.TWILIO_ACCOUNT_SID = twilioSid;
+    if (twilioToken) process.env.TWILIO_AUTH_TOKEN = twilioToken;
+    if (twilioKeySid) process.env.TWILIO_API_KEY_SID = twilioKeySid;
+    if (twilioKeySecret) process.env.TWILIO_API_KEY_SECRET = twilioKeySecret;
+    if (twilioConvServiceSid) process.env.TWILIO_CONVERSATIONS_SERVICE_SID = twilioConvServiceSid;
+
+    const waFromParam = twilioWhatsappFromParam.value().trim();
+    if (waFromParam) process.env.TWILIO_WHATSAPP_FROM = waFromParam;
+    const n8nLegacyParam = twilioN8nLegacyForwardParam.value().trim();
+    if (n8nLegacyParam) process.env.TWILIO_N8N_LEGACY_INBOUND_FORWARD_URL = n8nLegacyParam;
+
+    if (
+      !twilioSecretsIncompleteWarnLogged &&
+      (!twilioSid || !twilioToken || !twilioKeySid || !twilioKeySecret || !twilioConvServiceSid)
+    ) {
+      twilioSecretsIncompleteWarnLogged = true;
+      console.warn(
+        'Twilio secrets incomplete after load: Conversations token minting requires TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, and TWILIO_CONVERSATIONS_SERVICE_SID.',
+      );
+    }
+
     console.log('Secrets loaded:', {
       hasBlockade: !!blockadeKey,
       blockadeLength: blockadeKey?.length || 0,
@@ -342,7 +445,13 @@ export const api = onRequest(
       hasLinkedInToken: !!linkedinToken,
       linkedinTokenLength: linkedinToken?.length || 0,
       hasLinkedInURN: !!linkedinURN,
-      hasStreetViewKey: !!streetViewKey
+      hasStreetViewKey: !!streetViewKey,
+      hasClientFirebaseSA: !!process.env.LEARNXR_CLIENT_FIREBASE_SERVICE_ACCOUNT,
+      hasTwilioAccountSid: !!twilioSid,
+      hasTwilioAuthToken: !!twilioToken,
+      hasTwilioApiKeySid: !!twilioKeySid,
+      hasTwilioApiKeySecret: !!twilioKeySecret,
+      hasTwilioConversationsServiceSid: !!twilioConvServiceSid,
     });
     
     // Initialize services with secrets directly

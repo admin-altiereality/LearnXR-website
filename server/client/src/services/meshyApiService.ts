@@ -3,6 +3,7 @@
 
 import { getProxyAssetUrl } from '../utils/apiConfig';
 import { auth } from '../config/firebase';
+import { getCloudFunctionsApiUrl, getFunctionsEmulatorApiUrl } from '../utils/functionsApiUrl';
 
 export interface MeshyGenerationRequest {
   prompt: string;
@@ -181,13 +182,11 @@ const getApiBaseUrl = () => {
   
   // Use local backend in development
   if (import.meta.env.DEV) {
-    return 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
+    return getFunctionsEmulatorApiUrl();
   }
   
-  // Use Firebase Functions in production
-  const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-  return `https://${region}-${projectId}.cloudfunctions.net/api`;
+  // Use Firebase Functions in production / Firebase Hosting preview channels
+  return getCloudFunctionsApiUrl();
 };
 
 export class MeshyApiService {

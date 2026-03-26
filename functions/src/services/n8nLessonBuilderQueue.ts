@@ -207,6 +207,61 @@ export async function cancelQueuedJob(userId: string, jobId: string) {
   });
 }
 
+/** Best-effort: n8n versions differ; try public API paths until one succeeds. */
+async function tryStopN8nExecution(executionId: string): Promise<void> {
+  const n8nApiUrl = process.env.N8N_API_URL;
+  const n8nApiKey = process.env.N8N_API_KEY;
+  if (!n8nApiUrl || !n8nApiKey) return;
+
+  const base = n8nApiUrl.replace(/\/$/, '');
+  const urls = [
+    `${base}/api/v1/executions/${encodeURIComponent(executionId)}/stop`,
+    `${base}/rest/executions/${encodeURIComponent(executionId)}/stop`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-N8N-API-KEY': n8nApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      });
+      if (res.ok || res.status === 204) return;
+    } catch {
+      /* try next candidate */
+    }
+  }
+}
+
+/**
+ * Stop a starting or running job (asks n8n to stop when executionId exists), mark cancelled, then caller should sync.
+ */
+export async function stopActiveJobForUser(userId: string, jobId: string) {
+  const ref = getDb().collection(COLLECTION).doc(jobId);
+  const snap = await ref.get();
+  const job = mapJob(snap);
+  if (!job || job.userId !== userId) {
+    throw new Error('Queue item not found.');
+  }
+  if (job.status !== 'running' && job.status !== 'starting') {
+    throw new Error('Only a running or starting job can be stopped.');
+  }
+
+  if (job.executionId) {
+    await tryStopN8nExecution(job.executionId);
+  }
+
+  await ref.update({
+    status: 'cancelled',
+    updatedAt: nowIso(),
+    finishedAt: nowIso(),
+    errorMessage: 'Stopped by user.',
+  });
+}
+
 async function fetchExecutionResult(executionId: string): Promise<ExecutionResult | null> {
   const n8nApiUrl = process.env.N8N_API_URL;
   const n8nApiKey = process.env.N8N_API_KEY;
@@ -368,7 +423,10 @@ async function syncRunningJob(job: LessonBuilderJob) {
 
 export async function syncUserQueue(userId: string) {
   const jobs = sortAscending(await listUserJobDocs(userId));
-  const active = jobs.find((job) => job.status === 'starting' || job.status === 'running');
+  const actives = jobs.filter((job) => job.status === 'starting' || job.status === 'running');
+  const active = actives.length
+    ? actives.reduce((a, b) => (a.queueOrder <= b.queueOrder ? a : b))
+    : undefined;
 
   if (active) {
     await syncRunningJob(active);

@@ -1,0 +1,76 @@
+{
+  "weeklyExecutionCycle": {
+    "description": "Autonomous weekly execution cycle for all Altie Reality agents",
+    "timezone": "Asia/Kolkata",
+    "cycleDaySplit": {
+      "monday": {
+        "theme": "Review & Plan",
+        "activities": [
+          { "agent": "ceo-gaurav", "task": "Review company KPI dashboard. Set 3 weekly priorities." },
+          { "agent": "cfo-namrata", "task": "Update cash position. Review expenses vs budget." },
+          { "agent": "cmo-princi", "task": "Review lead metrics. Update content calendar." },
+          { "agent": "cto-manav", "task": "Sprint review + planning. Assign tickets." },
+          { "agent": "cbdo-lokesh", "task": "Pipeline review. Update deal stages and weighted value." },
+          { "agent": "govrel-ritika", "task": "Scan procurement portals for new tenders." },
+          { "agent": "enterprise-sales-arjun", "task": "Pipeline review with CBDO. Plan outreach." },
+          { "agent": "growth-kunal", "task": "Review last week's experiments. Plan 3-5 new ones." },
+          { "agent": "pm-sneha", "task": "Backlog grooming. Reprioritize based on deal requirements." },
+          { "agent": "xr-content-aditya", "task": "Content calendar review. Prioritize production." },
+          { "agent": "hr-neha", "task": "Hiring pipeline review. Source for open roles." },
+          { "agent": "perf-marketing-rohit", "task": "Campaign performance review. Pause/scale." },
+          { "agent": "data-analyst-ishita", "task": "Update all dashboards. Flag anomalies." },
+          { "agent": "partnerships-siddharth", "task": "Partnership pipeline review. Plan follow-ups." }
+        ]
+      },
+      "friday": {
+        "theme": "Report & Reflect",
+        "activities": [
+          { "agent": "cfo-namrata", "task": "CFO report to CEO: cash, burn, AR, budget, risks" },
+          { "agent": "cmo-princi", "task": "CMO report: MQLs, pipeline influenced, content performance" },
+          { "agent": "cto-manav", "task": "CTO report: velocity, uptime, releases, tech risks" },
+          { "agent": "cbdo-lokesh", "task": "CBDO report: pipeline, deals won/lost, competitive intel" },
+          { "agent": "ceo-gaurav", "task": "Review all reports. Update company scorecard. Plan next week." }
+        ]
+      }
+    },
+    "monthlyRituals": [
+      { "name": "All-Hands", "owner": "ceo-gaurav", "day": "Last Friday", "agenda": "Company metrics, wins, learnings, upcoming priorities" },
+      { "name": "Board Update", "owner": "ceo-gaurav", "day": "First Monday", "agenda": "Monthly metrics report to advisors/investors" },
+      { "name": "Financial Close", "owner": "cfo-namrata", "day": "5th of month", "agenda": "Previous month P&L, cash reconciliation, GST filing" },
+      { "name": "Product Roadmap Review", "owner": "pm-sneha", "day": "Second Thursday", "agenda": "Roadmap progress, reprioritization, demo of shipped features" },
+      { "name": "Pipeline Review", "owner": "cbdo-lokesh", "day": "First Tuesday", "agenda": "Full pipeline review, forecast, deal health assessment" }
+    ],
+    "quarterlyRituals": [
+      { "name": "OKR Review", "owner": "ceo-gaurav", "agenda": "Score OKRs, set next quarter OKRs" },
+      { "name": "Performance Reviews", "owner": "hr-neha", "agenda": "Individual 1:1s, feedback, development plans" },
+      { "name": "Strategy Offsite", "owner": "ceo-gaurav", "agenda": "Reflect on strategy, market shifts, competitive landscape" },
+      { "name": "Grant Reporting", "owner": "cfo-namrata", "agenda": "Submit utilization reports to Meta, iStart, NIDHI" }
+    ]
+  },
+  "taskSelfGeneration": {
+    "rules": [
+      "Every Friday, each agent generates 3-5 tasks for the following week based on their OKR key results",
+      "Tasks auto-inherit priority from parent OKR key result priority",
+      "If a KPI is below target for 2 consecutive weeks, auto-generate improvement tasks with P1 priority",
+      "If pipeline value drops below ₹1.5Cr, auto-generate 5 outreach tasks for CBDO + Enterprise Sales",
+      "If burn rate exceeds budget by >10%, auto-generate cost optimization tasks for CFO",
+      "If uptime drops below 99%, auto-generate incident response tasks for CTO",
+      "If MQLs are below 30/month, auto-generate growth experiment tasks for CMO + Growth Hacker"
+    ]
+  },
+  "selfEvaluation": {
+    "frequency": "weekly",
+    "process": [
+      "Each agent scores their KPIs as: G (green/on-track), Y (yellow/at-risk), R (red/behind)",
+      "Red KPIs auto-generate escalation to reporting manager",
+      "Two consecutive Red weeks trigger CEO review",
+      "Quarterly: full OKR scoring (0.0 - 1.0 scale)",
+      "Annual: comprehensive performance review with 360 feedback"
+    ],
+    "scoring": {
+      "green": "KPI at or above target",
+      "yellow": "KPI within 80-99% of target",
+      "red": "KPI below 80% of target"
+    }
+  }
+}

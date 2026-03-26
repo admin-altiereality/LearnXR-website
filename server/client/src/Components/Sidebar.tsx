@@ -26,7 +26,8 @@ import {
   FaFileAlt,
   FaLightbulb,
   FaSun,
-  FaMoon
+  FaMoon,
+  FaComments
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -149,6 +150,7 @@ const Sidebar = () => {
     // Associate: only Dashboard and Lessons
     if (isAssociate) {
       items.push({ path: '/dashboard/associate', label: 'Dashboard', icon: FaTachometerAlt });
+      items.push({ path: '/inbox/whatsapp', label: 'WhatsApp Inbox', icon: FaComments });
       items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
       return items;
     }
@@ -198,6 +200,7 @@ const Sidebar = () => {
 
     // Admin tools - only for admin/superadmin
     if (isAdminOrSuperadmin) {
+      items.push({ path: '/inbox/whatsapp', label: 'WhatsApp Inbox', icon: FaComments });
       items.push({ path: '/admin/approvals', label: 'Approvals', icon: FaUserCheck });
       items.push({ path: '/admin/lesson-edit-requests', label: 'Lesson Edit Requests', icon: FaEdit });
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });

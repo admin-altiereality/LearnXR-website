@@ -7,13 +7,14 @@ import {
   N8nExecution,
   N8nExecutionListItem,
   PIPELINE_STEPS,
-  PipelineStepId,
+  type PipelineStepId,
 } from '../../services/n8nService';
 import {
   cancelLessonBuilderQueueJob,
   enqueueLessonBuilderJobs,
   LessonBuilderQueueJob,
   refreshLessonBuilderQueue,
+  stopLessonBuilderQueueJob,
 } from '../../services/n8nLessonBuilderQueueService';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../n8n-ui/components/ui/card';
 import { Button } from '../../n8n-ui/components/ui/button';
@@ -62,7 +63,47 @@ const QUEUE_REFRESH_MS = 15_000;
 const EXECUTIONS_REFRESH_MS = 30_000;
 const DRAFT_STORAGE_KEY = 'n8nLessonBuilderDraft:v2';
 
-const NODE_TO_STEP: Partial<Record<string, PipelineStepId>> = {
+function sortJobsFifo(jobs: LessonBuilderQueueJob[]) {
+  return [...jobs].sort((a, b) => {
+    if (a.queueOrder !== b.queueOrder) return a.queueOrder - b.queueOrder;
+    return a.createdAt.localeCompare(b.createdAt);
+  });
+}
+
+function buildFifoPositionMap(jobs: LessonBuilderQueueJob[]): Map<string, { pos: number; total: number }> {
+  const fifo = sortJobsFifo(jobs);
+  const map = new Map<string, { pos: number; total: number }>();
+  fifo.forEach((j, i) => map.set(j.id, { pos: i + 1, total: fifo.length }));
+  return map;
+}
+
+function pickProcessingJob(jobs: LessonBuilderQueueJob[]): LessonBuilderQueueJob | null {
+  const active = jobs.filter((j) => j.status === 'running' || j.status === 'starting');
+  if (!active.length) return null;
+  return active.reduce((a, b) => (a.queueOrder <= b.queueOrder ? a : b));
+}
+
+function pickNextQueuedJob(jobs: LessonBuilderQueueJob[]): LessonBuilderQueueJob | null {
+  const q = jobs.filter((j) => j.status === 'queued');
+  if (!q.length) return null;
+  return q.reduce((a, b) => (a.queueOrder <= b.queueOrder ? a : b));
+}
+
+function parsePipelineNodeLabelOverrides(): Record<string, string> {
+  const raw = import.meta.env.VITE_N8N_PIPELINE_NODE_LABELS as string | undefined;
+  if (!raw || !raw.trim()) return {};
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(o).filter(([, v]) => typeof v === 'string') as [string, string][],
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** Map n8n node display names to canonical pipeline step ids (fallback ladder before/with sparse runData). */
+const DEFAULT_NODE_TO_STEP: Partial<Record<string, PipelineStepId>> = {
   'Receive PDF & prompt': 'receive',
   'Extract text from PDF': 'extract',
   'Generate lesson (OpenAI)': 'ai',
@@ -70,6 +111,29 @@ const NODE_TO_STEP: Partial<Record<string, PipelineStepId>> = {
   'Generate skyboxes': 'skybox',
   'Save to Firebase & Sheets': 'save',
 };
+
+const PIPELINE_STEP_IDS = new Set<PipelineStepId>(PIPELINE_STEPS.map((s) => s.id));
+
+function parseNodeToStepOverrides(): Partial<Record<string, PipelineStepId>> {
+  const raw = import.meta.env.VITE_N8N_NODE_TO_STEP as string | undefined;
+  if (!raw || !raw.trim()) return {};
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const out: Partial<Record<string, PipelineStepId>> = {};
+    for (const [k, v] of Object.entries(o)) {
+      if (typeof v === 'string' && PIPELINE_STEP_IDS.has(v as PipelineStepId)) {
+        out[k] = v as PipelineStepId;
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function buildNodeToStepMap(): Partial<Record<string, PipelineStepId>> {
+  return { ...DEFAULT_NODE_TO_STEP, ...parseNodeToStepOverrides() };
+}
 
 const getRunDataTimeline = (runData: Record<string, ExecutionNodeRun[]>) => {
   const timeline: Array<{ name: string; firstStart: number }> = [];
@@ -163,9 +227,15 @@ const N8nLessonBuilder: React.FC = () => {
   const [classLevel, setClassLevel] = useState<string>(initialDraft.classLevel);
   const [subject, setSubject] = useState<string>(initialDraft.subject);
   const [formError, setFormError] = useState<string | null>(null);
+  const [queueSyncError, setQueueSyncError] = useState<string | null>(null);
   const [queueJobs, setQueueJobs] = useState<LessonBuilderQueueJob[]>([]);
   const [enqueueing, setEnqueueing] = useState(false);
   const [refreshingQueue, setRefreshingQueue] = useState(false);
+  const [stoppingJobId, setStoppingJobId] = useState<string | null>(null);
+  const [stopConfirmJobId, setStopConfirmJobId] = useState<string | null>(null);
+  const [tabVisible, setTabVisible] = useState(
+    () => typeof document === 'undefined' || !document.hidden,
+  );
   const [recentExecutions, setRecentExecutions] = useState<N8nExecutionListItem[]>([]);
   const [selectedExecId, setSelectedExecId] = useState<string | null>(null);
   const [executionDetails, setExecutionDetails] = useState<Record<string, N8nExecution>>({});
@@ -179,18 +249,36 @@ const N8nLessonBuilder: React.FC = () => {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const queueRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const executionsRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshGenRef = useRef(0);
   const { info: logInfo, error: logError } = useProductionLogger();
 
   const n8nConfigured = useMemo(() => Boolean(import.meta.env.VITE_N8N_WEBHOOK_URL), []);
 
-  const activeJob = useMemo(
-    () =>
-      queueJobs.find((job) => job.status === 'running' || job.status === 'starting') ??
-      queueJobs.find((job) => job.status === 'queued') ??
-      queueJobs[0] ??
-      null,
-    [queueJobs],
-  );
+  const pipelineNodeLabels = useMemo(() => parsePipelineNodeLabelOverrides(), []);
+  const nodeToStepMap = useMemo(() => buildNodeToStepMap(), []);
+
+  const fifoMeta = useMemo(() => buildFifoPositionMap(queueJobs), [queueJobs]);
+
+  /** Last completed or terminal queue events (webhook finished), newest first. */
+  const recentActivity = useMemo(() => {
+    const terminal = queueJobs.filter((j) =>
+      ['success', 'error', 'cancelled'].includes(j.status),
+    );
+    return [...terminal]
+      .sort((a, b) => {
+        const ta = new Date(a.finishedAt ?? a.updatedAt).getTime();
+        const tb = new Date(b.finishedAt ?? b.updatedAt).getTime();
+        return tb - ta;
+      })
+      .slice(0, 8);
+  }, [queueJobs]);
+
+  const processingJob = useMemo(() => pickProcessingJob(queueJobs), [queueJobs]);
+
+  const nextQueuedJob = useMemo(() => pickNextQueuedJob(queueJobs), [queueJobs]);
+
+  /** Progress + pipeline card: currently processing, else next in line when only queued jobs exist */
+  const activeJobForPipeline = processingJob ?? nextQueuedJob;
 
   const builderStatus = useMemo(() => {
     if (!queueJobs.length) return 'idle';
@@ -200,7 +288,9 @@ const N8nLessonBuilder: React.FC = () => {
   }, [queueJobs]);
 
   const activeExecutionId =
-    activeJob && activeJob.status === 'running' && activeJob.executionId ? activeJob.executionId : null;
+    processingJob && processingJob.status === 'running' && processingJob.executionId
+      ? processingJob.executionId
+      : null;
 
   const queueCounts = useMemo(
     () => ({
@@ -214,12 +304,21 @@ const N8nLessonBuilder: React.FC = () => {
 
   const refreshQueue = useCallback(
     async (showBusy = false) => {
+      const gen = ++refreshGenRef.current;
       if (showBusy) setRefreshingQueue(true);
       try {
         const jobs = await refreshLessonBuilderQueue();
-        setQueueJobs(jobs);
+        if (gen === refreshGenRef.current) {
+          setQueueJobs(jobs);
+          setQueueSyncError(null);
+        }
       } catch (error) {
         logError('Failed to refresh n8n builder queue', 'n8n-lesson-builder', error);
+        if (gen === refreshGenRef.current) {
+          setQueueSyncError(
+            error instanceof Error ? error.message : 'Failed to sync queue with the server.',
+          );
+        }
       } finally {
         if (showBusy) setRefreshingQueue(false);
       }
@@ -244,6 +343,13 @@ const N8nLessonBuilder: React.FC = () => {
   }, [prompt, language, curriculum, classLevel, subject]);
 
   useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onVis = () => setTabVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
     // Background sync only; avoid toggling refreshingQueue on every effect run / user re-render
     refreshQueue(false);
     loadExecutions();
@@ -262,6 +368,13 @@ const N8nLessonBuilder: React.FC = () => {
       setNodeLogs([]);
       setCurrentExecutionStatus(null);
       return;
+    }
+
+    if (!tabVisible) {
+      return () => {
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = null;
+      };
     }
 
     const poll = async () => {
@@ -298,7 +411,7 @@ const N8nLessonBuilder: React.FC = () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [activeExecutionId, refreshQueue, loadExecutions]);
+  }, [activeExecutionId, refreshQueue, loadExecutions, tabVisible]);
 
   const handleSelectExecution = useCallback(
     async (id: string) => {
@@ -358,6 +471,7 @@ const N8nLessonBuilder: React.FC = () => {
         subject,
       });
       setQueueJobs(jobs);
+      setQueueSyncError(null);
       setSelectedFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -390,26 +504,52 @@ const N8nLessonBuilder: React.FC = () => {
     }
   };
 
+  const handleStopProcessingJob = async (jobId: string) => {
+    setStopConfirmJobId(null);
+    setStoppingJobId(jobId);
+    try {
+      const jobs = await stopLessonBuilderQueueJob(jobId);
+      setQueueJobs(jobs);
+      setQueueSyncError(null);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Failed to stop the current run.');
+    } finally {
+      setStoppingJobId(null);
+    }
+  };
+
   const totalSteps = dynamicNodes.length || PIPELINE_STEPS.length;
   const currentNodeIndex =
     currentNodeName && dynamicNodes.length ? dynamicNodes.indexOf(currentNodeName) : -1;
+  const mappedPipelineIndex =
+    dynamicNodes.length === 0 && currentNodeName
+      ? (() => {
+          const stepId = nodeToStepMap[currentNodeName];
+          if (!stepId) return -1;
+          return PIPELINE_STEPS.findIndex((s) => s.id === stepId);
+        })()
+      : -1;
   const activeIndex =
     builderStatus === 'running' && currentNodeIndex >= 0
       ? currentNodeIndex
-      : activeJob?.status === 'success'
+      : builderStatus === 'running' && mappedPipelineIndex >= 0
+      ? mappedPipelineIndex
+      : activeJobForPipeline?.status === 'success'
       ? totalSteps - 1
-      : activeJob?.status === 'starting'
+      : activeJobForPipeline?.status === 'error' && mappedPipelineIndex >= 0
+      ? mappedPipelineIndex
+      : activeJobForPipeline?.status === 'starting'
       ? 0
       : 0;
 
   const progressPercent =
-    activeJob?.status === 'success'
+    activeJobForPipeline?.status === 'success'
       ? 100
-      : activeJob?.status === 'error'
+      : activeJobForPipeline?.status === 'error'
       ? Math.max(10, Math.round(((activeIndex + 1) / totalSteps) * 100))
-      : activeJob?.status === 'queued'
+      : activeJobForPipeline?.status === 'queued'
       ? 0
-      : activeJob?.status === 'starting'
+      : activeJobForPipeline?.status === 'starting'
       ? 5
       : Math.max(0, Math.min(100, Math.round(((activeIndex + 1) / totalSteps) * 100)));
 
@@ -423,25 +563,25 @@ const N8nLessonBuilder: React.FC = () => {
               ? 'running'
               : currentNodeIndex >= 0 && index < currentNodeIndex
               ? 'done'
-              : activeJob?.status === 'success'
+              : activeJobForPipeline?.status === 'success'
               ? 'done'
               : 'pending';
 
           return {
             key: name,
-            label: name,
+            label: pipelineNodeLabels[name] ?? name,
             state,
           };
         })
       : PIPELINE_STEPS.map((step, index) => {
           const state: StepState =
-            activeJob?.status === 'error' && index === activeIndex
+            activeJobForPipeline?.status === 'error' && index === activeIndex
               ? 'error'
-              : activeJob?.status === 'success'
+              : activeJobForPipeline?.status === 'success'
               ? 'done'
-              : activeJob?.status === 'running' && index === activeIndex
+              : activeJobForPipeline?.status === 'running' && index === activeIndex
               ? 'running'
-              : activeJob?.status === 'starting' && index === 0
+              : activeJobForPipeline?.status === 'starting' && index === 0
               ? 'running'
               : index < activeIndex
               ? 'done'
@@ -459,7 +599,8 @@ const N8nLessonBuilder: React.FC = () => {
             </h1>
             <p className="max-w-2xl text-xs leading-relaxed text-slate-400 sm:text-[13px]">
               Queue multiple chapter PDFs, let the backend process them sequentially through n8n,
-              and return later without losing queue state or workflow progress.
+              and return later without losing queue state or workflow progress. Form sections below
+              (PDF upload, prompt, metadata) are workflow steps—not your position in the processing queue.
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -488,8 +629,19 @@ const N8nLessonBuilder: React.FC = () => {
             <span className="text-[11px] text-slate-400">
               Queue: <span className="font-semibold text-slate-100">{queueJobs.length}</span> item(s)
             </span>
+            {processingJob && (
+              <span className="max-w-xs text-right text-[10px] text-slate-400">
+                Now processing (FIFO):{' '}
+                <span className="font-medium text-slate-100">{processingJob.file.fileName}</span>
+              </span>
+            )}
           </div>
         </div>
+        {queueSyncError && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+            Queue sync failed: {queueSyncError}. Use Refresh queue or check your connection.
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
           <span>
             This screen is available to studio roles only. Queued PDFs keep processing through the
@@ -509,7 +661,7 @@ const N8nLessonBuilder: React.FC = () => {
         <section className="space-y-5">
           <Card className="border-slate-800/70 bg-slate-900">
             <CardHeader>
-              <CardTitle>1. PDF queue upload</CardTitle>
+              <CardTitle>PDF queue upload</CardTitle>
               <CardDescription>
                 Choose one or more PDFs. They are uploaded to durable storage first, then processed
                 sequentially by the backend queue.
@@ -554,10 +706,18 @@ const N8nLessonBuilder: React.FC = () => {
 
           <Card className="border-slate-800/70 bg-slate-900">
             <CardHeader>
-              <CardTitle>2. OpenAI prompt</CardTitle>
+              <CardTitle>OpenAI prompt</CardTitle>
               <CardDescription>
-                This draft is preserved locally, so you can leave the page and come back without
-                retyping your queue settings.
+                Override or extend the system prompt for the{' '}
+                <code className="rounded bg-slate-900/80 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">
+                  Message a model
+                </code>{' '}
+                node in n8n (for example{' '}
+                <code className="rounded bg-slate-900/80 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">
+                  {'{{$json["prompt"]}}'}
+                </code>
+                ). This draft is preserved locally so you can leave the page and return without
+                retyping.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -576,10 +736,10 @@ const N8nLessonBuilder: React.FC = () => {
         <section className="space-y-5">
           <Card className="border-slate-800/70 bg-slate-900">
             <CardHeader>
-              <CardTitle>3. Lesson metadata</CardTitle>
+              <CardTitle>Lesson metadata</CardTitle>
               <CardDescription>
-                These values are stored with each queued PDF and reused when that file reaches the
-                front of the queue.
+                Configure language, curriculum, class, and subject. Values are stored with each
+                queued PDF and forwarded to n8n with the file and prompt when that job runs.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -597,6 +757,8 @@ const N8nLessonBuilder: React.FC = () => {
                     <option value="">Select language…</option>
                     <option value="en">English</option>
                     <option value="hi">Hindi</option>
+                    <option value="de">German</option>
+                    <option value="es">Spanish</option>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
@@ -659,7 +821,7 @@ const N8nLessonBuilder: React.FC = () => {
 
           <Card className="border-slate-800/70 bg-slate-900">
             <CardHeader>
-              <CardTitle>4. Queue actions</CardTitle>
+              <CardTitle>Queue actions</CardTitle>
               <CardDescription>
                 Upload the selected PDFs into the durable queue or refresh the backend state.
               </CardDescription>
@@ -711,6 +873,53 @@ const N8nLessonBuilder: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+
+          <Card className="border-slate-800/70 bg-slate-900">
+            <CardHeader>
+              <CardTitle>Recent activity</CardTitle>
+              <CardDescription>
+                Latest finished webhook runs from your queue (newest first). Open queue items below for
+                full detail.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentActivity.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-700/80 bg-slate-950/50 px-4 py-3 text-[11px] text-slate-400">
+                  No completed runs yet. Successful, failed, or cancelled jobs will appear here.
+                </div>
+              ) : (
+                <ul className="space-y-2 text-[11px]">
+                  {recentActivity.map((job) => (
+                    <li
+                      key={job.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-950/60 px-3 py-2 text-slate-200"
+                    >
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="truncate font-medium text-slate-50">{job.file.fileName}</div>
+                        <div className="text-[10px] text-slate-500">
+                          {job.finishedAt
+                            ? new Date(job.finishedAt).toLocaleString()
+                            : new Date(job.updatedAt).toLocaleString()}
+                          {typeof job.httpStatus === 'number' ? ` • HTTP ${job.httpStatus}` : ''}
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase ${
+                          job.status === 'success'
+                            ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300'
+                            : job.status === 'cancelled'
+                            ? 'border-slate-600/60 bg-slate-600/10 text-slate-300'
+                            : 'border-rose-500/60 bg-rose-500/10 text-rose-200'
+                        }`}
+                      >
+                        {job.status}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
         </section>
       </main>
 
@@ -738,6 +947,12 @@ const N8nLessonBuilder: React.FC = () => {
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-slate-50">{job.file.fileName}</span>
+                          {fifoMeta.has(job.id) && (
+                            <span className="rounded-full border border-slate-600/70 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-300">
+                              Queue #{fifoMeta.get(job.id)!.pos} of {fifoMeta.get(job.id)!.total}{' '}
+                              <span className="text-slate-500">(FIFO)</span>
+                            </span>
+                          )}
                           <span
                             className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${
                               job.status === 'success'
@@ -763,6 +978,7 @@ const N8nLessonBuilder: React.FC = () => {
                           Language: {job.language || 'n/a'} • Curriculum: {job.curriculum || 'n/a'} • Class:{' '}
                           {job.classLevel || 'n/a'} • Subject: {job.subject || 'n/a'}
                         </p>
+                        <p className="font-mono text-[10px] text-slate-600">Job ID: {job.id}</p>
                         {job.executionId && (
                           <p className="font-mono text-[10px] text-slate-500">
                             Execution ID: {job.executionId}
@@ -779,16 +995,60 @@ const N8nLessonBuilder: React.FC = () => {
                           </pre>
                         )}
                       </div>
-                      {job.status === 'queued' && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => handleCancelQueuedJob(job.id)}
-                          className="px-3 text-[11px]"
-                        >
-                          Cancel queued item
-                        </Button>
-                      )}
+                      <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                        {job.status === 'queued' && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleCancelQueuedJob(job.id)}
+                            className="px-3 text-[11px]"
+                          >
+                            Remove from queue
+                          </Button>
+                        )}
+                        {(job.status === 'running' || job.status === 'starting') && (
+                          <>
+                            {stopConfirmJobId === job.id ? (
+                              <div className="flex flex-col gap-2 rounded-lg border border-rose-500/40 bg-rose-950/30 p-2">
+                                <p className="text-[10px] text-rose-100">
+                                  Stop this run? n8n will be asked to stop the execution (if supported), the
+                                  job will be marked cancelled, and the queue can advance.
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={stoppingJobId === job.id}
+                                    onClick={() => handleStopProcessingJob(job.id)}
+                                    className="border-rose-500/60 bg-rose-600/20 px-3 text-[11px] text-rose-50 hover:bg-rose-600/35"
+                                  >
+                                    {stoppingJobId === job.id ? 'Stopping…' : 'Confirm stop'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={stoppingJobId === job.id}
+                                    onClick={() => setStopConfirmJobId(null)}
+                                    className="px-3 text-[11px]"
+                                  >
+                                    Back
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={Boolean(stoppingJobId)}
+                                onClick={() => setStopConfirmJobId(job.id)}
+                                className="px-3 text-[11px]"
+                              >
+                                Stop current run
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -801,8 +1061,13 @@ const N8nLessonBuilder: React.FC = () => {
           <CardHeader>
             <CardTitle>Pipeline progress</CardTitle>
             <CardDescription>
-              Progress for the currently active queue item. When n8n returns an execution id, node-level
-              status is restored automatically when you come back.
+              Progress for the job currently processing (or the next in line if nothing is running yet).
+              When n8n returns live node data, steps reflect your workflow; otherwise the template ladder is
+              shown until the first poll. Optional friendly labels: set{' '}
+              <code className="font-mono text-[10px]">VITE_N8N_PIPELINE_NODE_LABELS</code> (JSON map of
+              node name → label). Optional:{' '}
+              <code className="font-mono text-[10px]">VITE_N8N_NODE_TO_STEP</code> maps n8n node names to
+              step ids (<code className="font-mono text-[10px]">receive</code>, <code className="font-mono text-[10px]">extract</code>, etc.) for the template ladder when runData is sparse.
             </CardDescription>
             {currentNodeName && (
               <p className="mt-1 text-[11px] text-slate-400">

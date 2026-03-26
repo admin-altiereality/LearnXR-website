@@ -176,10 +176,13 @@ export function requireRole(roles: UserRole[]) {
 
       const profile = await getUserProfile(req.user.uid);
       if (!profile) {
-        return res.status(404).json({
+        // 403 (not 404): route exists; caller is authenticated but has no Firestore users/{uid} doc.
+        return res.status(403).json({
           success: false,
-          error: 'Not Found',
-          message: 'User profile not found',
+          error: 'Forbidden',
+          code: 'USER_PROFILE_NOT_FOUND',
+          message:
+            'No Firestore profile for this account. Create users/{uid} with a role (e.g. associate, admin, superadmin).',
         });
       }
 
@@ -187,6 +190,7 @@ export function requireRole(roles: UserRole[]) {
         return res.status(403).json({
           success: false,
           error: 'Forbidden',
+          code: 'INSUFFICIENT_ROLE',
           message: `Required role: ${roles.join(' or ')}`,
         });
       }

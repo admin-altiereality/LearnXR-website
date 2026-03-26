@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { auth } from './firebase';
 import { productionLogger } from '../services/productionLogger';
+import {
+  getCloudFunctionsApiUrl,
+  getCloudFunctionsApiProjectId,
+  getFunctionsEmulatorApiUrl,
+} from '../utils/functionsApiUrl';
 
 // Debug function to check auth state (can be called from browser console)
 if (typeof window !== 'undefined') {
@@ -39,9 +44,7 @@ const getApiBaseUrl = () => {
     // If we're not on localhost but the URL is localhost, use production instead
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
-      const region = 'us-central1';
-      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-      const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
+      const productionUrl = getCloudFunctionsApiUrl();
       console.log('🌐 Using production Firebase Functions:', productionUrl);
       return productionUrl;
     }
@@ -51,15 +54,14 @@ const getApiBaseUrl = () => {
   
   // Only use local emulator if we're actually on localhost AND in dev mode
   if (isLocalhost && import.meta.env.DEV) {
-    const localUrl = 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
+    const localUrl = getFunctionsEmulatorApiUrl();
     console.log('🌐 Using local Firebase emulator:', localUrl);
     return localUrl;
   }
   
   // Use Firebase Functions in production/preview (default)
-  const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-  const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
+  const productionUrl = getCloudFunctionsApiUrl();
+  const projectId = getCloudFunctionsApiProjectId();
   console.log('🌐 Using production Firebase Functions:', productionUrl, {
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
     isLocalhost,

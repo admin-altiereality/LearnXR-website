@@ -9,7 +9,13 @@
     "build": "tsc",
     "test": "jest",
     "fix-auth": "tsx src/scripts/fixUserAuth.ts",
-    "ensure-user-profile": "tsx src/scripts/ensure-user-profile.ts"
+    "ensure-user-profile": "tsx src/scripts/ensure-user-profile.ts",
+    "export-n8n-workflows": "tsx src/scripts/export-n8n-workflows.ts",
+    "smoke:paperclip-n8n": "tsx src/scripts/smoke-paperclip-n8n.ts",
+    "paperclip:import-openclaw-skill": "node ../scripts/paperclip/import-openclaw-paperclip-skill.mjs",
+    "paperclip:audit-openclaw": "node ../scripts/paperclip/audit-openclaw-capabilities.mjs",
+    "paperclip:hire-openclaw-mirrors": "node ../scripts/paperclip/hire-openclaw-mirror-c-suite.mjs",
+    "paperclip:align-openclaw-c-suite": "node ../scripts/paperclip/align-openclaw-mirror-c-suite.mjs"
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.7",
@@ -25,11 +31,13 @@
     "express": "^4.18.2",
     "express-rate-limit": "^7.5.1",
     "firebase-admin": "^12.7.0",
+    "googleapis": "^144.0.0",
     "helmet": "^8.1.0",
     "multer": "^2.0.1",
     "openai": "^4.20.0",
     "razorpay": "^2.9.6",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "twilio": "^5.13.1"
   },
   "devDependencies": {
     "@types/argon2": "^0.14.1",

@@ -1,0 +1,132 @@
+{
+  "company": {
+    "name": "Altie Reality Private Limited",
+    "legalEntity": "Altie Reality Private Limited",
+    "cin": "U72900RJ2023PTC090XXX",
+    "incorporationDate": "2023-01-15",
+    "registeredState": "Rajasthan",
+    "registeredOffice": "Jaipur, Rajasthan, India",
+    "website": "https://altiereality.com",
+    "product": "LearnXR",
+    "productUrl": "https://learnxr.in",
+    "industry": ["XR", "EdTech", "GovTech"],
+    "stage": "Early Revenue + Pilot Traction",
+    "founded": 2023
+  },
+  "vision": "Transform India into the global leader in XR-powered learning infrastructure, making immersive education accessible to every student regardless of geography, language, or economic background — then scale this model worldwide.",
+  "mission": "Reduce training time by 40% and increase knowledge retention by 75% through AI-powered immersive XR experiences that work on any device, in any language, even offline.",
+  "usp": {
+    "noCodeXR": "No-code XR content creation platform — teachers create immersive lessons without coding or 3D design skills",
+    "webXR": "WebXR-first architecture — runs on any browser, no headset dependency, no app downloads for students",
+    "vernacularLearning": "Vernacular learning in 12+ Indian languages with AI-powered speech and text localization",
+    "offlineCapability": "Offline-first PWA with local caching — works in rural areas with zero or intermittent connectivity",
+    "governmentReady": "Government-compliant deployment: data residency in India, STQC-ready, NIC integration compatible, GIGW accessible",
+    "aiPowered": "AI-generated 3D environments, auto-assessment, adaptive learning paths, and real-time analytics"
+  },
+  "recognition": [
+    {
+      "program": "Meta XR Startup Program",
+      "grant": 2000000,
+      "currency": "INR",
+      "year": 2024,
+      "type": "grant"
+    },
+    {
+      "program": "iStart Rajasthan",
+      "grant": 500000,
+      "currency": "INR",
+      "year": 2024,
+      "type": "grant"
+    },
+    {
+      "program": "NIDHI Prayas (DST)",
+      "grant": 850000,
+      "currency": "INR",
+      "year": 2024,
+      "type": "grant"
+    },
+    {
+      "program": "FITT IIT Delhi",
+      "grant": 0,
+      "currency": "INR",
+      "year": 2024,
+      "type": "recognition",
+      "note": "Top XR Startup recognition"
+    }
+  ],
+  "totalGrantFunding": 3350000,
+  "businessModel": {
+    "b2g": {
+      "priority": "PRIMARY",
+      "description": "Government institutional XR deployment contracts",
+      "targets": [
+        "Rajasthan Govt — RSLDC (Rajasthan Skill & Livelihoods Development Corp)",
+        "Rajasthan DoIT&C (Dept of Information Technology & Communication)",
+        "Rajasthan Education Department",
+        "Rajasthan Police Academy",
+        "Rajasthan Healthcare Training (NHM, Medical Colleges)",
+        "National Skill Development Corporation (NSDC)",
+        "Ministry of Education (NEP 2020 alignment)"
+      ],
+      "strategy": "Pilot → State-wide deployment → National replication",
+      "avgContractValue": "₹50L - ₹5Cr per deployment",
+      "salesCycle": "3-9 months"
+    },
+    "b2b": {
+      "priority": "SECONDARY",
+      "description": "Schools, coaching institutes, universities — XR Labs + SaaS licensing",
+      "targets": [
+        "CBSE/ICSE private schools",
+        "Coaching institutes (Kota, Jaipur, Delhi)",
+        "State universities",
+        "Engineering colleges",
+        "Medical colleges (anatomy/surgery simulation)"
+      ],
+      "products": [
+        "XR Lab Setup (hardware + software + content)",
+        "LearnXR Platform License (per-school annual)",
+        "Custom XR Content Development"
+      ],
+      "avgDealSize": "₹2L - ₹25L per school/institute"
+    },
+    "b2c": {
+      "priority": "TERTIARY",
+      "description": "LearnXR App direct subscription for students",
+      "pricing": {
+        "monthly": 99,
+        "quarterly": 249,
+        "annual": 799,
+        "currency": "INR"
+      },
+      "targetUsers": "Class 6-12 students, competitive exam aspirants, skill learners"
+    }
+  },
+  "northStarGoal": {
+    "description": "Secure Government + Institutional XR contracts and scale to ₹40Cr+ revenue in 5 years",
+    "revenueTrajectory": {
+      "year1": 3200000,
+      "year2": 18000000,
+      "year3": 85000000,
+      "year4": 220000000,
+      "year5": 430000000
+    },
+    "keyMilestones": [
+      "Y1: 3 govt pilots signed, 10 schools onboarded, ₹32L revenue",
+      "Y2: Rajasthan state-wide deployment started, 50 schools, ₹1.8Cr revenue",
+      "Y3: 2 additional states, 200 schools, B2C app at 10K MAU, ₹8.5Cr revenue",
+      "Y4: National presence (5 states), 400 schools, 50K MAU, ₹22Cr revenue",
+      "Y5: 8+ states, international pilot, 500+ schools, 100K+ MAU, ₹43Cr revenue"
+    ]
+  },
+  "paperclipConfig": {
+    "companyId": "altie-reality-pvt-ltd",
+    "timezone": "Asia/Kolkata",
+    "currency": "INR",
+    "language": "en",
+    "supportedLanguages": ["en", "hi", "mr", "ta", "te", "kn", "bn", "gu", "pa", "ml", "or", "as"],
+    "fiscalYearStart": "April",
+    "weekStartDay": "Monday",
+    "executionCycleFrequency": "weekly",
+    "escalationThreshold": "critical_only"
+  }
+}

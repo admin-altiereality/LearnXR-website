@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import express from 'express';
 
 const router = express.Router();
@@ -22,6 +23,8 @@ type LeadBody = {
   utmTerm?: unknown;
   utmContent?: unknown;
   companyWebsite?: unknown;
+  /** Optional: Paperclip ticket id or UUID for n8n ↔ Paperclip traceability */
+  correlationId?: unknown;
 };
 
 const sanitizeText = (value: unknown, maxLength: number = 500): string => {
@@ -69,6 +72,8 @@ const handleLeadPost = async (req: express.Request, res: express.Response) => {
   const utmCampaign = sanitizeText(body.utmCampaign, 160);
   const utmTerm = sanitizeText(body.utmTerm, 160);
   const utmContent = sanitizeText(body.utmContent, 160);
+  const correlationIdFromClient = sanitizeText(body.correlationId, 128);
+  const correlationId = correlationIdFromClient || crypto.randomUUID();
 
   if (!name || !email) {
     return res.status(400).json({
@@ -109,6 +114,7 @@ const handleLeadPost = async (req: express.Request, res: express.Response) => {
     utmTerm,
     utmContent,
     submittedAt: new Date().toISOString(),
+    correlationId,
   };
 
   try {

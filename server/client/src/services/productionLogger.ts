@@ -5,7 +5,7 @@
  * Logs are categorized by level and include context for easier debugging.
  */
 
-import { collection, addDoc, serverTimestamp, query, where, orderBy, limit, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { getAuth } from 'firebase/auth';
 
@@ -48,7 +48,7 @@ class ProductionLogger {
     
     // Process queue periodically
     if (this.isProduction) {
-      setInterval(() => this.processQueue(), 5000); // Process every 5 seconds
+      setInterval(() => { this.processQueue().catch(() => {}); }, 5000); // Process every 5 seconds
     }
   }
 
@@ -220,10 +220,6 @@ class ProductionLogger {
       }
     } catch (error) {
       console.error('Error processing log queue:', error);
-      // Re-add failed logs to queue (up to max size)
-      if (this.logQueue.length < this.MAX_QUEUE_SIZE) {
-        this.logQueue.push(...this.logQueue);
-      }
     } finally {
       this.queueProcessing = false;
     }
@@ -307,7 +303,7 @@ class ProductionLogger {
       
       // Process immediately for critical errors
       if (entry.level === 'critical' || entry.level === 'error') {
-        this.processQueue();
+        this.processQueue().catch(() => {});
       }
     }
   }
@@ -347,7 +343,7 @@ class ProductionLogger {
     const entry = this.createLogEntry('critical', message, context, error, metadata);
     this.queueLog(entry);
     // Process immediately for critical errors
-    this.processQueue();
+    this.processQueue().catch(() => {});
   }
 
   /**

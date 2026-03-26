@@ -8,6 +8,11 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
+    "secrets:push-learnxr-client": "node scripts/set-learnxr-client-secret-from-env.mjs learnxr-evoneuralai",
+    "secrets:push-twilio": "node scripts/set-twilio-secrets-from-env.mjs learnxr-evoneuralai",
+    "deploy:api:evoneuralai": "npm run secrets:push-twilio && firebase deploy --only functions:api --project learnxr-evoneuralai --non-interactive",
+    "deploy:api:evoneuralai:only": "firebase deploy --only functions:api --project learnxr-evoneuralai --non-interactive",
+    "deploy:evoneuralai": "npm run secrets:push-learnxr-client && firebase deploy --only functions --project learnxr-evoneuralai --non-interactive",
     "logs": "firebase functions:log"
   },
   "engines": {
@@ -29,7 +34,8 @@
     "pdf-to-img": "^5.0.0",
     "razorpay": "^2.9.6",
     "rss-parser": "^3.13.0",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "twilio": "^5.13.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

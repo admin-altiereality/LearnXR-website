@@ -8,14 +8,24 @@ import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 // Firebase configuration from environment variables
 // In production, all values must be set via env; no hardcoded fallbacks for security
 const isProd = import.meta.env.PROD;
+
+/** Treat missing or whitespace-only Vite env as unset (avoids accidental empty override in .env.lexrn1). */
+function envFirebase(key: string): string | undefined {
+  const v = (import.meta.env as Record<string, string | boolean | undefined>)[key];
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
+}
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || (isProd ? '' : "AIzaSyBj8pKRSuj9XHD0eoM7tNQafH-2yXoOyag"),
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || (isProd ? '' : "learnxr-evoneuralai.firebaseapp.com"),
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || (isProd ? '' : "learnxr-evoneuralai"),
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || (isProd ? '' : "learnxr-evoneuralai.firebasestorage.app"),
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || (isProd ? '' : "427897409662"),
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || (isProd ? '' : "1:427897409662:web:95fc2fe7d527ac911a082f"),
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || (isProd ? '' : "G-CR7G315QSN")
+  apiKey: envFirebase('VITE_FIREBASE_API_KEY') || (isProd ? '' : 'AIzaSyBj8pKRSuj9XHD0eoM7tNQafH-2yXoOyag'),
+  authDomain:
+    envFirebase('VITE_FIREBASE_AUTH_DOMAIN') || (isProd ? '' : 'learnxr-evoneuralai.firebaseapp.com'),
+  projectId: envFirebase('VITE_FIREBASE_PROJECT_ID') || (isProd ? '' : 'learnxr-evoneuralai'),
+  storageBucket:
+    envFirebase('VITE_FIREBASE_STORAGE_BUCKET') || (isProd ? '' : 'learnxr-evoneuralai.firebasestorage.app'),
+  messagingSenderId:
+    envFirebase('VITE_FIREBASE_MESSAGING_SENDER_ID') || (isProd ? '' : '427897409662'),
+  appId: envFirebase('VITE_FIREBASE_APP_ID') || (isProd ? '' : '1:427897409662:web:95fc2fe7d527ac911a082f'),
+  measurementId: envFirebase('VITE_FIREBASE_MEASUREMENT_ID') || (isProd ? '' : 'G-CR7G315QSN'),
 };
 
 // Initialize Firebase App FIRST

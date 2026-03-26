@@ -65,6 +65,7 @@ import PersonalizedLearning from './screens/ai/PersonalizedLearning';
 import ApiDocumentation from './screens/ApiDocumentation';
 import WebAppShowcase from './screens/WebAppShowcase';
 import AssociateDashboard from './screens/dashboard/AssociateDashboard';
+import WhatsAppInbox from './screens/inbox/WhatsAppInbox';
 import JoinClassPage from './screens/dashboard/JoinClassPage';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
 import SchoolDashboard from './screens/dashboard/SchoolDashboard';
@@ -85,7 +86,7 @@ import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 // Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main', '/inbox/whatsapp'];
   
   // Hide footer completely on immersive experiences and main (environment studio) page
   if (hideFooterRoutes.includes(location.pathname) || 
@@ -1027,6 +1028,13 @@ function App() {
                         <ProtectedRoute>
                           <RoleGuard allowedRoles={['associate']}>
                             <AssociateDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/inbox/whatsapp" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['associate', 'admin', 'superadmin']}>
+                            <WhatsAppInbox />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />

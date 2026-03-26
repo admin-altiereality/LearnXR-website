@@ -20,6 +20,11 @@ build/
 .env.*.local
 # But allow template files
 !.env.template
+!.env.lexrn1.example
+.env.lexrn1
+functions/.learnxr-client-sa.secret.tmp.json
+# Firebase Functions v2 defineString values (per-project; may contain webhook URLs)
+functions/.env.learnxr-evoneuralai
 
 # IDE files
 .idea/
@@ -48,6 +53,12 @@ coverage/
 
 # Firebase service account keys (do not commit)
 *-firebase-adminsdk-*.json
+
+# Paperclip ↔ n8n local workflow map (copy from server/src/config/paperclip-n8n-workflows.example.json)
+server/config/paperclip-n8n-workflows.json
+
+# Generated n8n export (optional)
+docs/altie-paperclip-n8n/workflow-export.generated.json
 
 # Misc
 *.pem

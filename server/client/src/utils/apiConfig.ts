@@ -3,6 +3,8 @@
  * Provides consistent API base URL across the application
  */
 
+import { getCloudFunctionsApiUrl } from './functionsApiUrl';
+
 /**
  * When opened from the app with ?apiBase=..., we set this so all API calls use the same backend.
  */
@@ -33,9 +35,7 @@ export const getApiBaseUrl = (): string => {
     // If we're not on localhost but the URL is localhost, use production instead
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
-      const region = 'us-central1';
-      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-      const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
+      const productionUrl = getCloudFunctionsApiUrl();
       console.log('🌐 Using production Firebase Functions:', productionUrl);
       return productionUrl;
     }
@@ -51,9 +51,7 @@ export const getApiBaseUrl = (): string => {
   }
   
   // Use Firebase Functions in production/preview (default)
-  const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-  const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
+  const productionUrl = getCloudFunctionsApiUrl();
   console.log('🌐 Using production Firebase Functions:', productionUrl, {
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
     isLocalhost,

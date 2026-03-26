@@ -6,6 +6,8 @@ import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
 import leadRoutes from './leads';
 import n8nRoutes from './n8n';
+import n8nBuilderRoutes from './n8nBuilder';
+import paperclipN8nBridgeRoutes from './paperclipN8nBridge';
 // Subscription removed
 import userRoutes from './user';
 import aiDetectionRoutes from './aiDetection';
@@ -17,6 +19,7 @@ import assessmentRoutes from './assessment';
 import authRoutes from './auth';
 import classSessionRoutes from './classSessions';
 import streetviewRoutes from './streetview';
+import twilioInboxRoutes from './twilioInbox';
 
 const router = express.Router();
 
@@ -182,6 +185,10 @@ console.log('Mounting lead routes...');
 router.use('/leads', leadRoutes);
 console.log('Lead routes mounted at /leads');
 
+console.log('Mounting Twilio inbox routes...');
+router.use('/twilio-inbox', twilioInboxRoutes);
+console.log('Twilio inbox routes mounted at /twilio-inbox');
+
 // Mount user routes
 console.log('Mounting user routes...');
 router.use('/user', userRoutes);
@@ -234,6 +241,13 @@ console.log('Street View routes mounted at /streetview');
 console.log('Mounting n8n routes...');
 router.use('/n8n', n8nRoutes);
 console.log('n8n routes mounted at /n8n');
+
+router.use('/n8n-builder', n8nBuilderRoutes);
+console.log('n8n-builder routes mounted at /n8n-builder');
+
+console.log('Mounting Paperclip n8n bridge routes...');
+router.use('/paperclip-n8n', paperclipN8nBridgeRoutes);
+console.log('Paperclip n8n bridge mounted at /paperclip-n8n');
 
 // Debug: List all registered routes
 const listRoutes = (router: express.Router, basePath: string = '') => {

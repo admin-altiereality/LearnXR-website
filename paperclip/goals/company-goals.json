@@ -1,0 +1,131 @@
+{
+  "companyGoals": {
+    "northStar": "Secure Government + Institutional XR contracts and scale to ₹40Cr+ revenue in 5 years",
+    "fiveYearTrajectory": [
+      { "year": "Y1", "revenue": "₹32L", "govtPilots": 3, "schools": 10, "b2cMAU": 500, "teamSize": 14 },
+      { "year": "Y2", "revenue": "₹1.8Cr", "govtPilots": 8, "schools": 50, "b2cMAU": 3000, "teamSize": 25 },
+      { "year": "Y3", "revenue": "₹8.5Cr", "govtPilots": 20, "schools": 200, "b2cMAU": 10000, "teamSize": 50 },
+      { "year": "Y4", "revenue": "₹22Cr", "govtPilots": 40, "schools": 400, "b2cMAU": 50000, "teamSize": 100 },
+      { "year": "Y5", "revenue": "₹43Cr", "govtPilots": 80, "schools": 500, "b2cMAU": 100000, "teamSize": 200 }
+    ],
+    "annualGoals": {
+      "year1": {
+        "theme": "Prove & Pilot",
+        "objectives": [
+          {
+            "objective": "Win 3 Government Pilots in Rajasthan",
+            "keyResults": [
+              "Sign RSLDC skill training XR pilot (₹15L+)",
+              "Launch DoIT&C digital literacy VR program pilot",
+              "Deploy Police Academy training simulation pilot",
+              "Achieve >80% satisfaction score in all 3 pilots",
+              "Generate ₹20L+ revenue from govt contracts"
+            ],
+            "owner": "cbdo-lokesh",
+            "deadline": "Q4 Y1"
+          },
+          {
+            "objective": "Onboard 10 Schools on LearnXR Platform",
+            "keyResults": [
+              "Sign 10 CBSE/ICSE schools in Jaipur + Kota",
+              "Achieve >70% teacher adoption within 60 days of onboarding",
+              "Generate ₹8L+ in B2B revenue",
+              "Get 3 reference case studies from school deployments",
+              "Maintain <5% churn in onboarded schools"
+            ],
+            "owner": "enterprise-sales-arjun",
+            "deadline": "Q4 Y1"
+          },
+          {
+            "objective": "Build a Scalable Product with Govt-Ready Features",
+            "keyResults": [
+              "Launch offline mode (PWA with service workers)",
+              "Deploy vernacular support for Hindi + 2 more languages",
+              "Achieve 99.5% uptime for 12 consecutive weeks",
+              "Release no-code XR lesson builder v2.0",
+              "Pass STQC compliance pre-audit"
+            ],
+            "owner": "cto-manav",
+            "deadline": "Q4 Y1"
+          },
+          {
+            "objective": "Establish LearnXR as India's Leading XR Education Brand",
+            "keyResults": [
+              "Grow CEO LinkedIn following to 10K",
+              "Generate 50+ inbound leads per month",
+              "Publish 3 case studies with measurable outcomes",
+              "Secure 5 earned media mentions in EdTech/startup press",
+              "Host/speak at 4 industry events"
+            ],
+            "owner": "cmo-princi",
+            "deadline": "Q4 Y1"
+          },
+          {
+            "objective": "Maintain Financial Health and Runway",
+            "keyResults": [
+              "Keep burn rate < ₹4L/month",
+              "Maintain > 9 months runway at all times",
+              "Achieve 70%+ gross margin",
+              "Complete all GST, TDS, ROC filings on time",
+              "Prepare data room for Pre-Seed raise"
+            ],
+            "owner": "cfo-namrata",
+            "deadline": "Q4 Y1"
+          }
+        ]
+      }
+    }
+  },
+  "departmentOKRs": {
+    "sales": {
+      "objective": "Build a Repeatable Sales Machine",
+      "keyResults": [
+        { "kr": "Maintain ₹2Cr+ weighted pipeline value", "metric": "Pipeline (₹)", "target": "2,00,00,000", "frequency": "weekly" },
+        { "kr": "Conduct 15+ demos per month", "metric": "Demos/month", "target": 15, "frequency": "monthly" },
+        { "kr": "Achieve >25% proposal-to-close rate", "metric": "Win rate (%)", "target": 25, "frequency": "quarterly" },
+        { "kr": "Close ₹32L+ in total revenue Y1", "metric": "Revenue (₹)", "target": "32,00,000", "frequency": "quarterly" }
+      ],
+      "owners": ["cbdo-lokesh", "enterprise-sales-arjun"]
+    },
+    "marketing": {
+      "objective": "Own the XR Education Narrative in India",
+      "keyResults": [
+        { "kr": "Generate 50+ MQLs per month by Q4", "metric": "MQLs/month", "target": 50, "frequency": "monthly" },
+        { "kr": "Achieve >5% LinkedIn engagement rate for founder content", "metric": "Engagement (%)", "target": 5, "frequency": "weekly" },
+        { "kr": "Publish 12 content pieces per month", "metric": "Content/month", "target": 12, "frequency": "monthly" },
+        { "kr": "Maintain CAC <₹200 for B2C, <₹15K for B2B", "metric": "CAC (₹)", "target": "200 / 15000", "frequency": "monthly" }
+      ],
+      "owners": ["cmo-princi", "growth-kunal", "perf-marketing-rohit"]
+    },
+    "technology": {
+      "objective": "Build the Most Deployable XR Platform in India",
+      "keyResults": [
+        { "kr": "99.5%+ uptime", "metric": "Uptime (%)", "target": 99.5, "frequency": "daily" },
+        { "kr": "Page load <3s on 4G", "metric": "Load time (s)", "target": 3, "frequency": "weekly" },
+        { "kr": "Release 2+ major features per month", "metric": "Features/month", "target": 2, "frequency": "monthly" },
+        { "kr": "200+ XR lessons in content library", "metric": "Lessons", "target": 200, "frequency": "quarterly" }
+      ],
+      "owners": ["cto-manav", "pm-sneha", "xr-content-aditya"]
+    },
+    "finance": {
+      "objective": "Capital Efficiency and Compliance Excellence",
+      "keyResults": [
+        { "kr": "Maintain >9 months runway", "metric": "Runway (months)", "target": 9, "frequency": "weekly" },
+        { "kr": "Burn rate <₹4L/month Y1", "metric": "Burn (₹/month)", "target": "4,00,000", "frequency": "monthly" },
+        { "kr": "Gross margin >70%", "metric": "Margin (%)", "target": 70, "frequency": "monthly" },
+        { "kr": "100% compliance: GST, TDS, ROC on time", "metric": "Compliance (%)", "target": 100, "frequency": "quarterly" }
+      ],
+      "owners": ["cfo-namrata"]
+    },
+    "governmentRelations": {
+      "objective": "Make LearnXR the Default XR Platform for Rajasthan Govt",
+      "keyResults": [
+        { "kr": "Track 100% of relevant tenders in Rajasthan", "metric": "Tender coverage (%)", "target": 100, "frequency": "daily" },
+        { "kr": "Build 20+ warm govt relationships", "metric": "Active contacts", "target": 20, "frequency": "monthly" },
+        { "kr": "Zero bid disqualifications on technicalities", "metric": "Disqualifications", "target": 0, "frequency": "per-bid" },
+        { "kr": "Complete GeM registration and STQC pre-audit", "metric": "Compliance", "target": "100%", "frequency": "Q2" }
+      ],
+      "owners": ["govrel-ritika"]
+    }
+  }
+}

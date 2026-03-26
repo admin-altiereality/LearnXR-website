@@ -9,9 +9,12 @@
     "build": "tsup",
     "build:client": "cd client && npm install && npm run build",
     "build:hosting": "npm --prefix server/client run build",
+    "build:hosting:lexrn1": "npm --prefix server/client run build:lexrn1",
     "deploy:preview": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy testing",
     "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav",
-    "deploy:production:lexrn1": "firebase use lexrn1 && firebase deploy --only hosting -c firebase.lexrn1.json"
+    "deploy:preview:lexrn1:testing": "firebase use lexrn1 && firebase hosting:channel:deploy testing -c firebase.lexrn1.json",
+    "deploy:production:lexrn1": "firebase use lexrn1 && firebase deploy --only hosting -c firebase.lexrn1.json",
+    "openclaw": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openclaw/openclaw.ps1"
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.1",

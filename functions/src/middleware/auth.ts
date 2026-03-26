@@ -4,7 +4,7 @@
  */
 
 import { NextFunction, Request, Response } from 'express';
-import * as admin from 'firebase-admin';
+import { verifyUserIdToken } from '../utils/clientFirebaseAuth';
 
 // Public endpoints that don't require authentication
 const PUBLIC_PATHS = [
@@ -32,6 +32,7 @@ const PUBLIC_PATHS = [
   '/assistant/lipsync/generate',  // Allow viseme generation without auth
   '/assistant/list',  // Allow listing assistants without auth
   '/leads',
+  '/webhooks/twilio',
   '/linkedin/posts',  // Allow LinkedIn posts without auth (public company activity)
   '/streetview/generate-skybox', // Allow Street View skybox generation without auth
   '/streetview/places-autocomplete',
@@ -219,6 +220,12 @@ const isPublicEndpoint = (req: Request): boolean => {
     console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING leads endpoint`);
     return true;
   }
+
+  const isTwilioWebhook = uniquePaths.some(path => path.startsWith('/webhooks/twilio'));
+  if ((req.method === 'POST' || req.method === 'OPTIONS') && isTwilioWebhook) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING Twilio webhook`);
+    return true;
+  }
   
   // Check if any normalized path matches public endpoints
   const isPublic = uniquePaths.some(normalizedPath => {
@@ -310,9 +317,9 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
     return next();
   }
   
-  // It's a Firebase token - verify it
+  // It's a Firebase token - verify it (client project + default, see clientFirebaseAuth)
   try {
-    const decoded = await admin.auth().verifyIdToken(token);
+    const decoded = await verifyUserIdToken(token);
     (req as any).user = decoded;
     console.log(`[${requestId}] [AUTH] ✅ Firebase token verified, user: ${decoded.uid}`);
     next();

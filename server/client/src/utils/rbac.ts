@@ -61,6 +61,7 @@ export type RouteCategory =
   | 'lessons'          // Lesson viewing
   | 'create'           // Content creation (Create/Explore/History - no Studio/Chapter Editor)
   | 'studio'           // Chapter Editor / Content Library - school, admin, superadmin only (no student, teacher, principal)
+  | 'messaging'        // WhatsApp / Twilio inbox - associate, admin, superadmin
   | 'developer'        // API Keys / Developer - admin, superadmin only
   | 'class_management' // Class management - school, principal, admin, superadmin
   | 'admin'            // Admin pages (system, etc.)
@@ -114,6 +115,7 @@ export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
   lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
   create: ['teacher', 'admin', 'superadmin'], // School administrators removed
   studio: ['admin', 'superadmin', 'associate'], // Associate can refine lessons (no delete)
+  messaging: ['associate', 'admin', 'superadmin'],
   developer: ['admin', 'superadmin'],
   class_management: ['teacher', 'school', 'principal', 'admin', 'superadmin'],
   admin: ['admin', 'superadmin'],
@@ -190,6 +192,9 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   
   // Associate dashboard (staff only)
   '/dashboard/associate': 'studio',
+
+  // WhatsApp / Twilio Conversations inbox (staff)
+  '/inbox/whatsapp': 'messaging',
   
   // Secret backend login - no category (public route, role check after login)
   '/secretbackend': 'public',

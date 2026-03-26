@@ -3,6 +3,7 @@ import {
   cancelQueuedJob,
   enqueueJobsForUser,
   listJobsForUser,
+  stopActiveJobForUser,
   syncUserQueue,
 } from '../services/n8nLessonBuilderQueue';
 
@@ -105,6 +106,23 @@ router.post('/jobs/:id/cancel', async (req, res) => {
     return res.json({ jobs });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to cancel queue item.';
+    return res.status(400).json({ message });
+  }
+});
+
+router.post('/jobs/:id/stop', async (req, res) => {
+  const user = (req as { user?: { uid?: string; email?: string | null } }).user;
+  const userId = user?.uid;
+  if (!userId) {
+    return res.status(401).json({ message: 'Authentication required.' });
+  }
+
+  try {
+    await stopActiveJobForUser(userId, req.params.id);
+    const jobs = await syncUserQueue(userId);
+    return res.json({ jobs });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to stop queue item.';
     return res.status(400).json({ message });
   }
 });
