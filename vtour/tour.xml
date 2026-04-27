@@ -2,6 +2,22 @@
 
 	<include url="skin/vtourskin.xml" />
 
+	<!-- global video helpers -->
+	<action name="video_set_state" scope="local" args="state">
+		set(global.videostate, get(state));
+	</action>
+	<action name="video_pause_if_playing">
+		if(plugin[video],
+			if(plugin[video].ispaused == false, plugin[video].pause(); );
+		);
+	</action>
+
+	<events name="video_events" keep="true"
+		onbeforeloadscene="video_pause_if_playing();"
+		onexit="video_pause_if_playing();"
+		onexitfullscreen="video_pause_if_playing();"
+	/>
+
 	<!-- customize skin settings: maps, gyro, webvr, thumbnails, tooltips, layout, design, ... -->
 	<skin_settings maps="false"
 	               maps_type="openstreetmaps"
@@ -83,6 +99,102 @@
 			<cube url="panos/shot_panoramic_composition_living_room.tiles/%s/l%l/%v/l%l_%s_%v_%h.jpg" multires="512,1024,2048" />
 		</image>
 
+	</scene>
+
+	<scene name="scene_video_cell_tour" title="Cell Tour (360°)" onstart="" thumburl="../LearnXR-website-main/img/lxrn4.png">
+		<control bouncinglimits="false" />
+		<view hlookat="0.0" vlookat="0.0" fovtype="MFOV" fov="110" maxpixelzoom="2.0" fovmin="70" fovmax="120" limitview="auto" />
+		<preview url="../LearnXR-website-main/img/lxrn4.png" />
+
+		<plugin name="video"
+		        url="plugins/videoplayer.js"
+		        videourl="../LearnXR-website-main/videovrtour/360%C2%B0%20Guided%20Tour%20of%20the%20Cell%20(demo).mp4"
+		        posterurl="../LearnXR-website-main/img/lxrn4.png"
+		        panovideo="true"
+		        pausedonstart="false"
+		        loop="false"
+		        volume="1.0"
+		        onvideoready="video_set_state(ready);"
+		        onvideoplay="video_set_state(playing);"
+		        onvideopaused="video_set_state(paused);"
+		        onvideocomplete="video_set_state(completed);"
+		        />
+
+		<image hfov="360" vfov="180">
+			<sphere url="plugin:video" />
+		</image>
+	</scene>
+
+	<scene name="scene_video_spacewalk" title="Spacewalk (360°)" onstart="" thumburl="../LearnXR-website-main/img/lxrn3.png">
+		<control bouncinglimits="false" />
+		<view hlookat="0.0" vlookat="0.0" fovtype="MFOV" fov="110" maxpixelzoom="2.0" fovmin="70" fovmax="120" limitview="auto" />
+		<preview url="../LearnXR-website-main/img/lxrn3.png" />
+
+		<plugin name="video"
+		        url="plugins/videoplayer.js"
+		        videourl="../LearnXR-website-main/videovrtour/360%C2%B0%20VR%20Spacewalk%20Experience%20_%20BBC%20HOME.mp4"
+		        posterurl="../LearnXR-website-main/img/lxrn3.png"
+		        panovideo="true"
+		        pausedonstart="false"
+		        loop="false"
+		        volume="1.0"
+		        onvideoready="video_set_state(ready);"
+		        onvideoplay="video_set_state(playing);"
+		        onvideopaused="video_set_state(paused);"
+		        onvideocomplete="video_set_state(completed);"
+		        />
+
+		<image hfov="360" vfov="180">
+			<sphere url="plugin:video" />
+		</image>
+	</scene>
+
+	<scene name="scene_video_tajmahal" title="Taj Mahal (360°)" onstart="" thumburl="../LearnXR-website-main/img/lxrn2.png">
+		<control bouncinglimits="false" />
+		<view hlookat="0.0" vlookat="0.0" fovtype="MFOV" fov="110" maxpixelzoom="2.0" fovmin="70" fovmax="120" limitview="auto" />
+		<preview url="../LearnXR-website-main/img/lxrn2.png" />
+
+		<plugin name="video"
+		        url="plugins/videoplayer.js"
+		        videourl="../LearnXR-website-main/videovrtour/Taj%20Mahal,%20India.%20360%20animation%20in%208K..mp4"
+		        posterurl="../LearnXR-website-main/img/lxrn2.png"
+		        panovideo="true"
+		        pausedonstart="false"
+		        loop="false"
+		        volume="1.0"
+		        onvideoready="video_set_state(ready);"
+		        onvideoplay="video_set_state(playing);"
+		        onvideopaused="video_set_state(paused);"
+		        onvideocomplete="video_set_state(completed);"
+		        />
+
+		<image hfov="360" vfov="180">
+			<sphere url="plugin:video" />
+		</image>
+	</scene>
+
+	<scene name="scene_video_videoplayback" title="VR Demo (360°)" onstart="" thumburl="../LearnXR-website-main/img/lxrn5.png">
+		<control bouncinglimits="false" />
+		<view hlookat="0.0" vlookat="0.0" fovtype="MFOV" fov="110" maxpixelzoom="2.0" fovmin="70" fovmax="120" limitview="auto" />
+		<preview url="../LearnXR-website-main/img/lxrn5.png" />
+
+		<plugin name="video"
+		        url="plugins/videoplayer.js"
+		        videourl="../LearnXR-website-main/videovrtour/videoplayback.mp4"
+		        posterurl="../LearnXR-website-main/img/lxrn5.png"
+		        panovideo="true"
+		        pausedonstart="false"
+		        loop="false"
+		        volume="1.0"
+		        onvideoready="video_set_state(ready);"
+		        onvideoplay="video_set_state(playing);"
+		        onvideopaused="video_set_state(paused);"
+		        onvideocomplete="video_set_state(completed);"
+		        />
+
+		<image hfov="360" vfov="180">
+			<sphere url="plugin:video" />
+		</image>
 	</scene>
 
 

@@ -12,6 +12,7 @@ import { HistoryTab } from './tabs/HistoryTab';
 import { AssetsTab } from './tabs/AssetsTab';
 import { ImagesTab } from './tabs/ImagesTab';
 import { SourceTab } from './tabs/SourceTab';
+import { QuestionPaperTab } from './tabs/QuestionPaperTab';
 import {
   FileText,
   Image,
@@ -22,6 +23,7 @@ import {
   Loader2,
   Package,
   BookOpen,
+  ClipboardList,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 
@@ -77,6 +79,7 @@ const tabs = [
   { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'avatar', label: 'Avatar Scripts', icon: User },
   { id: 'mcqs', label: 'MCQs', icon: HelpCircle },
+  { id: 'question-paper', label: 'Question Paper', icon: ClipboardList },
   { id: 'history', label: 'History', icon: History },
   { id: 'source', label: 'Source', icon: BookOpen },
 ];
@@ -234,7 +237,17 @@ export const TopicEditor = ({
           <TabsContent value="source" className="mt-0 h-full">
             <SourceTab bundle={bundle} chapterId={chapterId} topicId={topic.id} />
           </TabsContent>
-        
+
+          <TabsContent value="question-paper" className="mt-0 h-full">
+            <QuestionPaperTab
+              chapterId={chapterId}
+              bundle={bundle}
+              subject={subject}
+              classLevel={classLevel}
+              curriculum={curriculum}
+            />
+          </TabsContent>
+
           <TabsContent value="history" className="mt-0 h-full">
             <HistoryTab editHistory={editHistory} lessonVersions={lessonVersions} />
           </TabsContent>

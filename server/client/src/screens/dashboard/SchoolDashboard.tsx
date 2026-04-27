@@ -40,6 +40,8 @@ import {
   FaBell,
   FaCheckCircle,
   FaHourglassHalf,
+  FaClipboardList,
+  FaFileAlt,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -716,6 +718,52 @@ const SchoolDashboard = () => {
             </SelectContent>
           </Select>
         </div>
+
+        {/* Quick action tiles */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-8">
+          <Link
+            to="/question-paper/generate"
+            className="rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaClipboardList className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">AI Question Paper</div>
+                <div className="text-xs text-muted-foreground truncate">Generate CBSE/RBSE papers for your school</div>
+              </div>
+            </div>
+          </Link>
+          <Link
+            to="/question-paper/library"
+            className="rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaFileAlt className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Paper Library</div>
+                <div className="text-xs text-muted-foreground truncate">Browse saved question papers</div>
+              </div>
+            </div>
+          </Link>
+          <Link
+            to="/school/approvals"
+            className="rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaCheckCircle className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Approvals</div>
+                <div className="text-xs text-muted-foreground truncate">Review teacher requests</div>
+              </div>
+            </div>
+          </Link>
+        </section>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">

@@ -1,4 +1,5 @@
 import express from 'express';
+import OpenAI from 'openai';
 import OpenAIAssistantService from '../services/openaiAssistantService';
 import TextToSpeechService from '../services/textToSpeechService';
 import LipSyncService from '../services/lipSyncService';
@@ -13,6 +14,7 @@ const VOICE_NAME = 'female_professional';
 let assistantService: OpenAIAssistantService | null = null;
 let ttsService: TextToSpeechService | null = null;
 let lipSyncService: LipSyncService | null = null;
+let simpleAnswerOpenAI: OpenAI | null = null;
 
 // Initialize services (lazy loading)
 let avatarAssistantService: OpenAIAssistantService | null = null;
@@ -79,6 +81,17 @@ const getLipSyncService = () => {
     lipSyncService = new LipSyncService();
   }
   return lipSyncService;
+};
+
+const getSimpleAnswerOpenAI = () => {
+  if (!simpleAnswerOpenAI) {
+    const apiKey = (process.env.OPENAI_API_KEY || process.env.OPENAI_AVATAR_API_KEY)?.trim();
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY (or OPENAI_AVATAR_API_KEY) is not configured');
+    }
+    simpleAnswerOpenAI = new OpenAI({ apiKey });
+  }
+  return simpleAnswerOpenAI;
 };
 
 // Create thread - POST only
@@ -317,6 +330,59 @@ router.get('/message', (req, res) => {
     method: req.method,
     allowedMethods: ['POST']
   });
+});
+
+// Simple answer - direct chat completion fallback for the LKG Spiral orb.
+// This avoids assistant-thread run failures for general questions.
+router.post('/simple-answer', async (req, res) => {
+  try {
+    const {
+      question,
+      curriculum = 'NCERT',
+      class: classLevel = '1',
+      subject = 'General Knowledge',
+    } = req.body || {};
+
+    const text = String(question || '').trim();
+    if (!text) {
+      return res.status(400).json({ error: 'question is required' });
+    }
+
+    const openai = getSimpleAnswerOpenAI();
+    const completion = await openai.chat.completions.create({
+      model: process.env.SPIRAL_QA_MODEL || 'gpt-4o-mini',
+      temperature: 0.4,
+      max_tokens: 220,
+      messages: [
+        {
+          role: 'system',
+          content:
+            `You are LearnXR's friendly voice tutor for Class ${classLevel} children. ` +
+            `Answer in simple English for a young student. Curriculum: ${curriculum}. ` +
+            `Subject context: ${subject}. Keep answers short: 2-4 small sentences. ` +
+            `If the child asks to create, show, make, or generate a world/object, say one short sentence that you will make it instead of explaining.`,
+        },
+        {
+          role: 'user',
+          content: text,
+        },
+      ],
+    });
+
+    const answer = completion.choices[0]?.message?.content?.trim();
+    if (!answer) {
+      return res.status(502).json({ error: 'No answer generated' });
+    }
+
+    return res.json({ success: true, answer });
+  } catch (error: any) {
+    console.error('❌ Error in /assistant/simple-answer:', error);
+    const status = error?.status === 429 ? 429 : 500;
+    return res.status(status).json({
+      error: error?.message || 'Failed to generate simple answer',
+      code: error?.code,
+    });
+  }
 });
 
 // Text to Speech - POST only

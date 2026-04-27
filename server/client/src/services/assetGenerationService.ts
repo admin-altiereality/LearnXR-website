@@ -40,6 +40,11 @@ export type ProgressCallback = (progress: AssetGenerationProgress) => void;
 
 class AssetGenerationService {
 
+  private selectMeshyModel(quality?: 'low' | 'medium' | 'high'): MeshyGenerationRequest['ai_model'] {
+    // Meshy deprecated meshy-4; use supported current models everywhere.
+    return quality === 'high' ? 'meshy-6' : 'latest';
+  }
+
   /**
    * Generate 3D assets from a skybox prompt
    */
@@ -89,7 +94,7 @@ class AssetGenerationService {
         const meshyRequest: MeshyGenerationRequest = {
           prompt: request.originalPrompt,
           art_style: (request.style === 'realistic' || request.style === 'sculpture') ? request.style : 'realistic',
-          ai_model: request.quality === 'high' ? 'meshy-5' : 'meshy-4',
+          ai_model: this.selectMeshyModel(request.quality),
           topology: 'triangle',
           target_polycount: request.quality === 'high' ? 50000 : request.quality === 'low' ? 15000 : 30000
         };
@@ -330,7 +335,7 @@ class AssetGenerationService {
           const meshyRequest: MeshyGenerationRequest = {
             prompt: extractedObject.suggestedPrompt,
             art_style: (request.style === 'realistic' || request.style === 'sculpture') ? request.style : 'realistic',
-            ai_model: request.quality === 'high' ? 'meshy-5' : 'meshy-4',
+            ai_model: this.selectMeshyModel(request.quality),
             topology: 'triangle',
             target_polycount: request.quality === 'high' ? 50000 : request.quality === 'low' ? 15000 : 30000
           };

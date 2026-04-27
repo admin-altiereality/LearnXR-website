@@ -172,7 +172,8 @@ api.interceptors.request.use(async (config) => {
     }
     
     // Log auth state for debugging protected endpoints
-    if (config.url?.includes('assistant') || config.url?.includes('skybox')) {
+    const isQuietRequest = Boolean((config as any).__quiet);
+    if (!isQuietRequest && (config.url?.includes('assistant') || config.url?.includes('skybox'))) {
       console.log('🔍 Auth check for:', config.url);
       console.log('   auth.currentUser:', user ? `${user.uid} (${user.email})` : 'null');
     }
@@ -207,7 +208,7 @@ api.interceptors.request.use(async (config) => {
       }
     } else {
       // Log warning for protected endpoints
-      if (config.url?.includes('assistant') || config.url?.includes('skybox')) {
+      if (!isQuietRequest && (config.url?.includes('assistant') || config.url?.includes('skybox'))) {
         console.error('❌ No authenticated user for request:', config.url);
         console.error('   auth.currentUser is null');
         console.error('   User needs to log in before making this request');
@@ -232,9 +233,12 @@ api.interceptors.response.use(
     const method = response.config.method?.toUpperCase() || 'GET';
     const url = response.config.url || 'unknown';
     const status = response.status;
+    const isQuietRequest = Boolean((response.config as any).__quiet);
 
     // Enhanced console logging for API calls
-    if (response.config.url?.includes('enhance')) {
+    if (isQuietRequest && status >= 400) {
+      // Expected fallback path (e.g. TTS quota); caller handles it.
+    } else if (response.config.url?.includes('enhance')) {
       console.log(
         `%c✅ API Response: ${method} ${url} - Status: ${status}${duration ? ` (${duration}ms)` : ''}`,
         'color: #10b981; font-weight: bold;',
@@ -254,12 +258,14 @@ api.interceptors.response.use(
     }
 
     // Log successful API call to production logger
-    productionLogger.logApiCall(
-      url,
-      method,
-      status,
-      duration
-    );
+    if (!(isQuietRequest && status >= 400)) {
+      productionLogger.logApiCall(
+        url,
+        method,
+        status,
+        duration
+      );
+    }
 
     return response;
   },
@@ -269,6 +275,7 @@ api.interceptors.response.use(
     const duration = startTime ? Date.now() - startTime : undefined;
     requestStartTimes.delete(requestId);
     const url = error.config?.url || 'unknown';
+    const isQuietRequest = Boolean((error.config as any)?.__quiet);
 
     // 401 retry for assistant URLs: refresh token once and retry
     if (error.response?.status === 401 && typeof url === 'string' && url.includes('assistant')) {
@@ -312,26 +319,28 @@ api.interceptors.response.use(
     }
 
     // Enhanced console logging for API errors
-    console.groupCollapsed(
-      `%c❌ API Error: ${method} ${url}${status ? ` [${status}]` : ''}${duration ? ` (${duration}ms)` : ''}`,
-      'color: #f87171; font-weight: bold; background: #fee2e2; padding: 2px 4px; border-radius: 2px;'
-    );
-    console.error('Method:', method);
-    console.error('URL:', url);
-    console.error('Status:', status || 'No response');
-    if (error.response?.data) {
-      console.error('Response data:', error.response.data);
+    if (!isQuietRequest) {
+      console.groupCollapsed(
+        `%c❌ API Error: ${method} ${url}${status ? ` [${status}]` : ''}${duration ? ` (${duration}ms)` : ''}`,
+        'color: #f87171; font-weight: bold; background: #fee2e2; padding: 2px 4px; border-radius: 2px;'
+      );
+      console.error('Method:', method);
+      console.error('URL:', url);
+      console.error('Status:', status || 'No response');
+      if (error.response?.data) {
+        console.error('Response data:', error.response.data);
+      }
+      if (error.message) {
+        console.error('Error message:', error.message);
+      }
+      if (error.stack) {
+        console.error('Stack:', error.stack);
+      }
+      console.groupEnd();
     }
-    if (error.message) {
-      console.error('Error message:', error.message);
-    }
-    if (error.stack) {
-      console.error('Stack:', error.stack);
-    }
-    console.groupEnd();
 
     // Log failed API call to production logger (skip for 404 evaluation)
-    if (!(status === 404 && url?.includes('/evaluation'))) {
+    if (!isQuietRequest && !(status === 404 && url?.includes('/evaluation'))) {
       const apiError = error.response 
         ? new Error(`API Error: ${error.response.status} ${error.response.statusText}`)
         : error;

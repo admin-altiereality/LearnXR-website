@@ -15,6 +15,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUni
 import { db } from '../../config/firebase';
 import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
 import { removeStudentFromSession } from '../../services/classSessionService';
+import { VR360_TOUR_CHAPTER_ID, getVr360TourById, topicIdForVr360TourId, VR360_TOURS } from '../../config/vr360Tours';
 import { getApiBaseUrl } from '../../utils/apiConfig';
 import { StudentScreen360Preview } from '../../Components/StudentScreen360Preview';
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
@@ -53,6 +54,8 @@ import {
   FaCopy,
   FaStopCircle,
   FaUserMinus,
+  FaClipboardList,
+  FaFileAlt,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import {
@@ -639,11 +642,73 @@ const TeacherDashboard = () => {
     [activeSessionId, user?.uid]
   );
 
+  const handleLaunchVr360ToClass = useCallback(
+    async (tour: (typeof VR360_TOURS)[number]) => {
+      if (!launchLessonToClass) return;
+      const payload = {
+        chapter_id: VR360_TOUR_CHAPTER_ID,
+        topic_id: topicIdForVr360TourId(tour.id),
+        lesson_type: 'vr360_video' as const,
+        vr360_tour_id: tour.id,
+        curriculum: 'VR',
+        class_name: '',
+        subject: '360° Video Tour',
+        lang: 'en',
+      };
+      const sessionId = activeSessionId;
+      if (!sessionId) {
+        toast.error('Start a class session first (select a class, then “Start class session”).');
+        return;
+      }
+      const ok = await launchLessonToClass(payload, sessionId);
+      if (ok) toast.success('360° video tour sent to class');
+      else toast.error('Failed to launch tour to class');
+    },
+    [launchLessonToClass, activeSessionId]
+  );
+
   // Open the launched lesson in Krpano so the teacher can control where the class looks (drag the 360° view)
   const [openLessonToControlLoading, setOpenLessonToControlLoading] = useState(false);
   const openLessonToControlView = useCallback(async () => {
     const launched = activeSession?.launched_lesson;
     if (!launched || !activeSessionId) return;
+
+    if (launched.lesson_type === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
+      setOpenLessonToControlLoading(true);
+      try {
+        const tid =
+          launched.vr360_tour_id ||
+          (typeof launched.topic_id === 'string' && launched.topic_id.startsWith('tour-')
+            ? launched.topic_id.replace(/^tour-/, '')
+            : null);
+        const tour = tid ? getVr360TourById(tid) : undefined;
+        if (!tour) {
+          toast.error('360° tour not found');
+          return;
+        }
+        try {
+          sessionStorage.setItem(
+            'learnxr_vr360_tour',
+            JSON.stringify({
+              tourId: tour.id,
+              title: tour.title,
+              videoPath: tour.videoPath,
+              videoStoragePath: tour.videoStoragePath,
+              player: tour.player,
+              fromClassSession: true,
+            })
+          );
+          sessionStorage.setItem('learnxr_class_session_id', activeSessionId);
+        } catch (e) {
+          console.error(e);
+        }
+        navigate('/vr360-videotour');
+      } finally {
+        setOpenLessonToControlLoading(false);
+      }
+      return;
+    }
+
     setOpenLessonToControlLoading(true);
     try {
       const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
@@ -876,6 +941,66 @@ const TeacherDashboard = () => {
           </div>
         </div>
 
+        {/* Quick action tiles */}
+        <section className="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link
+            to="/question-paper/generate"
+            className="group rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaClipboardList className="w-5 h-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">AI Question Paper</div>
+                <div className="text-xs text-muted-foreground truncate">Generate CBSE/RBSE papers</div>
+              </div>
+            </div>
+          </Link>
+          <Link
+            to="/question-paper/library"
+            className="group rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaFileAlt className="w-5 h-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Paper Library</div>
+                <div className="text-xs text-muted-foreground truncate">Saved question papers</div>
+              </div>
+            </div>
+          </Link>
+          <Link
+            to="/teacher/approvals"
+            className="group rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaChalkboardTeacher className="text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Student Approvals</div>
+                <div className="text-xs text-muted-foreground truncate">Review pending requests</div>
+              </div>
+            </div>
+          </Link>
+          <Link
+            to="/lessons"
+            className="group rounded-xl border border-border bg-card p-4 hover:border-primary/60 transition"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 border border-border flex items-center justify-center">
+                <FaVideo className="w-5 h-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">Lessons</div>
+                <div className="text-xs text-muted-foreground truncate">Browse content library</div>
+              </div>
+            </div>
+          </Link>
+        </section>
+
         {/* Class Session - Launch lesson to connected headsets */}
         <section className="mb-8" aria-labelledby="class-launch-heading">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -979,6 +1104,26 @@ const TeacherDashboard = () => {
                           <FaStopCircle className="w-4 h-4 shrink-0" />
                           End session
                         </Button>
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-muted/20 p-3 sm:p-4 space-y-2">
+                        <p className="text-xs sm:text-sm font-medium text-foreground">360° video VR tours (krpano)</p>
+                        <p className="text-[11px] sm:text-xs text-muted-foreground">Launch the same way as in Lessons: students in this session follow your view in real time after they open the tour.</p>
+                        <div className="flex flex-wrap gap-2">
+                          {VR360_TOURS.map((t) => (
+                            <Button
+                              key={t.id}
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="text-xs h-8"
+                              onClick={() => void handleLaunchVr360ToClass(t)}
+                              disabled={!activeSessionId || sessionContextLoading}
+                            >
+                              {t.title}
+                            </Button>
+                          ))}
+                        </div>
                       </div>
 
                       {/* Student list + chips (only when we have students) */}

@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
-import { AdminGuard, RoleGuard, StudioGuard, SuperAdminGuard, TeacherGuard } from './Components/auth/RoleGuard';
+import { AdminGuard, QuestionPaperGuard, RoleGuard, StudioGuard, SuperAdminGuard, TeacherGuard } from './Components/auth/RoleGuard';
 import { SecretBackendLogin } from './Components/auth/SecretBackendLogin';
 import { Signup } from './Components/auth/Signup';
 import { ErrorBoundary } from './Components/ErrorBoundary';
@@ -35,6 +35,7 @@ import Lessons from './screens/Lessons';
 import Profile from './screens/Profile';
 import School from './screens/School';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
+import Spiral from './screens/Spiral';
 // Pricing removed
 import { LearnXRLessonScene } from './Components/LearnXRLessonScene';
 import { MeshyDebugPanel } from './Components/MeshyDebugPanel';
@@ -76,8 +77,12 @@ import N8nLessonBuilder from './screens/studio/N8nLessonBuilder';
 import ChapterEditor from './screens/studio/ChapterEditor';
 import ContentLibrary from './screens/studio/ContentLibrary';
 import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
+import QuestionPaperGenerator from './screens/questionPaper/QuestionPaperGenerator';
+import QuestionPaperLibrary from './screens/questionPaper/QuestionPaperLibrary';
+import QuestionPaperPreview from './screens/questionPaper/QuestionPaperPreview';
 import VRLessonPlayer from './screens/VRLessonPlayer';
 import VRLessonPlayerKrpano from './screens/VRLessonPlayerKrpano';
+import VR360VideoTourPlayer from './screens/VR360VideoTourPlayer';
 import VRPlayerStandalone from './screens/VRPlayerStandalone';
 import StudioStandalone from './screens/StudioStandalone';
 import MainStandalone from './screens/MainStandalone';
@@ -85,7 +90,7 @@ import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 // Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
-  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main'];
+  const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main', '/spiral'];
   
   // Hide footer completely on immersive experiences and main (environment studio) page
   if (hideFooterRoutes.includes(location.pathname) || 
@@ -111,7 +116,7 @@ const ConditionalSidebar = () => {
     '/login', '/signup', '/forgot-password',
     '/onboarding', '/approval-pending',
     '/web-preview',
-    '/vrlessonplayer', '/vrlessonplayer-krpano', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson'
+    '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson'
   ];
   
   // Hide sidebar on auth pages, onboarding, and immersive experiences
@@ -512,6 +517,14 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      {/* Spiral — minimal voice-first /create page for LKG students */}
+                      <Route path="/spiral" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student', 'teacher', 'admin', 'superadmin']}>
+                            <Spiral />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       {/* Explore routes - Teachers, Schools, Admin only */}
                       <Route path="/explore" element={
                         <ProtectedRoute>
@@ -693,6 +706,13 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/vr360-videotour" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <VR360VideoTourPlayer />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* XR Lesson Player (WebXR for Meta Quest) - All authenticated users */}
                       <Route path="/xrlessonplayer" element={
@@ -754,7 +774,30 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
-                      
+
+                      {/* Question Paper Generator (fallback branch) */}
+                      <Route path="/question-paper/generate" element={
+                        <ProtectedRoute>
+                          <QuestionPaperGuard>
+                            <QuestionPaperGenerator />
+                          </QuestionPaperGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/question-paper/library" element={
+                        <ProtectedRoute>
+                          <QuestionPaperGuard>
+                            <QuestionPaperLibrary />
+                          </QuestionPaperGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/question-paper/view/:paperId" element={
+                        <ProtectedRoute>
+                          <QuestionPaperGuard>
+                            <QuestionPaperPreview />
+                          </QuestionPaperGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Redirect unknown routes to home */}
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
@@ -879,6 +922,14 @@ function App() {
                               backgroundSkybox={backgroundSkybox}
                               className="w-full absolute inset-0 min-h-screen"
                             />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      {/* Spiral — minimal voice-first /create page for LKG students */}
+                      <Route path="/spiral" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student', 'teacher', 'admin', 'superadmin']}>
+                            <Spiral />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
@@ -1164,6 +1215,13 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/vr360-videotour" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <VR360VideoTourPlayer />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* XR Lesson Player (WebXR for Meta Quest) - All authenticated users */}
                       <Route path="/xrlessonplayer" element={
@@ -1229,7 +1287,30 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
-                      
+
+                      {/* Question Paper Generator - Teacher, Principal, School, Admin, Superadmin */}
+                      <Route path="/question-paper/generate" element={
+                        <ProtectedRoute>
+                          <QuestionPaperGuard>
+                            <QuestionPaperGenerator />
+                          </QuestionPaperGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/question-paper/library" element={
+                        <ProtectedRoute>
+                          <QuestionPaperGuard>
+                            <QuestionPaperLibrary />
+                          </QuestionPaperGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/question-paper/view/:paperId" element={
+                        <ProtectedRoute>
+                          <QuestionPaperGuard>
+                            <QuestionPaperPreview />
+                          </QuestionPaperGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Redirect unknown routes to home */}
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>

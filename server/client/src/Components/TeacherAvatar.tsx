@@ -25,6 +25,7 @@ interface TeacherAvatarProps {
   subject?: string;
   useAvatarKey?: boolean;
   externalThreadId?: string | null; // If provided, use this thread instead of creating one
+  disableThreadInit?: boolean; // Display-only avatar mode; caller handles Q&A separately
   audioUrl?: string | null; // Audio URL for TTS playback and lip sync
   visemes?: VisemeFrame[]; // Viseme frames for lip sync animation
 }
@@ -489,6 +490,9 @@ function AvatarModel({
   // Comprehensive scan: Check model capabilities for lipsync, face movement, and body movement
   useEffect(() => {
     if (!scene || !modelCentered) return;
+    if (!import.meta.env.DEV) {
+      return;
+    }
 
     console.log('🔍 ===== COMPREHENSIVE MODEL SCAN =====');
     console.log('📦 Scanning GLB file: avatar3.glb');
@@ -980,7 +984,9 @@ function AvatarModel({
             
             if (isLeftArm || isRightArm) {
               foundBones.push(bone);
-              console.log(`✅ Found arm/hand bone: ${bone.name}`);
+              if (import.meta.env.DEV) {
+                console.log(`✅ Found arm/hand bone: ${bone.name}`);
+              }
             }
           });
         }
@@ -1321,8 +1327,21 @@ const getServerApiUrl = (): string => {
   return getApiBaseUrl();
 };
 
+export interface TeacherAvatarHandle {
+  sendMessage: (message: string) => Promise<void>;
+  testLipSync: () => void;
+  testBodyMovement: () => void;
+  testLipMovement: () => void;
+  /**
+   * Imperatively make the avatar speak with the supplied audio + visemes.
+   * Used by the Spiral (LKG) page where we want audio + lip-sync regardless
+   * of the assistant message path's text-only behavior.
+   */
+  speak: (audioUrl: string, visemeFrames: VisemeFrame[]) => void;
+}
+
 export const TeacherAvatar = React.forwardRef<
-  { sendMessage: (message: string) => Promise<void>; testLipSync: () => void; testBodyMovement: () => void; testLipMovement: () => void },
+  TeacherAvatarHandle,
   TeacherAvatarProps
 >(({
   avatarModelUrl = '/models/avatar3.glb',
@@ -1337,6 +1356,7 @@ export const TeacherAvatar = React.forwardRef<
   subject,
   useAvatarKey = false,
   externalThreadId,
+  disableThreadInit = false,
   audioUrl: externalAudioUrl,
   visemes: externalVisemes
 }, ref) => {
@@ -1488,6 +1508,11 @@ export const TeacherAvatar = React.forwardRef<
         setThreadReady(true);
         setError(null);
       }
+      return;
+    }
+
+    if (disableThreadInit) {
+      setThreadReady(false);
       return;
     }
 
@@ -1724,12 +1749,24 @@ export const TeacherAvatar = React.forwardRef<
     }
   };
 
-  // Expose sendMessage, testLipSync, testBodyMovement, and testLipMovement methods via ref
+  // Imperatively trigger TTS playback + lip-sync on the avatar.
+  // Used by the Spiral (LKG) page via avatarSpeak() helper.
+  const speak = (audioUrl: string, visemeFrames: VisemeFrame[]) => {
+    if (!audioUrl) {
+      return;
+    }
+    setVisemes(visemeFrames || []);
+    setCurrentAudioUrl(audioUrl);
+    setIsSpeaking(true);
+  };
+
+  // Expose sendMessage, testLipSync, testBodyMovement, testLipMovement, and speak methods via ref
   React.useImperativeHandle(ref, () => ({
     sendMessage,
     testLipSync,
     testBodyMovement,
-    testLipMovement
+    testLipMovement,
+    speak
   }), [threadId]);
 
   return (

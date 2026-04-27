@@ -10,6 +10,8 @@ import personalizedLearningService from '../services/personalizedLearningService
 import type { StudentProgressSummary } from '../services/personalizedLearningService';
 import teacherSupportService from '../services/teacherSupportService';
 import * as mcqGenerationService from '../services/mcqGenerationService';
+import * as questionPaperGenerationService from '../services/questionPaperGenerationService';
+import type { PaperBlueprint, PaperSource } from '../services/questionPaperGenerationService';
 import { db, isFirebaseInitialized } from '../config/firebase-admin';
 
 const router = express.Router();
@@ -445,6 +447,83 @@ router.post('/generate-mcq', async (req, res) => {
     });
   } catch (error: unknown) {
     console.error('Generate MCQ error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      success: false,
+      error: message,
+      message,
+    });
+  }
+});
+
+// --- Question Paper Generation (teachers / school admins / principals / admins) ---
+
+/**
+ * POST /ai-education/generate-question-paper
+ * Generates a CBSE/RBSE-style question paper from a PDF source + blueprint.
+ * Response is the raw paper JSON; caller is expected to persist it to
+ * the `question_papers` Firestore collection.
+ */
+router.post('/generate-question-paper', async (req, res) => {
+  try {
+    const profile = req.userProfile;
+    if (!profile) {
+      return res.status(401).json({
+        success: false,
+        error:
+          'User profile not found. Ensure your account has a document in Firestore users collection with a valid role.',
+      });
+    }
+    const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
+    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only teachers, principals, school admins, or administrators can generate question papers.',
+      });
+    }
+
+    const { source, blueprint } = req.body as {
+      source?: PaperSource;
+      blueprint?: PaperBlueprint;
+    };
+
+    if (!blueprint || typeof blueprint !== 'object') {
+      return res.status(400).json({ success: false, error: 'blueprint is required' });
+    }
+    if (!blueprint.subject || !blueprint.class) {
+      return res.status(400).json({ success: false, error: 'blueprint.subject and blueprint.class are required' });
+    }
+    if (!Array.isArray(blueprint.sections) || blueprint.sections.length === 0) {
+      return res.status(400).json({ success: false, error: 'blueprint.sections must be a non-empty array' });
+    }
+    const sectionsSum = blueprint.sections.reduce((sum, s) => sum + (Number(s.max_marks) || 0), 0);
+    if (Number(blueprint.max_marks) <= 0 || sectionsSum !== Number(blueprint.max_marks)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid blueprint: sum of section marks (${sectionsSum}) must equal max_marks (${blueprint.max_marks}).`,
+      });
+    }
+
+    const safeSource: PaperSource = source && typeof source === 'object'
+      ? {
+          type: (['chapter', 'upload', 'none'] as const).includes(source.type as 'chapter' | 'upload' | 'none')
+            ? source.type
+            : 'none',
+          chapterId: source.chapterId,
+          storagePath: source.storagePath,
+          pdfUrl: source.pdfUrl,
+          rawText: source.rawText,
+        }
+      : { type: 'none' };
+
+    const result = await questionPaperGenerationService.generateQuestionPaper({
+      source: safeSource,
+      blueprint,
+    });
+
+    res.json({ success: true, data: result });
+  } catch (error: unknown) {
+    console.error('Generate question paper error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({
       success: false,

@@ -28,6 +28,8 @@
     "helmet": "^8.1.0",
     "multer": "^2.0.1",
     "openai": "^4.20.0",
+    "pdf-parse": "^1.1.4",
+    "pdf-to-img": "^5.0.0",
     "razorpay": "^2.9.6",
     "sharp": "^0.33.5"
   },
@@ -38,6 +40,7 @@
     "@types/cors": "^2.8.13",
     "@types/express": "^4.17.17",
     "@types/node": "^18.15.11",
+    "@types/pdf-parse": "^1.1.5",
     "cross-env": "^7.0.3",
     "tsx": "^3.12.6",
     "typescript": "^5.0.4"

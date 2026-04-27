@@ -32,6 +32,7 @@ import {
     Target,
     Trophy,
     Users,
+    Video,
     Volume2,
     X,
     XCircle
@@ -46,6 +47,7 @@ import { Input } from '../Components/ui/input';
 import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Components/ui/select';
 import { db } from '../config/firebase';
+import { VR360_TOUR_CHAPTER_ID, getVr360TourById, topicIdForVr360TourId, VR360_TOURS } from '../config/vr360Tours';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
@@ -472,6 +474,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     activeSessionId,
     activeSession,
     startSession,
+    endSession,
     launchLesson: launchLessonToClass,
   } = useClassSession();
   const [sessionCodeInput, setSessionCodeInput] = useState('');
@@ -481,9 +484,20 @@ const Lessons = ({ setBackgroundSkybox }) => {
   // Student class data
   const [studentClasses, setStudentClasses] = useState([]);
   const [teacherClasses, setTeacherClasses] = useState([]);
+  const [hostSessionClasses, setHostSessionClasses] = useState([]);
+  const [vrHostClassId, setVrHostClassId] = useState('');
   const isStudent = profile?.role === 'student';
   const isTeacher = profile?.role === 'teacher';
+  const isPrincipal = profile?.role === 'principal';
+  const isSchoolStaff = profile?.role === 'school';
+  const isHostVr =
+    isTeacher || isAdminOnly(profile) || isSuperadmin(profile) || isPrincipal || isSchoolStaff;
   const isGuest = !!(profile?.isGuest === true && profile?.role === 'student');
+
+  const hostClassesForVr = useMemo(() => {
+    if (isTeacher) return teacherClasses;
+    return hostSessionClasses;
+  }, [isTeacher, teacherClasses, hostSessionClasses]);
 
   // Guest: logout then navigate so user can sign up or log in with a full account
   const handleGuestSignup = useCallback(async () => {
@@ -655,6 +669,50 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
     fetchTeacherClasses();
   }, [isTeacher, profile?.managed_class_ids, db]);
+
+  // Classes available to host a live session (teachers: managed classes; staff: school query)
+  useEffect(() => {
+    if (!isHostVr || !db || !profile) {
+      setHostSessionClasses([]);
+      return;
+    }
+    if (isTeacher) {
+      setHostSessionClasses([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const schoolId = profile.school_id || profile.managed_school_id;
+        if (schoolId) {
+          const q = query(collection(db, 'classes'), where('school_id', '==', schoolId), limit(200));
+          const snap = await getDocs(q);
+          if (cancelled) return;
+          setHostSessionClasses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        } else if (profile.role === 'superadmin') {
+          const q = query(collection(db, 'classes'), limit(200));
+          const snap = await getDocs(q);
+          if (cancelled) return;
+          setHostSessionClasses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        } else {
+          setHostSessionClasses([]);
+        }
+      } catch (e) {
+        console.error('Lessons: hostSessionClasses', e);
+        setHostSessionClasses([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isHostVr, isTeacher, db, profile?.uid, profile?.school_id, profile?.managed_school_id, profile?.role]);
+
+  useEffect(() => {
+    const list = hostClassesForVr;
+    if (!list.length) {
+      setVrHostClassId('');
+      return;
+    }
+    setVrHostClassId((prev) => (prev && list.some((c) => c.id === prev) ? prev : list[0].id));
+  }, [hostClassesForVr]);
 
   // Fetch chapters from Firestore (basic list - no heavy data fetching)
   useEffect(() => {
@@ -1333,6 +1391,42 @@ const Lessons = ({ setBackgroundSkybox }) => {
   React.useEffect(() => {
     const launched = joinedSession?.launched_lesson;
     if (!launched || !joinedSessionId || !user?.uid) return;
+
+    if (launched.lesson_type === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
+      const tid =
+        launched.vr360_tour_id ||
+        (typeof launched.topic_id === 'string' && launched.topic_id.startsWith('tour-')
+          ? launched.topic_id.replace(/^tour-/, '')
+          : null);
+      const vKey = `vr360_${tid || 'x'}`;
+      if (launchedLessonHandledRef.current === vKey) return;
+      launchedLessonHandledRef.current = vKey;
+      const tour = tid ? getVr360TourById(tid) : undefined;
+      if (!tour) {
+        launchedLessonHandledRef.current = null;
+        return;
+      }
+      try {
+        sessionStorage.setItem(
+          'learnxr_vr360_tour',
+          JSON.stringify({
+            tourId: tour.id,
+            title: tour.title,
+            videoPath: tour.videoPath,
+            videoStoragePath: tour.videoStoragePath,
+            player: tour.player,
+            fromClassSession: true,
+          })
+        );
+        sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+        setTimeout(() => navigate('/vr360-videotour'), 200);
+      } catch (err) {
+        console.error('Failed to open launched 360 video tour:', err);
+        launchedLessonHandledRef.current = null;
+      }
+      return;
+    }
+
     const key = `${launched.chapter_id}_${launched.topic_id}`;
     if (launchedLessonHandledRef.current === key) return;
     launchedLessonHandledRef.current = key;
@@ -1866,6 +1960,71 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
   const canLaunchInClass = isTeacher && teacherClasses.length > 0 && lessonData?.chapter && lessonData?.topic && canLaunchLesson && (activeSessionId || classIdForLaunch);
 
+  const handlePlayVr360Tour = useCallback(
+    (tour) => {
+      const vr = {
+        tourId: tour.id,
+        title: tour.title,
+        videoPath: tour.videoPath,
+        fromClassSession: false,
+      };
+      try {
+        sessionStorage.setItem('learnxr_vr360_tour', JSON.stringify(vr));
+      } catch (e) {
+        console.warn(e);
+      }
+      navigate('/vr360-videotour', { state: { vr360: vr } });
+    },
+    [navigate]
+  );
+
+  const handleStartVrClassSession = useCallback(async () => {
+    if (!vrHostClassId || !startSession) return;
+    const id = await startSession(vrHostClassId);
+    if (id) toast.success('Class session started — share the code with students');
+    else toast.error('Could not start session');
+  }, [vrHostClassId, startSession]);
+
+  const handleLaunchVr360ToClass = useCallback(
+    async (tour) => {
+      if (!launchLessonToClass || isGuest) return;
+      const payload = {
+        chapter_id: VR360_TOUR_CHAPTER_ID,
+        topic_id: topicIdForVr360TourId(tour.id),
+        lesson_type: 'vr360_video',
+        vr360_tour_id: tour.id,
+        curriculum: 'VR',
+        class_name: '',
+        subject: '360° Video Tour',
+        lang: selectedLanguage || 'en',
+      };
+      let sessionId = activeSessionId;
+      if (!sessionId && startSession && vrHostClassId) {
+        const newId = await startSession(vrHostClassId);
+        if (!newId) {
+          toast.error('Could not start class session. Pick a class and try again.');
+          return;
+        }
+        sessionId = newId;
+      }
+      if (!sessionId) {
+        toast.error('Start a class session first (select class and Start session).');
+        return;
+      }
+      const ok = await launchLessonToClass(payload, sessionId);
+      if (ok) toast.success('360° video tour sent to class');
+      else toast.error('Failed to launch tour to class');
+    },
+    [launchLessonToClass, isGuest, selectedLanguage, activeSessionId, startSession, vrHostClassId]
+  );
+
+  const canLaunchVr360ToClass =
+    isHostVr &&
+    !isGuest &&
+    hostClassesForVr.length > 0 &&
+    (activeSessionId || vrHostClassId) &&
+    !!launchLessonToClass;
+
   // Get thumbnail
   const getThumbnail = useCallback((chapter) => {
     return chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
@@ -2258,6 +2417,101 @@ const Lessons = ({ setBackgroundSkybox }) => {
             </CardContent>
           </Card>
         )}
+
+        {/* 360° video VR tours (all users can play; teachers / admins can launch to a live class) */}
+        <Card className="mb-6 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+                <Video className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold text-foreground">360° video VR tours</CardTitle>
+                <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                  Equirectangular 360° videos for any class. Students join with your session code like other live lessons.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 sm:px-6 space-y-4">
+            {isHostVr && !isGuest && hostClassesForVr.length > 0 && (
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-center flex-1 min-w-0">
+                  <span className="text-xs text-muted-foreground shrink-0">Class for live session</span>
+                  <Select value={vrHostClassId || ''} onValueChange={setVrHostClassId}>
+                    <SelectTrigger className="w-full sm:w-[220px] bg-background border-border text-foreground">
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {hostClassesForVr.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.class_name || c.name || c.id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {!activeSessionId ? (
+                  <Button size="sm" onClick={handleStartVrClassSession} disabled={sessionJoinLoading || !vrHostClassId}>
+                    Start class session
+                  </Button>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:ml-auto">
+                    <span className="text-sm font-mono font-semibold text-primary tracking-wider">
+                      Code: {activeSession?.session_code || '—'}
+                    </span>
+                    <Button size="sm" variant="outline" onClick={() => endSession?.()}>
+                      End session
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+            {isHostVr && !isGuest && !hostClassesForVr.length && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">No class found to host. Ask your admin to assign classes to your account.</p>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {VR360_TOURS.map((tour) => (
+                <div
+                  key={tour.id}
+                  className="flex flex-col gap-2 p-3 rounded-xl border border-border bg-muted/20 hover:border-primary/30 transition-colors"
+                >
+                  <div className="flex items-start gap-2">
+                    <Video className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{tour.title}</p>
+                      {tour.description && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{tour.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-auto">
+                    <Button size="sm" className="gap-1" onClick={() => handlePlayVr360Tour(tour)}>
+                      <Play className="h-3.5 w-3.5" />
+                      Play
+                    </Button>
+                    {isHostVr && !isGuest && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="gap-1"
+                        onClick={() => handleLaunchVr360ToClass(tour)}
+                        disabled={!canLaunchVr360ToClass}
+                        title={!canLaunchVr360ToClass ? 'Start a class session, then launch' : 'Send this tour to joined students'}
+                      >
+                        <Users className="h-3.5 w-3.5" />
+                        Launch in class
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {isGuest && (
+              <p className="text-xs text-muted-foreground">Sign up to join live class sessions and launch tours to a class.</p>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Filters */}
         <Card className="mb-6 rounded-xl border-border">

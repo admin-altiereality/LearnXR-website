@@ -640,14 +640,22 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == sessionSchoolId;
     }
     match /class_sessions/{sessionId} {
+      // Teachers (same school), school admins, superadmin, and principals (managed school) may host.
       allow create: if isAuthenticated() &&
         request.resource.data.teacher_uid == request.auth.uid &&
         request.resource.data.school_id != null &&
         request.resource.data.class_id != null &&
         request.resource.data.status == 'waiting' &&
         request.resource.data.session_code != null &&
-        teacherManagesClass(request.resource.data.class_id) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == request.resource.data.school_id;
+        exists(/databases/$(database)/documents/classes/$(request.resource.data.class_id)) &&
+        get(/databases/$(database)/documents/classes/$(request.resource.data.class_id)).data.school_id == request.resource.data.school_id &&
+        (
+          (teacherManagesClass(request.resource.data.class_id) && getUserSchoolId() == request.resource.data.school_id) ||
+          (isAdminOrSuperadmin() && canAccessSchool(request.resource.data.school_id)) ||
+          (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == request.resource.data.school_id) ||
+          (getUserRole() == 'school' && getUserSchoolId() == request.resource.data.school_id)
+        );
       allow read: if isAuthenticated() && (
         resource.data.teacher_uid == request.auth.uid ||
         studentInClass(resource.data.class_id, resource.data.school_id) ||
@@ -817,6 +825,43 @@ service cloud.firestore {
       allow read: if isAdminOrSuperadmin();
       // No updates or deletes allowed (logs are immutable)
       allow update, delete: if false;
+    }
+
+    // AI-generated Question Papers
+    // Teachers/principals/school admins create papers scoped to their school or classes.
+    // Owners can CRUD their own papers; admins see all; principals/school admins see same-school papers.
+    match /question_papers/{paperId} {
+      function isPaperOwner() {
+        return isAuthenticated() && resource.data.created_by_uid == request.auth.uid;
+      }
+      function isSameSchoolStaff() {
+        return isAuthenticated() &&
+          resource.data.school_id != null &&
+          (
+            (getUserRole() == 'school' && getUserSchoolId() == resource.data.school_id) ||
+            (getUserRole() == 'principal' &&
+              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
+            (getUserRole() == 'teacher' && getUserSchoolId() == resource.data.school_id)
+          );
+      }
+
+      allow read: if isAuthenticated() && (
+        isAdminOrSuperadmin() || isPaperOwner() || isSameSchoolStaff()
+      );
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.created_by_uid == request.auth.uid &&
+        getUserRole() in ['teacher', 'school', 'principal', 'admin', 'superadmin'];
+
+      allow update: if isAuthenticated() && (
+        isAdminOrSuperadmin() ||
+        (isPaperOwner() && request.resource.data.created_by_uid == resource.data.created_by_uid)
+      );
+
+      allow delete: if isAuthenticated() && (
+        isAdminOrSuperadmin() || isPaperOwner()
+      );
     }
   }
 } 

@@ -142,6 +142,9 @@ export interface Principal {
 // Class Launch – Sessions and live progress
 // =============================================================================
 
+/** Default / curriculum path uses Firestore topics; 360 video tours use sentinel IDs + lesson_type. */
+export type LaunchedLessonType = 'curriculum' | 'vr360_video';
+
 /** Payload when teacher launches a curriculum lesson to the class */
 export interface LaunchedLesson {
   chapter_id: string;
@@ -151,6 +154,13 @@ export interface LaunchedLesson {
   subject?: string;
   /** Language for the launched lesson (e.g. 'en' | 'hi'); used for bundle and TTS */
   lang?: string;
+  /**
+   * When `vr360_video`, clients open /vr360-videotour and skip getLessonBundle.
+   * `chapter_id` is typically `__vr360__`, `topic_id` like `tour-1`.
+   */
+  lesson_type?: LaunchedLessonType;
+  /** Tour id from config (e.g. "1".."5") when `lesson_type === 'vr360_video'` */
+  vr360_tour_id?: string;
 }
 
 /** Payload when teacher sends current Create-page scene to the class */

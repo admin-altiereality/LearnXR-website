@@ -19,7 +19,28 @@
 <div style="width:100%;height:100%;">
 	<noscript><table style="width:100%;height:100%;"><tr style="vertical-align:middle;text-align:center;"><td>ERROR:<br><br>Javascript not activated<br><br></td></tr></table></noscript>
 	<script>
-		embedpano({xml:"tour.xml", passQueryParameters:"startscene,startlookat"});
+		var krpanoInterface = null;
+
+		function pauseVideoIfPlaying() {
+			if (!krpanoInterface) return;
+			krpanoInterface.call("if(plugin[video], plugin[video].pause(); );");
+		}
+
+		function handleVisibilityChange() {
+			if (document.hidden) {
+				pauseVideoIfPlaying();
+			}
+		}
+
+		window.addEventListener("blur", pauseVideoIfPlaying);
+		window.addEventListener("pagehide", pauseVideoIfPlaying);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+
+		function onKrpanoReady(krpano) {
+			krpanoInterface = krpano;
+		}
+
+		embedpano({xml:"tour.xml", passQueryParameters:"startscene,startlookat", onready:onKrpanoReady});
 	</script>
 </div>
 

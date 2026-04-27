@@ -162,7 +162,13 @@ class ProductionLogger {
           // Swallow errors – Firestore is the primary log sink
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.code === 'already-exists' || String(error?.message || '').includes('Document already exists')) {
+        if (import.meta.env.DEV) {
+          console.warn('Duplicate production log ignored:', error);
+        }
+        return;
+      }
       // Fallback to console if Firestore fails
       console.error('Failed to save log to Firestore:', error);
       console.error('Original log entry:', entry);
@@ -220,10 +226,9 @@ class ProductionLogger {
       }
     } catch (error) {
       console.error('Error processing log queue:', error);
-      // Re-add failed logs to queue (up to max size)
-      if (this.logQueue.length < this.MAX_QUEUE_SIZE) {
-        this.logQueue.push(...this.logQueue);
-      }
+      // Do not requeue the same entries here; saveLogToFirestore already
+      // isolates individual failures and requeueing the current queue caused
+      // duplicate Firestore writes/noise in production.
     } finally {
       this.queueProcessing = false;
     }

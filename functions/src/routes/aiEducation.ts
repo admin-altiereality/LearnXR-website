@@ -9,6 +9,11 @@ import * as admin from 'firebase-admin';
 import { getUserProfile } from '../middleware/rbac';
 import { getRecommendations } from '../services/personalizedLearningService';
 import teacherSupportService from '../services/teacherSupportService';
+import {
+  generateQuestionPaper as runQuestionPaperGeneration,
+  type PaperBlueprint,
+  type PaperSource,
+} from '../services/questionPaperGenerationService';
 
 const router = express.Router();
 
@@ -380,6 +385,94 @@ router.post('/teacher-support/rubric', async (req, res) => {
       success: false,
       error: 'Failed to generate rubric',
       message: error?.message ?? 'Unknown error',
+    });
+  }
+});
+
+// --- Question Paper Generation (teachers, principals, school admins, admins) ---
+
+/**
+ * POST /ai-education/generate-question-paper
+ * Generates a CBSE/RBSE-style question paper from a PDF source + blueprint.
+ * Response is the raw paper JSON; the caller persists it to the `question_papers`
+ * Firestore collection (project: learnxr-evoneuralai).
+ */
+router.post('/generate-question-paper', async (req, res) => {
+  try {
+    const profile = (req as any).userProfile;
+    if (!profile) {
+      return res.status(401).json({
+        success: false,
+        error:
+          'User profile not found. Ensure your account has a document in the users Firestore collection with a valid role.',
+      });
+    }
+    if (!canUseTeacherSupport(profile)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only teachers, principals, school admins, or administrators can generate question papers.',
+      });
+    }
+
+    const { source, blueprint } = req.body as {
+      source?: PaperSource;
+      blueprint?: PaperBlueprint;
+    };
+
+    if (!blueprint || typeof blueprint !== 'object') {
+      return res.status(400).json({ success: false, error: 'blueprint is required' });
+    }
+    if (!blueprint.subject || !blueprint.class) {
+      return res.status(400).json({ success: false, error: 'blueprint.subject and blueprint.class are required' });
+    }
+    if (!Array.isArray(blueprint.sections) || blueprint.sections.length === 0) {
+      return res.status(400).json({ success: false, error: 'blueprint.sections must be a non-empty array' });
+    }
+
+    // Validate: sum of each group's (count × marks_per_q) across sections must equal max_marks.
+    const groupsSum = blueprint.sections.reduce(
+      (acc, s) => acc + (Array.isArray(s.groups) ? s.groups.reduce((g, gr) => g + (Number(gr.count) || 0) * (Number(gr.marks_per_q) || 0), 0) : 0),
+      0
+    );
+    const sectionsSum = blueprint.sections.reduce((sum, s) => sum + (Number(s.max_marks) || 0), 0);
+    if (Number(blueprint.max_marks) <= 0 || sectionsSum !== Number(blueprint.max_marks)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid blueprint: sum of section marks (${sectionsSum}) must equal max_marks (${blueprint.max_marks}).`,
+      });
+    }
+    if (groupsSum !== Number(blueprint.max_marks)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid blueprint: sum of question group marks (${groupsSum}) must equal max_marks (${blueprint.max_marks}).`,
+      });
+    }
+
+    const safeSource: PaperSource = source && typeof source === 'object'
+      ? {
+          type: (['chapter', 'upload', 'none'] as const).includes(source.type as 'chapter' | 'upload' | 'none')
+            ? source.type
+            : 'none',
+          chapterId: source.chapterId,
+          storagePath: source.storagePath,
+          pdfUrl: source.pdfUrl,
+          rawText: source.rawText,
+        }
+      : { type: 'none' };
+
+    const result = await runQuestionPaperGeneration({
+      source: safeSource,
+      blueprint,
+    });
+
+    return res.json({ success: true, data: result });
+  } catch (error: unknown) {
+    console.error('Generate question paper error:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return res.status(500).json({
+      success: false,
+      error: message,
+      message,
     });
   }
 });

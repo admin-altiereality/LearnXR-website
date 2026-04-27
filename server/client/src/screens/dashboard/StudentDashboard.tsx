@@ -11,6 +11,7 @@ import { useClassSession } from '../../contexts/ClassSessionContext';
 import { useLesson } from '../../contexts/LessonContext';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
 import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher, FaUsers, FaKey } from 'react-icons/fa';
@@ -111,6 +112,45 @@ const StudentDashboard = () => {
   useEffect(() => {
     const launched = joinedSession?.launched_lesson;
     if (!launched || !joinedSessionId || !user?.uid) return;
+
+    if (launched.lesson_type === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
+      const tid =
+        launched.vr360_tour_id ||
+        (typeof launched.topic_id === 'string' && launched.topic_id.startsWith('tour-')
+          ? launched.topic_id.replace(/^tour-/, '')
+          : null);
+      const vKey = `vr360_${tid || 'x'}`;
+      if (launchedLessonHandledRef.current === vKey) return;
+      launchedLessonHandledRef.current = vKey;
+      (async () => {
+        const { getVr360TourById } = await import('../../config/vr360Tours');
+        const tour = tid ? getVr360TourById(tid) : undefined;
+        if (!tour) {
+          launchedLessonHandledRef.current = null;
+          return;
+        }
+        try {
+          sessionStorage.setItem(
+            'learnxr_vr360_tour',
+            JSON.stringify({
+              tourId: tour.id,
+              title: tour.title,
+              videoPath: tour.videoPath,
+              videoStoragePath: tour.videoStoragePath,
+              player: tour.player,
+              fromClassSession: true,
+            })
+          );
+          sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+          setTimeout(() => navigate('/vr360-videotour'), 200);
+        } catch (err) {
+          console.error('Failed to open launched 360 video tour:', err);
+          launchedLessonHandledRef.current = null;
+        }
+      })();
+      return;
+    }
+
     const key = `${launched.chapter_id}_${launched.topic_id}`;
     if (launchedLessonHandledRef.current === key) return;
     launchedLessonHandledRef.current = key;

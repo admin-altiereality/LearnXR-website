@@ -53,6 +53,16 @@ service firebase.storage {
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
+    // 360° VR video tours (equirectangular MP4; may exceed 100MB for 8K / long clips)
+    function isValidVr360VideoSize() {
+      return request.resource.size < 2500 * 1024 * 1024; // 2.5GB cap
+    }
+    match /video_vr_tour/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidVr360VideoSize();
+      allow delete: if isAuthenticated();
+    }
+
     // PDFs storage
     match /pdfs/{pdfId}/{allPaths=**} {
       allow read: if isAuthenticated();
@@ -67,6 +77,14 @@ service firebase.storage {
       allow delete: if isAuthenticated();
     }
     
+    // Question Papers: source PDFs uploaded by users for paper generation
+    // Path layout: question_papers/{userId}/source/{filename}.pdf
+    match /question_papers/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if request.auth != null && request.auth.uid == userId && isValidSize();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     // General user uploads (non-lesson content)
     match /uploads/{userId}/{allPaths=**} {
       allow read: if isAuthenticated();

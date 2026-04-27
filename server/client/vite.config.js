@@ -41,47 +41,20 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       assetsDir: 'assets',
       sourcemap: mode !== 'production', // Disable in prod to avoid exposing source
-      // Add timestamp to force cache busting
+      // Use content hash for cache busting (Date.now() per chunk breaks Rollup and can hang the build)
       rollupOptions: {
         output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom', 'react-router-dom'],
-            three: ['three', '@react-three/fiber', '@react-three/drei'],
-          },
-          // Add timestamp to chunk names for cache busting
-          chunkFileNames: (chunkInfo) => {
-            const timestamp = Date.now();
-            return `assets/[name]-${timestamp}.[hash].js`;
-          },
-          entryFileNames: (chunkInfo) => {
-            const timestamp = Date.now();
-            return `assets/[name]-${timestamp}.[hash].js`;
-          },
-          assetFileNames: (assetInfo) => {
-            const timestamp = Date.now();
-            return `assets/[name]-${timestamp}.[hash].[ext]`;
-          },
+          // manualChunks disabled: large app + custom vendor/three split can stall Rollup for a long time
+          chunkFileNames: 'assets/[name]-[hash].js',
+          entryFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: 'assets/[name]-[hash][extname]',
         },
       },
       // Optimize chunk size warnings
       chunkSizeWarningLimit: 1000,
-      // Enable minification - keep console.error/console.warn for debugging
-      minify: 'terser',
-      terserOptions: {
-        compress: {
-          // Keep console.error and console.warn so errors are visible in production
-          pure_funcs: ['console.log', 'console.info', 'console.debug'],
-          drop_debugger: true,
-          keep_classnames: true,
-          keep_fnames: true,
-          passes: 1,
-        },
-        mangle: false,
-        format: {
-          comments: false,
-          beautify: false,
-        },
-      },
+      // Skip minify with VITE_SKIP_MINIFY=1; reportCompressedSize=false speeds Rollup’s final pass
+      reportCompressedSize: false,
+      minify: process.env.VITE_SKIP_MINIFY === '1' ? false : 'esbuild',
     },
 
     // Resolve configuration

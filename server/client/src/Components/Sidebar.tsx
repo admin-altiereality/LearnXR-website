@@ -26,7 +26,9 @@ import {
   FaFileAlt,
   FaLightbulb,
   FaSun,
-  FaMoon
+  FaMoon,
+  FaClipboardList,
+  FaStar
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -107,7 +109,7 @@ const Sidebar = () => {
   };
 
   // Don't render sidebar on these pages
-  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/vrlessonplayer', '/xrlessonplayer', '/learnxr/lesson'];
+  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/xrlessonplayer', '/learnxr/lesson'];
   if (hiddenPages.some(page => location.pathname.startsWith(page)) || !user) {
     return null;
   }
@@ -136,6 +138,9 @@ const Sidebar = () => {
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;
   // School administrators should NOT have access to Create, Explore, History
   const canCreate = isTeacher || isAdminOrSuperadmin;
+  // Spiral (Kids) is intentionally also visible to students so a Class 1 child
+  // can launch the voice-first creator without seeing the full Create page.
+  const canUseSpiral = isStudent || isTeacher || isAdminOrSuperadmin;
 
   // Build navigation items based on role according to the spec:
   // Associate: Dashboard, Lessons only (refine lessons, submit for approval)
@@ -180,9 +185,22 @@ const Sidebar = () => {
     // Creator tools - teachers, schools, admin, superadmin (includes AI Teacher Support panel in top-right)
     if (canCreate) {
       items.push({ path: '/main', label: 'Create', icon: FaFlask });
+    }
+    // Spiral (Kids) - voice-first minimal creator for LKG / Class 1 students.
+    // Kept alongside the existing Create entry so both old and new pages coexist
+    // until we retire `/main`.
+    if (canUseSpiral) {
+      items.push({ path: '/spiral', label: 'Create (Kids)', icon: FaStar });
+    }
+    if (canCreate) {
       items.push({ path: '/explore', label: 'Explore', icon: FaCubes });
       items.push({ path: '/history', label: 'History', icon: FaHistory });
       // Studio / Chapter Editor - admin and superadmin only (no school)
+    }
+
+    // AI Question Paper - teacher, school, principal, admin, superadmin
+    if (isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
+      items.push({ path: '/question-paper/library', label: 'Question Papers', icon: FaClipboardList });
     }
 
     // Teacher tools - approve students

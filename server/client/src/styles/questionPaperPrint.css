@@ -1,0 +1,362 @@
+/**
+ * Print styles for AI-generated question papers.
+ * Matches the CBSE/RBSE practice paper format (A4, repeated header, "-- N of M --" footer).
+ */
+
+.qp-root {
+  color: #111;
+  background: #fff;
+  font-family: "Noto Serif", "Liberation Serif", "Times New Roman", serif;
+  font-size: 12pt;
+  line-height: 1.45;
+}
+
+.qp-root * {
+  box-sizing: border-box;
+}
+
+/* --- Screen preview: mimic an A4 page on a dark background ---------------- */
+.qp-preview {
+  background: #e6e6e6;
+  padding: 24px;
+  overflow-y: auto;
+  min-height: 100%;
+}
+
+.qp-page {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto 16px auto;
+  padding: 16mm 18mm;
+  background: #fff;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  position: relative;
+}
+
+/* --- Header -------------------------------------------------------------- */
+.qp-header {
+  text-align: center;
+  border-bottom: 2px solid #111;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.qp-header .qp-school {
+  font-size: 1.4em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.qp-header .qp-address {
+  font-size: 0.9em;
+  color: #333;
+}
+
+.qp-header .qp-title {
+  font-size: 1.1em;
+  font-weight: 700;
+  margin-top: 6px;
+  text-transform: uppercase;
+}
+
+.qp-header .qp-session {
+  font-size: 0.95em;
+  color: #222;
+}
+
+.qp-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95em;
+  margin: 8px 0 14px 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qp-meta > div {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.qp-instructions {
+  border: 1px solid #555;
+  padding: 8px 12px 8px 28px;
+  margin: 0 0 14px 0;
+  font-size: 0.95em;
+  background: #fafafa;
+}
+
+.qp-instructions-title {
+  font-weight: 700;
+  list-style: none;
+  margin-left: -16px;
+  margin-bottom: 4px;
+}
+
+.qp-instructions li {
+  margin-bottom: 2px;
+}
+
+/* --- Sections ------------------------------------------------------------ */
+.qp-section-heading {
+  text-align: center;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 14px 0 8px 0;
+  border-top: 1px solid #666;
+  border-bottom: 1px solid #666;
+  padding: 4px 0;
+}
+
+.qp-section-total {
+  font-size: 0.85em;
+  font-weight: 400;
+  text-transform: none;
+  color: #333;
+  margin-left: 6px;
+}
+
+/* --- Questions ----------------------------------------------------------- */
+.qp-q {
+  margin-bottom: 12px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.qp-q-header {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.qp-q-num {
+  min-width: 2.2em;
+  font-weight: 700;
+}
+
+.qp-q-prompt {
+  flex: 1 1 auto;
+}
+
+.qp-q-marks {
+  white-space: nowrap;
+  font-weight: 700;
+  color: #111;
+}
+
+.qp-q-body {
+  margin-left: 2.2em;
+  margin-top: 2px;
+}
+
+.qp-q-secondary {
+  font-style: italic;
+  color: #333;
+  margin-top: 2px;
+}
+
+.qp-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 18px;
+  margin: 4px 0 0 0;
+}
+
+.qp-option {
+  display: flex;
+  gap: 6px;
+}
+
+.qp-option-label {
+  min-width: 1.8em;
+  font-weight: 600;
+}
+
+/* --- Match the column --------------------------------------------------- */
+.qp-match {
+  width: 100%;
+  margin-top: 4px;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.qp-match td {
+  padding: 4px 10px;
+  border: 1px solid #999;
+}
+
+.qp-match thead td {
+  background: #f0f0f0;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* --- OR divider --------------------------------------------------------- */
+.qp-or {
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  margin: 4px 0;
+  color: #333;
+}
+
+/* --- Writing space ------------------------------------------------------ */
+.qp-space {
+  border-bottom: 1px dashed #999;
+  margin: 4px 0 2px 2.2em;
+  min-height: 18pt;
+}
+
+.qp-space.short {
+  min-height: 22pt;
+}
+
+.qp-space.medium {
+  min-height: 60pt;
+}
+
+.qp-space.long {
+  min-height: 120pt;
+}
+
+/* --- Diagram placeholder ------------------------------------------------ */
+.qp-diagram {
+  border: 1px dashed #666;
+  padding: 12px;
+  margin: 6px 0 6px 2.2em;
+  font-style: italic;
+  color: #555;
+  min-height: 90pt;
+}
+
+/* --- Answer key --------------------------------------------------------- */
+.qp-answer-key {
+  page-break-before: always;
+  break-before: page;
+  margin-top: 20px;
+}
+
+.qp-answer-key h2 {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-top: 2px solid #111;
+  border-bottom: 2px solid #111;
+  padding: 6px 0;
+  margin-bottom: 10px;
+}
+
+.qp-answer-key ol {
+  padding-left: 24px;
+}
+
+.qp-answer-key li {
+  margin-bottom: 8px;
+}
+
+.qp-answer-tags {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+  font-size: 0.8em;
+  color: #555;
+}
+
+.qp-answer-tag {
+  background: #eee;
+  border: 1px solid #ccc;
+  padding: 0 5px;
+  border-radius: 4px;
+}
+
+.qp-marking-scheme {
+  font-size: 0.88em;
+  color: #333;
+  margin-top: 2px;
+  padding-left: 0;
+}
+
+/* --- Watermark for drafts ----------------------------------------------- */
+.qp-watermark {
+  position: absolute;
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-30deg);
+  font-size: 72pt;
+  color: rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  letter-spacing: 0.2em;
+  user-select: none;
+}
+
+/* --- Print-specific ----------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 16mm 18mm 16mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .qp-printable,
+  .qp-printable * {
+    visibility: visible !important;
+  }
+
+  .qp-printable {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  .qp-preview {
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .qp-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    min-height: auto !important;
+    page-break-after: always;
+  }
+
+  .qp-page:last-child {
+    page-break-after: auto;
+  }
+
+  .qp-print-header {
+    display: table-header-group;
+  }
+
+  .qp-print-footer {
+    display: table-footer-group;
+  }
+
+  .qp-hide-on-print,
+  .qp-hide-on-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}
+
+/* --- Screen-only helper for printing footer ----------------------------- */
+.qp-print-footer {
+  text-align: center;
+  font-size: 0.85em;
+  margin-top: 10px;
+  color: #555;
+  border-top: 1px dashed #999;
+  padding-top: 4px;
+}

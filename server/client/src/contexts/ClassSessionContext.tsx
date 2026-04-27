@@ -13,8 +13,11 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
+import type { UserProfile } from '../utils/rbac';
 import {
   createSession,
   launchLesson as apiLaunchLesson,
@@ -39,7 +42,7 @@ interface ClassSessionContextValue {
   progressList: SessionStudentProgress[];
   startSession: (classId: string) => Promise<string | null>;
   launchLesson: (payload: LaunchedLesson, sessionIdOverride?: string) => Promise<boolean>;
-  launchScene: (payload: LaunchedScene) => Promise<boolean>;
+  launchScene: (payload: LaunchedScene, sessionIdOverride?: string) => Promise<boolean>;
   endSession: () => Promise<boolean>;
   leaveSessionAsTeacher: () => void;
 
@@ -59,6 +62,35 @@ const ClassSessionContext = createContext<ClassSessionContextValue | null>(null)
 
 const STORAGE_KEY_ACTIVE_SESSION = 'learnxr_class_session_id';
 const STORAGE_KEY_JOINED_SESSION = 'learnxr_joined_session_id';
+
+function canStartClassSession(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  if (profile.role === 'teacher' && (profile.school_id || (profile.managed_class_ids && profile.managed_class_ids.length > 0)))
+    return true;
+  if (profile.role === 'admin' || profile.role === 'superadmin') return true;
+  if (profile.role === 'principal' && profile.managed_school_id) return true;
+  if (profile.role === 'school' && profile.school_id) return true;
+  return false;
+}
+
+/** Resolve school_id for the session; uses profile or the class document (e.g. superadmin / teacher profile edge cases). */
+async function resolveSchoolIdForClassSession(
+  classId: string,
+  profile: UserProfile
+): Promise<string | null> {
+  if (profile.school_id) return profile.school_id;
+  if (profile.role === 'principal' && profile.managed_school_id) return profile.managed_school_id;
+  try {
+    const snap = await getDoc(doc(db, 'classes', classId));
+    if (snap.exists()) {
+      const sid = snap.data()?.school_id;
+      if (typeof sid === 'string') return sid;
+    }
+  } catch (e) {
+    console.warn('resolveSchoolIdForClassSession:', e);
+  }
+  return null;
+}
 
 export function ClassSessionProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -95,14 +127,19 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
 
   const startSession = useCallback(
     async (classId: string): Promise<string | null> => {
-      if (!user?.uid || !profile || profile.role !== 'teacher' || !profile.school_id) {
-        setSessionError('You must be a teacher with a school to start a session.');
+      if (!user?.uid || !profile || !canStartClassSession(profile)) {
+        setSessionError('You do not have permission to start a class session.');
         return null;
       }
       setSessionLoading(true);
       setSessionError(null);
       try {
-        const id = await createSession(user.uid, profile.school_id, classId);
+        const schoolId = await resolveSchoolIdForClassSession(classId, profile);
+        if (!schoolId) {
+          setSessionError('Could not determine school for this class. Select a class in your school.');
+          return null;
+        }
+        const id = await createSession(user.uid, schoolId, classId);
         if (id) {
           setActiveSessionId(id);
           if (typeof window !== 'undefined') sessionStorage.setItem(STORAGE_KEY_ACTIVE_SESSION, id);
@@ -134,11 +171,12 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
   );
 
   const launchScene = useCallback(
-    async (payload: LaunchedScene): Promise<boolean> => {
-      if (!activeSessionId || !user?.uid) return false;
+    async (payload: LaunchedScene, sessionIdOverride?: string): Promise<boolean> => {
+      const sessionId = sessionIdOverride ?? activeSessionId;
+      if (!sessionId || !user?.uid) return false;
       setSessionLoading(true);
       try {
-        const ok = await apiLaunchScene(activeSessionId, user.uid, payload);
+        const ok = await apiLaunchScene(sessionId, user.uid, payload);
         if (!ok) setSessionError('Failed to send scene.');
         return ok;
       } finally {
