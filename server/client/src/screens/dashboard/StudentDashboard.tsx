@@ -12,7 +12,7 @@ import { useLesson } from '../../contexts/LessonContext';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
-import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
+import type { LessonLaunch, StudentScore, Class, UserProfile, LaunchedScene } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
 import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher, FaUsers, FaKey } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
@@ -24,6 +24,8 @@ import { Button } from '../../Components/ui/button';
 import { Input } from '../../Components/ui/input';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+
+import { buildCreateSceneActiveLesson } from '../../utils/buildCreateSceneActiveLesson';
 
 const GUEST_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=LearnXRGuest';
 
@@ -251,22 +253,27 @@ const StudentDashboard = () => {
     return () => { cancelled = true; };
   }, [joinedSession?.launched_lesson, joinedSessionId, user?.uid, navigate, contextStartLesson]);
 
-  // When teacher sends a scene to the class, open class-scene viewer
+  // When teacher sends a scene to the class, open VR lesson player (KRPano) with synthetic bundle
   useEffect(() => {
     const scene = joinedSession?.launched_scene;
     if (!scene || scene.type !== 'create_scene' || !joinedSessionId || !user?.uid) return;
-    const key = `scene_${joinedSessionId}_${scene.skybox_image_url || scene.skybox_id || 'default'}`;
+    const key = `scene_${joinedSessionId}_${scene.skybox_image_url || scene.skybox_id || 'default'}_${scene.meshy_glb_url || ''}`;
     if (launchedSceneHandledRef.current === key) return;
     launchedSceneHandledRef.current = key;
     try {
+      const fullLessonData = buildCreateSceneActiveLesson(scene as LaunchedScene);
+      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
       sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
       sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
-      setTimeout(() => navigate('/class-scene'), 200);
+      const ch = fullLessonData.chapter as Record<string, string>;
+      const tp = fullLessonData.topic as Record<string, unknown>;
+      if (typeof contextStartLesson === 'function') contextStartLesson(ch, tp);
+      setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
     } catch (e) {
       console.error('Failed to open launched scene:', e);
       launchedSceneHandledRef.current = null;
     }
-  }, [joinedSession?.launched_scene, joinedSessionId, user?.uid, navigate]);
+  }, [joinedSession?.launched_scene, joinedSessionId, user?.uid, navigate, contextStartLesson]);
 
   // Show session join error
   useEffect(() => {

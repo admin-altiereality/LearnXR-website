@@ -87,7 +87,7 @@ export const SpiralGenerationProgress = ({
   assetProgress,
   isGenerating,
 }: SpiralGenerationProgressProps) => {
-  if (!isGenerating && items.length === 0) return null;
+  if (!isGenerating) return null;
 
   return (
     <div className="pointer-events-none absolute right-4 top-6 z-20 w-[min(24rem,calc(100vw-2rem))] rounded-[1.75rem] border border-white/12 bg-slate-950/72 p-4 text-white shadow-2xl backdrop-blur-2xl md:right-8 md:top-8">

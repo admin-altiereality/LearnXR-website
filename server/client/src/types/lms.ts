@@ -170,6 +170,8 @@ export interface LaunchedScene {
   skybox_glb_url?: string;
   /** Equirectangular image URL for 360 viewer (optional; used by class-scene viewer) */
   skybox_image_url?: string;
+  /** Meshy-generated GLB URL for KRPano topic.asset_urls (optional). */
+  meshy_glb_url?: string | null;
   name?: string;
 }
 

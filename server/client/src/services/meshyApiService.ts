@@ -1188,6 +1188,42 @@ export class MeshyApiService {
     if (!res.ok) throw new Error(raw?.task_error?.message || data?.message || `Animation status failed: ${res.status}`);
     return raw as MeshyAnimationTaskResult;
   }
+
+  /**
+   * Full pipeline: preview mesh, then refine with PBR textures.
+   * If refine fails or returns no task ID, returns the preview (mesh-only) asset.
+   */
+  async generateTexturedAsset(request: MeshyGenerationRequest): Promise<MeshyAsset> {
+    if (!this.isConfigured()) {
+      throw new Error('Meshy API key not configured');
+    }
+
+    const generation = await this.generateAsset(request);
+    if (!generation.result || generation.result === 'undefined') {
+      throw new Error('Invalid response from Meshy API: No task ID received');
+    }
+
+    const previewTaskId = generation.result;
+    const previewAsset = await this.pollForCompletion(previewTaskId);
+
+    try {
+      const refine = await this.createRefineTask({
+        preview_task_id: previewTaskId,
+        enable_pbr: true,
+        texture_prompt: request.prompt.trim().slice(0, 600),
+        ai_model: 'latest',
+      });
+      if (!refine.result || refine.result === 'undefined') {
+        console.warn('Meshy refine returned no task id; using preview mesh.');
+        return previewAsset;
+      }
+      const refined = await this.pollForCompletion(refine.result);
+      return refined;
+    } catch (e) {
+      console.warn('Meshy refine failed; using preview (untextured) mesh:', e);
+      return previewAsset;
+    }
+  }
 }
 
 export const meshyApiService = new MeshyApiService(); 

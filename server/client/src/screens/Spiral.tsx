@@ -25,12 +25,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
 import { useLesson } from '../contexts/LessonContext';
 import { useVoiceInput } from '../hooks/useVoiceInput';
-import { SpiralOrb, type SpiralOrbState } from '../Components/spiral/SpiralOrb';
+import type { SpiralOrbState } from '../Components/spiral/SpiralOrb';
+import { SpiralOrb3D } from '../Components/spiral/SpiralOrb3D';
 import { ListeningHint } from '../Components/spiral/ListeningHint';
 import { TeacherAvatar, type TeacherAvatarHandle } from '../Components/TeacherAvatar';
 import { SpiralResultViewer } from '../Components/spiral/SpiralResultViewer';
 import { SpiralGenerationProgress, type GenerationProgressItem } from '../Components/spiral/SpiralGenerationProgress';
 import { SpiralSuggestions } from '../Components/spiral/SpiralSuggestions';
+import { SpiralControls } from '../Components/spiral/SpiralControls';
+import { SpiralSessionBanner } from '../Components/spiral/SpiralSessionBanner';
+import { SpiralStudentClassesPanel } from '../Components/spiral/SpiralStudentClassesPanel';
 import { routePrompt, type SpiralRoute } from '../services/spiralPromptRouter';
 import { skyboxApiService } from '../services/skyboxApiService';
 import { assetGenerationService } from '../services/assetGenerationService';
@@ -40,6 +44,7 @@ import { buildLessonPayloadFromBundle } from '../services/launchLessonFromBundle
 import type { SpiralSuggestion } from '../services/spiralContentSearch';
 import type { Vr360TourItem } from '../config/vr360Tours';
 import { topicIdForVr360TourId, VR360_TOUR_CHAPTER_ID } from '../config/vr360Tours';
+import { resolveGenerated3DAssetUrl } from '../utils/generatedAssetUrl';
 
 interface SkyboxStyle {
   id: number | string;
@@ -172,10 +177,17 @@ const Spiral = () => {
   const { startLesson: startLocalLesson } = useLesson();
   const {
     activeSessionId,
+    activeSession,
+    progressList,
     startSession,
+    endSession,
     launchLesson: launchLessonToClass,
     launchScene: launchSceneToClass,
     sessionLoading,
+    joinedSessionId,
+    joinedSession,
+    joinSession: joinClassSession,
+    leaveSessionAsStudent,
   } = useClassSession();
 
   const avatarRef = useRef<TeacherAvatarHandle | null>(null);
@@ -203,6 +215,13 @@ const Spiral = () => {
   const [teacherClasses, setTeacherClasses] = useState<SpiralClassOption[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  /** Compact teacher FAB: expandable panel for class + launch */
+  const [teacherLaunchPanelOpen, setTeacherLaunchPanelOpen] = useState(false);
+  const isMutedRef = useRef<boolean>(false);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   const avatarConfig = useMemo(() => {
     const fromProfile = {
@@ -218,6 +237,11 @@ const Spiral = () => {
   }, [profile?.curriculum, profile?.class]);
 
   const isTeacher = profile?.role === 'teacher';
+  const isStudent = profile?.role === 'student';
+  const studentClassIds = useMemo<string[]>(() => {
+    const ids = (profile as any)?.class_ids;
+    return Array.isArray(ids) ? ids.filter(Boolean).map(String) : [];
+  }, [profile]);
 
   const clearGenerationProgressTimer = useCallback(() => {
     if (generationProgressTimerRef.current) {
@@ -475,7 +499,6 @@ const Spiral = () => {
 
   const {
     isSupported: voiceSupported,
-    isListening,
     transcript,
     error: voiceError,
     start: startVoice,
@@ -499,10 +522,34 @@ const Spiral = () => {
       goIdle();
       return;
     }
+    // Mute gate: stop any in-flight TTS and skip new audio. We still flash the
+    // "speaking" phase so the orb shows the assistant is responding silently.
+    if (isMutedRef.current) {
+      try {
+        window.speechSynthesis?.cancel?.();
+      } catch {
+        /* ignore */
+      }
+      setPhase('speaking');
+      setProgressMessage('Audio is muted. Tap the speaker to unmute.');
+      const words = text.split(/\s+/).filter(Boolean).length;
+      const ms = Math.min(8000, Math.max(1200, words * 80));
+      if (speakingTimerRef.current) {
+        window.clearTimeout(speakingTimerRef.current);
+      }
+      speakingTimerRef.current = window.setTimeout(() => {
+        goIdle();
+        speakingTimerRef.current = null;
+      }, ms);
+      return;
+    }
     setPhase('speaking');
     setProgressMessage('');
     try {
-      await speakWithAvatar(text, avatarRef);
+      // Professional female TTS voice. `nova` is enterprise-grade, warm, and
+      // classroom-appropriate. We pass it explicitly so future overrides are
+      // a one-line change.
+      await speakWithAvatar(text, avatarRef, { voice: 'nova' });
     } catch (err) {
       console.warn('Spiral: speakWithAvatar failed', err);
     }
@@ -517,6 +564,55 @@ const Spiral = () => {
       speakingTimerRef.current = null;
     }, ms);
   }, [goIdle]);
+
+  // -------- Conversation reset / mute -------------------------------------
+  const handleToggleMute = useCallback(() => {
+    setIsMuted((prev) => {
+      const next = !prev;
+      if (next) {
+        try {
+          window.speechSynthesis?.cancel?.();
+        } catch {
+          /* ignore */
+        }
+        // Stop any HTML audio elements the avatar may have spawned.
+        document.querySelectorAll('audio').forEach((audio) => {
+          try {
+            audio.pause();
+            audio.currentTime = 0;
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const resetConversation = useCallback(() => {
+    cancelActiveGeneration();
+    try {
+      window.speechSynthesis?.cancel?.();
+    } catch {
+      /* ignore */
+    }
+    if (speakingTimerRef.current) {
+      window.clearTimeout(speakingTimerRef.current);
+      speakingTimerRef.current = null;
+    }
+    setSuggestions([]);
+    setSuggestionFallbackRoute(null);
+    setGeneratedVariations([]);
+    setCurrentVariationIndex(0);
+    setGenerated3DAsset(null);
+    setSceneContext({});
+    setHeardText('');
+    setActiveIntent('unknown');
+    setProgressMessage('');
+    setErrorMessage(null);
+    resetGenerationDetail();
+    goIdle();
+  }, [cancelActiveGeneration, goIdle, resetGenerationDetail]);
 
   useEffect(() => {
     return () => {
@@ -740,6 +836,12 @@ const Spiral = () => {
     [assetProgress, generationProgress, isGenerationCancelled, startGenerationProgress, upsertGenerationItem, user?.uid]
   );
 
+  // NOTE: All navigation in Spiral is gated behind explicit user actions
+  // (Play / Launch to class / voice command "play first one"). Spiral never
+  // auto-routes on the *first* prompt — even when a route maps to a tour, we
+  // surface it as a suggestion card instead. The only navigation paths that
+  // remain are user-clicked: playTour (from card click or voice "play …") and
+  // playLessonSuggestion (same).
   const playTour = useCallback(
     (tour: Vr360TourItem, fromClassSession = false, sessionId?: string | null) => {
       const vr = {
@@ -825,11 +927,19 @@ const Spiral = () => {
       return;
     }
 
+    const meshyPayloadUrl = resolveGenerated3DAssetUrl(generated3DAsset as Record<string, unknown>) || undefined;
+    const skyboxGlbPayload =
+      (typeof currentSkybox?.stored_glb_url === 'string' && currentSkybox.stored_glb_url) ||
+      (typeof currentSkybox?.glb_url === 'string' && currentSkybox.glb_url) ||
+      undefined;
+
     const ok = await launchSceneToClass(
       {
         type: 'create_scene',
         skybox_id: skyboxId,
         skybox_image_url: skyboxImageUrl,
+        skybox_glb_url: skyboxGlbPayload,
+        meshy_glb_url: meshyPayloadUrl ?? null,
         name: sceneContext.skyboxTitle || sceneContext.skyboxPrompt || currentSkybox?.title || 'Spiral generated scene',
       },
       sessionId
@@ -838,6 +948,7 @@ const Spiral = () => {
     setGenerationProgress(100);
     if (ok) {
       toast.success('Generated scene launched to class.');
+      setTeacherLaunchPanelOpen(false);
       await speakAnswer('I sent this scene to your class.');
     } else {
       toast.error('Could not launch this scene to class.');
@@ -846,6 +957,7 @@ const Spiral = () => {
   }, [
     currentVariationIndex,
     ensureClassSessionForLaunch,
+    generated3DAsset,
     generatedVariations,
     goIdle,
     isTeacher,
@@ -935,8 +1047,23 @@ const Spiral = () => {
           return;
         }
         case 'tour': {
-          await speakAnswer(`Let's visit ${route.tour.title.replace(/—.*/g, '').trim()}!`);
-          window.setTimeout(() => playTour(route.tour), 600);
+          // Spiral never auto-routes — surface the tour as a one-card
+          // suggestion so the user (or teacher) explicitly opts in to
+          // navigate. Tap "Play" or "Launch to class" to leave this page.
+          const tourSuggestion = {
+            id: `vr360:${route.tour.id}`,
+            type: 'vr360' as const,
+            title: route.tour.title.replace(/—.*/g, '').trim(),
+            subtitle: '360 video tour',
+            description: route.tour.description,
+            score: 1,
+            tour: route.tour,
+          };
+          setSuggestions([tourSuggestion]);
+          setSuggestionFallbackRoute({ kind: 'generateBoth', prompt: route.text });
+          setPhase('suggesting');
+          setProgressMessage('Tap Play to open this 360 tour, or continue generating.');
+          await speakAnswer('I found a 360 tour for that. Tap play, or keep creating.');
           return;
         }
         case 'suggestions': {
@@ -1136,8 +1263,24 @@ const Spiral = () => {
               ? 'Launching'
               : undefined;
 
+  const canReset = hasResult || hasSuggestions || Boolean(heardText) || activeIntent !== 'unknown';
+
+  const showIntentChips = !hasResult && !hasSuggestions;
+  const chipRowVisible =
+    isMuted || isGenerating || (showIntentChips && (heardText || activeIntent !== 'unknown'));
+
   return (
-    <div className="fixed inset-0 z-50 flex h-full w-full flex-col items-center justify-center overflow-hidden bg-black text-white">
+    <div className="fixed inset-0 z-50 flex h-full w-full flex-col items-center justify-center overflow-hidden bg-[#05070d] text-white">
+      {/* Premium graphite background gradient */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          background:
+            'radial-gradient(circle at 20% 18%, rgba(56,189,248,0.16), transparent 55%), radial-gradient(circle at 82% 78%, rgba(167,139,250,0.18), transparent 60%), linear-gradient(180deg, #05070d 0%, #0a0d18 100%)',
+        }}
+      />
+
       {/* Background skybox / asset */}
       <div className="pointer-events-auto absolute inset-0 z-0">
         <SpiralResultViewer
@@ -1157,6 +1300,28 @@ const Spiral = () => {
         }}
       />
 
+      {/* Top: session banner (teacher / student) */}
+      <SpiralSessionBanner
+        activeSession={activeSession}
+        joinedSession={joinedSession}
+        studentCount={progressList.length || undefined}
+        isTeacher={isTeacher}
+        onEndSession={async () => {
+          await endSession();
+        }}
+        onLeaveSession={leaveSessionAsStudent}
+      />
+
+      {/* Right: student joinable classes panel */}
+      {isStudent && (
+        <SpiralStudentClassesPanel
+          studentUid={user?.uid ?? null}
+          classIds={studentClassIds}
+          joinedSessionId={joinedSessionId}
+          onJoin={joinClassSession}
+        />
+      )}
+
       <SpiralGenerationProgress
         items={generationItems}
         skyboxProgress={skyboxProgress}
@@ -1173,9 +1338,11 @@ const Spiral = () => {
         busy={sessionLoading || phase === 'classLaunch'}
         onSelectClass={setSelectedClassId}
         onPlay={(suggestion) => {
+          // User-initiated play — explicit click. Spiral never auto-routes.
           void playSuggestion(suggestion);
         }}
         onLaunchToClass={(suggestion) => {
+          // User-initiated launch to class.
           void launchSuggestionToClass(suggestion);
         }}
         onContinueGenerating={() => {
@@ -1187,35 +1354,52 @@ const Spiral = () => {
       />
 
       {canLaunchGeneratedScene && (
-        <div className="pointer-events-auto absolute left-4 top-6 z-30 w-[min(22rem,calc(100vw-2rem))] rounded-[1.5rem] border border-white/12 bg-slate-950/72 p-4 text-white shadow-2xl backdrop-blur-2xl md:left-8 md:top-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100/75">Teacher control</p>
-          <h2 className="mt-1 text-lg font-semibold">Launch generated scene</h2>
-          {!activeSessionId && teacherClasses.length > 0 && (
-            <label className="mt-3 block text-xs font-medium text-white/70">
-              Class
-              <select
-                value={selectedClassId}
-                onChange={(event) => setSelectedClassId(event.target.value)}
-                className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950/95 px-3 py-2 text-sm text-white outline-none focus:border-emerald-200"
-              >
-                {teacherClasses.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+        <div className="pointer-events-auto absolute left-4 top-24 z-30 flex flex-col gap-2 md:left-6 md:top-28">
           <button
             type="button"
-            onClick={() => {
-              void launchGeneratedSceneToClass();
-            }}
-            disabled={sessionLoading || phase === 'classLaunch' || (!activeSessionId && teacherClasses.length === 0)}
-            className="mt-3 w-full rounded-full bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => setTeacherLaunchPanelOpen((o) => !o)}
+            aria-expanded={teacherLaunchPanelOpen}
+            aria-label={teacherLaunchPanelOpen ? 'Close class launch options' : 'Open class launch options'}
+            title="Send scene to class"
+            className="flex h-12 w-12 items-center justify-center rounded-full border border-emerald-300/35 bg-emerald-500/25 text-emerald-50 shadow-xl backdrop-blur-md transition hover:bg-emerald-500/35"
           >
-            {activeSessionId ? 'Launch to class' : 'Start session and launch'}
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor" aria-hidden>
+              <path d="M3 20h2V4H3v16Zm4 0h1V4H7v16Zm2-16v16h9a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H9Zm10 8a1 1 0 0 1-1 1h-4v-2h4a1 1 0 0 1 1 1Zm0-4a1 1 0 0 1-1 1h-4V7h4a1 1 0 0 1 1 1Z" />
+            </svg>
           </button>
+          {teacherLaunchPanelOpen && (
+            <div className="w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-white/12 bg-slate-950/88 p-4 text-white shadow-2xl backdrop-blur-2xl">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-100/75">Class</p>
+              {!activeSessionId && teacherClasses.length > 0 && (
+                <label className="mt-2 block text-xs font-medium text-white/70">
+                  Select class
+                  <select
+                    value={selectedClassId}
+                    onChange={(event) => setSelectedClassId(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-white/15 bg-slate-950/95 px-3 py-2 text-sm text-white outline-none focus:border-emerald-200"
+                  >
+                    {teacherClasses.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  void launchGeneratedSceneToClass();
+                }}
+                disabled={
+                  sessionLoading || phase === 'classLaunch' || (!activeSessionId && teacherClasses.length === 0)
+                }
+                className="mt-3 w-full rounded-full bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {activeSessionId ? 'Launch to class' : 'Start session & launch'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1223,12 +1407,12 @@ const Spiral = () => {
       <div
         className={`pointer-events-none absolute z-20 flex px-6 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           hasResult || hasSuggestions
-            ? 'bottom-6 left-4 items-end justify-start md:bottom-8 md:left-8'
+            ? 'bottom-24 left-4 items-end justify-start md:bottom-28 md:left-8'
             : 'inset-0 flex-col items-center justify-center'
         }`}
       >
         <div className="pointer-events-auto">
-          <SpiralOrb
+          <SpiralOrb3D
             state={orbState}
             onTap={handleOrbTap}
             size={hasSuggestions ? 132 : orbSize}
@@ -1241,14 +1425,16 @@ const Spiral = () => {
         <div className={`${hasResult || hasSuggestions ? 'ml-4 max-w-sm pb-4 text-left' : 'mt-8 max-w-2xl text-center'}`}>
           <ListeningHint state={orbState} liveText={hintLiveText} compact={hasResult || hasSuggestions} />
         </div>
-        {(heardText || activeIntent !== 'unknown' || hasResult) && (
+        {chipRowVisible && (
           <div
             className={`pointer-events-none flex flex-wrap gap-2 text-xs font-medium uppercase tracking-[0.18em] text-white/70 ${
               hasResult || hasSuggestions ? 'absolute bottom-0 left-40 max-w-sm justify-start md:left-48' : 'mt-4 justify-center'
             }`}
           >
-            {heardText && <span className="rounded-full bg-white/10 px-3 py-1 backdrop-blur-md">Heard</span>}
-            {activeIntent !== 'unknown' && (
+            {showIntentChips && heardText && (
+              <span className="rounded-full bg-white/10 px-3 py-1 backdrop-blur-md">Heard</span>
+            )}
+            {showIntentChips && activeIntent !== 'unknown' && (
               <span className="rounded-full bg-cyan-400/15 px-3 py-1 text-cyan-100 backdrop-blur-md">
                 {activeIntent === 'skybox'
                   ? '360 World'
@@ -1259,8 +1445,10 @@ const Spiral = () => {
                       : activeIntent}
               </span>
             )}
-            {hasResult && <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-emerald-100 backdrop-blur-md">Ready</span>}
-            {isGenerating && <span className="rounded-full bg-sky-400/15 px-3 py-1 text-sky-100 backdrop-blur-md">Tap orb to stop</span>}
+            {isGenerating && (
+              <span className="rounded-full bg-sky-400/15 px-3 py-1 text-sky-100 backdrop-blur-md">Tap orb to stop</span>
+            )}
+            {isMuted && <span className="rounded-full bg-rose-400/15 px-3 py-1 text-rose-100 backdrop-blur-md">Muted</span>}
           </div>
         )}
         {errorMessage && (
@@ -1271,7 +1459,7 @@ const Spiral = () => {
       </div>
 
       {/* Avatar in lower-right (small) */}
-      <div className="pointer-events-auto absolute bottom-6 right-6 z-30 h-44 w-36 overflow-hidden rounded-3xl bg-black/30 ring-1 ring-white/10 backdrop-blur-sm md:h-56 md:w-44">
+      <div className="pointer-events-auto absolute bottom-24 right-6 z-30 h-44 w-36 overflow-hidden rounded-3xl bg-black/30 ring-1 ring-white/10 backdrop-blur-sm md:bottom-28 md:h-56 md:w-44">
         <TeacherAvatar
           ref={avatarRef}
           className="h-full w-full"
@@ -1280,6 +1468,19 @@ const Spiral = () => {
           disableThreadInit
         />
       </div>
+
+      {/* Bottom: visible controls — mic / stop / mute / reset */}
+      <SpiralControls
+        orbState={orbState}
+        isMuted={isMuted}
+        micSupported={voiceSupported}
+        isGenerating={isGenerating}
+        canReset={canReset}
+        onToggleMic={handleOrbTap}
+        onStopGeneration={cancelActiveGeneration}
+        onToggleMute={handleToggleMute}
+        onReset={resetConversation}
+      />
     </div>
   );
 };

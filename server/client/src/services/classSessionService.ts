@@ -37,6 +37,25 @@ const SUBCOLLECTION_PROGRESS = 'progress';
 
 const ALPHANUM = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0,O,1,I to avoid confusion
 
+/**
+ * Firestore updateDoc/setDoc reject `undefined` field values.
+ * Remove undefined keys recursively for plain objects and arrays.
+ */
+function stripUndefinedDeep<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'object') return value;
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefinedDeep(item)) as T;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (v === undefined) continue;
+    out[k] = stripUndefinedDeep(v);
+  }
+  return out as T;
+}
+
 function generateSessionCode(length: number = 6): string {
   let code = '';
   const arr = new Uint8Array(length);
@@ -96,7 +115,7 @@ export async function launchLesson(
     if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
 
     await updateDoc(sessionRef, {
-      launched_lesson: payload,
+      launched_lesson: stripUndefinedDeep(payload),
       launched_scene: null, // clear scene when launching lesson
       status: 'active',
       updated_at: serverTimestamp(),
@@ -122,7 +141,7 @@ export async function launchScene(
     if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
 
     await updateDoc(sessionRef, {
-      launched_scene: payload,
+      launched_scene: stripUndefinedDeep(payload),
       launched_lesson: null, // clear lesson when launching scene
       status: 'active',
       updated_at: serverTimestamp(),

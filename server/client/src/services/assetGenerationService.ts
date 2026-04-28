@@ -124,31 +124,20 @@ class AssetGenerationService {
           message: 'Generating 3D asset...'
         });
         try {
-          // Generate asset - returns { result: "task-id" }
-          const generation = await meshyApiService.generateAsset(meshyRequest);
-          
-          // Validate that we got a task ID
-          if (!generation.result || generation.result === 'undefined') {
-            throw new Error('Invalid response from Meshy API: No task ID received');
-          }
-          
-          const taskId = generation.result;
-          console.log('✅ Meshy generation started with task ID:', taskId);
-          
-          // Update progress to show we're polling
           onProgress?.({
             stage: 'generating',
             progress: 20,
             totalAssets: 1,
             completedAssets: 0,
-            message: 'Polling for generation completion...'
+            message: 'Texturing your 3D object (this may take a bit)...'
           });
+
+          const completedAsset = await meshyApiService.generateTexturedAsset(meshyRequest);
           
-          // Poll for completion first to get the actual asset data
-          const completedAsset = await meshyApiService.pollForCompletion(taskId);
-          
+          const meshyId = completedAsset.id || `meshy_${Date.now()}`;
+
           console.log('✅ Asset generation completed:', {
-            taskId,
+            meshyId,
             hasDownloadUrl: !!completedAsset.downloadUrl,
             hasPreviewUrl: !!completedAsset.previewUrl,
             format: completedAsset.format
@@ -163,7 +152,7 @@ class AssetGenerationService {
               // Store metadata with the completed asset data
               const assetId = await assetStorageService.storeAssetMetadata(
                 {
-                  id: taskId,
+                  id: meshyId,
                   prompt: request.originalPrompt,
                   status: 'completed',
                   format: completedAsset.format || request.outputFormat || 'glb',
@@ -198,7 +187,7 @@ class AssetGenerationService {
                 `${request.originalPrompt}.${completedAsset.format || request.outputFormat || 'glb'}`,
                 request.userId,
                 {
-                  meshyId: taskId,
+                  meshyId,
                   originalPrompt: request.originalPrompt,
                   skyboxId: request.skyboxId,
                   quality: request.quality || 'medium',
@@ -222,7 +211,7 @@ class AssetGenerationService {
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   metadata: {
-                    meshyId: taskId,
+                    meshyId,
                     generationTime: Date.now() - startTime,
                     cost: meshyApiService.getCostEstimate(request.quality || 'medium'),
                     quality: request.quality || 'medium',
@@ -353,35 +342,15 @@ class AssetGenerationService {
             currentAsset: extractedObject.keyword,
             totalAssets: objectsToGenerate.length,
             completedAssets: index,
-            message: `Generating ${extractedObject.keyword}...`
+            message: `Generating and texturing ${extractedObject.keyword}...`
           });
 
-          // Generate asset - returns { result: "task-id" }
-          const generation = await meshyApiService.generateAsset(meshyRequest);
-          
-          // Validate that we got a task ID
-          if (!generation.result || generation.result === 'undefined') {
-            throw new Error('Invalid response from Meshy API: No task ID received');
-          }
-          
-          const taskId = generation.result;
-          console.log(`✅ Meshy generation started for ${extractedObject.keyword} with task ID:`, taskId);
-          
-          // Update progress to show we're polling
-          onProgress?.({
-            stage: 'generating',
-            progress: (index / objectsToGenerate.length) * 50 + 25,
-            currentAsset: extractedObject.keyword,
-            totalAssets: objectsToGenerate.length,
-            completedAssets: index,
-            message: `Polling for ${extractedObject.keyword} completion...`
-          });
-          
-          // Poll for completion first to get the actual asset data
-          const completedAsset = await meshyApiService.pollForCompletion(taskId);
+          const completedAsset = await meshyApiService.generateTexturedAsset(meshyRequest);
+
+          const meshyId = completedAsset.id || `meshy_${index}_${Date.now()}`;
           
           console.log(`✅ Asset generation completed for ${extractedObject.keyword}:`, {
-            taskId,
+            meshyId,
             hasDownloadUrl: !!completedAsset.downloadUrl,
             hasPreviewUrl: !!completedAsset.previewUrl,
             format: completedAsset.format
@@ -406,7 +375,7 @@ class AssetGenerationService {
               // Store initial metadata with the completed asset data
               const assetId = await assetStorageService.storeAssetMetadata(
                 {
-                  id: taskId,
+                  id: meshyId,
                   prompt: extractedObject.suggestedPrompt,
                   status: 'completed',
                   format: completedAsset.format || request.outputFormat || 'glb',
@@ -443,7 +412,7 @@ class AssetGenerationService {
                 `${extractedObject.keyword}.${completedAsset.format || request.outputFormat || 'glb'}`,
                 request.userId,
                 {
-                  meshyId: taskId,
+                  meshyId,
                   originalPrompt: request.originalPrompt,
                   extractedObject,
                   skyboxId: request.skyboxId,
@@ -470,7 +439,7 @@ class AssetGenerationService {
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   metadata: {
-                    meshyId: taskId,
+                    meshyId,
                     generationTime: Date.now() - startTime,
                     cost: meshyApiService.getCostEstimate(request.quality || 'medium'),
                     quality: request.quality || 'medium',
