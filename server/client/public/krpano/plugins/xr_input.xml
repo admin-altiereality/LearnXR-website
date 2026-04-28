@@ -48,6 +48,7 @@
     var tempMatrix = new THREE.Matrix4();
     var direction = new THREE.Vector3();
     var origin = new THREE.Vector3();
+    var rayQuat = new THREE.Quaternion();
 
     // Create reticle ring
     var reticleGeo = new THREE.RingGeometry(0.008, 0.012, 24);
@@ -177,7 +178,7 @@
     }
 
     // Process a raycast hit on the UI panel (with padding for forgiving button hits, esp. Meta Quest controller)
-    var HIT_PADDING = 6;
+    var HIT_PADDING = 10;
     function processUIHit(hit, inputSource) {
       var refs = krpano.immersive_ui_refs;
       if (!refs || !refs.panel || !hit || !hit.uv) return null;
@@ -297,16 +298,33 @@
         var itype = classifyInput(source);
 
         if (itype === "controller") {
-          var controller = renderer.xr.getController(si);
-          if (!controller) continue;
-          tempMatrix.identity().extractRotation(controller.matrixWorld);
-          direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-          controller.getWorldPosition(origin);
+          var gotRayCtrl = false;
+          if (frame && refSpace && source.targetRaySpace) {
+            try {
+              var trPose = frame.getPose(source.targetRaySpace, refSpace);
+              if (trPose && trPose.transform) {
+                var ttr = trPose.transform;
+                var tpos = ttr.position;
+                origin.set(tpos.x, tpos.y, tpos.z);
+                var tori = ttr.orientation;
+                rayQuat.set(tori.x, tori.y, tori.z, tori.w);
+                direction.set(0, 0, -1).applyQuaternion(rayQuat).normalize();
+                gotRayCtrl = true;
+              }
+            } catch (eTr) {}
+          }
+          if (!gotRayCtrl) {
+            var controller = renderer.xr.getController(si);
+            if (!controller) continue;
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            direction.set(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+            controller.getWorldPosition(origin);
+          }
           raycaster.set(origin, direction);
 
           var refs = krpano.immersive_ui_refs;
           if (refs && refs.panel && refs.panel.mesh) {
-            var hits = raycaster.intersectObject(refs.panel.mesh);
+            var hits = raycaster.intersectObject(refs.panel.mesh, true);
             if (hits.length > 0) {
               bestHit = hits[0];
               bestRegion = processUIHit(hits[0], source);
@@ -320,7 +338,7 @@
             raycaster.set(handState.origin, handState.direction);
             var refs2 = krpano.immersive_ui_refs;
             if (refs2 && refs2.panel && refs2.panel.mesh) {
-              var hits2 = raycaster.intersectObject(refs2.panel.mesh);
+              var hits2 = raycaster.intersectObject(refs2.panel.mesh, true);
               if (hits2.length > 0) {
                 bestHit = hits2[0];
                 bestRegion = processUIHit(hits2[0], source);
@@ -336,7 +354,7 @@
             raycaster.set(origin, direction);
             var refs3 = krpano.immersive_ui_refs;
             if (refs3 && refs3.panel && refs3.panel.mesh) {
-              var hits3 = raycaster.intersectObject(refs3.panel.mesh);
+              var hits3 = raycaster.intersectObject(refs3.panel.mesh, true);
               if (hits3.length > 0) {
                 bestHit = hits3[0];
                 bestRegion = processUIHit(hits3[0], source);
@@ -355,7 +373,7 @@
         raycaster.set(origin, direction);
         var refsGaze = krpano.immersive_ui_refs;
         if (refsGaze && refsGaze.panel && refsGaze.panel.mesh) {
-          var hitsGaze = raycaster.intersectObject(refsGaze.panel.mesh);
+          var hitsGaze = raycaster.intersectObject(refsGaze.panel.mesh, true);
           if (hitsGaze.length > 0) {
             bestHit = hitsGaze[0];
             bestRegion = processUIHit(hitsGaze[0], null);
