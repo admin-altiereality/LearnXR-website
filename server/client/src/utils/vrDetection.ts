@@ -70,13 +70,33 @@ export function hasWebXRAPI(): boolean {
  */
 export async function checkImmersiveVRSupport(): Promise<boolean> {
   if (!hasWebXRAPI()) return false;
-  
+
   try {
     const supported = await navigator.xr!.isSessionSupported('immersive-vr');
     return supported;
   } catch (error) {
     console.warn('[VR Detection] Error checking immersive-vr support:', error);
     return false;
+  }
+}
+
+/**
+ * Pick the default VR lesson player route segment (legacy vs krpano).
+ * When explicit is set, returns it unchanged. Otherwise prefers krpano on Meta Quest
+ * browser or when WebXR immersive-vr is supported (e.g. tethered headsets).
+ */
+export async function resolveDefaultVrLessonLaunchTarget(
+  explicit?: 'vrlessonplayer' | 'vrlessonplayer-krpano'
+): Promise<'vrlessonplayer' | 'vrlessonplayer-krpano'> {
+  if (explicit !== undefined) return explicit;
+  if (typeof navigator !== 'undefined' && isMetaQuestBrowser()) {
+    return 'vrlessonplayer-krpano';
+  }
+  try {
+    const caps = await getVRCapabilities();
+    return caps.isImmersiveVRSupported ? 'vrlessonplayer-krpano' : 'vrlessonplayer';
+  } catch {
+    return 'vrlessonplayer';
   }
 }
 
@@ -405,6 +425,7 @@ export default {
   detectDeviceType,
   getVRCapabilities,
   isVRLikelySupported,
+  resolveDefaultVrLessonLaunchTarget,
   requestVRSession,
   endVRSession,
   getVRSupportMessage,

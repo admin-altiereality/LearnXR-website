@@ -27,6 +27,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useLesson } from '../../contexts/LessonContext';
 import { canApproveLessonEdits } from '../../utils/rbac';
+import { resolveDefaultVrLessonLaunchTarget } from '../../utils/vrDetection';
 import {
   fetchEditRequests,
   approveAllPendingEditRequests,
@@ -559,7 +560,8 @@ const LessonEditRequests = () => {
           })
         );
         toast.success('Opening lesson preview. You can approve or reject after viewing.');
-        navigate('/vrlessonplayer');
+        const kind = await resolveDefaultVrLessonLaunchTarget();
+        navigate(kind === 'vrlessonplayer-krpano' ? '/vrlessonplayer-krpano' : '/vrlessonplayer');
       } catch (error) {
         console.error('Preview launch error:', error);
         toast.error('Failed to open lesson preview. The chapter or draft may be missing.');

@@ -276,6 +276,7 @@
 		if(webvr.isfake OR (webvr.ismobilevr AND device.mobile), webvr_show_infos(true); );
 		
 		webvr_load_vr_cursor_hs();
+		delayedcall(0, xr_input_onentervr() );
 	</action>
 
 
