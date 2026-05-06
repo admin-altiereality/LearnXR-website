@@ -14,11 +14,14 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, '&apos;');
 }
 
+const KRPANO_ASSET_VERSION = '1.23.3-r3';
+
 function pluginUrl(origin: string | undefined, basePath: string, pluginFile: string): string {
+  const pluginWithVersion = `${pluginFile}?v=${KRPANO_ASSET_VERSION}`;
   if (origin) {
-    return `${origin.replace(/\/$/, '')}${basePath.replace(/\/$/, '')}/plugins/${pluginFile}`;
+    return `${origin.replace(/\/$/, '')}${basePath.replace(/\/$/, '')}/plugins/${pluginWithVersion}`;
   }
-  return `plugins/${pluginFile}`;
+  return `plugins/${pluginWithVersion}`;
 }
 
 export interface Krpano360VideoXmlOptions {

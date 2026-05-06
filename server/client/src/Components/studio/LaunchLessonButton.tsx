@@ -5,7 +5,7 @@
  * to /main with the lesson context set.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useLesson, LessonChapter, LessonTopic, LessonMCQ } from '../../contexts/LessonContext';
@@ -20,7 +20,6 @@ import {
   getLearningObjectiveByLanguage
 } from '../../lib/firebase/utils/languageAvailability';
 import { Play, Loader2, Rocket, CheckCircle } from 'lucide-react';
-import { isMetaQuestBrowser, resolveDefaultVrLessonLaunchTarget } from '../../utils/vrDetection';
 
 interface LaunchLessonButtonProps {
   chapterId: string;
@@ -46,10 +45,7 @@ interface LaunchLessonButtonProps {
   size?: 'sm' | 'md' | 'lg';
   variant?: 'primary' | 'secondary' | 'icon';
   disabled?: boolean;
-  /**
-   * When set, forces that player. When omitted, uses Meta Quest / WebXR immersive-vr detection
-   * to default to krpano (`vrlessonplayer-krpano`) when appropriate.
-   */
+  /** When set to 'vrlessonplayer-krpano', opens the lesson in the krpano 360° player instead of the default VR player */
   launchTarget?: 'vrlessonplayer' | 'vrlessonplayer-krpano';
   /** Override button label (e.g. "Launch krpano") when using launchTarget */
   label?: string;
@@ -79,30 +75,12 @@ export const LaunchLessonButton = ({
   size = 'md',
   variant = 'primary',
   disabled = false,
-  launchTarget,
+  launchTarget = 'vrlessonplayer',
   label,
 }: LaunchLessonButtonProps) => {
   const navigate = useNavigate();
   const { startLesson } = useLesson();
   const [loading, setLoading] = useState(false);
-
-  const [launchKindForUi, setLaunchKindForUi] = useState<'vrlessonplayer' | 'vrlessonplayer-krpano'>(() =>
-    launchTarget ?? (isMetaQuestBrowser() ? 'vrlessonplayer-krpano' : 'vrlessonplayer')
-  );
-
-  useEffect(() => {
-    if (launchTarget !== undefined) {
-      setLaunchKindForUi(launchTarget);
-      return;
-    }
-    let cancelled = false;
-    resolveDefaultVrLessonLaunchTarget(undefined).then((k) => {
-      if (!cancelled) setLaunchKindForUi(k);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [launchTarget]);
   
   const handleLaunch = useCallback(async () => {
     if (loading || disabled) return;
@@ -305,8 +283,7 @@ export const LaunchLessonButton = ({
       
       toast.success(`Launching lesson: ${finalTopicName || topicName}`);
       
-      const kind = await resolveDefaultVrLessonLaunchTarget(launchTarget);
-      const targetPath = kind === 'vrlessonplayer-krpano' ? '/vrlessonplayer-krpano' : '/vrlessonplayer';
+      const targetPath = launchTarget === 'vrlessonplayer-krpano' ? '/vrlessonplayer-krpano' : '/vrlessonplayer';
       console.log('🧭 [LaunchLesson] Navigating to', targetPath);
       
       navigate(targetPath);
@@ -340,7 +317,7 @@ export const LaunchLessonButton = ({
   };
   
   // Variant styles (krpano uses cyan/blue to differentiate from default green Launch Lesson)
-  const isKrpano = launchKindForUi === 'vrlessonplayer-krpano';
+  const isKrpano = launchTarget === 'vrlessonplayer-krpano';
   const variantClasses = {
     primary: isKrpano
       ? `
@@ -387,7 +364,7 @@ export const LaunchLessonButton = ({
           disabled:opacity-50 disabled:cursor-not-allowed
           ${variantClasses[variant]}
         `}
-        title={label || (isKrpano ? `Launch krpano: ${topicName}` : `Launch lesson: ${topicName}`)}
+        title={label || (launchTarget === 'vrlessonplayer-krpano' ? `Launch krpano: ${topicName}` : `Launch lesson: ${topicName}`)}
       >
         {loading ? (
           <Loader2 className={`${iconSizes[size]} animate-spin`} />
@@ -418,7 +395,7 @@ export const LaunchLessonButton = ({
       ) : (
         <>
           <Rocket className={iconSizes[size]} />
-          <span>{label ?? (isKrpano ? 'Launch krpano' : 'Launch Lesson')}</span>
+          <span>{label ?? (launchTarget === 'vrlessonplayer-krpano' ? 'Launch krpano' : 'Launch Lesson')}</span>
         </>
       )}
     </button>

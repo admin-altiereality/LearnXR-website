@@ -1561,7 +1561,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
   // Navigate to VR lesson player with lesson state; preparation screen (10s countdown) is shown there
   const handleLessonClick = useCallback((chapter, topicInput) => {
-    navigate('/vrlessonplayer-krpano', {
+    navigate('/vrlessonplayer', {
       state: {
         chapter: { ...chapter, id: chapter.id },
         topic: topicInput,
