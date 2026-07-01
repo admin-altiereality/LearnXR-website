@@ -157,8 +157,12 @@ const Landing = () => {
 
     window.addEventListener('mousemove', handleMouseMove);
 
+    let animationId = 0;
+    let disposed = false;
+
     const animate = () => {
-      requestAnimationFrame(animate);
+      if (disposed) return;
+      animationId = requestAnimationFrame(animate);
       if (sphere) sphere.rotation.y += 0.001;
       gsap.to(group.rotation, {
         x: -mouse.y * 0.1,
@@ -168,7 +172,7 @@ const Landing = () => {
       renderer.render(scene, camera);
     };
 
-    animate();
+    animationId = requestAnimationFrame(animate);
 
     const handleResize = () => {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -179,8 +183,16 @@ const Landing = () => {
     window.addEventListener('resize', handleResize);
 
     return () => {
+      disposed = true;
+      cancelAnimationFrame(animationId);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('resize', handleResize);
+      sphereGeometry.dispose();
+      sphereMaterial.dispose();
+      atmosphereGeometry.dispose();
+      atmosphereMaterial.dispose();
+      starGeometry.dispose();
+      starMaterial.dispose();
       renderer.dispose();
       ScrollTrigger.getAll().forEach(trigger => trigger.kill());
     };
@@ -331,6 +343,18 @@ const Landing = () => {
             <nav className="w-full max-w-full flex items-center justify-between px-3 sm:px-8 md:px-12 lg:p-16 z-10">
               <div className="h-9 w-14 sm:h-15 sm:w-20 flex-shrink-0" aria-hidden></div>
               <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-wrap justify-end">
+                <Link
+                  to="/case-studies"
+                  className="px-3 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-sm sm:text-lg touch-manipulation"
+                >
+                  Case Studies
+                </Link>
+                <Link
+                  to="/channel-partners"
+                  className="px-3 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-sm sm:text-lg touch-manipulation"
+                >
+                  Partners
+                </Link>
                 <button
                   onClick={handleBookDemo}
                   className="px-4 py-2 sm:px-5 sm:py-2 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors duration-200 text-base sm:text-lg touch-manipulation"
@@ -402,6 +426,25 @@ const Landing = () => {
             >
               Redefining Learning with XR + AI.
             </motion.p>
+            <motion.div
+              className="flex flex-wrap justify-center gap-3 px-3 pb-3 sm:pb-2 max-w-3xl"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.9 }}
+            >
+              <Link
+                to="/case-studies"
+                className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg border border-white/40 bg-white/10 text-white hover:bg-white/20 font-medium transition-colors duration-200 text-sm sm:text-base touch-manipulation"
+              >
+                View Case Studies
+              </Link>
+              <Link
+                to="/channel-partners"
+                className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors duration-200 text-sm sm:text-base touch-manipulation"
+              >
+                Become a Channel Partner
+              </Link>
+            </motion.div>
             <motion.div
               className="flex justify-center pb-4 sm:pb-0"
               initial={{ opacity: 0 }}
@@ -540,6 +583,20 @@ const Landing = () => {
               <img className="w-full h-auto object-contain" src="/img/sptbilogo.png" alt="SPTBI" loading="lazy" />
             </div>
           </div>
+          <div className="flex flex-wrap justify-center gap-4 mt-2 mb-4">
+            <Link
+              to="/case-studies"
+              className="px-6 py-3 rounded-lg border border-white/30 text-white hover:bg-white/10 font-medium transition-colors text-base sm:text-lg touch-manipulation"
+            >
+              XR Case Studies
+            </Link>
+            <Link
+              to="/channel-partners"
+              className="px-6 py-3 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors text-base sm:text-lg touch-manipulation"
+            >
+              Join Partner Program
+            </Link>
+          </div>
         </div>
 
         {/* Footer */}
@@ -556,6 +613,8 @@ const Landing = () => {
             </div>
             <div id="footer-right" className="flex w-full lg:w-[25%] justify-start lg:justify-center mt-4 lg:mt-0">
               <div className="flex flex-col gap-2">
+                <Link to="/case-studies" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors">Case Studies</Link>
+                <Link to="/channel-partners" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors">Channel Partners</Link>
                 <a href="https://www.youtube.com/channel/UCXhsQN9jsazg4FDoIuSseBg" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Youtube</a>
                 <a href="https://www.facebook.com/altiereality" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Facebook</a>
                 <a href="https://www.instagram.com/learn__xr/" className="text-white text-sm sm:text-base md:text-[1.4rem] hover:text-purple-400 transition-colors" target="_blank" rel="noopener noreferrer">Instagram</a>

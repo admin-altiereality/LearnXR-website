@@ -30,7 +30,7 @@ export async function askSpiralQuestion(
     const answer = res.data?.answer?.trim();
     if (answer) return answer;
   } catch (err) {
-    if (import.meta.env.DEV) {
+    if ((window.VITE_ENV?.DEV)) {
       console.warn('Spiral simple-answer failed:', err);
     }
   }

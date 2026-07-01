@@ -38,8 +38,8 @@ export class PaddleService {
   private paddleClientToken: string = '';
 
   private constructor() {
-    this.paddleClientToken = import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '';
-    this.paddleEnvironment = import.meta.env.VITE_PADDLE_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
+    this.paddleClientToken = window.VITE_ENV.VITE_PADDLE_CLIENT_TOKEN || '';
+    this.paddleEnvironment = window.VITE_ENV.VITE_PADDLE_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
     
     if (typeof window === 'undefined') {
       console.warn('PaddleService: Not in browser environment, skipping initialization');

@@ -32,7 +32,7 @@ export interface LogEntry {
   sessionId?: string;
 }
 
-const N8N_LOG_WEBHOOK_URL = import.meta.env.VITE_N8N_LOG_WEBHOOK_URL as string | undefined;
+const N8N_LOG_WEBHOOK_URL = window.VITE_ENV?.VITE_N8N_LOG_WEBHOOK_URL as string | undefined;
 
 class ProductionLogger {
   private sessionId: string;
@@ -44,7 +44,7 @@ class ProductionLogger {
 
   constructor() {
     this.sessionId = this.generateSessionId();
-    this.isProduction = import.meta.env.PROD || import.meta.env.MODE === 'production';
+    this.isProduction = (window.VITE_ENV?.PROD) || (window.VITE_ENV?.MODE) === 'production';
     
     // Process queue periodically
     if (this.isProduction) {
@@ -144,7 +144,7 @@ class ProductionLogger {
   private async saveLogToFirestore(entry: LogEntry): Promise<void> {
     try {
       // Only save to Firestore in production or if explicitly enabled
-      if (!this.isProduction && import.meta.env.VITE_ENABLE_LOGGING !== 'true') {
+      if (!this.isProduction && window.VITE_ENV?.VITE_ENABLE_LOGGING !== 'true') {
         // In development, just log to console
         console.log(`[${entry.level.toUpperCase()}]`, entry);
         return;
@@ -164,7 +164,7 @@ class ProductionLogger {
       }
     } catch (error: any) {
       if (error?.code === 'already-exists' || String(error?.message || '').includes('Document already exists')) {
-        if (import.meta.env.DEV) {
+        if ((window.VITE_ENV?.DEV)) {
           console.warn('Duplicate production log ignored:', error);
         }
         return;
@@ -182,7 +182,7 @@ class ProductionLogger {
       const basePayload = this.stripUndefined(entry) as Record<string, unknown>;
       const payload = {
         source: 'learnxr-frontend',
-        mode: import.meta.env.MODE,
+        mode: (window.VITE_ENV?.MODE),
         timestamp: new Date().toISOString(),
         ...basePayload,
       };
@@ -198,7 +198,7 @@ class ProductionLogger {
       });
     } catch (err) {
       // Never throw – n8n logging is auxiliary
-      if (import.meta.env.DEV) {
+      if ((window.VITE_ENV?.DEV)) {
         // Extra visibility in dev only
         // eslint-disable-next-line no-console
         console.warn('Failed to send log to n8n:', err);
@@ -303,7 +303,7 @@ class ProductionLogger {
     }
 
     // Queue for Firestore
-    if (this.isProduction || import.meta.env.VITE_ENABLE_LOGGING === 'true') {
+    if (this.isProduction || window.VITE_ENV?.VITE_ENABLE_LOGGING === 'true') {
       if (this.logQueue.length >= this.MAX_QUEUE_SIZE) {
         // Remove oldest entry
         this.logQueue.shift();

@@ -64,3 +64,5 @@ coverage/
 .env.test.local
 .env.production.local
 function-deploy-*.zip
+node_modules.bad
+node_modules.bad

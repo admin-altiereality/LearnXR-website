@@ -261,8 +261,8 @@ class AlternativeStorageService {
 
   private isCloudinaryAvailable(): boolean {
     // Check if Cloudinary is configured
-    return !!(import.meta.env.VITE_CLOUDINARY_CLOUD_NAME && 
-              import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+    return !!(window.VITE_ENV.VITE_CLOUDINARY_CLOUD_NAME && 
+              window.VITE_ENV.VITE_CLOUDINARY_UPLOAD_PRESET);
   }
 
   private getFileFormat(filename: string): string {
@@ -310,8 +310,8 @@ class AlternativeStorageService {
 
   private async uploadToCloudinary(file: File | Blob, filename: string): Promise<StorageResult> {
     try {
-      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+      const cloudName = window.VITE_ENV.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = window.VITE_ENV.VITE_CLOUDINARY_UPLOAD_PRESET;
       
       if (!cloudName || !uploadPreset) {
         throw new Error('Cloudinary not configured');
@@ -372,7 +372,7 @@ class AlternativeStorageService {
   }
 
   private getCloudinaryUrl(identifier: string): string {
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+    const cloudName = window.VITE_ENV.VITE_CLOUDINARY_CLOUD_NAME;
     return `https://res.cloudinary.com/${cloudName}/auto/upload/${identifier}`;
   }
 

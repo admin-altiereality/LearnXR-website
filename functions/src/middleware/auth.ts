@@ -32,6 +32,10 @@ const PUBLIC_PATHS = [
   '/assistant/lipsync/generate',  // Allow viseme generation without auth
   '/assistant/list',  // Allow listing assistants without auth
   '/leads',
+  '/partners',  // Allow public partner registration submissions
+  '/partners/register',
+  '/reports',  // Allow public report-download lead capture
+  '/reports/lead',
   '/linkedin/posts',  // Allow LinkedIn posts without auth (public company activity)
   '/streetview/generate-skybox', // Allow Street View skybox generation without auth
   '/streetview/places-autocomplete',
@@ -217,6 +221,30 @@ const isPublicEndpoint = (req: Request): boolean => {
 
   if ((req.method === 'POST' || req.method === 'OPTIONS') && isLeadEndpoint) {
     console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING leads endpoint`);
+    return true;
+  }
+
+  const isPartnerEndpoint = uniquePaths.some(path => {
+    return path === '/partners/register' ||
+           path.endsWith('/partners/register') ||
+           path.startsWith('/partners/') ||
+           path.includes('/partners');
+  });
+
+  if ((req.method === 'POST' || req.method === 'OPTIONS') && isPartnerEndpoint) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING partners endpoint`);
+    return true;
+  }
+
+  const isReportLeadEndpoint = uniquePaths.some(path => {
+    return path === '/reports/lead' ||
+           path.endsWith('/reports/lead') ||
+           path.startsWith('/reports/') ||
+           path.includes('/reports');
+  });
+
+  if ((req.method === 'POST' || req.method === 'OPTIONS') && isReportLeadEndpoint) {
+    console.log(`[${requestId}] [AUTH] ✅ EXPLICITLY ALLOWING reports endpoint`);
     return true;
   }
   

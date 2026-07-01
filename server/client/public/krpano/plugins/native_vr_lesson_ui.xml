@@ -1,0 +1,328 @@
+<krpano>
+
+  <!--
+    Native KRPano lesson UI for Meta Quest / WebXR.
+    CLEAN_DOCK_R23: Added top phase navigation bar.
+    Preserves all action names and controller interaction.
+  -->
+
+  <action name="native_vr_lesson_ui_init" autorun="onstart" type="js"><![CDATA[
+    if (krpano.native_vr_lesson_ui_initialized) return;
+    krpano.native_vr_lesson_ui_initialized = true;
+
+    var UI_PREFIX = "vrui_";
+    var OPTION_COUNT = 4;
+    var hotspots = [];
+    var lastClick = { name: "", at: 0 };
+
+    /* Ultra-compact panel (2D card-like proportions) */
+    var P = { tx: 0, ty: 0, tz: 220, scale: 0.12, w: 520, h: 460 };
+
+    var C = {
+      bg:      "0x080C14", card:    "0x101826", card2:   "0x182232",
+      border:  "0x283848", green:   "0x14B8A6", greenBg: "0x0B302E",
+      amber:   "0xD97706", amberBg: "0x451A03", red:     "0xEF4444",
+      blue:    "0x0284C7", blueBg:  "0x073347", purple:  "0x7C3AED",
+      purpleBg:"0x26144A", text:    "#F1F5F9",  muted:   "#94A3B8"
+    };
+
+    var PHASES = {
+      intro:       { badge:"INTRO",   accent:C.green,  bbg:C.greenBg,  bt:"#99F6E4" },
+      explanation: { badge:"LEARN",   accent:C.blue,   bbg:C.blueBg,   bt:"#BAE6FD" },
+      outro:       { badge:"SUMMARY", accent:C.purple, bbg:C.purpleBg, bt:"#DDD6FE" },
+      quiz:        { badge:"QUIZ",    accent:C.amber,  bbg:C.amberBg,  bt:"#FDE68A" },
+      completed:   { badge:"DONE",    accent:C.green,  bbg:C.greenBg,  bt:"#99F6E4" }
+    };
+
+    function log(e,d){try{if(window.__krpanoXRDebugLog)window.__krpanoXRDebugLog(e,d||{});else console.log("[KRPANO_NATIVE_UI]",e,d||{});}catch(x){}}
+    function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+    function shorten(v,m){var t=String(v||"").replace(/\s+/g," ").trim();return t.length<=m?t:t.slice(0,Math.max(0,m-3)).trim()+"...";}
+    function state(){return window.__krpanoUIState||{};}
+    function phase(){return String(state().phase||"intro");}
+    function phaseInfo(k){return PHASES[k]||PHASES.intro;}
+
+    /* VR-ONLY visibility: Only show when actually inside an XR session */
+    function showNativeUi(){
+      return !!(krpano.webvr && (krpano.webvr.isenabled===true || krpano.webvr.isenabled==="true" || krpano.webvr.isenabled==="1"));
+    }
+
+    function addName(n){if(hotspots.indexOf(n)<0)hotspots.push(n);}
+
+    function ensure(n){
+      if(!krpano.get("hotspot["+n+"]"))krpano.call("addhotspot("+n+")");
+      addName(n);
+      var s=function(k,v){krpano.set("hotspot["+n+"]."+k,v);};
+      s("keep",true); s("type","text"); s("distorted",true); s("torigin","world");
+      s("depth",0); s("renderer","webgl"); s("oversampling",3); s("scale",P.scale);
+      s("capture",true); s("handcursor",true); s("hittest",true); s("alpha",1);
+      s("edge","center"); s("zorder",90000); s("padding","4 12 4 12");
+      s("onover","js(window.native_vr_lesson_ui_hover && window.native_vr_lesson_ui_hover(caller.name, true));");
+      s("onout","js(window.native_vr_lesson_ui_hover && window.native_vr_lesson_ui_hover(caller.name, false));");
+      s("onclick","js(window.native_vr_lesson_ui_click && window.native_vr_lesson_ui_click(caller.name, 'onclick'));");
+      s("onvrcontrollerbutton","js(window.native_vr_lesson_ui_hotspot_button && window.native_vr_lesson_ui_hotspot_button(caller.name, caller.vrbuttonindex, caller.vrbuttonstate));");
+    }
+
+    function xOff(l,w){return -P.w/2+l+w/2;}
+    function yOff(t,h){return P.h/2-t-h/2;}
+
+    function pos(n,l,t,w,h){
+      krpano.set("hotspot["+n+"].tx", P.tx+xOff(l,w));
+      krpano.set("hotspot["+n+"].ty", P.ty+yOff(t,h));
+      krpano.set("hotspot["+n+"].tz", P.tz);
+      krpano.set("hotspot["+n+"].width",w);
+      krpano.set("hotspot["+n+"].height",h);
+    }
+
+    function css(sz,col,al,lh,wt){
+      return "color:"+(col||C.text)+";font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;font-size:"+sz+"px;font-weight:"+(wt||"normal")+";line-height:"+(lh||"130%")+";text-align:"+(al||"center")+";";
+    }
+
+    function style(n,html,c,bg,bga,bdr,rad){
+      krpano.set("hotspot["+n+"].html",html);
+      krpano.set("hotspot["+n+"].css",c||css(20,C.text));
+      krpano.set("hotspot["+n+"].bgcolor",bg||C.card);
+      krpano.set("hotspot["+n+"].bgalpha",bga==null?0.95:bga);
+      krpano.set("hotspot["+n+"].bgborder",bdr||"1 "+C.border+" 0.6");
+      krpano.set("hotspot["+n+"].bgroundedge",rad==null?12:rad);
+    }
+
+    function setAct(n,action,en){
+      krpano.set("hotspot["+n+"].dataaction",action||"");
+      krpano.set("hotspot["+n+"].enabled",!!en);
+      krpano.set("hotspot["+n+"].capture",!!en);
+      krpano.set("hotspot["+n+"].handcursor",!!en);
+      krpano.set("hotspot["+n+"].hittest",!!en);
+      krpano.set("hotspot["+n+"].alpha",en?1:0.35);
+    }
+
+    function box(n,l,t,w,h,html,c,bg,bga,bdr,act,en,rad){
+      ensure(n); pos(n,l,t,w,h); style(n,html,c,bg,bga,bdr,rad); setAct(n,act,en);
+      krpano.set("hotspot["+n+"].visible",showNativeUi());
+    }
+
+    function dec(n,l,t,w,h,html,c,bg,bga,bdr,rad){
+      box(n,l,t,w,h,html,c,bg,bga,bdr,"",false,rad);
+      krpano.set("hotspot["+n+"].alpha",1);
+      krpano.set("hotspot["+n+"].capture",false);
+      krpano.set("hotspot["+n+"].handcursor",false);
+      krpano.set("hotspot["+n+"].hittest",false);
+    }
+
+    function hide(n){
+      if(!krpano.get("hotspot["+n+"]"))return;
+      krpano.set("hotspot["+n+"].visible",false);
+      krpano.set("hotspot["+n+"].enabled",false);
+    }
+
+    function actionOf(n){try{return krpano.get("hotspot["+n+"].dataaction")||"";}catch(e){return "";}}
+
+    function dispatch(n,src,meta){
+      var a=actionOf(n),now=Date.now();
+      if(!a)return;
+      if(lastClick.name===n && now-lastClick.at<280)return;
+      lastClick={name:n,at:now};
+      log("native-vr-ui-action",{name:n,action:a,source:src||"",phase:phase(),button:meta&&meta.button,state:meta&&meta.state});
+      try{if(window.__krpanoUIAction)window.__krpanoUIAction(a);}catch(e){log("native-vr-ui-action-error",{action:a,message:String(e&&e.message?e.message:e)});}
+      try{if(window.__xrHaptic)window.__xrHaptic(a==="mcqSubmit"?"confirm":"select");else krpano.call("callwith(hotspot[vr_controller_r], pulse(0.45,0.05));");}catch(e){}
+    }
+
+    function btnS(k,en){
+      if(k==="primary") return {bg:C.green,bga:en?0.95:0.3,bdr:"2 0x72EFD3 "+(en?"0.5":"0.1"),tx:en?"#FFFFFF":"#8899B0",r:10};
+      if(k==="amber")   return {bg:en?C.amber:C.amberBg,bga:en?0.9:0.4,bdr:"2 0xF8B84C "+(en?"0.4":"0.12"),tx:en?"#FFF4D8":"#8899B0",r:10};
+      if(k==="danger")  return {bg:"0x5C1A20",bga:0.8,bdr:"1 "+C.red+" 0.45",tx:"#FFE7E7",r:10};
+      return {bg:C.card2,bga:en?0.65:0.25,bdr:"1 "+C.border+" "+(en?"0.5":"0.15"),tx:en?"#DCE7F4":"#6A7A90",r:10};
+    }
+    function btn(n,l,t,w,h,label,kind,act,en){
+      var s=btnS(kind,en);
+      box(n,l,t,w,h,esc(label),css(kind==="primary"?19:16,s.tx,"center","120%","bold"),s.bg,s.bga,s.bdr,act,en,s.r);
+    }
+
+    function optS(sel,ok,bad){
+      if(ok)  return {bg:"0x0F3830",bga:0.85,bdr:"2 0x34D399 0.8",tx:"#D1FAE5"};
+      if(bad) return {bg:"0x450A0A",bga:0.85,bdr:"2 "+C.red+" 0.8",tx:"#FEE2E2"};
+      if(sel) return {bg:"0x0C4A6E",bga:0.85,bdr:"2 0x38BDF8 0.7",tx:"#E0F2FE"};
+      return {bg:C.card,bga:0.7,bdr:"1 "+C.border+" 0.5",tx:C.text};
+    }
+
+    function hideL(){hide("vrui_hdr");hide("vrui_scr");hide("vrui_rep");hide("vrui_tts");hide("vrui_skq");hide("vrui_cnt");}
+    function hideQ(){for(var i=0;i<OPTION_COUNT;i++)hide("vrui_o"+i);hide("vrui_qh");hide("vrui_sub");hide("vrui_nxt");hide("vrui_exp");}
+    function hideC(){hide("vrui_done");}
+    function hideN(){hide("vrui_nav_intro");hide("vrui_nav_explanation");hide("vrui_nav_outro");hide("vrui_nav_quiz");}
+
+    /* ══ BACKGROUND ══ */
+    function drawBg(){
+      dec("vrui_bg",0,0,P.w,P.h,"&nbsp;",css(1),C.bg,0.96,"1 "+C.border+" 0.6",16);
+      krpano.set("hotspot[vrui_bg].zorder",89980);
+    }
+
+    /* ══ TOP NAV BAR ══ */
+    function drawNavBar(S){
+      var pk=String(S.phase||"intro");
+      var hasQ=Number(S.totalMcqs||0)>0;
+      
+      var tabs = [
+        { id:"intro", lbl:"Intro" },
+        { id:"explanation", lbl:"Learn" },
+        { id:"outro", lbl:"Summary" }
+      ];
+      if(hasQ) tabs.push({ id:"quiz", lbl:"Quiz" });
+
+      var tw=116, th=34, gap=6;
+      var totW = tabs.length * tw + (tabs.length-1)*gap;
+      var startX = (P.w - totW)/2;
+      var y = -42; // Above the main panel
+      
+      for(var i=0;i<tabs.length;i++){
+        var t = tabs[i];
+        var isAct = (t.id === pk);
+        var html = "<div style='font-size:14px;font-weight:"+(isAct?"bold":"normal")+";margin-top:2px;'>"+t.lbl+"</div>";
+        
+        var bg = isAct ? C.greenBg : C.card2;
+        var bga = isAct ? 0.95 : 0.6;
+        var bdr = isAct ? "2 "+C.green+" 0.8" : "1 "+C.border+" 0.4";
+        var txtCol = isAct ? "#FFFFFF" : C.muted;
+        
+        box("vrui_nav_"+t.id, startX + i*(tw+gap), y, tw, th, html, css(14, txtCol, "center", "130%", isAct?"bold":"normal"), bg, bga, bdr, "phaseGo:"+t.id, !isAct, 6);
+      }
+      if(!hasQ) hide("vrui_nav_quiz");
+    }
+
+    /* ══ LESSON ══ */
+    function drawLesson(S){
+      hideQ(); hideC();
+      var pk=String(S.phase||"intro"), pi=phaseInfo(pk);
+      var playing=S.isPlayingAudio===true||S.ttsStatus==="playing"||S.ttsStatus==="loading";
+      var sts=playing?" \u00B7 Playing":(S.ttsStatus==="paused"?" \u00B7 Paused":"");
+
+      var hHtml="<span style='display:inline-block;background:"+pi.bbg+";border:1px solid "+pi.accent+";border-radius:4px;padding:1px 6px;margin-right:8px;font-size:12px;font-weight:bold;color:"+pi.bt+";vertical-align:middle;'>"+pi.badge+"</span>"
+        +"<span style='font-size:17px;font-weight:bold;color:"+C.text+";vertical-align:middle;'>LearnXR"+esc(sts)+"</span>";
+      dec("vrui_hdr",12,12,496,36,hHtml,css(18,C.text,"left","120%","bold"),C.card,0.6,"1 "+C.border+" 0.3",8);
+
+      var scr=shorten(S.script||"Lesson content will appear here.",240);
+      dec("vrui_scr",12,54,496,320,esc(scr),css(19,C.text,"left","145%","normal"),C.card,0.65,"1 "+C.border+" 0.4",8);
+
+      var hasQ=Number(S.totalMcqs||0)>0;
+      var tLbl=playing?"Pause":(S.ttsStatus==="paused"?"Resume":"Play");
+      var tK=playing?"danger":"secondary";
+      var tA=playing?"ttsPause":"ttsPlay";
+      var cLbl=pk==="outro"&&hasQ?"Quiz \u203A":(pk==="outro"?"Done \u203A":"Next \u203A");
+      var dy=388, dh=42, gap=6, ml=12;
+
+      // Because we now have Top Nav, Skip is somewhat redundant but we keep it for fast progression
+      if(hasQ){
+        var bw=Math.floor((496-3*gap)/4);
+        btn("vrui_rep",ml,        dy,bw,dh,"Replay",  "secondary","replay",    true);
+        btn("vrui_tts",ml+bw+gap, dy,bw,dh,tLbl,      tK,         tA,          true);
+        btn("vrui_skq",ml+2*(bw+gap),dy,bw,dh,"Skip",   "amber","skipToQuiz",true);
+        btn("vrui_cnt",ml+3*(bw+gap),dy,bw,dh,cLbl,    "primary",  "continue",  true);
+      } else {
+        var bw3=Math.floor((496-2*gap)/3);
+        btn("vrui_rep",ml,          dy,bw3,dh,"Replay","secondary","replay",  true);
+        btn("vrui_tts",ml+bw3+gap,  dy,bw3,dh,tLbl,    tK,         tA,        true);
+        btn("vrui_cnt",ml+2*(bw3+gap),dy,bw3,dh,cLbl,  "primary",  "continue",true);
+        hide("vrui_skq");
+      }
+    }
+
+    /* ══ QUIZ ══ */
+    function drawQuiz(S){
+      hideL(); hideC();
+      var sel=parseInt(S.selectedAnswer,10); if(isNaN(sel))sel=-1;
+      var cor=parseInt(S.correctAnswer,10);  if(isNaN(cor))cor=-1;
+      var sr=S.showResult===true;
+      var opts=String(S.options||"").split("||").filter(function(o){return o;});
+      var ltrs=["A","B","C","D"];
+      var idx=Number(S.currentMcqIndex||0);
+      var tot=Math.max(1,Number(S.totalMcqs||0));
+
+      /* Question TOP */
+      var prog="Q"+(idx+1)+"/"+tot;
+      var qt=shorten(S.question||"",120);
+      var qHtml="<span style='display:inline-block;background:"+C.amberBg+";border:1px solid "+C.amber+";border-radius:4px;padding:1px 6px;margin-right:8px;font-size:12px;font-weight:bold;color:#FDE68A;vertical-align:middle;'>"+esc(prog)+"</span>"
+        +"<span style='font-size:16px;font-weight:bold;color:"+C.text+";vertical-align:middle;'>"+esc(qt)+"</span>";
+      dec("vrui_qh",12,12,496,56,qHtml,css(16,C.text,"left","130%","bold"),C.card,0.6,"1 "+C.border+" 0.3",8);
+
+      /* Options MIDDLE */
+      var ot=76, oh=44, og=6;
+      for(var i=0;i<OPTION_COUNT;i++){
+        if(!opts[i]){hide("vrui_o"+i);continue;}
+        var os=optS(sel===i, sr&&cor===i, sr&&sel===i&&cor!==i);
+        var y=ot+i*(oh+og);
+        var oHtml="<span style='display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:5px;background:rgba(255,255,255,0.1);font-weight:bold;font-size:13px;margin-right:10px;vertical-align:middle;'>"+ltrs[i]+"</span>"
+          +"<span style='vertical-align:middle;'>"+esc(shorten(opts[i],80))+"</span>";
+        box("vrui_o"+i,12,y,496,oh,oHtml,css(16,os.tx,"left","120%","normal"),os.bg,os.bga,os.bdr,"mcqSelect:"+i,!sr,8);
+      }
+
+      /* Explanation */
+      var afterOpts=ot+OPTION_COUNT*(oh+og)+4;
+      if(sr && S.explanation){
+        dec("vrui_exp",12,afterOpts,496,30,esc(shorten(S.explanation,120)),css(13,"#CBD5E1","left","125%","normal"),C.card2,0.6,"1 "+C.border+" 0.4",6);
+        afterOpts+=36;
+      } else { hide("vrui_exp"); }
+
+      /* Submit BOTTOM */
+      var bh=46;
+      if(sr){
+        btn("vrui_nxt",12,398,496,bh,idx<tot-1?"Next Question \u203A":"Results \u203A","primary","mcqNext",true);
+        hide("vrui_sub");
+      } else {
+        btn("vrui_sub",12,398,496,bh,"Submit Answer","amber","mcqSubmit",sel>=0);
+        hide("vrui_nxt");
+      }
+    }
+
+    function drawDone(S){
+      hideL(); hideQ(); hideN();
+      var sHtml="<div style='font-size:24px;font-weight:bold;margin-bottom:4px;'>\u2714 Lesson Done</div>"
+        +"<div style='font-size:16px;color:"+C.muted+";'>"+esc(S.scoreLabel||"Great work!")+"</div>";
+      dec("vrui_done",60,100,400,140,sHtml,css(24,C.text,"center","135%","bold"),C.greenBg,0.8,"2 0x14B8A6 0.5",12);
+      btn("vrui_cnt",140,280,240,48,"Finish","primary","continue",true);
+    }
+
+    function update(){
+      var vis=showNativeUi();
+      try{if(krpano.get("hotspot[iu_panel_3d]"))krpano.set("hotspot[iu_panel_3d].visible",!vis);}catch(e){}
+      if(!vis){for(var i=0;i<hotspots.length;i++)hide(hotspots[i]);return;}
+      var S=state();
+      drawBg();
+      
+      if(String(S.phase||"")!=="completed") drawNavBar(S);
+
+      if(String(S.phase||"")==="quiz" && S.showQuiz===true) drawQuiz(S);
+      else if(String(S.phase||"")==="completed") drawDone(S);
+      else drawLesson(S);
+    }
+
+    window.native_vr_lesson_ui_click=function(n,src){dispatch(n,src||"onclick",{});};
+    window.native_vr_lesson_ui_hover=function(n,ovr){
+      var a=actionOf(n); if(!a||ovr!==true)return;
+      try{krpano.call("callwith(hotspot[vr_controller_r], pulse(0.15,0.02));");}catch(e){}
+    };
+    window.native_vr_lesson_ui_hotspot_button=function(n,btn,bs){
+      if(String(bs)==="down")dispatch(n,"hotspot-button",{button:btn,state:bs});
+    };
+    window.__krpanoNativeVrUiControllerButton=function(ch){
+      var t=null,n="",b="",sv="";
+      try{b=ch?ch.vrbuttonindex:"";sv=ch?ch.vrbuttonstate:"";t=ch&&ch.target?ch.target:null;n=t&&t.name?t.name:"";}catch(e){}
+      if(String(sv)==="down"&&n.indexOf(UI_PREFIX)===0)dispatch(n,"controller-button",{button:b,state:sv});
+    };
+
+    krpano.native_vr_lesson_ui_update=update;
+    try{if(krpano.webvr){krpano.webvr.vr_controller_clickbuttons="0,1";krpano.webvr.vr_controller_activationbuttons="0,1";}}catch(e){}
+    update();
+    try{krpano.native_vr_lesson_ui_timer=setInterval(update,350);}catch(e){}
+  ]]></action>
+
+  <action name="native_vr_lesson_ui_update" type="js"><![CDATA[
+    if (krpano.native_vr_lesson_ui_update) krpano.native_vr_lesson_ui_update();
+  ]]></action>
+
+  <action name="native_vr_lesson_ui_click" type="js" args="hotspotName,source"><![CDATA[
+    if (window.native_vr_lesson_ui_click) window.native_vr_lesson_ui_click(hotspotName || (caller ? caller.name : ""), source || "action");
+  ]]></action>
+
+  <action name="native_vr_lesson_ui_controller_button" type="js"><![CDATA[
+    if (window.__krpanoNativeVrUiControllerButton) window.__krpanoNativeVrUiControllerButton(caller || null);
+  ]]></action>
+
+</krpano>

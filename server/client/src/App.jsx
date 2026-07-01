@@ -61,10 +61,13 @@ import LessonEditRequests from './screens/admin/LessonEditRequests';
 import ProductionLogs from './screens/admin/ProductionLogs';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import SchoolManagement from './screens/admin/SchoolManagement';
+import PartnerRegistrations from './screens/admin/PartnerRegistrations';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import PersonalizedLearning from './screens/ai/PersonalizedLearning';
 import ApiDocumentation from './screens/ApiDocumentation';
 import WebAppShowcase from './screens/WebAppShowcase';
+import CaseStudies from './screens/CaseStudies';
+import ChannelPartners from './screens/ChannelPartners';
 import AssociateDashboard from './screens/dashboard/AssociateDashboard';
 import JoinClassPage from './screens/dashboard/JoinClassPage';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
@@ -125,7 +128,7 @@ const ConditionalSidebar = () => {
   }
   
   // Also hide on public pages
-  const publicPages = ['/', '/careers', '/blog', '/privacy-policy', '/terms-conditions', '/refund-policy', '/help'];
+  const publicPages = ['/', '/careers', '/blog', '/privacy-policy', '/terms-conditions', '/refund-policy', '/help', '/case-studies', '/channel-partners'];
   if (publicPages.includes(location.pathname) && !user) {
     return null;
   }
@@ -325,7 +328,10 @@ const ConditionalBackground = ({ backgroundSkybox, backgroundKey }) => {
 const ConditionalCanvas = ({ children, backgroundSkybox }) => {
   const location = useLocation();
   const isStandaloneMarketing =
-    location.pathname === '/' || location.pathname === '/web-preview';
+    location.pathname === '/' ||
+    location.pathname === '/web-preview' ||
+    location.pathname === '/case-studies' ||
+    location.pathname === '/channel-partners';
   const isMainPage = location.pathname === '/main' || location.pathname === '/main-standalone';
   const isHistoryPage = location.pathname === '/history';
   
@@ -470,6 +476,8 @@ function App() {
                       <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/help" element={<HelpChat />} />
                       <Route path="/web-preview" element={<WebAppShowcase />} />
+                      <Route path="/case-studies" element={<CaseStudies />} />
+                      <Route path="/channel-partners" element={<ChannelPartners />} />
                       <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
                       <Route path="/studio-standalone" element={<StudioStandalone />} />
                       <Route path="/main-standalone" element={<MainStandalone />} />
@@ -494,6 +502,14 @@ function App() {
                           <SuperAdminGuard>
                             <Approvals />
                           </SuperAdminGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      <Route path="/admin/partners" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['admin', 'superadmin']}>
+                            <PartnerRegistrations />
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -878,6 +894,8 @@ function App() {
                       <Route path="/refund-policy" element={<RefundPolicy />} />
                       <Route path="/help" element={<HelpChat />} />
                       <Route path="/web-preview" element={<WebAppShowcase />} />
+                      <Route path="/case-studies" element={<CaseStudies />} />
+                      <Route path="/channel-partners" element={<ChannelPartners />} />
                       <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
                       <Route path="/studio-standalone" element={<StudioStandalone />} />
                       <Route path="/main-standalone" element={<MainStandalone />} />
@@ -1125,6 +1143,13 @@ function App() {
                           <AdminGuard>
                             <LessonEditRequests />
                           </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/partners" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['admin', 'superadmin']}>
+                            <PartnerRegistrations />
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       

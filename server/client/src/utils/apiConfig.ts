@@ -21,20 +21,20 @@ export const getApiBaseUrl = (): string => {
     return window.__LEARNXR_API_BASE_URL;
   }
   // Check if we're actually running on localhost in the browser
-  // This is more reliable than import.meta.env.DEV which can be true in preview builds
+  // This is more reliable than (window.VITE_ENV?.DEV) which can be true in preview builds
   const isLocalhost = typeof window !== 'undefined' && 
     (window.location.hostname === 'localhost' || 
      window.location.hostname === '127.0.0.1' ||
      window.location.hostname === '');
   
   // Check for explicit API base URL from environment (but validate it's not localhost for non-localhost environments)
-  if (import.meta.env.VITE_API_BASE_URL) {
-    const explicitUrl = import.meta.env.VITE_API_BASE_URL;
+  if (window.VITE_ENV.VITE_API_BASE_URL) {
+    const explicitUrl = window.VITE_ENV.VITE_API_BASE_URL;
     // If we're not on localhost but the URL is localhost, use production instead
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
       const region = 'us-central1';
-      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
+      const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
       const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
       console.log('🌐 Using production Firebase Functions:', productionUrl);
       return productionUrl;
@@ -44,7 +44,7 @@ export const getApiBaseUrl = (): string => {
   }
   
   // Local dev: prefer Express server (5002) so /assistant/tts/regenerate-topic etc. work; fallback to Firebase emulator (5001)
-  if (isLocalhost && import.meta.env.DEV) {
+  if (isLocalhost && (window.VITE_ENV?.DEV)) {
     const expressUrl = 'http://localhost:5002/api';
     console.log('🌐 Using local API (Express):', expressUrl);
     return expressUrl;
@@ -52,13 +52,13 @@ export const getApiBaseUrl = (): string => {
   
   // Use Firebase Functions in production/preview (default)
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
+  const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
   console.log('🌐 Using production Firebase Functions:', productionUrl, {
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
     isLocalhost,
-    isDev: import.meta.env.DEV,
-    mode: import.meta.env.MODE
+    isDev: (window.VITE_ENV?.DEV),
+    mode: (window.VITE_ENV?.MODE)
   });
   return productionUrl;
 };
@@ -70,11 +70,23 @@ export const getApiBaseUrl = (): string => {
  * @returns Full proxy URL: {apiBase}/proxy-asset?url={encoded target}
  */
 export const getProxyAssetUrl = (targetUrl: string): string => {
-  try {
-    targetUrl = decodeURIComponent(targetUrl);
-  } catch {
-    // leave as-is if decoding fails
+  if (!targetUrl) return '';
+  if (targetUrl.startsWith('/assets/')) return targetUrl;
+  if (targetUrl.startsWith('blob:')) return targetUrl;
+
+  // We DO proxy Firebase Storage URLs for 3D assets because Krpano ThreeJS plugin strips
+  // query parameters (like ?alt=media&token=...) which causes 403 Forbidden errors if fetched natively.
+  const shouldPreserveFirebaseStorageEncoding =
+    targetUrl.includes('firebasestorage.googleapis.com') || targetUrl.includes('firebasestorage.app') || targetUrl.includes('appspot.com');
+
+  if (!shouldPreserveFirebaseStorageEncoding) {
+    try {
+      targetUrl = decodeURIComponent(targetUrl);
+    } catch {
+      //
+    }
   }
+
   return `${getApiBaseUrl()}/proxy-asset?url=${encodeURIComponent(targetUrl)}`;
 };
 
@@ -86,10 +98,19 @@ export const getProxyAssetUrl = (targetUrl: string): string => {
  * @returns Full proxy URL: {apiBase}/proxy-asset/{base64url}/model.glb
  */
 export const getProxyAssetUrlForThreejs = (targetUrl: string): string => {
-  try {
-    targetUrl = decodeURIComponent(targetUrl);
-  } catch {
-    // leave as-is if decoding fails
+  if (!targetUrl) return '';
+  if (targetUrl.startsWith('/assets/')) return targetUrl;
+  if (targetUrl.startsWith('blob:')) return targetUrl;
+
+  const shouldPreserveFirebaseStorageEncoding =
+    targetUrl.includes('firebasestorage.googleapis.com') || targetUrl.includes('firebasestorage.app') || targetUrl.includes('appspot.com');
+
+  if (!shouldPreserveFirebaseStorageEncoding) {
+    try {
+      targetUrl = decodeURIComponent(targetUrl);
+    } catch {
+      // leave as-is if decoding fails
+    }
   }
   const base64 = btoa(encodeURIComponent(targetUrl));
   const pathSafe = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -101,11 +122,10 @@ export const getProxyAssetUrlForThreejs = (targetUrl: string): string => {
  */
 export const getFirebaseProjectConfig = () => {
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
+  const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   return {
     region,
     projectId,
     functionsUrl: `https://${region}-${projectId}.cloudfunctions.net`
   };
 };
-

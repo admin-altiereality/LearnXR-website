@@ -5,6 +5,7 @@ import paymentRoutes from './payment';
 import skyboxRoutes from './skybox';
 import linkedinRoutes from './linkedin';
 import leadRoutes from './leads';
+import partnerRoutes from './partners';
 import n8nRoutes from './n8n';
 // Subscription removed
 import userRoutes from './user';
@@ -181,6 +182,11 @@ console.log('LinkedIn routes mounted at /api');
 console.log('Mounting lead routes...');
 router.use('/leads', leadRoutes);
 console.log('Lead routes mounted at /leads');
+
+// Mount partner route
+console.log('Mounting partner routes...');
+router.use('/partners', partnerRoutes);
+console.log('Partner routes mounted at /partners');
 
 // Mount user routes
 console.log('Mounting user routes...');

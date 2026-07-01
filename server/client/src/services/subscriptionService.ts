@@ -4,15 +4,15 @@ import { SubscriptionPlan, UserSubscription, PaymentProvider } from '../types/su
 import api from '../config/axios';
 
 // Load Razorpay plan IDs from environment variables
-const RAZORPAY_PRO_MONTHLY = import.meta.env.VITE_RAZORPAY_PRO_MONTHLY_PLAN_ID || '';
-const RAZORPAY_PRO_YEARLY = import.meta.env.VITE_RAZORPAY_PRO_YEARLY_PLAN_ID || '';
-const RAZORPAY_TEAM_MONTHLY = import.meta.env.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID || '';
-const RAZORPAY_TEAM_YEARLY = import.meta.env.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID || '';
-const RAZORPAY_ENTERPRISE_MONTHLY = import.meta.env.VITE_RAZORPAY_ENTERPRISE_MONTHLY_PLAN_ID || '';
-const RAZORPAY_ENTERPRISE_YEARLY = import.meta.env.VITE_RAZORPAY_ENTERPRISE_YEARLY_PLAN_ID || '';
+const RAZORPAY_PRO_MONTHLY = window.VITE_ENV.VITE_RAZORPAY_PRO_MONTHLY_PLAN_ID || '';
+const RAZORPAY_PRO_YEARLY = window.VITE_ENV.VITE_RAZORPAY_PRO_YEARLY_PLAN_ID || '';
+const RAZORPAY_TEAM_MONTHLY = window.VITE_ENV.VITE_RAZORPAY_TEAM_MONTHLY_PLAN_ID || '';
+const RAZORPAY_TEAM_YEARLY = window.VITE_ENV.VITE_RAZORPAY_TEAM_YEARLY_PLAN_ID || '';
+const RAZORPAY_ENTERPRISE_MONTHLY = window.VITE_ENV.VITE_RAZORPAY_ENTERPRISE_MONTHLY_PLAN_ID || '';
+const RAZORPAY_ENTERPRISE_YEARLY = window.VITE_ENV.VITE_RAZORPAY_ENTERPRISE_YEARLY_PLAN_ID || '';
 
 // Validate Razorpay plan IDs on load (only in browser, only in development - app uses Paddle in production)
-if (typeof window !== 'undefined' && import.meta.env.DEV) {
+if (typeof window !== 'undefined' && (window.VITE_ENV?.DEV)) {
   const missingPlans: string[] = [];
   if (!RAZORPAY_PRO_MONTHLY) missingPlans.push('Pro Monthly');
   if (!RAZORPAY_PRO_YEARLY) missingPlans.push('Pro Yearly');
@@ -83,8 +83,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       unityUnrealIntegration: true,
       supportLevel: 'standard'
     },
-    paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_PRO_MONTHLY_PRICE_ID || '',
-    paddlePriceIdYearly: import.meta.env.VITE_PADDLE_PRO_YEARLY_PRICE_ID || '',
+    paddlePriceIdMonthly: window.VITE_ENV.VITE_PADDLE_PRO_MONTHLY_PRICE_ID || '',
+    paddlePriceIdYearly: window.VITE_ENV.VITE_PADDLE_PRO_YEARLY_PRICE_ID || '',
     razorpayPlanIdMonthly: RAZORPAY_PRO_MONTHLY,
     razorpayPlanIdYearly: RAZORPAY_PRO_YEARLY
   },
@@ -118,8 +118,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       unityUnrealIntegration: true,
       supportLevel: 'priority'
     },
-    paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_TEAM_MONTHLY_PRICE_ID || '',
-    paddlePriceIdYearly: import.meta.env.VITE_PADDLE_TEAM_YEARLY_PRICE_ID || '',
+    paddlePriceIdMonthly: window.VITE_ENV.VITE_PADDLE_TEAM_MONTHLY_PRICE_ID || '',
+    paddlePriceIdYearly: window.VITE_ENV.VITE_PADDLE_TEAM_YEARLY_PRICE_ID || '',
     razorpayPlanIdMonthly: RAZORPAY_TEAM_MONTHLY,
     razorpayPlanIdYearly: RAZORPAY_TEAM_YEARLY
   },
@@ -154,8 +154,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       unityUnrealIntegration: true,
       supportLevel: 'dedicated'
     },
-    paddlePriceIdMonthly: import.meta.env.VITE_PADDLE_ENTERPRISE_MONTHLY_PRICE_ID || '',
-    paddlePriceIdYearly: import.meta.env.VITE_PADDLE_ENTERPRISE_YEARLY_PRICE_ID || '',
+    paddlePriceIdMonthly: window.VITE_ENV.VITE_PADDLE_ENTERPRISE_MONTHLY_PRICE_ID || '',
+    paddlePriceIdYearly: window.VITE_ENV.VITE_PADDLE_ENTERPRISE_YEARLY_PRICE_ID || '',
     razorpayPlanIdMonthly: RAZORPAY_ENTERPRISE_MONTHLY,
     razorpayPlanIdYearly: RAZORPAY_ENTERPRISE_YEARLY
   }

@@ -130,10 +130,18 @@ const getApp = (): express.Application => {
 
     // Mount public routes FIRST (before authentication)
     const leadRoutes = require('./routes/leads').default;
+    const partnerRoutes = require('./routes/partners').default;
+    const reportRoutes = require('./routes/reports').default;
     app.use('/linkedin', linkedinRoutes);
     app.use('/leads', leadRoutes);
+    app.use('/partners', partnerRoutes);
+    app.use('/reports', reportRoutes);
     app.use('/auth', authTokenRoutes); // custom-token exchange for standalone VR player (GET)
     app.use('/auth', authRoutes);
+
+    // Mount proxy BEFORE authentication because img tags and 3D loaders don't send Bearer tokens
+    const proxyRoutes = require('./routes/proxy').default;
+    app.use('/', proxyRoutes);
 
     // Apply authentication middleware
     app.use(authenticateUser);
@@ -145,7 +153,6 @@ const getApp = (): express.Application => {
     const paymentRoutes = require('./routes/payment').default;
     const subscriptionRoutes = require('./routes/subscription').default;
     const userRoutes = require('./routes/user').default;
-    const proxyRoutes = require('./routes/proxy').default;
     const aiDetectionRoutes = require('./routes/aiDetection').default;
     const assistantRoutes = require('./routes/assistant').default;
     const apiKeyRoutes = require('./routes/apiKey').default;
@@ -167,7 +174,6 @@ const getApp = (): express.Application => {
     app.use('/payment', paymentRoutes);
     app.use('/subscription', subscriptionRoutes);
     app.use('/user', userRoutes);
-    app.use('/', proxyRoutes);
     app.use('/ai-detection', aiDetectionRoutes);
     app.use('/assistant', assistantRoutes);
     app.use('/dev/api-keys', apiKeyRoutes);

@@ -8,10 +8,11 @@
     "dev": "cross-env NODE_ENV=development tsx watch ./server/src/server.ts",
     "build": "tsup",
     "build:client": "cd client && npm install && npm run build",
-    "build:hosting": "npm --prefix server/client run build",
+    "build:hosting": "bash firebase-build.sh",
     "deploy:preview": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy testing",
     "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav",
-    "deploy:production:lexrn1": "firebase use lexrn1 && firebase deploy --only hosting -c firebase.lexrn1.json"
+    "deploy:preview:lexrn1": "bash firebase-build.sh deploy preview",
+    "deploy:production:lexrn1": "bash firebase-build.sh deploy live"
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.1",

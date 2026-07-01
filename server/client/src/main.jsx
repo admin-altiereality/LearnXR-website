@@ -1,5 +1,7 @@
+import './config/viteEnv';
 import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { HelmetProvider } from 'react-helmet-async';
 import App from './App.jsx';
 import './index.css';
 import { productionLogger } from './services/productionLogger';
@@ -19,6 +21,17 @@ import LearnXRLoader from './Components/LearnXRLoader';
 window.addEventListener('error', (event) => {
   const msg = (event.message || '').toLowerCase();
   if (msg.includes('message port closed') || msg.includes('message channel closed') || msg.includes('before a response was received') || msg.includes('runtime.lasterror')) {
+    event.preventDefault();
+    return;
+  }
+
+  // Benign GPU / WebGL warnings (common when leaving the landing globe page).
+  if (
+    msg.includes('webgl') ||
+    msg.includes('gl_invalid_operation') ||
+    msg.includes('gltexstorage2d') ||
+    msg.includes('texture is immutable')
+  ) {
     event.preventDefault();
     return;
   }
@@ -286,8 +299,10 @@ const AppWithLoader = () => {
 
 root.render(
   <StrictMode>
-    <ErrorBoundary>
-      <AppWithLoader />
-    </ErrorBoundary>
+    <HelmetProvider>
+      <ErrorBoundary>
+        <AppWithLoader />
+      </ErrorBoundary>
+    </HelmetProvider>
   </StrictMode>
 );

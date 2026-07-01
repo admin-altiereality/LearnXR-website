@@ -863,5 +863,21 @@ service cloud.firestore {
         isAdminOrSuperadmin() || isPaperOwner()
       );
     }
+
+    // Channel partner registrations - submitted via public website form.
+    // Writes happen ONLY through the backend (Firebase Admin SDK), so client
+    // writes are denied. Reads are restricted to admins/superadmins (CRM view).
+    match /partner_registrations/{registrationId} {
+      allow read: if isAdminOrSuperadmin();
+      allow write: if false;
+    }
+
+    // Report-download lead capture (Case Studies hub).
+    // Writes happen ONLY through the backend (Firebase Admin SDK); reads are
+    // restricted to admins/superadmins (CRM view).
+    match /report_leads/{leadId} {
+      allow read: if isAdminOrSuperadmin();
+      allow write: if false;
+    }
   }
 } 

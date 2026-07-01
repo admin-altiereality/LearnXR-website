@@ -30,7 +30,11 @@ function isBenignExtensionOrIframeError(error: Error | null): boolean {
     msg.includes('message channel closed') ||
     msg.includes('before a response was received') ||
     msg.includes('runtime.lasterror') ||
-    msg.includes('extension context invalidated')
+    msg.includes('extension context invalidated') ||
+    msg.includes('webgl') ||
+    msg.includes('gl_invalid_operation') ||
+    msg.includes('gltexstorage2d') ||
+    msg.includes('texture is immutable')
   );
 }
 

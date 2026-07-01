@@ -45,8 +45,6 @@ export const fetchLinkedInPosts = async (limit: number = 6): Promise<LinkedInPos
     const apiBaseUrl = getApiBaseUrl();
     const apiUrl = `${apiBaseUrl}/linkedin/posts`;
     
-    console.log('🌐 Fetching LinkedIn posts from:', apiUrl);
-    
     // Try to fetch from backend API
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -57,20 +55,16 @@ export const fetchLinkedInPosts = async (limit: number = 6): Promise<LinkedInPos
 
     if (response.ok) {
       const data = await response.json();
-      console.log('✅ LinkedIn posts fetched successfully:', data);
       cachedPosts = data.posts || [];
       lastFetchTime = now;
       return cachedPosts.slice(0, limit);
-    } else {
-      console.warn('⚠️ LinkedIn API returned non-OK status:', response.status);
     }
   } catch (error) {
-    console.error('❌ Error fetching LinkedIn posts:', error);
+    if (import.meta.env.DEV) {
+      console.warn('LinkedIn posts unavailable, using fallback content:', error);
+    }
   }
 
-  // Fallback to mock data for demonstration
-  // In production, this should be replaced with actual LinkedIn API integration
-  console.warn('⚠️ Using mock LinkedIn posts as fallback');
   return getMockLinkedInPosts(limit);
 };
 

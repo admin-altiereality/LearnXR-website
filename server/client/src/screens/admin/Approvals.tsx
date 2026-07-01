@@ -40,7 +40,8 @@ import {
   FaUserGraduate,
   FaExclamationTriangle,
   FaCog,
-  FaUserShield
+  FaUserShield,
+  FaHandshake,
 } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../config/firebase';
@@ -137,7 +138,8 @@ const Approvals = () => {
     rejected: 0,
     teachers: 0,
     schools: 0,
-    pendingSchools: 0
+    pendingSchools: 0,
+    partnerRegistrations: 0,
   });
 
   // Check if user can approve
@@ -377,8 +379,18 @@ const Approvals = () => {
           if (data.role === 'teacher') teachers++;
           else if (data.role === 'school') schools++;
         });
+
+        const partnerSnapshot = await getDocs(collection(db, 'partner_registrations'));
         
-        setStats({ pending, approved, rejected, teachers, schools, pendingSchools: pendingSchools.length });
+        setStats({
+          pending,
+          approved,
+          rejected,
+          teachers,
+          schools,
+          pendingSchools: pendingSchools.length,
+          partnerRegistrations: partnerSnapshot.size,
+        });
       } catch (error) {
         console.error('Error fetching stats:', error);
       }
@@ -735,6 +747,42 @@ const Approvals = () => {
             </div>
           </div>
         </motion.div>
+
+        {/* Channel partner applications */}
+        {(profile?.role === 'admin' || profile?.role === 'superadmin') && (
+          <motion.div
+            custom={0.5}
+            variants={fadeUpVariants}
+            initial="hidden"
+            animate="visible"
+            className="mb-6"
+          >
+            <button
+              type="button"
+              onClick={() => navigate('/admin/partners')}
+              className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors p-4 text-left"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center shrink-0">
+                  <FaHandshake className="text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-foreground">Channel Partner Registrations</h2>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Review partner applications from the public channel partners page.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 sm:pl-4">
+                <div className="px-4 py-2 rounded-xl bg-background border border-border">
+                  <span className="text-foreground font-bold text-lg">{stats.partnerRegistrations}</span>
+                  <span className="text-muted-foreground text-sm ml-2">Total</span>
+                </div>
+                <span className="text-sm font-medium text-primary">View all →</span>
+              </div>
+            </button>
+          </motion.div>
+        )}
 
         {/* Tabs */}
         <motion.div

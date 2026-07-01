@@ -3,18 +3,18 @@ import { auth } from '../config/firebase';
 // API base URL - use environment variable or fallback to defaults
 const getApiBaseUrl = () => {
   // Check for explicit API base URL from environment
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  if (window.VITE_ENV.VITE_API_BASE_URL) {
+    return window.VITE_ENV.VITE_API_BASE_URL;
   }
   
   // Use local backend in development
-  if (import.meta.env.DEV) {
+  if ((window.VITE_ENV?.DEV)) {
     return 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
   }
   
   // Use Firebase Functions in production
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
+  const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   return `https://${region}-${projectId}.cloudfunctions.net/api`;
 };
 

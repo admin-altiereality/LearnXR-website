@@ -19,7 +19,7 @@ export class StorageTestUtility {
       environment: {
         isBrowser: typeof window !== 'undefined',
         userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A',
-        nodeEnv: process.env.NODE_ENV || 'unknown'
+        nodeEnv: window.VITE_ENV.NODE_ENV || 'unknown'
       },
       firebase: {
         configValid: false,

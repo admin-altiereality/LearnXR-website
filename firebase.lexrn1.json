@@ -6,6 +6,15 @@
     "rewrites": [{"source": "**", "destination": "/index.html"}],
     "headers": [
       {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Permissions-Policy",
+            "value": "xr-spatial-tracking=(self \"https://altiereality.com\" \"https://www.altiereality.com\" \"https://altiereality.web.app\" \"https://altiereality--testing-j5fpd959.web.app\"), fullscreen=(self)"
+          }
+        ]
+      },
+      {
         "source": "**/*.@(js|css|woff2|woff|ttf)",
         "headers": [{"key": "Cache-Control", "value": "public, max-age=31536000, immutable"}]
       },
@@ -17,7 +26,6 @@
         "source": "index.html",
         "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
       }
-    ],
-    "predeploy": ["npm --prefix \"server/client\" run build"]
+    ]
   }
 }

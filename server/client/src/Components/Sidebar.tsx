@@ -28,7 +28,8 @@ import {
   FaSun,
   FaMoon,
   FaClipboardList,
-  FaStar
+  FaStar,
+  FaHandshake
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -221,6 +222,7 @@ const Sidebar = () => {
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
+      items.push({ path: '/admin/partners', label: 'Partner Registrations', icon: FaHandshake });
       items.push({ path: '/system-status', label: 'System', icon: FaServer });
     }
 

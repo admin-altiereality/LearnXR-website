@@ -55,8 +55,18 @@ const LinkedInActivity: React.FC<LinkedInActivityProps> = ({
 
   if (error && posts.length === 0) {
     return (
-      <div className="w-full flex items-center justify-center py-20">
-        <div className="text-red-400 text-xl">{error}</div>
+      <div className="w-full flex flex-col items-center justify-center gap-4 py-20">
+        <p className="text-white/70 text-lg text-center px-4">
+          Company updates are temporarily unavailable.
+        </p>
+        <a
+          href="https://www.linkedin.com/company/altie-reality/mycompany/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-purple-700/30 border border-purple-700/50 text-white text-sm font-medium hover:bg-purple-700/40 transition-colors"
+        >
+          <FaLinkedin /> View on LinkedIn
+        </a>
       </div>
     );
   }

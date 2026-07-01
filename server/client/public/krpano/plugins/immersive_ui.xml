@@ -179,22 +179,22 @@
         label: "Lecture Hall",
         panel:  { tx: 0,    ty: 10,  tz: 250 },
         avatar: { tx: -80,  ty: -60, tz: 180 },
-        asset:  { tx: 60,   ty: -30, tz: 150 },
-        spread: { x: 40, z: 50 }
+        asset:  { tx: 90,   ty: -55, tz: 300 },
+        spread: { x: 95, z: 55 }
       },
       podium: {
         label: "Podium",
         panel:  { tx: 80,   ty: 10,  tz: 220 },
         avatar: { tx: -20,  ty: -60, tz: 150 },
-        asset:  { tx: -70,  ty: -30, tz: 180 },
-        spread: { x: 40, z: 50 }
+        asset:  { tx: -110, ty: -55, tz: 310 },
+        spread: { x: 95, z: 55 }
       },
       museum: {
         label: "Museum",
         panel:  { tx: -100, ty: 10,  tz: 230 },
         avatar: { tx: 80,   ty: -60, tz: 200 },
-        asset:  { tx: 0,    ty: -25, tz: 130 },
-        spread: { x: 45, z: 40 }
+        asset:  { tx: 105,  ty: -55, tz: 320 },
+        spread: { x: 100, z: 60 }
       }
     };
     refs.currentLayout = "lecture";
@@ -1207,6 +1207,9 @@
 
     if (refs.panel && refs.panel.draw) refs.panel.draw();
     krpano.call("immersive_ui_gaze_update_positions()");
+    try {
+      if (window.__krpanoAssetScaleAction) window.__krpanoAssetScaleAction("refresh");
+    } catch(e) {}
   ]]></action>
 
 </krpano>

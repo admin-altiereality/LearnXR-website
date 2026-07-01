@@ -175,18 +175,18 @@ export interface MeshyAnimationTaskResult {
 // Get the correct API base URL
 const getApiBaseUrl = () => {
   // Check for explicit API base URL from environment
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  if (window.VITE_ENV.VITE_API_BASE_URL) {
+    return window.VITE_ENV.VITE_API_BASE_URL;
   }
   
   // Use local backend in development
-  if (import.meta.env.DEV) {
+  if ((window.VITE_ENV?.DEV)) {
     return 'http://localhost:5001/learnxr-evoneuralai/us-central1/api';
   }
   
   // Use Firebase Functions in production
   const region = 'us-central1';
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
+  const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   return `https://${region}-${projectId}.cloudfunctions.net/api`;
 };
 
@@ -200,8 +200,8 @@ export class MeshyApiService {
   private timeout: number = 30000;
   
   constructor() {
-    this.apiKey = import.meta.env.VITE_MESHY_API_KEY || '';
-    this.baseUrl = import.meta.env.VITE_MESHY_API_BASE_URL || 'https://api.meshy.ai/openapi/v2';
+    this.apiKey = window.VITE_ENV.VITE_MESHY_API_KEY || '';
+    this.baseUrl = window.VITE_ENV.VITE_MESHY_API_BASE_URL || 'https://api.meshy.ai/openapi/v2';
     this.proxyBaseUrl = getApiBaseUrl();
     
     // Check if we're in a preview channel (preview channels typically don't have env vars)
@@ -213,8 +213,8 @@ export class MeshyApiService {
     // 2. Explicitly configured to use proxy
     // 3. We're in a preview channel (safer to use proxy)
     this.useProxy = !this.apiKey || 
-                    import.meta.env.VITE_USE_MESHY_PROXY === 'true' ||
-                    (isPreviewChannel && !import.meta.env.VITE_MESHY_API_KEY);
+                    window.VITE_ENV.VITE_USE_MESHY_PROXY === 'true' ||
+                    (isPreviewChannel && !window.VITE_ENV.VITE_MESHY_API_KEY);
     
     if (!this.apiKey && !this.useProxy) {
       console.warn('Meshy API key not configured. Will attempt to use Firebase proxy.');

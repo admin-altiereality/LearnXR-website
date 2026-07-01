@@ -19,7 +19,7 @@ export class RazorpayService {
   private isInitialized: boolean = false;
 
   private constructor() {
-    this.razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
+    this.razorpayKeyId = window.VITE_ENV.VITE_RAZORPAY_KEY_ID || '';
     
     if (typeof window === 'undefined') {
       console.warn('RazorpayService: Not in browser environment');
