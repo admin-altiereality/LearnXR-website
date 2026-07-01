@@ -72,6 +72,8 @@ const DEFAULT_HOTSPOT_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%23f97316" stroke="%23fff" stroke-width="3" opacity="0.95"/><circle cx="24" cy="24" r="8" fill="%23fff"/></svg>'
   );
 
+const KRPANO_ASSET_VERSION = '1.23.3-r3';
+
 /**
  * Build hotspot XML for one hotspot. Uses image url or a default pin icon.
  * onclick calls window.__krpanoOnHotspotClick(name) for React.
@@ -89,10 +91,11 @@ function buildHotspotXml(spot: KrpanoHotspotOption): string {
 
 /** Resolve plugin URL for blob-loaded XML (origin + basePath + plugins/name) */
 function pluginUrl(origin: string | undefined, basePath: string, pluginFile: string): string {
+  const pluginWithVersion = `${pluginFile}?v=${KRPANO_ASSET_VERSION}`;
   if (origin) {
-    return `${origin.replace(/\/$/, '')}${basePath.replace(/\/$/, '')}/plugins/${pluginFile}`;
+    return `${origin.replace(/\/$/, '')}${basePath.replace(/\/$/, '')}/plugins/${pluginWithVersion}`;
   }
-  return `plugins/${pluginFile}`;
+  return `plugins/${pluginWithVersion}`;
 }
 
 /** Only GLB/GLTF URLs are valid for threejs hotspots; filter out images and other formats. */
