@@ -1410,7 +1410,7 @@ const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, 
   const storagePath = data.storagePath || data.storage_path;
   
   // Handle different field naming conventions for URLs
-  const existingGlbUrl = data.glb_url || data.textured_model_glb || data.final_asset_url || data.asset_url || data.model_urls?.glb || '';
+  const existingGlbUrl = data.render_url || data.model_urls?.glb || data.glb_url || data.textured_model_glb || data.final_asset_url || data.asset_url || '';
   const existingFbxUrl = data.fbx_url || data.textured_model_fbx || data.model_urls?.fbx;
   const existingUsdzUrl = data.usdz_url || data.textured_model_usdz || data.model_urls?.usdz;
   
@@ -1481,6 +1481,10 @@ const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, 
     name: data.name || data.prompt || 'Meshy 3D Asset',
     prompt: data.prompt,
     glb_url: glbUrl || '', // Ensure we always return a string
+    render_url: data.render_url || '',
+    storage_path: data.storage_path || storagePath,
+    storage_paths: data.storage_paths,
+    model_urls: data.model_urls,
     fbx_url: existingFbxUrl,
     usdz_url: existingUsdzUrl,
     thumbnail_url: data.thumbnail_url || data.thumbnail || data.previewUrl,
@@ -1492,6 +1496,12 @@ const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, 
       ...data.metadata,
       storagePath, // Include storagePath in metadata for future refetching
     },
+    animated_render_url: data.animated_render_url,
+    animated_storage_path: data.animated_storage_path,
+    animated_glb_url: data.animated_render_url || data.animated_glb_url,
+    rig_task_id: data.rig_task_id,
+    animation_task_id: data.animation_task_id,
+    animation_action_id: data.animation_action_id,
   };
 };
 

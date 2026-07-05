@@ -728,8 +728,9 @@ const TeacherDashboard = () => {
       const assetIds = topic.asset_ids || [];
       const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
       safeAssets3d.forEach((asset: any) => {
-        if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
-          assetUrls.push(asset.glb_url);
+        const glb = asset?.animated_render_url || asset?.animated_glb_url || asset?.render_url || asset?.model_urls?.glb || asset?.glb_url;
+        if (glb && !assetUrls.includes(glb)) {
+          assetUrls.push(glb);
           assetIds.push(asset.id || `asset_${assetUrls.length}`);
         }
       });

@@ -4,19 +4,17 @@
  * Service for uploading assets with validation, progress tracking, and error handling
  */
 
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes } from 'firebase/storage';
 import { storage, db } from '../../config/firebase';
-import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { linkMeshyAssetsToTopic } from '../../lib/firestore/updateHelpers';
+import { collection, doc } from 'firebase/firestore';
 import { validateFile } from './validators';
 import { retryOperation } from '../../hooks/useRetry';
 import { classifyError, logError } from '../../utils/errorHandler';
-import { PermissionService } from '../permissionService';
+import { meshyApiService } from '../meshyApiService';
 import type { AssetUploadOptions, AssetUploadResult, MeshyAssetExtended } from './types';
 
 // File type for upload service
 type File = globalThis.File;
-import type { PermissionContext } from '../../types/permissions';
 
 /**
  * Asset Upload Service Class
@@ -39,26 +37,27 @@ export class AssetUploadService {
           error: validation.error,
         };
       }
-
-      // Check permissions before upload
-      const permissionContext: PermissionContext = {
-        resource: 'meshy_assets',
-        operation: 'create',
-      };
+      if (!file.name.toLowerCase().endsWith('.glb')) {
+        return {
+          success: false,
+          error: 'Please upload a GLB file for VR lesson rendering.',
+        };
+      }
 
       // Prepare asset name
       const assetName = name || file.name.replace(/\.[^/.]+$/, '');
       const timestamp = Date.now();
-      const fileExtension = file.name.substring(file.name.lastIndexOf('.'));
-      const fileName = `${assetName.replace(/\s+/g, '_')}_${timestamp}${fileExtension}`;
-      const storagePath = `meshy_assets/${chapterId}/${topicId}/${fileName}`;
+      const fileName = `${assetName.replace(/\s+/g, '_')}_${timestamp}.glb`;
+      const assetDocRef = doc(collection(db, 'meshy_assets'));
+      const assetId = assetDocRef.id;
+      const storagePath = `meshy_assets/${chapterId}/${topicId}/${assetId}/model.glb`;
       const storageRef = ref(storage, storagePath);
 
       // Update progress
       onProgress?.(10);
 
       // Upload file with retry
-      const downloadUrl = await retryOperation(
+      await retryOperation(
         async () => {
           const metadata = {
             contentType: file.type || this.getContentType(file.name),
@@ -71,7 +70,6 @@ export class AssetUploadService {
 
           await uploadBytes(storageRef, file, metadata);
           onProgress?.(50);
-          return await getDownloadURL(storageRef);
         },
         {
           maxAttempts: 3,
@@ -85,51 +83,32 @@ export class AssetUploadService {
 
       onProgress?.(70);
 
-      // Create Firestore document
-      const assetDocRef = doc(collection(db, 'meshy_assets'));
-      const assetId = assetDocRef.id;
-
-      const assetData = {
-        asset_id: assetId,
-        chapter_id: chapterId,
-        topic_id: topicId,
+      const persistedAsset = await meshyApiService.registerUploadedAsset({
+        assetKind: 'uploaded',
+        assetId,
+        storagePath,
+        chapterId,
+        topicId,
+        userId,
         name: assetName,
-        storagePath: storagePath,
-        glb_url: downloadUrl,
-        status: 'complete',
-        isCore: false,
-        assetTier: 'optional',
-        contentType: this.getContentType(file.name),
-        fileName: fileName,
-        fileSize: file.size,
+        fileName,
         originalFileName: file.name,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      await setDoc(assetDocRef, assetData);
+        fileSize: file.size,
+        contentType: this.getContentType(file.name),
+      });
 
       onProgress?.(85);
-
-      // Link asset to topic
-      try {
-        await linkMeshyAssetsToTopic({
-          chapterId,
-          topicId,
-          assetIds: [assetId],
-          userId: userId,
-        });
-      } catch (linkError) {
-        console.warn('Failed to link asset to topic:', linkError);
-        // Don't fail the upload if linking fails
-      }
 
       onProgress?.(100);
 
       const asset: MeshyAssetExtended = {
         id: assetId,
-        ...assetData,
-        glb_url: downloadUrl,
+        ...(persistedAsset as Partial<MeshyAssetExtended>),
+        asset_id: assetId,
+        chapter_id: chapterId,
+        topic_id: topicId,
+        name: assetName,
+        glb_url: String(persistedAsset.glb_url || persistedAsset.render_url || ''),
         status: 'complete',
       } as MeshyAssetExtended;
 

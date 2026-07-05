@@ -6,6 +6,15 @@
 import type { LessonBundle } from './firestore/getLessonBundle';
 import type { LessonChapter, LessonTopic, LessonMCQ } from '../contexts/LessonContext';
 
+const pick3dAssetUrl = (asset: any): string =>
+  asset?.animated_render_url ||
+  asset?.animated_glb_url ||
+  asset?.render_url ||
+  asset?.model_urls?.glb ||
+  asset?.glb_url ||
+  asset?.file_url ||
+  '';
+
 /**
  * Build chapter and topic in the shape expected by LessonContext and VRLessonPlayer.
  * Uses first topic in bundle if topicId not provided.
@@ -92,7 +101,7 @@ export function buildLessonPayloadFromBundle(
     language: t.language || t.lang || bundle.lang || 'en',
   }));
 
-  const assetUrls = (bundle.assets3d || []).map((a: any) => a.glb_url || a.file_url).filter(Boolean);
+  const assetUrls = (bundle.assets3d || []).map((a: any) => pick3dAssetUrl(a)).filter(Boolean);
 
   const lessonTopic: LessonTopic = {
     topic_id: topic.topic_id || topic.id || '',

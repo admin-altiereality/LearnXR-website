@@ -234,8 +234,19 @@ const detectPlatform = (): Platform => {
  * iOS: Prefer USDZ, fallback to GLB
  * Web: Use GLB
  */
+const pickBestGlbUrl = (asset: any): string =>
+  asset?.animated_render_url ||
+  asset?.animated_glb_url ||
+  asset?.render_url ||
+  asset?.model_urls?.glb ||
+  asset?.glb_url ||
+  asset?.stored_glb_url ||
+  '';
+
 const selectPlatformAssetUrl = (asset: MeshyAsset | null, platform: Platform): string | null => {
   if (!asset) return null;
+  const renderableGlb = pickBestGlbUrl(asset);
+  if (renderableGlb) return renderableGlb;
   
   switch (platform) {
     case 'android':
@@ -861,8 +872,9 @@ const VRLessonPlayerInner = () => {
         let assetUrls = topic.asset_urls || [];
         const assetIds = topic.asset_ids || [];
         safeAssets3d.forEach((asset: any) => {
-          if (asset?.glb_url && !assetUrls.includes(asset.glb_url)) {
-            assetUrls.push(asset.glb_url);
+          const glb = pickBestGlbUrl(asset);
+          if (glb && !assetUrls.includes(glb)) {
+            assetUrls.push(glb);
           }
         });
         if (fullData.image3dasset?.imageasset_url || fullData.image3dasset?.imagemodel_glb) {
@@ -1388,11 +1400,11 @@ const VRLessonPlayerInner = () => {
               const asset = assets[0];
               // Select platform-appropriate URL
               if (platform === 'android') {
-                selectedUrl = asset.fbx_url || asset.glb_url;
+                selectedUrl = pickBestGlbUrl(asset) || asset.fbx_url || asset.glb_url;
               } else if (platform === 'ios') {
-                selectedUrl = asset.usdz_url || asset.glb_url;
+                selectedUrl = pickBestGlbUrl(asset) || asset.usdz_url || asset.glb_url;
               } else {
-                selectedUrl = asset.glb_url;
+                selectedUrl = pickBestGlbUrl(asset);
               }
               
               if (selectedUrl) {
@@ -1619,7 +1631,13 @@ const VRLessonPlayerInner = () => {
         // Convert bundle assets to MeshyAsset format
         const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
           id: asset.id || '',
-          glb_url: asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
+          render_url: asset.render_url,
+          animated_render_url: asset.animated_render_url,
+          animated_glb_url: asset.animated_render_url || asset.animated_glb_url,
+          storage_path: asset.storage_path,
+          storage_paths: asset.storage_paths,
+          model_urls: asset.model_urls,
+          glb_url: pickBestGlbUrl(asset),
           name: asset.name || asset.prompt || 'Asset',
           thumbnail_url: asset.thumbnail_url || asset.thumbnailUrl || '',
           fbx_url: asset.fbx_url || asset.model_urls?.fbx,

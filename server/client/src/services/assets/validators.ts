@@ -10,9 +10,9 @@
 export const VALID_EXTENSIONS = ['.glb', '.gltf', '.fbx', '.obj'];
 
 /**
- * Maximum file size (100MB)
+ * Maximum file size (500MB)
  */
-export const MAX_FILE_SIZE = 100 * 1024 * 1024;
+export const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
 /**
  * File validation result

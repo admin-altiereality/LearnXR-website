@@ -227,8 +227,17 @@ router.get('/', async (req: Request, res: Response) => {
 
     const assets3d = meshyAssets.map((a: any) => ({
       id: a.id,
-      glb_url: a.glb_url || a.file_url,
-      file_url: a.file_url || a.glb_url,
+      animated_render_url: a.animated_render_url || a.animated_glb_url,
+      animated_glb_url: a.animated_render_url || a.animated_glb_url,
+      render_url: a.render_url,
+      storage_path: a.storage_path || a.storagePath,
+      storage_paths: a.storage_paths,
+      model_urls: {
+        ...(a.model_urls || {}),
+        glb: a.render_url || a.model_urls?.glb || a.glb_url || a.file_url,
+      },
+      glb_url: a.render_url || a.model_urls?.glb || a.glb_url || a.file_url,
+      file_url: a.render_url || a.file_url || a.glb_url,
       name: a.name || a.prompt,
     }));
 

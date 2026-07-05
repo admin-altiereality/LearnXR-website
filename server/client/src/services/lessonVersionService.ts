@@ -113,8 +113,14 @@ export function buildDraftSnapshotFromBundle(
   const assets3d: LessonDraftSnapshot['assets3d'] = (bundle.assets3d || []).map((a: any) => ({
     id: a.id,
     name: a.name,
-    glb_url: a.glb_url || a.file_url,
-    file_url: a.file_url,
+    animated_render_url: a.animated_render_url,
+    animated_glb_url: a.animated_render_url || a.animated_glb_url,
+    render_url: a.render_url,
+    storage_path: a.storage_path,
+    storage_paths: a.storage_paths,
+    model_urls: a.model_urls,
+    glb_url: a.render_url || a.model_urls?.glb || a.glb_url || a.file_url,
+    file_url: a.render_url || a.file_url || a.glb_url,
     thumbnail_url: a.thumbnail_url,
     status: a.status,
     approval_status: a.approval_status,
@@ -215,8 +221,14 @@ export function buildSnapshotFromBundle(
   const assets3D = (bundle.assets3d || []).map((a: any) => ({
     id: a.id,
     name: a.name,
-    file_url: a.file_url,
-    glb_url: a.glb_url || a.file_url,
+    animated_render_url: a.animated_render_url,
+    animated_glb_url: a.animated_render_url || a.animated_glb_url,
+    render_url: a.render_url,
+    storage_path: a.storage_path,
+    storage_paths: a.storage_paths,
+    model_urls: a.model_urls,
+    file_url: a.render_url || a.file_url || a.glb_url,
+    glb_url: a.render_url || a.model_urls?.glb || a.glb_url || a.file_url,
     approval_status: a.approval_status,
   }));
 

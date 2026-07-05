@@ -4,9 +4,6 @@
  * https://docs.meshy.ai/api/animation-library
  */
 
-import { storage, db } from '../config/firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { meshyApiService } from './meshyApiService';
 
 export interface MeshyAnimationLibraryItem {
@@ -147,48 +144,34 @@ export const meshyRiggingAnimationService = {
       }
 
       const animationGlbUrl = animFinal.result.animation_glb_url;
-      onProgress?.('upload', 88, 'Downloading animated model...');
+      onProgress?.('upload', 88, 'Saving animated model to Firebase Storage...');
 
-      const res = await fetch(animationGlbUrl);
-      if (!res.ok) {
+      const persistedAnimation = await meshyApiService.finalizeAnimatedAsset({
+        assetKind: 'animation',
+        sourceAssetId: assetId,
+        sourceCollection: collectionName,
+        meshyAssetId,
+        animationGlbUrl,
+        rigTaskId,
+        animationTaskId: animTaskId,
+        actionId,
+      });
+      const animatedGlbUrl = String(
+        persistedAnimation.animated_render_url ||
+        persistedAnimation.animated_glb_url ||
+        ''
+      );
+
+      if (!animatedGlbUrl) {
         return {
           success: false,
-          error: `Failed to download animation GLB: ${res.status}`,
+          error: 'Animated model was stored but no render URL was returned',
           rig_task_id: rigTaskId,
           animation_task_id: animTaskId,
         };
       }
-      const blob = await res.blob();
-
-      onProgress?.('upload', 92, 'Uploading to storage...');
-      const storagePath = `${collectionName}/${assetId}/animated_model.glb`;
-      const storageRef = ref(storage, storagePath);
-      await uploadBytes(storageRef, blob);
-      const animatedGlbUrl = await getDownloadURL(storageRef);
 
       onProgress?.('done', 98, 'Saving...');
-
-      const updatePayload: Record<string, unknown> = {
-        animated_glb_url: animatedGlbUrl,
-        rig_task_id: rigTaskId,
-        animation_task_id: animTaskId,
-        animation_action_id: actionId,
-        updated_at: serverTimestamp(),
-      };
-
-      const docRef = doc(db, collectionName, assetId);
-      await updateDoc(docRef, updatePayload);
-
-      if (meshyAssetId && (collectionName === 'text_to_3d_assets' || collectionName === 'avatar_to_3d_assets')) {
-        const meshyRef = doc(db, 'meshy_assets', meshyAssetId);
-        await updateDoc(meshyRef, {
-          animated_glb_url: animatedGlbUrl,
-          rig_task_id: rigTaskId,
-          animation_task_id: animTaskId,
-          animation_action_id: actionId,
-          updated_at: serverTimestamp(),
-        });
-      }
 
       onProgress?.('done', 100, 'Done.');
       return {

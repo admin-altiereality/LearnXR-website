@@ -162,6 +162,22 @@ export interface MeshyAsset {
   name: string;
   prompt?: string;
   glb_url: string;
+  render_url?: string;
+  storage_path?: string;
+  storage_paths?: {
+    glb?: string;
+    fbx?: string;
+    usdz?: string;
+    thumbnail?: string;
+    animated_glb?: string;
+    [key: string]: unknown;
+  };
+  model_urls?: {
+    glb?: string;
+    fbx?: string;
+    usdz?: string;
+    [key: string]: unknown;
+  };
   fbx_url?: string;
   usdz_url?: string;
   thumbnail_url?: string;
@@ -180,6 +196,8 @@ export interface MeshyAsset {
   };
   /** Meshy v1 rigging + animation: optional animated GLB URL (prefer over glb_url when present) */
   animated_glb_url?: string;
+  animated_render_url?: string;
+  animated_storage_path?: string;
   rig_task_id?: string;
   animation_task_id?: string;
   animation_action_id?: number;

@@ -232,7 +232,9 @@ export const LaunchLessonButton = ({
         try {
           const assets = await get3DAssets(chapterId, topicId);
           console.log('📦 [LaunchLesson] 3D assets fetch result:', assets);
-          finalAssetUrls = assets.map(a => a.glb_url).filter(Boolean);
+          finalAssetUrls = assets
+            .map((a: any) => a.animated_render_url || a.animated_glb_url || a.render_url || a.model_urls?.glb || a.glb_url)
+            .filter(Boolean);
           console.log('✅ [LaunchLesson] Got asset URLs:', finalAssetUrls);
         } catch (e) {
           console.warn('⚠️ [LaunchLesson] Could not fetch 3D assets:', e);

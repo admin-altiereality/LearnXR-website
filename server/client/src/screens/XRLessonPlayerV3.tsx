@@ -788,10 +788,10 @@ const XRLessonPlayerV3: React.FC = () => {
         const bundleAssets = (lessonData as any).assets3d;
         addDebug(`Using ${bundleAssets.length} 3D assets from bundle`);
         
-        // Convert bundle assets to MeshyAsset format (prefer animated_glb_url when present)
+        // Convert bundle assets to MeshyAsset format (prefer tokenized render URLs when present)
         const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
           id: asset.id || '',
-          glbUrl: asset.animated_glb_url || asset.glb_url || asset.stored_glb_url || asset.model_urls?.glb || '',
+          glbUrl: asset.animated_render_url || asset.animated_glb_url || asset.render_url || asset.model_urls?.glb || asset.glb_url || asset.stored_glb_url || '',
           name: asset.name || asset.prompt || 'Asset',
           thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
         })).filter((asset: MeshyAsset) => asset.glbUrl); // Only include assets with URLs
@@ -850,8 +850,7 @@ const XRLessonPlayerV3: React.FC = () => {
           const assetDoc = await getDoc(doc(db, 'meshy_assets', assetId));
           if (assetDoc.exists()) {
             const data = assetDoc.data();
-            // Prefer animated_glb_url (Meshy rigged+animated), then stored_glb_url, model_urls.glb, glb_url
-            const glbUrl = data.animated_glb_url || data.stored_glb_url || data.model_urls?.glb || data.glb_url;
+            const glbUrl = data.animated_render_url || data.animated_glb_url || data.render_url || data.model_urls?.glb || data.stored_glb_url || data.glb_url;
             if (glbUrl) {
               assetResults.push({
                 id: assetId,

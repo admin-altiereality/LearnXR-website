@@ -56,7 +56,8 @@ const getApp = (): express.Application => {
         res.setHeader('Access-Control-Allow-Origin', origin ?? 'null');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-In3d-Key');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-In3d-Key, Range');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Type');
         res.setHeader('Access-Control-Max-Age', '86400');
       }
       if (req.method === 'OPTIONS') {
@@ -74,8 +75,8 @@ const getApp = (): express.Application => {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-In3d-Key'],
-      exposedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-In3d-Key', 'Range'],
+      exposedHeaders: ['Content-Type', 'Authorization', 'Content-Length', 'Content-Range', 'Accept-Ranges'],
       maxAge: 86400,
       optionsSuccessStatus: 204
     };
@@ -138,6 +139,10 @@ const getApp = (): express.Application => {
     app.use('/reports', reportRoutes);
     app.use('/auth', authTokenRoutes); // custom-token exchange for standalone VR player (GET)
     app.use('/auth', authRoutes);
+
+    // Mount render/proxy routes BEFORE authentication because img tags and 3D loaders don't send Bearer tokens.
+    const renderAssetRoutes = require('./routes/renderAsset').default;
+    app.use('/', renderAssetRoutes);
 
     // Mount proxy BEFORE authentication because img tags and 3D loaders don't send Bearer tokens
     const proxyRoutes = require('./routes/proxy').default;
@@ -213,7 +218,7 @@ export const api = onRequest(
     // 512MiB is too tight for some routes (logs show OOM at ~521MiB),
     // and crashes manifest as 500 + missing CORS headers in the browser.
     memory: '1GiB',
-    timeoutSeconds: 60,
+    timeoutSeconds: 300,
     maxInstances: 10,
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',

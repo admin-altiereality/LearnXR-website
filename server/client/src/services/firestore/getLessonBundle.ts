@@ -497,8 +497,8 @@ function mergeDraftIntoBundle(
   if (Array.isArray(draft.assets3d) && draft.assets3d.length >= 0) {
     bundle.assets3d = draft.assets3d.map((a) => ({
       ...a,
-      glb_url: a.glb_url ?? a.file_url,
-      file_url: a.file_url ?? a.glb_url,
+      glb_url: a.render_url ?? a.model_urls?.glb ?? a.glb_url ?? a.file_url,
+      file_url: a.render_url ?? a.file_url ?? a.glb_url,
     }));
   }
   // Update bundle skybox when draft has skybox_url (Associate may have changed skybox)
@@ -1017,7 +1017,16 @@ export async function getLessonBundle(params: {
     const allAssetsRaw = [...(meshyAssetsRaw || [])];
     // IMPORTANT: 3D assets are LANGUAGE-INDEPENDENT - do NOT filter by language
     // They should appear in both English and Hindi tabs
-    const assets3d = allAssetsRaw; // Remove language filtering for 3D assets
+    const assets3d = allAssetsRaw.map((asset: any) => ({
+      ...asset,
+      animated_glb_url: asset.animated_render_url || asset.animated_glb_url,
+      glb_url: asset.render_url || asset.model_urls?.glb || asset.glb_url || asset.file_url || '',
+      file_url: asset.render_url || asset.file_url || asset.glb_url || '',
+      model_urls: {
+        ...(asset.model_urls || {}),
+        glb: asset.render_url || asset.model_urls?.glb || asset.glb_url || asset.file_url || '',
+      },
+    })); // Remove language filtering for 3D assets
     
     // text_to_3d_assets don't need language filtering (they're language-agnostic)
     // But we'll keep them separate in the bundle

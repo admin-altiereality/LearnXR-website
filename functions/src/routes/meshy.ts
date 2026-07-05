@@ -8,7 +8,17 @@ import { Router } from 'express';
 import axios from 'axios';
 import { initializeServices, MESHY_API_KEY } from '../utils/services';
 import { validateFullAccess } from '../middleware/validateIn3dApiKey';
+import { requireRole } from '../middleware/rbac';
 import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils/apiResponse';
+import {
+  backfillAssets,
+  finalizeAnimatedAsset,
+  finalizeGeneratedAsset,
+  registerUploadedAsset,
+  type FinalizeAnimatedAssetInput,
+  type FinalizeGeneratedAssetInput,
+  type RegisterUploadedAssetInput,
+} from '../services/meshyAssetStorage';
 
 const router = Router();
 
@@ -27,6 +37,100 @@ const setCorsHeaders = (res: Response) => {
 router.options('*', (req: Request, res: Response) => {
   setCorsHeaders(res);
   res.status(204).send();
+});
+
+const requireContentEditor = requireRole(['admin', 'superadmin', 'associate']);
+const requireSuperadmin = requireRole(['superadmin']);
+
+/**
+ * Persist Meshy output files into Firebase Storage and register a renderable asset.
+ * POST /meshy/finalize-generated-asset
+ */
+router.post('/finalize-generated-asset', validateFullAccess, requireContentEditor, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const assetKind = String(req.body?.assetKind || 'generated');
+    const authenticatedUserId = (req as any).user?.uid as string | undefined;
+
+    if (assetKind === 'animation') {
+      const result = await finalizeAnimatedAsset(req, req.body as FinalizeAnimatedAssetInput);
+      setCorsHeaders(res);
+      return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+        requestId,
+        message: 'Animated 3D asset persisted successfully',
+      }));
+    }
+
+    if (assetKind === 'uploaded') {
+      const result = await registerUploadedAsset(req, req.body as RegisterUploadedAssetInput, authenticatedUserId);
+      setCorsHeaders(res);
+      return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+        requestId,
+        message: 'Uploaded 3D asset registered successfully',
+      }));
+    }
+
+    const body = req.body as FinalizeGeneratedAssetInput;
+    if (!body?.sourceAssetId || !body?.sourceCollection || !body?.chapterId || !body?.topicId || !body?.modelUrls?.glb) {
+      const { statusCode, response } = errorResponse(
+        'Validation error',
+        'sourceAssetId, sourceCollection, chapterId, topicId, and modelUrls.glb are required',
+        ErrorCode.MISSING_REQUIRED_FIELD,
+        HTTP_STATUS.BAD_REQUEST,
+        { requestId }
+      );
+      setCorsHeaders(res);
+      return res.status(statusCode).json(response);
+    }
+
+    const result = await finalizeGeneratedAsset(req, body, authenticatedUserId);
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+      requestId,
+      message: 'Generated 3D asset persisted successfully',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Finalize generated asset error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Finalize failed',
+      error?.message || 'Failed to persist generated 3D asset',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
+});
+
+/**
+ * Backfill existing 3D asset documents with Storage paths and token render URLs.
+ * POST /meshy/backfill-assets
+ */
+router.post('/backfill-assets', validateFullAccess, requireSuperadmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const limit = Number(req.body?.limit || 50);
+    const result = await backfillAssets(req, Number.isFinite(limit) ? limit : 50);
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+      requestId,
+      message: '3D asset backfill completed',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Backfill assets error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Backfill failed',
+      error?.message || 'Failed to backfill 3D assets',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
 });
 
 /**

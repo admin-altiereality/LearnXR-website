@@ -11,6 +11,11 @@ service firebase.storage {
     function isValidSize() {
       return request.resource.size < 100 * 1024 * 1024;
     }
+
+    // Generated Meshy models, animated GLBs, FBX, and USDZ files can exceed 100MB.
+    function isValidMeshAssetSize() {
+      return request.resource.size < 500 * 1024 * 1024;
+    }
     
     // Note: Storage rules cannot access Firestore documents directly
     // Core asset protection is enforced in UI + Firestore rules
@@ -28,21 +33,21 @@ service firebase.storage {
     // Meshy assets storage
     match /meshy_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidMeshAssetSize(); // UI/backend enforce staff role checks
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // Text-to-3D assets storage
     match /text_to_3d_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidMeshAssetSize(); // UI/backend enforce staff role checks
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
     // Avatar-to-3D assets storage
     match /avatar_to_3d_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
+      allow write: if isAuthenticated() && isValidMeshAssetSize(); // UI/backend enforce staff role checks
       allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
     }
     
