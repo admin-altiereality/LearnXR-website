@@ -94,7 +94,9 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
   const [prompt, setPrompt] = useState(cachedState?.prompt || '');
   const [negativePrompt, setNegativePrompt] = useState(cachedState?.negativePrompt || '');
   const [selectedArtStyle, setSelectedArtStyle] = useState<'realistic' | 'sculpture'>(cachedState?.selectedArtStyle || 'realistic');
-  const [selectedAiModel, setSelectedAiModel] = useState<'meshy-4' | 'meshy-5'>(cachedState?.selectedAiModel || 'meshy-4');
+  const [selectedAiModel, setSelectedAiModel] = useState<'meshy-5' | 'meshy-6' | 'latest'>(
+    ['meshy-5', 'meshy-6', 'latest'].includes(cachedState?.selectedAiModel) ? cachedState.selectedAiModel : 'meshy-6'
+  );
   const [selectedTopology, setSelectedTopology] = useState<'quad' | 'triangle'>(cachedState?.selectedTopology || 'triangle');
   const [targetPolycount, setTargetPolycount] = useState(cachedState?.targetPolycount ?? 30000);
   const [shouldRemesh, setShouldRemesh] = useState(cachedState?.shouldRemesh ?? true);
@@ -307,7 +309,13 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
           setPrompt(latestTask.uiState.prompt || latestTask.prompt);
           setNegativePrompt(latestTask.uiState.negativePrompt || '');
           if (latestTask.uiState.artStyle) setSelectedArtStyle(latestTask.uiState.artStyle as 'realistic' | 'sculpture');
-          if (latestTask.uiState.aiModel) setSelectedAiModel(latestTask.uiState.aiModel as 'meshy-4' | 'meshy-5');
+          if (latestTask.uiState.aiModel) {
+            setSelectedAiModel(
+              ['meshy-5', 'meshy-6', 'latest'].includes(latestTask.uiState.aiModel)
+                ? latestTask.uiState.aiModel as 'meshy-5' | 'meshy-6' | 'latest'
+                : 'meshy-6'
+            );
+          }
           if (latestTask.uiState.topology) setSelectedTopology(latestTask.uiState.topology as 'quad' | 'triangle');
           if (latestTask.uiState.targetPolycount) setTargetPolycount(latestTask.uiState.targetPolycount);
           if (latestTask.uiState.shouldRemesh !== undefined) setShouldRemesh(latestTask.uiState.shouldRemesh);
@@ -580,14 +588,20 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
       const request: MeshyGenerationRequest = {
         prompt: prompt.trim(),
         negative_prompt: negativePrompt.trim() || undefined,
-        art_style: selectedArtStyle,
-        seed: seed || Math.floor(Math.random() * 1000000),
+        ...(selectedAiModel === 'meshy-5' ? {
+          art_style: selectedArtStyle,
+          symmetry_mode: symmetryMode,
+          seed: seed || Math.floor(Math.random() * 1000000),
+        } : {}),
         ai_model: selectedAiModel,
+        model_type: 'standard',
         topology: selectedTopology,
         target_polycount: targetPolycount,
-        should_remesh: shouldRemesh,
-        symmetry_mode: symmetryMode,
-        moderation: moderation
+        should_remesh: selectedAiModel === 'meshy-5' ? shouldRemesh : false,
+        target_formats: ['glb'],
+        auto_size: true,
+        origin_at: 'bottom',
+        moderation: moderation !== false
       };
 
       // Validate request
@@ -865,11 +879,12 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
             </label>
             <select
               value={selectedAiModel}
-              onChange={(e) => setSelectedAiModel(e.target.value as 'meshy-4' | 'meshy-5')}
+              onChange={(e) => setSelectedAiModel(e.target.value as 'meshy-5' | 'meshy-6' | 'latest')}
               className="w-full px-2 sm:px-3 py-1.5 sm:py-2 bg-gray-800/50 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
-              <option value="meshy-4">Meshy 4 (Faster)</option>
-              <option value="meshy-5">Meshy 5 (Better Quality)</option>
+              <option value="meshy-6">Meshy 6 (Best Quality)</option>
+              <option value="latest">Latest (Meshy 6)</option>
+              <option value="meshy-5">Meshy 5 (Legacy)</option>
             </select>
           </div>
         </div>
@@ -1078,4 +1093,4 @@ export const EnhancedMeshyPanel: React.FC<EnhancedMeshyPanelProps> = ({
       )}
     </div>
   );
-}; 
+};

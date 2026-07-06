@@ -361,13 +361,16 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
     
     const meshRequest = {
       prompt: request.prompt,
-      art_style: meshConfig.style || 'realistic',
-      ai_model: meshConfig.aiModel || 'meshy-4',
+      ...(meshConfig.aiModel === 'meshy-5' ? { art_style: meshConfig.style || 'realistic' } : {}),
+      ai_model: meshConfig.aiModel || 'meshy-6',
+      model_type: 'standard' as const,
       topology: meshConfig.topology || 'triangle',
       target_polycount: meshConfig.targetPolycount || 30000,
-      should_remesh: true,
-      symmetry_mode: 'auto' as const,
-      moderation: false
+      should_remesh: meshConfig.aiModel === 'meshy-5',
+      target_formats: ['glb'] as Array<'glb'>,
+      auto_size: true,
+      origin_at: 'bottom' as const,
+      moderation: true
     };
 
     // Update progress to starting mesh generation
@@ -726,4 +729,4 @@ export const useGenerate = (): UnifiedGenerationHookResult => {
     cancelGeneration,
     retryGeneration
   };
-}; 
+};

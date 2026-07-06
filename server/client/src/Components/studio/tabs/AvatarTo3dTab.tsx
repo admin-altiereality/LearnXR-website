@@ -338,7 +338,7 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
           topicId,
           userId: user.uid,
           artStyle: 'realistic',
-          aiModel: 'meshy-4',
+          aiModel: 'meshy-6',
           collectionName: 'avatar_to_3d_assets' // Use avatar_to_3d_assets collection
         },
         (progress) => {

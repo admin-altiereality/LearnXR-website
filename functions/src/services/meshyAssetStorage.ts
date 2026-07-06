@@ -151,6 +151,11 @@ export function buildRenderAssetUrl(req: Request, assetId: string, token: string
   return `${buildApiBaseUrl(req)}/render-asset/${encodeURIComponent(assetId)}/${encodeURIComponent(token)}/${fileName}`;
 }
 
+export function buildRenderAssetUrlFromBase(apiBaseUrl: string, assetId: string, token: string, fileName = 'model.glb'): string {
+  const normalizedBaseUrl = apiBaseUrl.replace(/\/+$/, '');
+  return `${normalizedBaseUrl}/render-asset/${encodeURIComponent(assetId)}/${encodeURIComponent(token)}/${fileName}`;
+}
+
 function buildFirebaseMediaUrl(bucketName: string, storagePath: string): string {
   return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(storagePath)}?alt=media`;
 }
@@ -341,12 +346,15 @@ async function writeAssetRecord(
     aiModel?: string;
     metadata?: Record<string, unknown>;
     extra?: Record<string, unknown>;
+    apiBaseUrl?: string;
   }
 ): Promise<Record<string, unknown>> {
   const db = getDb();
   const bucket = getBucket();
   const renderToken = createRenderToken();
-  const renderUrl = buildRenderAssetUrl(req, params.assetId, renderToken);
+  const renderUrl = params.apiBaseUrl
+    ? buildRenderAssetUrlFromBase(params.apiBaseUrl, params.assetId, renderToken)
+    : buildRenderAssetUrl(req, params.assetId, renderToken);
   const firebaseDownloadUrl = buildFirebaseMediaUrl(bucket.name, params.storageFiles.glb.storagePath);
   const storagePaths: Record<string, unknown> = {
     glb: params.storageFiles.glb.storagePath,
@@ -441,7 +449,8 @@ async function writeAssetRecord(
 export async function finalizeGeneratedAsset(
   req: Request,
   input: FinalizeGeneratedAssetInput,
-  authenticatedUserId?: string
+  authenticatedUserId?: string,
+  apiBaseUrl?: string
 ): Promise<Record<string, unknown>> {
   const db = getDb();
   const assetRef = db.collection(MESHY_ASSETS_COLLECTION).doc();
@@ -510,6 +519,7 @@ export async function finalizeGeneratedAsset(
     artStyle: input.artStyle,
     aiModel: input.aiModel,
     metadata: input.metadata,
+    apiBaseUrl,
   });
 }
 

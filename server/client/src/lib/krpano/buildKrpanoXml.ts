@@ -101,7 +101,11 @@ function pluginUrl(origin: string | undefined, basePath: string, pluginFile: str
 /** Only GLB/GLTF URLs are valid for threejs hotspots; filter out images and other formats. */
 function isGlbOrGltfUrl(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
-  return /\.(glb|gltf)(\?|$)/i.test(url) || /\.glb\b/i.test((url.split('?')[0] ?? '').trim());
+  return /\.(glb|gltf)([?#]|$)/i.test(url) || /\.glb\b/i.test((url.split('?')[0] ?? '').trim());
+}
+
+function isBlobModelUrl(url: string): boolean {
+  return typeof url === 'string' && url.startsWith('blob:') && isGlbOrGltfUrl(url);
 }
 
 /** True if url is a proxy URL that points to a GLB (target in query param). Caller already validated original as GLB. */
@@ -140,7 +144,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...)
   const safe3dUrls = threeJsAssetUrls.filter(
-    (url) => isGlbOrGltfUrl(url) || isProxyToGlb(url)
+    (url) => isGlbOrGltfUrl(url) || isProxyToGlb(url) || isBlobModelUrl(url)
   );
   const has3dAssets = safe3dUrls.length > 0;
   const hasAvatar = !!(avatarModelUrl && (isGlbOrGltfUrl(avatarModelUrl) || avatarModelUrl.endsWith('.glb') || avatarModelUrl.endsWith('.gltf')));

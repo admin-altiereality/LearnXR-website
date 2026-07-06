@@ -87,7 +87,7 @@ const ApiDocumentation: React.FC = () => {
           params: [
             { name: 'prompt', type: 'string', required: true, description: 'Text description of the 3D asset' },
             { name: 'art_style', type: 'string', required: false, default: 'realistic', description: 'Art style preference' },
-            { name: 'ai_model', type: 'string', required: false, default: 'meshy-4', description: 'AI model version' }
+            { name: 'ai_model', type: 'string', required: false, default: 'meshy-6', description: 'AI model version' }
           ],
           example: {
             request: 'POST /meshy/generate\nHeaders: X-In3d-Key: in3d_live_...\nBody: { "prompt": "A detailed medieval sword", "art_style": "realistic" }',

@@ -1403,6 +1403,13 @@ const getAssetDownloadUrl = async (storagePath: string | undefined, existingUrl:
  * Handles various field naming conventions in the collection
  * Now includes storagePath support for reliable refetching
  */
+const isRetiredMeshyAssetData = (data: any): boolean => Boolean(
+  data?.active === false ||
+  data?.status === 'replaced' ||
+  data?.replaced_by_meshy_asset_id ||
+  (data?.asset_repair_status === 'regenerated' && data?.replaced_by_meshy_asset_id)
+);
+
 const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, topicId: string): Promise<MeshyAsset> => {
   const data = docSnap.data() || {};
   
@@ -1414,34 +1421,14 @@ const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, 
   const existingFbxUrl = data.fbx_url || data.textured_model_fbx || data.model_urls?.fbx;
   const existingUsdzUrl = data.usdz_url || data.textured_model_usdz || data.model_urls?.usdz;
   
-  // Regenerate URLs from storagePath if available (for GLB - primary format)
-  // Only regenerate if storagePath points to a GLB file
+  // Prefer the stored render_url/model URL fields. Do not regenerate browser
+  // Firebase Storage download URLs here; direct Storage reads are private and
+  // produce CORS noise in lesson players. The tokenized render_url is the
+  // supported path for krpano and WebGL loading.
   let glbUrl = existingGlbUrl;
-  
-  // Check if storagePath is for a GLB file
-  const isGlbFile = storagePath && (
-    storagePath.toLowerCase().endsWith('.glb') || 
-    storagePath.toLowerCase().includes('.glb?') ||
-    storagePath.toLowerCase().includes('.glb&')
-  );
-  
-  if (isGlbFile) {
-    // Regenerate URL from storagePath for GLB files
-    const regenerated = await getAssetDownloadUrl(storagePath, existingGlbUrl);
-    if (regenerated) {
-      glbUrl = regenerated;
-      console.log(`✅ Using regenerated GLB URL from storagePath: ${storagePath}`);
-    } else if (existingGlbUrl) {
-      console.log(`⚠️ Failed to regenerate URL, using existing glb_url: ${existingGlbUrl.substring(0, 80)}...`);
-      glbUrl = existingGlbUrl;
-    }
-  } else if (storagePath) {
-    // storagePath exists but doesn't point to GLB - log warning
-    console.warn(`⚠️ storagePath does not point to GLB file: ${storagePath}`);
-    // Still use existing URL if available
-    if (!existingGlbUrl) {
-      console.warn(`⚠️ No existing glb_url and storagePath is not GLB - asset may not be loadable`);
-    }
+
+  if (storagePath && !existingGlbUrl) {
+    console.warn(`⚠️ Asset ${docSnap.id} has storagePath but no render/model URL. storagePath: ${storagePath}`);
   }
   
   // Final validation: ensure we have a URL and it's not an image
@@ -1485,6 +1472,9 @@ const mapMeshyDocToAsset = async (docSnap: DocumentSnapshot, chapterId: string, 
     storage_path: data.storage_path || storagePath,
     storage_paths: data.storage_paths,
     model_urls: data.model_urls,
+    active: data.active,
+    asset_repair_status: data.asset_repair_status,
+    replaced_by_meshy_asset_id: data.replaced_by_meshy_asset_id,
     fbx_url: existingFbxUrl,
     usdz_url: existingUsdzUrl,
     thumbnail_url: data.thumbnail_url || data.thumbnail || data.previewUrl,
@@ -1568,8 +1558,9 @@ export const getMeshyAssets = async (
           console.log(`📦 Batch query for asset_ids returned ${snapshot.docs.length} results`);
           
           // Map documents to assets (now async)
+          const activeDocs = snapshot.docs.filter((docSnap) => !isRetiredMeshyAssetData(docSnap.data()));
           const batchAssets = await Promise.all(
-            snapshot.docs.map((docSnap) => mapMeshyDocToAsset(docSnap, chapterId, topicId))
+            activeDocs.map((docSnap) => mapMeshyDocToAsset(docSnap, chapterId, topicId))
           );
           assets.push(...batchAssets);
         } catch (batchErr) {
@@ -1581,7 +1572,7 @@ export const getMeshyAssets = async (
               const assetRef = doc(db, COLLECTION_MESHY_ASSETS, assetId);
               const assetSnap = await getDoc(assetRef);
               
-              if (assetSnap.exists()) {
+              if (assetSnap.exists() && !isRetiredMeshyAssetData(assetSnap.data())) {
                 const asset = await mapMeshyDocToAsset(assetSnap, chapterId, topicId);
                 assets.push(asset);
               }
@@ -1607,8 +1598,9 @@ export const getMeshyAssets = async (
       const snapshot = await getDocs(q);
       if (!snapshot.empty) {
         console.log('✅ Found Meshy assets via chapter_id/topic_id query:', snapshot.docs.length);
+        const activeDocs = snapshot.docs.filter((docSnap) => !isRetiredMeshyAssetData(docSnap.data()));
         const fallbackAssets = await Promise.all(
-          snapshot.docs.map((docSnap) => mapMeshyDocToAsset(docSnap, chapterId, topicId))
+          activeDocs.map((docSnap) => mapMeshyDocToAsset(docSnap, chapterId, topicId))
         );
         assets.push(...fallbackAssets);
       }

@@ -12,6 +12,7 @@ import { useSearchParams } from 'react-router-dom';
 import { signInWithCustomToken } from 'firebase/auth';
 import { buildKrpanoXml } from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
+import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
 import { getApiBaseUrl, getProxyAssetUrl, getProxyAssetUrlForThreejs } from '../utils/apiConfig';
 import { auth } from '../config/firebase';
 import {
@@ -59,11 +60,41 @@ interface BundleData {
 
 function isGlbOrGltfUrl(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
-  return /\.(glb|gltf)(\?|$)/i.test(url) || /\.glb\b/i.test((url.split('?')[0] ?? '').trim());
+  return /\.(glb|gltf)([?#]|$)/i.test(url) || /\.glb\b/i.test((url.split('?')[0] ?? '').trim());
 }
 
 function isFirebaseStorage(url: string): boolean {
   return url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app');
+}
+
+function isRenderAssetUrl(url: string): boolean {
+  return typeof url === 'string' && url.includes('/render-asset/') && /\.(glb|gltf)$/i.test((url.split(/[?#]/)[0] ?? url).replace(/\/$/, ''));
+}
+
+function isLegacyMeshyCdnUrl(url: string): boolean {
+  return /\/\/(?:assets|storage)\.meshy\.ai\//i.test(url) || /\/\/api\.meshy\.ai\//i.test(url);
+}
+
+function pickBundleGlbUrl(asset: any): string {
+  const candidates = [
+    asset?.animated_render_url,
+    asset?.render_url,
+    asset?.model_urls?.glb,
+    asset?.glb_url,
+    asset?.file_url,
+    asset?.animated_glb_url,
+  ];
+  const url = candidates.find((candidate) => {
+    const value = String(candidate || '');
+    return isGlbOrGltfUrl(value) && !isLegacyMeshyCdnUrl(value);
+  });
+  return url ? String(url) : '';
+}
+
+function toKrpanoThreeJsAssetUrl(url: string): string {
+  if (!url) return '';
+  if (isRenderAssetUrl(url) || url.startsWith('/assets/') || url.startsWith('blob:')) return url;
+  return getProxyAssetUrlForThreejs(url);
 }
 
 const PHASE_META: Record<string, { label: string; icon: string; color: string }> = {
@@ -599,7 +630,7 @@ export default function VRPlayerStandalone() {
         if (!res.ok) { const b = await res.json().catch(() => null); throw new Error(b?.error || `HTTP ${res.status}`); }
         return res.json();
       })
-      .then((bundleRes) => {
+      .then(async (bundleRes) => {
         if (cancelledRef.current) return;
         const skybox = bundleRes.skybox;
         const skyboxUrl = skybox?.imageUrl || skybox?.file_url || (skybox as any)?.skybox_url;
@@ -608,10 +639,27 @@ export default function VRPlayerStandalone() {
         const sphereUrlForKrpano = isFirebaseStorage(skyboxUrl) ? skyboxUrl : getProxyAssetUrl(skyboxUrl);
         const rawGlbUrls: string[] = [];
         for (const a of (bundleRes.assets3d || [])) {
-          const glb = (a as any).glb_url || (a as any).file_url || (a as any).animated_glb_url;
+          const glb = pickBundleGlbUrl(a);
           if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
         }
-        const threeJsAssetUrls = rawGlbUrls.map((url) => isFirebaseStorage(url) ? url : getProxyAssetUrlForThreejs(url));
+        const hasRenderAssetUrls = rawGlbUrls.some((assetUrl) => isRenderAssetUrl(assetUrl));
+        const renderAssetBridgeReady = hasRenderAssetUrls ? await ensureRenderAssetBridgeReady() : false;
+        if (cancelledRef.current) return;
+
+        const preparedAssetUrls: string[] = [];
+        for (const rawUrl of rawGlbUrls) {
+          if (isRenderAssetUrl(rawUrl)) {
+            if (renderAssetBridgeReady) {
+              preparedAssetUrls.push(toRenderAssetBridgeUrl(rawUrl));
+            } else {
+              console.warn('[VRPlayerStandalone] Skipping Firebase render asset because the render bridge is not ready:', rawUrl);
+            }
+          } else {
+            preparedAssetUrls.push(toKrpanoThreeJsAssetUrl(rawUrl));
+          }
+        }
+        const threeJsAssetUrls = preparedAssetUrls.filter(Boolean);
+        console.log('[VRPlayerStandalone] Prepared krpano 3D asset URLs:', threeJsAssetUrls);
 
         setBundle({
           tts: (bundleRes.tts || []).map((t: any) => ({ id: t.id, section: t.script_type || t.section || 'full', audioUrl: t.audio_url || t.audioUrl || t.url || '' })),
@@ -638,7 +686,7 @@ export default function VRPlayerStandalone() {
       .catch((err) => { if (!cancelledRef.current) { setStatus('error'); setErrorMessage(err?.message || 'Failed to load lesson bundle.'); } });
 
     return () => { cancelledRef.current = true; cleanupAudio(); };
-  }, [searchParams, cleanupAudio]);
+  }, [searchParams, lang, cleanupAudio]);
 
   const topicName = (bundle?.topic as any)?.topic_name ?? (bundle?.chapter as any)?.chapter_name ?? 'Lesson';
   const audioProgress = audioDuration > 0 ? (audioCurrentTime / audioDuration) * 100 : 0;

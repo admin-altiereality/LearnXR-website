@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { getProxyAssetUrl } from '../utils/apiConfig';
+import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
 
 interface AssetViewerWithSkyboxProps {
   assetUrl: string;
@@ -53,6 +54,12 @@ interface BlendSettings {
   worldMeshDepthScale: number;
   worldMeshSmoothness: number;
 }
+
+const isFirebaseStorageAssetUrl = (url: string): boolean =>
+  url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app');
+
+const isRenderAssetUrl = (url: string): boolean =>
+  url.includes('/render-asset/') && /\.(glb|gltf)$/i.test((url.split(/[?#]/)[0] ?? url).replace(/\/$/, ''));
 
 // Loading component with enhanced visuals
 function Loader() {
@@ -729,12 +736,19 @@ function AssetModel({
         }
         
         // Check if this is a Firebase Storage URL - use directly (no proxy needed)
-        const isFirebaseStorageUrl = assetUrl.includes('firebasestorage.googleapis.com') || 
-                                    assetUrl.includes('firebasestorage.app');
+        const isFirebaseStorageUrl = isFirebaseStorageAssetUrl(assetUrl);
+        const isFirebaseRenderUrl = isRenderAssetUrl(assetUrl);
         
         let finalUrl = assetUrl;
         
-        if (!isFirebaseStorageUrl) {
+        if (isFirebaseRenderUrl) {
+          const bridgeReady = await ensureRenderAssetBridgeReady();
+          if (!bridgeReady) {
+            throw new Error('The 3D asset render bridge is not ready yet. Please refresh the preview and try again.');
+          }
+          finalUrl = toRenderAssetBridgeUrl(assetUrl);
+          console.log('Loading Firebase render asset through local bridge:', finalUrl);
+        } else if (!isFirebaseStorageUrl) {
           // Only use proxy for external URLs (like Meshy.ai)
           finalUrl = getProxyAssetUrl(assetUrl);
           console.log('🔄 Loading 3D asset via proxy (external URL):', finalUrl);

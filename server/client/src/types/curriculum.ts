@@ -182,7 +182,10 @@ export interface MeshyAsset {
   usdz_url?: string;
   thumbnail_url?: string;
   meshy_id?: string;
-  status: 'pending' | 'processing' | 'complete' | 'failed' | 'completed';
+  status: 'pending' | 'processing' | 'complete' | 'failed' | 'completed' | 'replaced';
+  active?: boolean;
+  asset_repair_status?: string;
+  replaced_by_meshy_asset_id?: string;
   created_at?: string;
   updated_at?: string;
   // Core asset protection - prevents accidental deletion

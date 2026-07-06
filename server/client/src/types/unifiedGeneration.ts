@@ -81,7 +81,7 @@ export interface GenerationRequest {
     quality?: 'low' | 'medium' | 'high' | 'ultra';
     style?: 'realistic' | 'sculpture' | 'cartoon' | 'anime';
     format?: 'glb' | 'usdz' | 'obj' | 'fbx';
-    aiModel?: 'meshy-4' | 'meshy-5';
+    aiModel?: 'meshy-5' | 'meshy-6' | 'latest';
     topology?: 'quad' | 'triangle';
     targetPolycount?: number;
   };
@@ -207,4 +207,4 @@ export type PromptSlug = string;
 export type Timestamp = string;
 export type JobId = string;
 export type UserId = string;
-export type AssetUrl = string; 
+export type AssetUrl = string;

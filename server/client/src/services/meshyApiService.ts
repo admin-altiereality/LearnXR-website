@@ -9,20 +9,33 @@ export interface MeshyGenerationRequest {
   negative_prompt?: string;
   art_style?: 'realistic' | 'sculpture';
   seed?: number;
-  ai_model?: 'meshy-4' | 'meshy-5' | 'meshy-6' | 'latest';
+  ai_model?: 'meshy-5' | 'meshy-6' | 'latest';
+  model_type?: 'standard' | 'lowpoly';
   topology?: 'quad' | 'triangle';
   target_polycount?: number;
+  decimation_mode?: 1 | 2 | 3 | 4;
   should_remesh?: boolean;
   symmetry_mode?: 'off' | 'auto' | 'on';
+  pose_mode?: 'a-pose' | 't-pose' | '';
+  target_formats?: Array<'glb' | 'obj' | 'fbx' | 'stl' | 'usdz' | '3mf'>;
+  alpha_thumbnail?: boolean;
+  auto_size?: boolean;
+  origin_at?: 'bottom' | 'center';
   moderation?: boolean;
 }
 
 export interface MeshyRefineRequest {
   preview_task_id: string;
   enable_pbr?: boolean; // Generate PBR maps (metallic, roughness, normal) in addition to base color
+  hd_texture?: boolean;
+  remove_lighting?: boolean;
   texture_prompt?: string; // Additional text prompt to guide texturing (max 600 chars)
   texture_image_url?: string; // 2D image to guide texturing
-  ai_model?: 'meshy-5' | 'latest';
+  ai_model?: 'meshy-5' | 'meshy-6' | 'latest';
+  target_formats?: Array<'glb' | 'obj' | 'fbx' | 'stl' | 'usdz' | '3mf'>;
+  alpha_thumbnail?: boolean;
+  auto_size?: boolean;
+  origin_at?: 'bottom' | 'center';
   moderation?: boolean;
 }
 
@@ -490,10 +503,16 @@ export class MeshyApiService {
         mode: 'refine',
         preview_task_id: request.preview_task_id,
         enable_pbr: request.enable_pbr !== false, // Default to true for full textures
+        hd_texture: request.hd_texture !== false,
+        remove_lighting: request.remove_lighting !== false,
         ...(request.texture_prompt && { texture_prompt: request.texture_prompt.trim() }),
         ...(request.texture_image_url && { texture_image_url: request.texture_image_url }),
-        ai_model: request.ai_model || 'latest',
-        moderation: request.moderation || false,
+        ai_model: request.ai_model || 'meshy-6',
+        target_formats: request.target_formats || ['glb'],
+        ...(request.alpha_thumbnail !== undefined && { alpha_thumbnail: request.alpha_thumbnail }),
+        auto_size: request.auto_size !== false,
+        origin_at: request.origin_at || 'bottom',
+        moderation: request.moderation !== undefined ? request.moderation : true,
       };
 
       console.log('📤 Sending refine request to Meshy API:', {
@@ -573,26 +592,39 @@ export class MeshyApiService {
       });
 
       // Use latest model (meshy-6) by default for better quality
-      const aiModel = request.ai_model || 'latest';
+      const aiModel = request.ai_model || 'meshy-6';
       
       const payload: any = {
         mode: 'preview',
         prompt: request.prompt.trim(),
         ai_model: aiModel,
+        model_type: request.model_type || 'standard',
         topology: request.topology || 'triangle',
-        target_polycount: request.target_polycount || (aiModel === 'meshy-6' || aiModel === 'latest' ? 30000 : 30000),
-        should_remesh: request.should_remesh !== undefined ? request.should_remesh : (aiModel === 'meshy-6' || aiModel === 'latest' ? false : true),
-        symmetry_mode: request.symmetry_mode || 'auto',
-        moderation: request.moderation || false,
+        target_polycount: request.target_polycount || 30000,
+        should_remesh: request.should_remesh !== undefined ? request.should_remesh : (aiModel === 'meshy-5'),
+        target_formats: request.target_formats || ['glb'],
+        auto_size: request.auto_size !== false,
+        origin_at: request.origin_at || 'bottom',
+        moderation: request.moderation !== undefined ? request.moderation : true,
       };
 
-      // Only include art_style for legacy models (meshy-4, meshy-5)
+      // Only include art_style/symmetry_mode for legacy Meshy 5.
       // Meshy-6/latest ignores art_style and may cause errors if included
-      if (aiModel === 'meshy-4' || aiModel === 'meshy-5') {
+      if (aiModel === 'meshy-5') {
         payload.art_style = request.art_style || 'realistic';
+        payload.symmetry_mode = request.symmetry_mode || 'auto';
         if (request.seed) {
           payload.seed = request.seed;
         }
+      }
+      if (request.decimation_mode !== undefined) {
+        payload.decimation_mode = request.decimation_mode;
+      }
+      if (request.pose_mode !== undefined) {
+        payload.pose_mode = request.pose_mode;
+      }
+      if (request.alpha_thumbnail !== undefined) {
+        payload.alpha_thumbnail = request.alpha_thumbnail;
       }
 
       console.log('📤 Sending request to Meshy API:', {
@@ -922,8 +954,8 @@ export class MeshyApiService {
       errors.push('Art style must be either "realistic" or "sculpture"');
     }
 
-    if (request.ai_model && !['meshy-4', 'meshy-5', 'meshy-6', 'latest'].includes(request.ai_model)) {
-      errors.push('AI model must be one of "meshy-4", "meshy-5", "meshy-6", or "latest"');
+    if (request.ai_model && !['meshy-5', 'meshy-6', 'latest'].includes(request.ai_model)) {
+      errors.push('AI model must be one of "meshy-5", "meshy-6", or "latest"');
     }
 
     if (request.topology && !['quad', 'triangle'].includes(request.topology)) {
@@ -1346,8 +1378,14 @@ export class MeshyApiService {
       const refine = await this.createRefineTask({
         preview_task_id: previewTaskId,
         enable_pbr: true,
+        hd_texture: true,
+        remove_lighting: true,
         texture_prompt: request.prompt.trim().slice(0, 600),
-        ai_model: 'latest',
+        ai_model: request.ai_model || 'meshy-6',
+        target_formats: request.target_formats || ['glb'],
+        auto_size: request.auto_size !== false,
+        origin_at: request.origin_at || 'bottom',
+        moderation: request.moderation !== undefined ? request.moderation : true,
       });
       if (!refine.result || refine.result === 'undefined') {
         console.warn('Meshy refine returned no task id; using preview mesh.');

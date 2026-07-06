@@ -16,7 +16,8 @@ import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '../lib/krpano/buildKrpanoXml';
-import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
+import { loadKrpanoScript, embedKrpano, removeKrpano } from '../lib/krpano/embedKrpano';
+import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
@@ -247,10 +248,14 @@ const selectPlatformAssetUrl = (asset: MeshyAsset | null, platform: Platform): s
   switch (platform) {
     case 'android':
       // Android/Quest: FBX first, then GLB
-      return asset.fbx_url || asset.glb_url || null;
+      return !isLegacyMeshyCdnUrl(asset.fbx_url || asset.glb_url || '')
+        ? (asset.fbx_url || asset.glb_url || null)
+        : null;
     case 'ios':
       // iOS: USDZ first, then GLB
-      return asset.usdz_url || asset.glb_url || null;
+      return !isLegacyMeshyCdnUrl(asset.usdz_url || asset.glb_url || '')
+        ? (asset.usdz_url || asset.glb_url || null)
+        : null;
     case 'web':
     default:
       // Web: GLB is best supported
@@ -260,13 +265,27 @@ const selectPlatformAssetUrl = (asset: MeshyAsset | null, platform: Platform): s
 
 /** Web player only supports GLB/GLTF (GLTFLoader). */
 const isGlbOrGltfUrl = (url: string): boolean =>
-  /\.(glb|gltf)(\?|$)/i.test(url) || /\.glb\b/i.test(url.split('?')[0] ?? '');
+  /\.(glb|gltf)([?#]|$)/i.test(url) || /\.glb\b/i.test(url.split('?')[0] ?? '');
 
 const isFirebaseStorageAssetUrl = (url: string): boolean =>
   url.includes('firebasestorage.googleapis.com') || url.includes('firebasestorage.app') || url.includes('appspot.com');
 
 const isRenderAssetUrl = (url: string): boolean =>
-  url.includes('/render-asset/') && /\.(glb|gltf)(\?|$)/i.test(url.split('?')[0] ?? url);
+  url.includes('/render-asset/') && /\.(glb|gltf)$/i.test((url.split(/[?#]/)[0] ?? url).replace(/\/$/, ''));
+
+const isLegacyMeshyCdnUrl = (url: string): boolean =>
+  /\/\/(?:assets|storage)\.meshy\.ai\//i.test(url) || /\/\/api\.meshy\.ai\//i.test(url);
+
+const isRetiredMeshyAsset = (asset: any): boolean =>
+  Boolean(
+    asset?.active === false ||
+    asset?.status === 'replaced' ||
+    asset?.replaced_by_meshy_asset_id ||
+    (asset?.asset_repair_status === 'regenerated' && asset?.replaced_by_meshy_asset_id)
+  );
+
+const isSafeLessonGlbUrl = (url: string): boolean =>
+  Boolean(url && isGlbOrGltfUrl(url) && !isLegacyMeshyCdnUrl(url));
 
 const toKrpanoThreeJsAssetUrl = (url: string): string => {
   if (!url) return '';
@@ -275,20 +294,37 @@ const toKrpanoThreeJsAssetUrl = (url: string): string => {
 };
 
 function pickBestGlbUrl(asset: any): string {
-  return asset?.animated_render_url ||
-    asset?.animated_glb_url ||
-    asset?.render_url ||
-    asset?.model_urls?.glb ||
-    asset?.glb_url ||
-    asset?.stored_glb_url ||
-    '';
+  if (isRetiredMeshyAsset(asset)) return '';
+  const candidates = [
+    asset?.animated_render_url,
+    asset?.render_url,
+    asset?.model_urls?.glb,
+    asset?.glb_url,
+    asset?.stored_glb_url,
+    asset?.animated_glb_url,
+  ];
+  const url = candidates.find((candidate) => isSafeLessonGlbUrl(String(candidate || '')));
+  return url ? String(url) : '';
 }
 
 const firstGlbOrGltfUrl = (urls: string[]): string | null => {
   for (const u of urls) {
-    if (u && isGlbOrGltfUrl(u)) return u;
+    if (u && isSafeLessonGlbUrl(u)) return u;
   }
   return null;
+};
+
+const collectBundleAssetUrls = (assets: any[]): { urls: string[]; ids: string[] } => {
+  const urls: string[] = [];
+  const ids: string[] = [];
+  for (const asset of assets) {
+    const glb = pickBestGlbUrl(asset);
+    if (glb && !urls.includes(glb)) {
+      urls.push(glb);
+      ids.push(asset?.id || `asset_${urls.length}`);
+    }
+  }
+  return { urls, ids };
 };
 
 // ============================================================================
@@ -929,15 +965,11 @@ const VRLessonPlayerInner = () => {
               const topic = fullData.topics?.find((t: any) => t.topic_id === topicId) || fullData.topics?.[0];
               if (!topic) { setInitPhase('ready'); setDataInitialized(true); return; }
               const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
-              let assetUrls = topic.asset_urls || [];
-              const assetIds = topic.asset_ids || [];
-              (Array.isArray(bundle.assets3d) ? bundle.assets3d : []).forEach((asset: any) => {
-                const glb = pickBestGlbUrl(asset);
-                if (glb && !assetUrls.includes(glb)) {
-                  assetUrls.push(glb);
-                  assetIds.push(asset.id || `asset_${assetUrls.length}`);
-                }
-              });
+              const bundleAssetInfo = collectBundleAssetUrls(Array.isArray(bundle.assets3d) ? bundle.assets3d : []);
+              const assetUrls = bundleAssetInfo.urls;
+              const assetIds = bundleAssetInfo.ids.length > 0
+                ? bundleAssetInfo.ids
+                : (Array.isArray(topic.asset_ids) ? [...topic.asset_ids] : []);
               const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
               const mcqs = safeMcqs.map((m: any) => ({
                 id: m.id || `mcq_${Math.random()}`,
@@ -1061,17 +1093,14 @@ const VRLessonPlayerInner = () => {
         const skyboxUrl = topic.skybox_url || topic.skybox_glb_url || bundle.skybox?.url || '';
         const learningObjective = typeof topic.learning_objective === 'string' ? topic.learning_objective : (topic.learning_objective?.en || topic.learning_objective?.hi || '');
         const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
-        let assetUrls = topic.asset_urls || [];
-        const assetIds = topic.asset_ids || [];
-        safeAssets3d.forEach((asset: any) => {
-          const glb = pickBestGlbUrl(asset);
-          if (glb && !assetUrls.includes(glb)) {
-            assetUrls.push(glb);
-          }
-        });
+        const bundleAssetInfo = collectBundleAssetUrls(safeAssets3d);
+        let assetUrls = bundleAssetInfo.urls;
+        const assetIds = bundleAssetInfo.ids.length > 0
+          ? bundleAssetInfo.ids
+          : (Array.isArray(topic.asset_ids) ? [...topic.asset_ids] : []);
         if (fullData.image3dasset?.imageasset_url || fullData.image3dasset?.imagemodel_glb) {
           const url = fullData.image3dasset.imagemodel_glb || fullData.image3dasset.imageasset_url;
-          if (url) assetUrls = [url, ...assetUrls];
+          if (url && isSafeLessonGlbUrl(url)) assetUrls = [url, ...assetUrls];
         }
         const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
         const ttsAudio = safeTts.map((tts: any) => ({
@@ -1220,6 +1249,7 @@ const VRLessonPlayerInner = () => {
   // Asset State - Platform-aware
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
   const [assetLoading, setAssetLoading] = useState(false);
+  const [assetDiscoveryComplete, setAssetDiscoveryComplete] = useState(false);
   const [meshyAssets, setMeshyAssets] = useState<MeshyAsset[]>([]);
   const [currentAssetIndex, setCurrentAssetIndex] = useState(0);
   const platform = useMemo(() => detectPlatform(), []);
@@ -1595,6 +1625,12 @@ const VRLessonPlayerInner = () => {
   useEffect(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     if (!skyboxUrl || !krpanoContainerRef.current || !krpanoContainerMounted) return;
+    if (!assetDiscoveryComplete) {
+      setSceneReady(false);
+      setKrpano3dAssetsReady(false);
+      log('...', 'Waiting for 3D asset discovery before embedding krpano');
+      return;
+    }
 
     let cancelled = false;
     krpanoViewerRef.current = null;
@@ -1626,29 +1662,47 @@ const VRLessonPlayerInner = () => {
 
     // Collect GLB/GLTF URLs for threejs plugin (proxy non-Firebase for CORS). Include all sources so student view gets same 3D assets as teacher.
     const rawGlbUrls: string[] = [];
-    if (assetUrl && isGlbOrGltfUrl(assetUrl)) rawGlbUrls.push(assetUrl);
-    if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d)) {
+    if (assetUrl && isSafeLessonGlbUrl(assetUrl)) rawGlbUrls.push(assetUrl);
+    const hasBundle3dAssets = extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d) && extraLessonData.assets3d.length > 0;
+    if (hasBundle3dAssets) {
       for (const a of extraLessonData.assets3d) {
         const glb = pickBestGlbUrl(a);
         if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
       }
     }
-    // Topic-level asset_urls (student view may have effectiveLesson without extraLessonData.assets3d)
-    const topicAssetUrls = effectiveLesson?.topic?.asset_urls;
-    if (Array.isArray(topicAssetUrls)) {
-      for (const u of topicAssetUrls) {
-        if (u && isGlbOrGltfUrl(u) && !rawGlbUrls.includes(u)) rawGlbUrls.push(u);
+    if (meshyAssets.length > 0) {
+      for (const a of meshyAssets) {
+        const glb = pickBestGlbUrl(a);
+        if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
       }
     }
-    const threeJsAssetUrls = rawGlbUrls.map((url) => toKrpanoThreeJsAssetUrl(url));
-
-    if (threeJsAssetUrls.length > 0) {
+    if (rawGlbUrls.length > 0) {
       setKrpano3dAssetsReady(false);
     }
 
     loadKrpanoScript()
-      .then(() => {
+      .then(async () => {
         if (cancelled) return;
+        const hasRenderAssetUrls = rawGlbUrls.some((url) => isRenderAssetUrl(url));
+        const renderAssetBridgeReady = hasRenderAssetUrls ? await ensureRenderAssetBridgeReady() : false;
+        if (cancelled) return;
+
+        const preparedAssetUrls: string[] = [];
+
+        for (const rawUrl of rawGlbUrls) {
+          if (isRenderAssetUrl(rawUrl)) {
+            if (renderAssetBridgeReady) {
+              preparedAssetUrls.push(toRenderAssetBridgeUrl(rawUrl));
+            } else {
+              console.warn('[VRPlayer] Skipping Firebase render asset because the render bridge is not ready:', rawUrl);
+            }
+          } else {
+            preparedAssetUrls.push(toKrpanoThreeJsAssetUrl(rawUrl));
+          }
+        }
+
+        const threeJsAssetUrls = preparedAssetUrls.filter(Boolean);
+        console.log('[VRPlayer] Prepared krpano 3D asset URLs:', threeJsAssetUrls);
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         const avatarModelUrl = origin + '/models/avatar3.glb';
         useKrpanoTTSRef.current = true;
@@ -1813,8 +1867,9 @@ const VRLessonPlayerInner = () => {
       }
       (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
       (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
+      removeKrpano(KRPANO_CONTAINER_ID);
     };
-  }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetUrl, extraLessonData, effectiveLesson]);
+  }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetDiscoveryComplete, assetUrl, meshyAssets, extraLessonData, effectiveLesson]);
 
   // Hotspot click handler: keep ref updated so krpano callback can trigger React state
   useEffect(() => {
@@ -2102,6 +2157,11 @@ const VRLessonPlayerInner = () => {
   // ============================================================================
 
   useEffect(() => {
+    // Unified asset discovery is handled by the effect below. Keeping two
+    // independent fetchers caused krpano to embed once before Firestore assets
+    // arrived, leaving the live viewer with zero 3D hotspots.
+    return;
+
     const loadAsset = () => {
       if (!activeLesson) return;
       
@@ -2120,10 +2180,10 @@ const VRLessonPlayerInner = () => {
           selectedUrl = img3d.imagemodel_usdz || img3d.imagemodel_glb || img3d.imageasset_url;
         } else {
           // Web: only GLB/GLTF
-          selectedUrl = img3d.imagemodel_glb || (isGlbOrGltfUrl(img3d.imageasset_url || '') ? img3d.imageasset_url : null) || null;
+          selectedUrl = img3d.imagemodel_glb || (isSafeLessonGlbUrl(img3d.imageasset_url || '') ? img3d.imageasset_url : null) || null;
         }
         
-        if (selectedUrl && (platform === 'web' ? isGlbOrGltfUrl(selectedUrl) : true)) {
+        if (selectedUrl && (platform === 'web' ? isSafeLessonGlbUrl(selectedUrl) : !isLegacyMeshyCdnUrl(selectedUrl))) {
           log('✅', `Selected ${platform} asset from image3dasset:`, selectedUrl.substring(0, 80));
           setAssetUrl(selectedUrl);
           setAssetLoading(true);
@@ -2131,10 +2191,12 @@ const VRLessonPlayerInner = () => {
         }
       }
       
-      // Priority 2: Check topic asset_urls (on web use first GLB/GLTF only)
+      // Legacy topic.asset_urls can contain deleted render IDs; use meshy_assets records instead.
       const assetUrls = activeLesson.topic?.asset_urls;
-      if (assetUrls && assetUrls.length > 0) {
-        selectedUrl = platform === 'web' ? firstGlbOrGltfUrl(assetUrls) : assetUrls[0];
+      if (false && assetUrls && assetUrls.length > 0) {
+        selectedUrl = platform === 'web'
+          ? firstGlbOrGltfUrl(assetUrls)
+          : (assetUrls.find((url: string) => !isLegacyMeshyCdnUrl(url)) || null);
         if (selectedUrl) {
           log('📦', '3D Asset URL from topic.asset_urls:', selectedUrl.substring(0, 80));
           setAssetUrl(selectedUrl);
@@ -2399,6 +2461,10 @@ const VRLessonPlayerInner = () => {
 
   useEffect(() => {
     const fetchAssets = async () => {
+      setAssetDiscoveryComplete(false);
+      setAssetUrl(null);
+      setMeshyAssets([]);
+
       // Priority 1: Check sessionStorage for 3D assets from bundle
       if (extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d) && extraLessonData.assets3d.length > 0) {
         const bundleAssets = extraLessonData.assets3d;
@@ -2435,8 +2501,10 @@ const VRLessonPlayerInner = () => {
       
       // Priority 2: Check topic asset_urls from sessionStorage (on web use first GLB/GLTF only)
       const effectiveTopic = extraLessonData?.topic || activeLesson?.topic;
-      if (effectiveTopic?.asset_urls && Array.isArray(effectiveTopic.asset_urls) && effectiveTopic.asset_urls.length > 0) {
-        const urlForPlatform = platform === 'web' ? firstGlbOrGltfUrl(effectiveTopic.asset_urls) : effectiveTopic.asset_urls[0];
+      if (false && effectiveTopic?.asset_urls && Array.isArray(effectiveTopic.asset_urls) && effectiveTopic.asset_urls.length > 0) {
+        const urlForPlatform = platform === 'web'
+          ? firstGlbOrGltfUrl(effectiveTopic.asset_urls)
+          : (effectiveTopic.asset_urls.find((url: string) => !isLegacyMeshyCdnUrl(url)) || null);
         if (urlForPlatform) {
           log('📦', `Using ${effectiveTopic.asset_urls.length} asset URLs from topic`);
           setAssetUrl(urlForPlatform);
@@ -2455,10 +2523,10 @@ const VRLessonPlayerInner = () => {
         } else if (platform === 'ios') {
           selectedUrl = img3d.imagemodel_usdz || img3d.imagemodel_glb || img3d.imageasset_url;
         } else {
-          selectedUrl = img3d.imagemodel_glb || (isGlbOrGltfUrl(img3d.imageasset_url || '') ? img3d.imageasset_url : null) || null;
+          selectedUrl = img3d.imagemodel_glb || (isSafeLessonGlbUrl(img3d.imageasset_url || '') ? img3d.imageasset_url : null) || null;
         }
         
-        if (selectedUrl && (platform === 'web' ? isGlbOrGltfUrl(selectedUrl) : true)) {
+        if (selectedUrl && (platform === 'web' ? isSafeLessonGlbUrl(selectedUrl) : !isLegacyMeshyCdnUrl(selectedUrl))) {
           log('✅', `Using image3dasset for ${platform}:`, selectedUrl.substring(0, 60));
           setAssetUrl(selectedUrl);
           setAssetLoading(true);
@@ -2498,7 +2566,14 @@ const VRLessonPlayerInner = () => {
       }
     };
     
-    fetchAssets();
+    fetchAssets()
+      .catch((error) => {
+        console.error('Failed to discover 3D assets:', error);
+        setAssetLoading(false);
+      })
+      .finally(() => {
+        setAssetDiscoveryComplete(true);
+      });
   }, [activeLesson, extraLessonData, platform]);
 
   // ============================================================================

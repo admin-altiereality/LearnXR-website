@@ -388,3 +388,32 @@ export const syncN8nLessonBuilderQueues = onSchedule(
     await syncAllQueues();
   },
 );
+
+export const processMeshyRegenerationJobsScheduled = onSchedule(
+  {
+    schedule: 'every 1 minutes',
+    region: 'us-central1',
+    timeoutSeconds: 540,
+    memory: '1GiB',
+    maxInstances: 1,
+    invoker: 'public',
+    secrets: [meshyApiKey],
+  },
+  async () => {
+    initializeAdmin();
+    let meshyKey: string | undefined;
+    try {
+      meshyKey = meshyApiKey.value();
+      if (meshyKey) {
+        meshyKey = meshyKey.trim().replace(/^Bearer\s+/i, '').replace(/\r?\n/g, '').replace(/\s+/g, '');
+        process.env.MESHY_API_KEY = meshyKey;
+      }
+    } catch (err: any) {
+      console.error('Error accessing MESHY_API_KEY for regeneration worker:', err?.message || err);
+    }
+    const { initializeServices } = require('./utils/services');
+    initializeServices({ meshyApiKey: meshyKey });
+    const { processMeshyRegenerationJobs } = require('./services/meshyAssetRegeneration');
+    await processMeshyRegenerationJobs(1);
+  },
+);

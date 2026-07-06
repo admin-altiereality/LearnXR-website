@@ -228,7 +228,7 @@ export const TextTo3dAssetsTab = ({ chapterId, topicId, bundle }: TextTo3dAssets
           topicId,
           userId: user.uid,
           artStyle: 'realistic',
-          aiModel: 'meshy-4'
+          aiModel: 'meshy-6'
         },
         (progress) => {
           setGenerationProgress(prev => ({

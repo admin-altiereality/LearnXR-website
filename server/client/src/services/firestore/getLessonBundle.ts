@@ -94,6 +94,31 @@ function chunkArray<T>(array: T[], size: number = 30): T[][] {
   return chunks;
 }
 
+function isRetiredMeshyAsset(asset: any): boolean {
+  return Boolean(
+    asset?.active === false ||
+    asset?.status === 'replaced' ||
+    asset?.replaced_by_meshy_asset_id ||
+    (asset?.asset_repair_status === 'regenerated' && asset?.replaced_by_meshy_asset_id)
+  );
+}
+
+function isRenderAssetUrl(url: string): boolean {
+  return typeof url === 'string' && url.includes('/render-asset/') && /\.glb(?:\?|$|\/?$)/i.test(url);
+}
+
+function pickPlayerGlbUrl(asset: any): string {
+  const candidates = [
+    asset?.animated_render_url,
+    asset?.render_url,
+    asset?.model_urls?.glb,
+    asset?.glb_url,
+    asset?.file_url,
+  ];
+  const url = candidates.find((candidate) => isRenderAssetUrl(String(candidate || '')));
+  return url ? String(url) : '';
+}
+
 /**
  * Extract linked IDs from chapter document
  * @param topicId - Optional topic ID to extract from specific topic, otherwise uses first topic
@@ -495,11 +520,22 @@ function mergeDraftIntoBundle(
     }));
   }
   if (Array.isArray(draft.assets3d) && draft.assets3d.length >= 0) {
-    bundle.assets3d = draft.assets3d.map((a) => ({
-      ...a,
-      glb_url: a.render_url ?? a.model_urls?.glb ?? a.glb_url ?? a.file_url,
-      file_url: a.render_url ?? a.file_url ?? a.glb_url,
-    }));
+    bundle.assets3d = draft.assets3d
+      .filter((a) => !isRetiredMeshyAsset(a) && pickPlayerGlbUrl(a))
+      .map((a) => {
+        const glbUrl = pickPlayerGlbUrl(a);
+        return {
+          ...a,
+          animated_render_url: isRenderAssetUrl(String(a.animated_render_url || '')) ? a.animated_render_url : '',
+          animated_glb_url: isRenderAssetUrl(String(a.animated_render_url || '')) ? a.animated_render_url : '',
+          glb_url: glbUrl,
+          file_url: glbUrl,
+          model_urls: {
+            ...(a.model_urls || {}),
+            glb: glbUrl,
+          },
+        };
+      });
   }
   // Update bundle skybox when draft has skybox_url (Associate may have changed skybox)
   if (draft.scene_skybox?.skybox_url) {
@@ -1014,19 +1050,28 @@ export async function getLessonBundle(params: {
     // text_to_3d_assets are already fetched separately in textTo3dAssetsRaw
     // meshy_assets are in meshyAssetsRaw
     // assetsRaw might contain either, but we'll use meshyAssetsRaw as primary source
-    const allAssetsRaw = [...(meshyAssetsRaw || [])];
+    const allAssetsRaw = [...(meshyAssetsRaw || [])]
+      .filter((asset: any) => !isRetiredMeshyAsset(asset) && pickPlayerGlbUrl(asset));
     // IMPORTANT: 3D assets are LANGUAGE-INDEPENDENT - do NOT filter by language
     // They should appear in both English and Hindi tabs
-    const assets3d = allAssetsRaw.map((asset: any) => ({
-      ...asset,
-      animated_glb_url: asset.animated_render_url || asset.animated_glb_url,
-      glb_url: asset.render_url || asset.model_urls?.glb || asset.glb_url || asset.file_url || '',
-      file_url: asset.render_url || asset.file_url || asset.glb_url || '',
-      model_urls: {
-        ...(asset.model_urls || {}),
-        glb: asset.render_url || asset.model_urls?.glb || asset.glb_url || asset.file_url || '',
-      },
-    })); // Remove language filtering for 3D assets
+    const assets3d = allAssetsRaw.map((asset: any) => {
+      const glbUrl = pickPlayerGlbUrl(asset);
+      const animatedRenderUrl = isRenderAssetUrl(String(asset.animated_render_url || ''))
+        ? String(asset.animated_render_url)
+        : '';
+      return {
+        ...asset,
+        animated_render_url: animatedRenderUrl,
+        animated_glb_url: animatedRenderUrl,
+        render_url: isRenderAssetUrl(String(asset.render_url || '')) ? asset.render_url : glbUrl,
+        glb_url: glbUrl,
+        file_url: glbUrl,
+        model_urls: {
+          ...(asset.model_urls || {}),
+          glb: glbUrl,
+        },
+      };
+    }); // Remove language filtering for 3D assets
     
     // text_to_3d_assets don't need language filtering (they're language-agnostic)
     // But we'll keep them separate in the bundle
@@ -1034,6 +1079,7 @@ export async function getLessonBundle(params: {
     console.log(`[getLessonBundle] Merged assets (language-independent):`, {
       textTo3dAssets: textTo3dAssetsRaw?.length || 0,
       meshyAssets: meshyAssetsRaw?.length || 0,
+      retiredOrUnrenderableAssets: (meshyAssetsRaw?.length || 0) - allAssetsRaw.length,
       total: allAssetsRaw.length,
       assets3d: assets3d.length,
       note: '3D assets are NOT filtered by language - they appear in all languages',

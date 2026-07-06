@@ -22,6 +22,12 @@ import { retryOperation } from '../../../hooks/useRetry';
 import { classifyError, logError } from '../../../utils/errorHandler';
 import { PermissionService } from '../../../services/permissionService';
 import type { PermissionContext } from '../../../types/permissions';
+import { isSuperadmin } from '../../../utils/rbac';
+import {
+  meshyRegenerationService,
+  type MeshyRegenerationItem,
+  type MeshyRegenerationJob,
+} from '../../../services/meshyRegenerationService';
 import {
   Loader2,
   CheckCircle2,
@@ -77,6 +83,9 @@ const createManualPromptRow = (prompt = ''): ManualPromptRow => ({
   status: 'idle',
 });
 
+const regenerationItemKey = (item: MeshyRegenerationItem): string =>
+  `${item.source_collection}:${item.source_asset_id}`;
+
 async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
   const results: T[] = new Array(tasks.length);
   let nextIndex = 0;
@@ -103,6 +112,7 @@ export const TextTo3DUnified = ({
 }: TextTo3DUnifiedProps) => {
   const { user, profile } = useAuth();
   const permissions = usePermissions('avatar_to_3d_assets');
+  const isSuperAdmin = isSuperadmin(profile);
   const [activeSection, setActiveSection] = useState<'text-to-3d' | 'script-to-3d'>('text-to-3d');
   const [error, setError] = useState<any>(null);
   
@@ -130,6 +140,12 @@ export const TextTo3DUnified = ({
   const [generationProgress, setGenerationProgress] = useState<{ [assetId: string]: GenerationProgress }>({});
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
+  const [regenerationJob, setRegenerationJob] = useState<MeshyRegenerationJob | null>(null);
+  const [regenerationItems, setRegenerationItems] = useState<MeshyRegenerationItem[]>([]);
+  const [regenerationLoading, setRegenerationLoading] = useState(false);
+  const [regenerationError, setRegenerationError] = useState<string | null>(null);
+  const [selectedRegenerationKeys, setSelectedRegenerationKeys] = useState<Set<string>>(new Set());
+  const [showReplacedAssets, setShowReplacedAssets] = useState(false);
 
   // Rig & Animate state (Meshy v1)
   const [animatingAssetId, setAnimatingAssetId] = useState<string | null>(null);
@@ -369,7 +385,7 @@ export const TextTo3DUnified = ({
           topicId,
           userId: user.uid,
           artStyle: 'realistic',
-          aiModel: 'meshy-4',
+          aiModel: 'meshy-6',
           collectionName
         },
         (progress) => {
@@ -771,9 +787,148 @@ export const TextTo3DUnified = ({
     }
   };
 
+  const applyRegenerationJob = (job: MeshyRegenerationJob) => {
+    const items = job.items || [];
+    setRegenerationJob(job);
+    setRegenerationItems(items);
+    if (job.dry_run) {
+      setSelectedRegenerationKeys(new Set(items.map(regenerationItemKey)));
+    }
+  };
+
+  const regenerationSettings = {
+    aiModel: 'meshy-6',
+    concurrency: 2,
+    targetFormats: ['glb'],
+    hdTexture: true,
+    enablePbr: true,
+    removeLighting: true,
+    autoSize: true,
+    originAt: 'bottom',
+    moderation: true,
+  };
+
+  const handleScanBrokenAssets = async () => {
+    setRegenerationLoading(true);
+    setRegenerationError(null);
+    try {
+      const job = await meshyRegenerationService.createJob({
+        dryRun: true,
+        scope: {
+          chapterId,
+          topicId,
+          limit: 100,
+          healthCheck: true,
+          sourceCollections: ['text_to_3d_assets', 'avatar_to_3d_assets'],
+        },
+        settings: regenerationSettings,
+      });
+      applyRegenerationJob(job);
+      if ((job.items || []).length === 0) {
+        toast.info('No broken approved prompt-based 3D assets found for this topic.');
+      } else {
+        toast.success(`Found ${(job.items || []).length} broken approved asset(s).`);
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Failed to scan broken 3D assets';
+      setRegenerationError(message);
+      toast.error(message);
+    } finally {
+      setRegenerationLoading(false);
+    }
+  };
+
+  const handleStartRegeneration = async () => {
+    const selectedItems = regenerationItems
+      .filter((item) => selectedRegenerationKeys.has(regenerationItemKey(item)))
+      .map((item) => ({
+        sourceCollection: item.source_collection,
+        sourceAssetId: item.source_asset_id,
+      }));
+
+    if (selectedItems.length === 0) {
+      toast.info('Select at least one scanned asset to regenerate.');
+      return;
+    }
+
+    setRegenerationLoading(true);
+    setRegenerationError(null);
+    try {
+      const job = await meshyRegenerationService.createJob({
+        dryRun: false,
+        scope: {
+          chapterId,
+          topicId,
+          limit: 100,
+          healthCheck: false,
+          sourceCollections: ['text_to_3d_assets', 'avatar_to_3d_assets'],
+        },
+        selectedItems,
+        settings: regenerationSettings,
+      });
+      applyRegenerationJob(job);
+      toast.success('Regeneration job queued.');
+    } catch (err: any) {
+      const message = err?.message || 'Failed to start regeneration';
+      setRegenerationError(message);
+      toast.error(message);
+    } finally {
+      setRegenerationLoading(false);
+    }
+  };
+
+  const handleCancelRegeneration = async () => {
+    if (!regenerationJob?.id) return;
+    setRegenerationLoading(true);
+    setRegenerationError(null);
+    try {
+      const job = await meshyRegenerationService.cancelJob(regenerationJob.id);
+      applyRegenerationJob(job);
+      toast.success('Pending regeneration items cancelled.');
+    } catch (err: any) {
+      const message = err?.message || 'Failed to cancel regeneration job';
+      setRegenerationError(message);
+      toast.error(message);
+    } finally {
+      setRegenerationLoading(false);
+    }
+  };
+
+  const handleRetryFailedRegeneration = async () => {
+    if (!regenerationJob?.id) return;
+    setRegenerationLoading(true);
+    setRegenerationError(null);
+    try {
+      const job = await meshyRegenerationService.retryFailed(regenerationJob.id);
+      applyRegenerationJob(job);
+      toast.success('Failed items queued for retry.');
+    } catch (err: any) {
+      const message = err?.message || 'Failed to retry regeneration items';
+      setRegenerationError(message);
+      toast.error(message);
+    } finally {
+      setRegenerationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!regenerationJob?.id || !['queued', 'running'].includes(regenerationJob.status)) return;
+    const timer = window.setInterval(() => {
+      meshyRegenerationService.getJob(regenerationJob.id)
+        .then(applyRegenerationJob)
+        .catch((err) => setRegenerationError(err?.message || 'Failed to refresh regeneration job'));
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [regenerationJob?.id, regenerationJob?.status]);
+
   const currentAssets = activeSection === 'text-to-3d' ? textTo3dAssets : scriptTo3dAssets;
   const currentSelected = activeSection === 'text-to-3d' ? selectedTextTo3d : selectedScriptTo3d;
   const isLoading = activeSection === 'text-to-3d' ? textTo3dLoading : scriptTo3dLoading;
+  const visibleRegenerationItems = showReplacedAssets
+    ? regenerationItems
+    : regenerationItems.filter((item) => item.status !== 'replaced' && item.status !== 'cancelled');
+  const selectedRegenerationCount = regenerationItems.filter((item) => selectedRegenerationKeys.has(regenerationItemKey(item))).length;
+  const regenerationCounts = regenerationJob?.counts || {};
 
   // Don't block UI for errors - show inline instead
   // if (error) {
@@ -853,6 +1008,170 @@ export const TextTo3DUnified = ({
           </div>
         </button>
       </div>
+
+      {isSuperAdmin && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-semibold text-foreground">Regenerate Broken 3D Assets</h3>
+                {regenerationJob?.status && (
+                  <span className="px-2 py-0.5 rounded bg-muted text-xs text-muted-foreground">
+                    {regenerationJob.status.replace(/_/g, ' ')}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Meshy 6 preview + HD texture refine for approved prompt assets in this topic.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleScanBrokenAssets}
+                disabled={regenerationLoading}
+                className="px-3 py-2 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-50 text-sm flex items-center gap-2"
+              >
+                {regenerationLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                Scan broken assets
+              </button>
+              <button
+                onClick={handleStartRegeneration}
+                disabled={regenerationLoading || !regenerationJob?.dry_run || selectedRegenerationCount === 0}
+                className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 disabled:opacity-50 text-sm flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                Start regeneration
+              </button>
+              <button
+                onClick={handleCancelRegeneration}
+                disabled={regenerationLoading || !regenerationJob?.id || !['queued', 'running'].includes(regenerationJob.status)}
+                className="px-3 py-2 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50 text-sm"
+              >
+                Cancel pending
+              </button>
+              <button
+                onClick={handleRetryFailedRegeneration}
+                disabled={regenerationLoading || !regenerationJob?.id || Number(regenerationCounts.failed || 0) === 0}
+                className="px-3 py-2 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20 hover:bg-blue-500/20 disabled:opacity-50 text-sm"
+              >
+                Retry failed
+              </button>
+              <button
+                onClick={() => setShowReplacedAssets((value) => !value)}
+                className="px-3 py-2 rounded-lg bg-muted text-muted-foreground hover:bg-muted/80 text-sm"
+              >
+                {showReplacedAssets ? 'Hide archived/replaced' : 'Show archived/replaced'}
+              </button>
+            </div>
+          </div>
+
+          {regenerationError && (
+            <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{regenerationError}</span>
+            </div>
+          )}
+
+          {regenerationJob && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {[
+                ['pending', 'Pending'],
+                ['generating_preview', 'Preview'],
+                ['refining_texture', 'Refining'],
+                ['finalizing', 'Finalizing'],
+                ['replaced', 'Replaced'],
+                ['failed', 'Failed'],
+                ['cancelled', 'Cancelled'],
+              ].map(([key, label]) => (
+                <span key={key} className="px-2 py-1 rounded bg-muted text-muted-foreground">
+                  {label}: {Number(regenerationCounts[key] || 0)}
+                </span>
+              ))}
+              {regenerationJob.dry_run && (
+                <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-300">
+                  Selected: {selectedRegenerationCount}
+                </span>
+              )}
+            </div>
+          )}
+
+          {visibleRegenerationItems.length > 0 && (
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {visibleRegenerationItems.map((item) => {
+                const key = regenerationItemKey(item);
+                const selected = selectedRegenerationKeys.has(key);
+                return (
+                  <div key={item.id} className="rounded-lg border border-border bg-muted/40 p-3">
+                    <div className="flex items-start gap-3">
+                      {regenerationJob?.dry_run && (
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(event) => {
+                            setSelectedRegenerationKeys((previous) => {
+                              const next = new Set(previous);
+                              if (event.target.checked) next.add(key);
+                              else next.delete(key);
+                              return next;
+                            });
+                          }}
+                          className="mt-1"
+                          aria-label={`Select ${item.prompt || item.source_asset_id}`}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-foreground truncate max-w-full">
+                            {item.prompt || item.source_asset_id}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-background text-xs text-muted-foreground">
+                            {item.status.replace(/_/g, ' ')}
+                          </span>
+                          {typeof item.progress === 'number' && item.progress > 0 && (
+                            <span className="text-xs text-blue-300">{Math.round(item.progress)}%</span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <div>Source: {item.source_collection}</div>
+                          <div>Chapter/topic: {item.chapter_id || chapterId} / {item.topic_id || topicId}</div>
+                          <div>Current asset: {item.old_meshy_asset_id || 'missing'}</div>
+                          <div>Old URL type: {item.old_url_type || 'unknown'}</div>
+                          <div>Meshy tasks: {item.estimated_meshy_task_count || 2}</div>
+                          {item.new_meshy_asset_id && <div>New asset: {item.new_meshy_asset_id}</div>}
+                        </div>
+                        {item.broken_reasons?.length ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {item.broken_reasons.map((reason) => (
+                              <span key={reason} className="px-2 py-0.5 rounded bg-red-500/10 text-red-300 text-xs">
+                                {reason.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {item.error && (
+                          <p className="mt-2 text-xs text-red-300">{item.error}</p>
+                        )}
+                        {item.render_url && (
+                          <a
+                            href={item.render_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <Package className="w-3 h-3" />
+                            Firebase render URL
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Content */}
       {activeSection === 'text-to-3d' ? (

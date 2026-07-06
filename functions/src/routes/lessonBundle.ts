@@ -45,6 +45,31 @@ function topicMatches(t: any, topicId: string): boolean {
   return tTopicId === norm || tId === norm;
 }
 
+function isRetiredMeshyAsset(asset: any): boolean {
+  return Boolean(
+    asset?.active === false ||
+    asset?.status === 'replaced' ||
+    asset?.replaced_by_meshy_asset_id ||
+    (asset?.asset_repair_status === 'regenerated' && asset?.replaced_by_meshy_asset_id)
+  );
+}
+
+function isRenderAssetUrl(url: string): boolean {
+  return typeof url === 'string' && url.includes('/render-asset/') && /\.glb(?:\?|$|\/?$)/i.test(url);
+}
+
+function pickPlayerGlbUrl(asset: any): string {
+  const candidates = [
+    asset?.animated_render_url,
+    asset?.render_url,
+    asset?.model_urls?.glb,
+    asset?.glb_url,
+    asset?.file_url,
+  ];
+  const url = candidates.find((candidate) => isRenderAssetUrl(String(candidate || '')));
+  return url ? String(url) : '';
+}
+
 function extractIds(chapterData: any, topicId: string | undefined, lang: string): {
   skyboxId?: string;
   assetIds: string[];
@@ -225,21 +250,28 @@ router.get('/', async (req: Request, res: Response) => {
       }
     }
 
-    const assets3d = meshyAssets.map((a: any) => ({
-      id: a.id,
-      animated_render_url: a.animated_render_url || a.animated_glb_url,
-      animated_glb_url: a.animated_render_url || a.animated_glb_url,
-      render_url: a.render_url,
-      storage_path: a.storage_path || a.storagePath,
-      storage_paths: a.storage_paths,
-      model_urls: {
-        ...(a.model_urls || {}),
-        glb: a.render_url || a.model_urls?.glb || a.glb_url || a.file_url,
-      },
-      glb_url: a.render_url || a.model_urls?.glb || a.glb_url || a.file_url,
-      file_url: a.render_url || a.file_url || a.glb_url,
-      name: a.name || a.prompt,
-    }));
+    const activeMeshyAssets = meshyAssets.filter((a: any) => !isRetiredMeshyAsset(a) && pickPlayerGlbUrl(a));
+    const assets3d = activeMeshyAssets.map((a: any) => {
+      const glbUrl = pickPlayerGlbUrl(a);
+      const animatedRenderUrl = isRenderAssetUrl(String(a.animated_render_url || ''))
+        ? String(a.animated_render_url)
+        : '';
+      return {
+        id: a.id,
+        animated_render_url: animatedRenderUrl,
+        animated_glb_url: animatedRenderUrl,
+        render_url: isRenderAssetUrl(String(a.render_url || '')) ? a.render_url : glbUrl,
+        storage_path: a.storage_path || a.storagePath,
+        storage_paths: a.storage_paths,
+        model_urls: {
+          ...(a.model_urls || {}),
+          glb: glbUrl,
+        },
+        glb_url: glbUrl,
+        file_url: glbUrl,
+        name: a.name || a.prompt,
+      };
+    });
 
     const ttsList = Array.isArray(ttsSnap) ? ttsSnap : [];
     const mcqsList = Array.isArray(mcqSnap) ? mcqSnap : [];

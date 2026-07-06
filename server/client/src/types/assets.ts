@@ -12,11 +12,14 @@ import type { MeshyAsset } from '../types/curriculum';
 export type AssetStatus = 
   | 'pending'
   | 'approved'
+  | 'processing'
   | 'generating'
   | 'uploaded'
   | 'ready'
   | 'complete'
-  | 'failed';
+  | 'completed'
+  | 'failed'
+  | 'replaced';
 
 /**
  * Asset source types
@@ -79,7 +82,7 @@ export interface TextTo3dAsset extends BaseAsset {
   generation_error?: string;
   meshy_asset_id?: string;
   art_style?: 'realistic' | 'sculpture';
-  ai_model?: 'meshy-4' | 'meshy-5';
+  ai_model?: 'meshy-5' | 'meshy-6' | 'latest';
   glb_url?: string;
   render_url?: string;
   storage_path?: string;

@@ -501,6 +501,18 @@ service cloud.firestore {
       allow delete: if isAdminOrSuperadmin() && 
         (!isCoreAsset(resource.data) || isSuperadmin());
     }
+
+    // Meshy regeneration jobs - superadmin-controlled automation.
+    // Backend worker uses Admin SDK; clients can inspect and control jobs but cannot delete them.
+    match /meshy_asset_regeneration_jobs/{jobId} {
+      allow read, create, update: if isSuperadmin();
+      allow delete: if false;
+
+      match /items/{itemId} {
+        allow read, create, update: if isSuperadmin();
+        allow delete: if false;
+      }
+    }
     
     // Skybox GLB URLs collection - read access for authenticated users
     match /skybox_glb_urls/{urlId} {
@@ -880,4 +892,4 @@ service cloud.firestore {
       allow write: if false;
     }
   }
-} 
+}

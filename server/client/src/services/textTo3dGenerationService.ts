@@ -17,7 +17,7 @@ export interface TextTo3dGenerationOptions {
   topicId: string;
   userId: string;
   artStyle?: 'realistic' | 'sculpture';
-  aiModel?: 'meshy-4' | 'meshy-5';
+  aiModel?: 'meshy-5' | 'meshy-6' | 'latest';
   collectionName?: 'text_to_3d_assets' | 'avatar_to_3d_assets';
 }
 
@@ -34,6 +34,10 @@ type MeshyTextureSet = {
   normal?: string;
   roughness?: string;
 };
+
+function isHumanoidPrompt(prompt: string): boolean {
+  return /\b(person|people|human|boy|girl|man|woman|child|teacher|student|character|avatar|doctor|nurse|worker|robot|humanoid)\b/i.test(prompt);
+}
 
 export class TextTo3dGenerationService {
   private meshyApiService: MeshyApiService;
@@ -53,7 +57,7 @@ export class TextTo3dGenerationService {
       topicId,
       userId,
       artStyle = 'realistic',
-      aiModel = 'meshy-4',
+      aiModel = 'meshy-6',
       collectionName = 'text_to_3d_assets',
     } = options;
 
@@ -64,16 +68,20 @@ export class TextTo3dGenerationService {
         message: 'Initiating 3D model generation...',
       });
 
-      const modelToUse = aiModel === 'meshy-4' ? 'meshy-5' : (aiModel || 'latest');
+      const modelToUse = aiModel || 'meshy-6';
       const generationRequest = {
         prompt: prompt.trim(),
-        art_style: artStyle,
+        ...(modelToUse === 'meshy-5' ? { art_style: artStyle } : {}),
         ai_model: modelToUse as 'meshy-5' | 'meshy-6' | 'latest',
+        model_type: 'standard' as const,
         topology: 'triangle' as const,
-        target_polycount: modelToUse === 'meshy-5' ? 50000 : 30000,
-        should_remesh: modelToUse === 'meshy-6' || modelToUse === 'latest' ? false : true,
-        symmetry_mode: 'auto' as const,
-        moderation: false,
+        target_formats: ['glb'] as const,
+        target_polycount: 30000,
+        should_remesh: modelToUse === 'meshy-5',
+        auto_size: true,
+        origin_at: 'bottom' as const,
+        pose_mode: isHumanoidPrompt(prompt) ? 'a-pose' as const : '' as const,
+        moderation: true,
       };
 
       console.log('Starting Meshy preview generation for text-to-3D asset:', {
@@ -118,8 +126,14 @@ export class TextTo3dGenerationService {
       const refineResponse = await this.meshyApiService.createRefineTask({
         preview_task_id: previewTaskId,
         enable_pbr: true,
-        ai_model: modelToUse === 'meshy-4' ? 'meshy-5' : 'latest',
-        moderation: false,
+        hd_texture: true,
+        remove_lighting: true,
+        texture_prompt: prompt.trim().slice(0, 600),
+        ai_model: modelToUse as 'meshy-5' | 'meshy-6' | 'latest',
+        target_formats: ['glb'],
+        auto_size: true,
+        origin_at: 'bottom',
+        moderation: true,
       });
 
       const refineTaskId = refineResponse.result;

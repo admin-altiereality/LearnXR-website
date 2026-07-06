@@ -19,6 +19,12 @@ import {
   type FinalizeGeneratedAssetInput,
   type RegisterUploadedAssetInput,
 } from '../services/meshyAssetStorage';
+import {
+  cancelRegenerationJob,
+  createRegenerationJob,
+  getRegenerationJob,
+  retryFailedRegenerationItems,
+} from '../services/meshyAssetRegeneration';
 
 const router = Router();
 
@@ -134,6 +140,122 @@ router.post('/backfill-assets', validateFullAccess, requireSuperadmin, async (re
 });
 
 /**
+ * Create a superadmin regeneration scan or live job.
+ * POST /meshy/regeneration/jobs
+ */
+router.post('/regeneration/jobs', validateFullAccess, requireSuperadmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const createdBy = String((req as any).user?.uid || '');
+    const result = await createRegenerationJob({
+      ...req.body,
+      createdBy,
+    });
+    setCorsHeaders(res);
+    return res.status(req.body?.dryRun === true ? HTTP_STATUS.OK : HTTP_STATUS.ACCEPTED).json(successResponse(result, {
+      requestId,
+      message: req.body?.dryRun === true ? 'Broken 3D asset scan completed' : '3D asset regeneration job queued',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Create regeneration job error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Regeneration job failed',
+      error?.message || 'Failed to create regeneration job',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
+});
+
+/**
+ * Get a regeneration job and its item results.
+ * GET /meshy/regeneration/jobs/:jobId
+ */
+router.get('/regeneration/jobs/:jobId', validateFullAccess, requireSuperadmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const result = await getRegenerationJob(req.params.jobId);
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+      requestId,
+      message: '3D asset regeneration job retrieved',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Get regeneration job error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Regeneration job lookup failed',
+      error?.message || 'Failed to retrieve regeneration job',
+      ErrorCode.NOT_FOUND,
+      HTTP_STATUS.NOT_FOUND,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
+});
+
+/**
+ * Cancel pending items in a regeneration job.
+ * POST /meshy/regeneration/jobs/:jobId/cancel
+ */
+router.post('/regeneration/jobs/:jobId/cancel', validateFullAccess, requireSuperadmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const result = await cancelRegenerationJob(req.params.jobId);
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+      requestId,
+      message: 'Pending regeneration items cancelled',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Cancel regeneration job error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Regeneration cancel failed',
+      error?.message || 'Failed to cancel regeneration job',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
+});
+
+/**
+ * Retry failed items in a regeneration job.
+ * POST /meshy/regeneration/jobs/:jobId/retry-failed
+ */
+router.post('/regeneration/jobs/:jobId/retry-failed', validateFullAccess, requireSuperadmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const result = await retryFailedRegenerationItems(req.params.jobId);
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+      requestId,
+      message: 'Failed regeneration items queued for retry',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Retry regeneration job error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Regeneration retry failed',
+      error?.message || 'Failed to retry failed regeneration items',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
+});
+
+/**
  * Generate a 3D asset using Meshy.ai
  * POST /meshy/generate
  * Requires FULL scope API key
@@ -155,7 +277,83 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
       return res.status(statusCode).json(response);
     }
 
-    const { prompt, negative_prompt, art_style, ai_model, topology, target_polycount, should_remesh, symmetry_mode, moderation } = req.body;
+    const {
+      prompt,
+      mode,
+      preview_task_id,
+      negative_prompt,
+      art_style,
+      ai_model,
+      topology,
+      target_polycount,
+      should_remesh,
+      symmetry_mode,
+      moderation,
+      model_type,
+      decimation_mode,
+      pose_mode,
+      target_formats,
+      auto_size,
+      origin_at,
+      alpha_thumbnail,
+      enable_pbr,
+      hd_texture,
+      remove_lighting,
+      texture_prompt,
+      texture_image_url,
+    } = req.body;
+
+    // Meshy v2 uses the same endpoint for preview and refine. Keep this proxy
+    // route compatible with both so preview-channel clients never need a Meshy key.
+    if (mode === 'refine') {
+      if (!preview_task_id || typeof preview_task_id !== 'string') {
+        const { statusCode, response } = errorResponse(
+          'Validation error',
+          'preview_task_id is required for refine tasks',
+          ErrorCode.MISSING_REQUIRED_FIELD,
+          HTTP_STATUS.BAD_REQUEST,
+          { requestId }
+        );
+        return res.status(statusCode).json(response);
+      }
+
+      const model = ai_model === 'meshy-5' || ai_model === 'meshy-6' || ai_model === 'latest' ? ai_model : 'meshy-6';
+      const refinePayload: Record<string, unknown> = {
+        mode: 'refine',
+        preview_task_id: preview_task_id.trim(),
+        ai_model: model,
+        enable_pbr: enable_pbr !== undefined ? Boolean(enable_pbr) : true,
+        hd_texture: hd_texture !== undefined ? Boolean(hd_texture) : true,
+        remove_lighting: remove_lighting !== undefined ? Boolean(remove_lighting) : true,
+        target_formats: Array.isArray(target_formats) && target_formats.length ? target_formats : ['glb'],
+        auto_size: auto_size !== undefined ? Boolean(auto_size) : true,
+        origin_at: origin_at === 'center' ? 'center' : 'bottom',
+        moderation: moderation !== undefined ? Boolean(moderation) : true,
+      };
+      if (typeof texture_prompt === 'string' && texture_prompt.trim()) {
+        refinePayload.texture_prompt = texture_prompt.trim().slice(0, 600);
+      }
+      if (typeof texture_image_url === 'string' && texture_image_url.trim()) {
+        refinePayload.texture_image_url = texture_image_url.trim();
+      }
+      if (alpha_thumbnail !== undefined) {
+        refinePayload.alpha_thumbnail = Boolean(alpha_thumbnail);
+      }
+
+      const response = await axios.post(`${MESHY_API_BASE_URL}/text-to-3d`, refinePayload, {
+        headers: {
+          'Authorization': `Bearer ${MESHY_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      });
+
+      setCorsHeaders(res);
+      return res.status(HTTP_STATUS.ACCEPTED).json(successResponse(response.data, {
+        requestId,
+        message: '3D asset refine initiated successfully'
+      }));
+    }
 
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
       const { statusCode, response } = errorResponse(
@@ -185,14 +383,27 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
       mode: 'preview',
       prompt: prompt.trim(),
       ai_model: model,
+      model_type: model_type || 'standard',
       topology: topology || 'triangle',
       target_polycount: target_polycount ?? 30000,
       should_remesh: should_remesh !== undefined ? should_remesh : defaultShouldRemesh,
-      symmetry_mode: symmetry_mode || 'auto',
-      moderation: moderation || false,
+      target_formats: Array.isArray(target_formats) && target_formats.length ? target_formats : ['glb'],
+      auto_size: auto_size !== undefined ? Boolean(auto_size) : true,
+      origin_at: origin_at === 'center' ? 'center' : 'bottom',
+      moderation: moderation !== undefined ? Boolean(moderation) : true,
     };
     if (includeArtStyle) {
       payload.art_style = art_style || 'realistic';
+      payload.symmetry_mode = symmetry_mode || 'auto';
+    }
+    if (decimation_mode !== undefined) {
+      payload.decimation_mode = Number(decimation_mode);
+    }
+    if (pose_mode === 'a-pose' || pose_mode === 't-pose' || pose_mode === '') {
+      payload.pose_mode = pose_mode;
+    }
+    if (alpha_thumbnail !== undefined) {
+      payload.alpha_thumbnail = Boolean(alpha_thumbnail);
     }
     if (negative_prompt && typeof negative_prompt === 'string' && negative_prompt.trim()) {
       payload.negative_prompt = negative_prompt.trim();

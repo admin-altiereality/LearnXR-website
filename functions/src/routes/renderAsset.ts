@@ -59,6 +59,58 @@ function parseByteRange(rangeHeader: string | undefined, fileSize: number): { st
   };
 }
 
+function getAssetStoragePath(asset: any, isAnimated: boolean): string {
+  if (isAnimated) {
+    return String(
+      asset.animated_storage_path ||
+      asset.storage_paths?.animated_glb ||
+      asset.storage_path ||
+      asset.storagePath ||
+      asset.storage_paths?.glb ||
+      ''
+    );
+  }
+  return String(asset.storage_path || asset.storagePath || asset.storage_paths?.glb || '');
+}
+
+function isReplacedAsset(asset: any): boolean {
+  return Boolean(
+    asset?.active === false ||
+    asset?.status === 'replaced' ||
+    asset?.replaced_by_meshy_asset_id ||
+    (asset?.asset_repair_status === 'regenerated' && asset?.replaced_by_meshy_asset_id)
+  );
+}
+
+async function resolveRenderableAsset(asset: any, isAnimated: boolean): Promise<any> {
+  if (!isReplacedAsset(asset) || !asset?.replaced_by_meshy_asset_id) {
+    return asset;
+  }
+
+  try {
+    const replacementSnap = await admin
+      .firestore()
+      .collection('meshy_assets')
+      .doc(String(asset.replaced_by_meshy_asset_id))
+      .get();
+
+    if (!replacementSnap.exists) {
+      return asset;
+    }
+
+    const replacement = replacementSnap.data() || {};
+    const replacementStoragePath = getAssetStoragePath(replacement, isAnimated);
+    if (!replacementStoragePath || isReplacedAsset(replacement)) {
+      return asset;
+    }
+
+    return replacement;
+  } catch (error: any) {
+    console.warn('Failed to resolve replacement render asset:', error?.message || error);
+    return asset;
+  }
+}
+
 router.options(renderAssetRegex, (req: Request, res: Response) => {
   setRenderCorsHeaders(req, res);
   res.status(204).send();
@@ -94,16 +146,15 @@ router.get(renderAssetRegex, async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const storagePath = isAnimated
-      ? String(asset.animated_storage_path || asset.storage_paths?.animated_glb || '')
-      : String(asset.storage_path || asset.storagePath || asset.storage_paths?.glb || '');
+    const renderableAsset = await resolveRenderableAsset(asset, isAnimated);
+    const storagePath = getAssetStoragePath(renderableAsset, isAnimated);
 
     if (!storagePath) {
       res.status(404).json({ error: 'Asset storage path not registered', requestId });
       return;
     }
 
-    const bucketName = asset.storage_bucket ? String(asset.storage_bucket) : undefined;
+    const bucketName = renderableAsset.storage_bucket ? String(renderableAsset.storage_bucket) : undefined;
     const bucket = bucketName ? admin.storage().bucket(bucketName) : admin.storage().bucket();
     const file = bucket.file(storagePath);
     const [exists] = await file.exists();

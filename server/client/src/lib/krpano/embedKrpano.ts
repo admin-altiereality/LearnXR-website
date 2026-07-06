@@ -8,6 +8,7 @@ declare global {
     krpanoJS?: {
       embedpano: (options: KrpanoEmbedOptions) => void;
     };
+    removepano?: (target: string | HTMLElement) => void;
   }
 }
 
@@ -22,6 +23,20 @@ export interface KrpanoEmbedOptions {
   height?: string;
   bgcolor?: string;
   initvars?: Record<string, string>;
+}
+
+export function removeKrpano(target: string | HTMLElement): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.removepano?.(target);
+  } catch (error) {
+    console.warn('[krpano] Failed to remove previous viewer:', error);
+  }
+
+  const element = typeof target === 'string' ? document.getElementById(target) : target;
+  if (element) {
+    element.innerHTML = '';
+  }
 }
 
 const SCRIPT_ID = 'krpano-viewer-script';
@@ -98,6 +113,7 @@ export function embedKrpano(options: KrpanoEmbedOptions): void {
     options.onerror?.('krpano viewer not loaded. Call loadKrpanoScript() first.');
     return;
   }
+  removeKrpano(options.target);
   const { url: xmlUrl, revoke } = toXmlUrlIfInline(options.xml);
   const userOnready = options.onready;
   const opts: KrpanoEmbedOptions = {
