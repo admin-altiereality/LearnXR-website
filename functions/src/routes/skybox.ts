@@ -10,9 +10,12 @@ import { initializeServices, BLOCKADE_API_KEY } from '../utils/services';
 import { incrementStyleUsage, getAllStyleUsageStats, getStyleUsageCounts } from '../utils/styleUsageTracker';
 import { migrateStyleUsage } from '../scripts/migrateStyleUsage';
 import { validateReadAccess, validateFullAccess } from '../middleware/validateIn3dApiKey';
+import { requireRole } from '../middleware/rbac';
 import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils/apiResponse';
+import { timingSafeEqualString } from '../utils/crypto';
 
 const router = Router();
+const requireSuperadmin = requireRole(['superadmin']);
 
 // Skybox Styles API - Read access (API key READ or FULL scope, or Firebase Auth)
 router.get('/styles', validateReadAccess, async (req: Request, res: Response) => {
@@ -282,7 +285,7 @@ router.post('/generate', validateFullAccess, async (req: Request, res: Response)
       depthScale: depth_scale || null
     };
     // Get userId from API key user or Firebase Auth user
-    const resolvedUserId = userId || req.apiKeyUser?.userId || req.user?.uid;
+    const resolvedUserId = req.apiKeyUser?.userId || req.user?.uid;
     if (resolvedUserId) {
       skyboxData.userId = resolvedUserId;
     }
@@ -576,8 +579,30 @@ router.post('/webhook', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId || `webhook-${Date.now()}`;
   
   try {
-    console.log(`[${requestId}] Webhook received from BlockadeLabs:`, req.body);
-    
+    const webhookSecret = process.env.SKYBOX_WEBHOOK_SECRET || process.env.BLOCKADE_WEBHOOK_SECRET;
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
+    if (!webhookSecret) {
+      if (!isEmulator) {
+        console.error(`[${requestId}] Skybox webhook secret is not configured`);
+        return res.status(503).json({
+          success: false,
+          error: 'Webhook authentication is not configured',
+          requestId,
+        });
+      }
+      console.warn(`[${requestId}] Skybox webhook secret missing in emulator; allowing request`);
+    } else {
+      const providedRaw = req.headers['x-blockade-signature'] || req.headers['x-webhook-secret'];
+      const provided = Array.isArray(providedRaw) ? providedRaw[0] : providedRaw;
+      if (!provided || !timingSafeEqualString(String(provided), webhookSecret)) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid webhook signature',
+          requestId,
+        });
+      }
+    }
+
     const webhookData = req.body;
     const generationId = webhookData.id || webhookData.generation_id;
     
@@ -787,7 +812,7 @@ router.get('/style-usage', async (req: Request, res: Response) => {
  * POST /api/skybox/migrate-style-usage
  * Query params: dryRun=true (optional, default: false)
  */
-router.post('/migrate-style-usage', async (req: Request, res: Response) => {
+router.post('/migrate-style-usage', requireSuperadmin, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId || `migrate-${Date.now()}`;
   
   try {

@@ -1,10 +1,12 @@
 import * as admin from 'firebase-admin';
 import { QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { initializeAdmin } from '../utils/services';
+import { assertUserOwnedStoragePath } from '../utils/storagePathOwnership';
 
 const COLLECTION = 'n8n_lesson_builder_jobs';
 const MAX_RESPONSE_PREVIEW = 4000;
 const STALE_STARTING_MS = 5 * 60 * 1000;
+const N8N_STORAGE_PREFIXES = ['n8n-builder', 'uploads'] as const;
 
 export type LessonBuilderJobStatus =
   | 'queued'
@@ -156,6 +158,11 @@ export async function enqueueJobsForUser(
   const createdAt = nowIso();
 
   items.forEach((item, index) => {
+    const ownedPath = assertUserOwnedStoragePath(
+      userId,
+      item.file.storagePath,
+      N8N_STORAGE_PREFIXES,
+    );
     const docRef = db.collection(COLLECTION).doc();
     const queueOrder = maxQueueOrder + index + 1;
     const job: LessonBuilderJob = {
@@ -163,7 +170,10 @@ export async function enqueueJobsForUser(
       userId,
       userEmail: userEmail ?? null,
       webhookUrl: item.webhookUrl,
-      file: item.file,
+      file: {
+        ...item.file,
+        storagePath: ownedPath,
+      },
       prompt: item.prompt,
       language: item.language,
       curriculum: item.curriculum ?? '',
@@ -245,8 +255,13 @@ async function markJobStatus(
 }
 
 async function startClaimedJob(job: LessonBuilderJob) {
+  const ownedPath = assertUserOwnedStoragePath(
+    job.userId,
+    job.file.storagePath,
+    N8N_STORAGE_PREFIXES,
+  );
   const bucket = getBucket();
-  const [buffer] = await bucket.file(job.file.storagePath).download();
+  const [buffer] = await bucket.file(ownedPath).download();
 
   const body = new FormData();
   body.append(

@@ -2,106 +2,88 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Helper function to check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Max file size: 100MB (Storage rules cannot access Firestore for role checks)
+
+    function isStaffContentEditor() {
+      return isAuthenticated() &&
+        request.auth.token.role in ['admin', 'superadmin', 'associate'];
+    }
+
     function isValidSize() {
       return request.resource.size < 100 * 1024 * 1024;
     }
 
-    // Generated Meshy models, animated GLBs, FBX, and USDZ files can exceed 100MB.
     function isValidMeshAssetSize() {
       return request.resource.size < 500 * 1024 * 1024;
     }
-    
-    // Note: Storage rules cannot access Firestore documents directly
-    // Core asset protection is enforced in UI + Firestore rules
-    // Storage rules allow admin/superadmin to delete, UI will prevent admin from deleting core assets
-    
-    // Lesson assets and content storage
-    // Admin and superadmin can upload/replace/delete
-    // UI will prevent admin from deleting core assets
+
+    function isValidVr360VideoSize() {
+      return request.resource.size < 2500 * 1024 * 1024;
+    }
+
     match /lesson_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
-      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+      allow write, delete: if isStaffContentEditor() && isValidSize();
     }
-    
-    // Meshy assets storage
+
     match /meshy_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidMeshAssetSize(); // UI/backend enforce staff role checks
-      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+      allow write, delete: if isStaffContentEditor() && isValidMeshAssetSize();
     }
-    
-    // Text-to-3D assets storage
+
     match /text_to_3d_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidMeshAssetSize(); // UI/backend enforce staff role checks
-      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+      allow write, delete: if isStaffContentEditor() && isValidMeshAssetSize();
     }
-    
-    // Avatar-to-3D assets storage
+
     match /avatar_to_3d_assets/{assetId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidMeshAssetSize(); // UI/backend enforce staff role checks
-      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+      allow write, delete: if isStaffContentEditor() && isValidMeshAssetSize();
     }
-    
-    // Chapter images storage
+
     match /chapter_images/{imageId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
-      allow delete: if isAuthenticated(); // UI enforces admin/superadmin + core asset check
+      allow write, delete: if isStaffContentEditor() && isValidSize();
     }
-    
-    // 360° VR video tours (equirectangular MP4; may exceed 100MB for 8K / long clips)
-    function isValidVr360VideoSize() {
-      return request.resource.size < 2500 * 1024 * 1024; // 2.5GB cap
-    }
+
     match /video_vr_tour/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidVr360VideoSize();
-      allow delete: if isAuthenticated();
+      allow write, delete: if isStaffContentEditor() && isValidVr360VideoSize();
     }
 
-    // PDFs storage
     match /pdfs/{pdfId}/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
-      allow delete: if isAuthenticated(); // UI enforces superadmin-only check
+      allow write, delete: if isStaffContentEditor() && isValidSize();
     }
 
-    // Chapter PDFs (source documents for lessons)
     match /chapter_pdf/{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces admin/superadmin check
-      allow delete: if isAuthenticated();
+      allow write, delete: if isStaffContentEditor() && isValidSize();
     }
-    
-    // Question Papers: source PDFs uploaded by users for paper generation
-    // Path layout: question_papers/{userId}/source/{filename}.pdf
+
     match /question_papers/{userId}/{allPaths=**} {
-      allow read: if isAuthenticated();
+      allow read: if (request.auth != null && request.auth.uid == userId) || isStaffContentEditor();
       allow write: if request.auth != null && request.auth.uid == userId && isValidSize();
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
-    // General user uploads (non-lesson content)
     match /uploads/{userId}/{allPaths=**} {
-      allow read: if isAuthenticated();
+      allow read: if (request.auth != null && request.auth.uid == userId) || isStaffContentEditor();
       allow write: if request.auth != null && request.auth.uid == userId && isValidSize();
       allow delete: if request.auth != null && request.auth.uid == userId;
     }
-    
-    // Default: Allow read for authenticated users
+
+    match /n8n-builder/{userId}/{allPaths=**} {
+      allow read: if (request.auth != null && request.auth.uid == userId) || isStaffContentEditor();
+      allow write: if request.auth != null && request.auth.uid == userId && isValidSize();
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     match /{allPaths=**} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces role checks
-      allow delete: if isAuthenticated(); // UI enforces role checks
+      allow write, delete: if false;
     }
   }
-} 
+}

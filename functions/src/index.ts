@@ -129,14 +129,23 @@ const getApp = (): express.Application => {
     });
     app.use('/auth', authLimiter);
 
+    // Abuse controls for unauthenticated lead / partner / report forms
+    const publicLeadLimiter = rateLimit({
+      windowMs: 60 * 60 * 1000,
+      max: 10,
+      message: { success: false, error: 'Too many submissions. Please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
     // Mount public routes FIRST (before authentication)
     const leadRoutes = require('./routes/leads').default;
     const partnerRoutes = require('./routes/partners').default;
     const reportRoutes = require('./routes/reports').default;
     app.use('/linkedin', linkedinRoutes);
-    app.use('/leads', leadRoutes);
-    app.use('/partners', partnerRoutes);
-    app.use('/reports', reportRoutes);
+    app.use('/leads', publicLeadLimiter, leadRoutes);
+    app.use('/partners', publicLeadLimiter, partnerRoutes);
+    app.use('/reports', publicLeadLimiter, reportRoutes);
     app.use('/auth', authTokenRoutes); // custom-token exchange for standalone VR player (GET)
     app.use('/auth', authRoutes);
 
@@ -396,7 +405,7 @@ export const processMeshyRegenerationJobsScheduled = onSchedule(
     timeoutSeconds: 540,
     memory: '1GiB',
     maxInstances: 1,
-    invoker: 'public',
+    invoker: 'private',
     secrets: [meshyApiKey],
   },
   async () => {

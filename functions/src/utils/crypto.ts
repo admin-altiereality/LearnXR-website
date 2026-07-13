@@ -87,3 +87,13 @@ export function isValidApiKeyFormat(key: string): boolean {
     /^[a-f0-9]+$/.test(key.replace(KEY_PREFIX, ''))
   );
 }
+
+/**
+ * Constant-time string comparison for secrets / HMAC digests.
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}

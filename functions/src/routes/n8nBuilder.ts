@@ -5,6 +5,7 @@ import {
   listJobsForUser,
   syncUserQueue,
 } from '../services/n8nLessonBuilderQueue';
+import { resolveAllowedN8nWebhookUrl } from '../utils/n8nWebhookValidation';
 
 const router = express.Router();
 
@@ -40,8 +41,11 @@ router.post('/jobs', async (req, res) => {
     return res.status(400).json({ message: 'At least one uploaded PDF is required.' });
   }
 
-  if (typeof webhookUrl !== 'string' || !webhookUrl.trim()) {
-    return res.status(400).json({ message: 'A valid n8n webhook URL is required.' });
+  const resolvedWebhookUrl = resolveAllowedN8nWebhookUrl(
+    typeof webhookUrl === 'string' ? webhookUrl : undefined,
+  );
+  if (!resolvedWebhookUrl) {
+    return res.status(400).json({ message: 'A valid server-configured n8n webhook URL is required.' });
   }
 
   if (typeof language !== 'string' || !language.trim()) {
@@ -53,7 +57,7 @@ router.post('/jobs', async (req, res) => {
       userId,
       user?.email,
       items.map((item: any) => ({
-        webhookUrl,
+        webhookUrl: resolvedWebhookUrl,
         file: {
           storagePath: String(item?.storagePath ?? ''),
           fileName: String(item?.fileName ?? ''),
@@ -72,7 +76,9 @@ router.post('/jobs', async (req, res) => {
     return res.status(201).json({ created, jobs });
   } catch (error) {
     console.error('Failed to enqueue n8n builder jobs:', error);
-    return res.status(500).json({ message: 'Failed to enqueue PDFs for automation.' });
+    const message = error instanceof Error ? error.message : 'Failed to enqueue PDFs for automation.';
+    const isClientError = /not owned|Storage path/i.test(message);
+    return res.status(isClientError ? 400 : 500).json({ message });
   }
 });
 

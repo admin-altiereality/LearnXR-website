@@ -134,6 +134,8 @@ export interface GenerateInput {
   source: PaperSource;
   blueprint: PaperBlueprint;
   sourceCharLimit?: number;
+  /** Authenticated UID — required to bind storagePath/pdfUrl to the caller. */
+  userId: string;
 }
 
 export interface GenerateOutput {
@@ -171,18 +173,27 @@ function langLabel(code?: string): string {
 // PDF text extraction
 // ---------------------------------------------------------------------------
 
-async function extractSourceText(src: PaperSource, maxChars: number): Promise<string> {
+async function extractSourceText(
+  src: PaperSource,
+  maxChars: number,
+  userId: string,
+): Promise<string> {
   if (src.type === 'none') return '';
   if (src.rawText && src.rawText.trim().length > 0) {
     return src.rawText.slice(0, maxChars);
   }
 
+  // Lazy imports keep deploy-time side effects minimal.
+  const { assertUserOwnedStoragePath } = require('../utils/storagePathOwnership') as typeof import('../utils/storagePathOwnership');
+  const { assertSafeUserPdfUrl, fetchUrlWithLimits } = require('../utils/ssrfGuard') as typeof import('../utils/ssrfGuard');
+
   let buffer: Buffer | null = null;
 
   if (src.storagePath) {
+    const ownedPath = assertUserOwnedStoragePath(userId, src.storagePath);
     try {
       const bucket = admin.storage().bucket();
-      const file = bucket.file(src.storagePath);
+      const file = bucket.file(ownedPath);
       const [exists] = await file.exists();
       if (exists) {
         const [contents] = await file.download();
@@ -190,20 +201,19 @@ async function extractSourceText(src: PaperSource, maxChars: number): Promise<st
       }
     } catch (err) {
       console.warn('[questionPaper] Storage path download failed:', (err as Error).message);
+      throw err instanceof Error && err.message.includes('not owned')
+        ? err
+        : new Error('Failed to read source PDF from storage.');
     }
   }
 
   if (!buffer && src.pdfUrl) {
+    const safeUrl = assertSafeUserPdfUrl(src.pdfUrl, userId);
     try {
-      const res = await fetch(src.pdfUrl);
-      if (res.ok) {
-        const ab = await res.arrayBuffer();
-        buffer = Buffer.from(ab);
-      } else {
-        console.warn('[questionPaper] PDF URL fetch failed:', res.status, res.statusText);
-      }
+      buffer = await fetchUrlWithLimits(safeUrl.toString());
     } catch (err) {
       console.warn('[questionPaper] PDF URL fetch error:', (err as Error).message);
+      throw err instanceof Error ? err : new Error('Failed to fetch source PDF URL.');
     }
   }
 
@@ -340,8 +350,12 @@ export async function generateQuestionPaper(input: GenerateInput): Promise<Gener
   const model = (process.env.QUESTION_PAPER_MODEL ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
   const openai = new OpenAI({ apiKey: openaiKey });
 
+  if (!input.userId) {
+    throw new Error('Authenticated userId is required to generate a question paper.');
+  }
+
   const sourceLimit = input.sourceCharLimit ?? DEFAULT_SOURCE_LIMIT;
-  const sourceText = await extractSourceText(input.source, sourceLimit);
+  const sourceText = await extractSourceText(input.source, sourceLimit, input.userId);
 
   const sourceSection =
     sourceText.length > 0

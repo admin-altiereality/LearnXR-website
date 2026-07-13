@@ -460,16 +460,26 @@ router.post('/generate-question-paper', async (req, res) => {
         }
       : { type: 'none' };
 
+    const userId = (req as any).user?.uid as string | undefined;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required.' });
+    }
+
     const result = await runQuestionPaperGeneration({
       source: safeSource,
       blueprint,
+      userId,
     });
 
     return res.json({ success: true, data: result });
   } catch (error: unknown) {
     console.error('Generate question paper error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return res.status(500).json({
+    const isClientError =
+      /not owned|not allowed|Invalid PDF|must use HTTPS|maximum allowed|Authentication required/i.test(
+        message,
+      );
+    return res.status(isClientError ? 400 : 500).json({
       success: false,
       error: message,
       message,

@@ -7,15 +7,25 @@ import { Router } from 'express';
 import * as admin from 'firebase-admin';
 import { initializeServices, razorpay } from '../utils/services';
 import { getSecret } from '../utils/config';
+import { verifyRazorpayPaymentSignature } from '../utils/razorpaySignature';
 
 const router = Router();
 
 router.post('/create-order', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
-  const { amount, currency = 'INR', receipt, notes, userId } = req.body;
+  const authUid = (req as any).user?.uid as string | undefined;
+  if (!authUid) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+      requestId,
+    });
+  }
+
+  const { amount, currency = 'INR', receipt, notes } = req.body;
   
   try {
-    console.log(`[${requestId}] Creating payment order:`, { amount, currency, userId });
+    console.log(`[${requestId}] Creating payment order:`, { amount, currency, userId: authUid });
     
     initializeServices();
     
@@ -31,7 +41,7 @@ router.post('/create-order', async (req: Request, res: Response) => {
       amount: amount,
       currency,
       receipt,
-      notes: { ...notes, userId }
+      notes: { ...notes, userId: authUid }
     };
     
     const order = await razorpay.orders.create(options);
@@ -39,7 +49,7 @@ router.post('/create-order', async (req: Request, res: Response) => {
     const db = admin.firestore();
     await db.collection('orders').doc(order.id).set({
       ...order,
-      userId: userId || (req as any).user?.uid,
+      userId: authUid,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       status: 'created'
     });
@@ -89,14 +99,7 @@ router.post('/verify', async (req: Request, res: Response) => {
       });
     }
     
-    // Verify signature
-    const crypto = require('crypto');
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-    
-    if (expectedSignature !== razorpay_signature) {
+    if (!verifyRazorpayPaymentSignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)) {
       console.error(`[${requestId}] Signature mismatch`);
       return res.status(400).json({
         success: false,
