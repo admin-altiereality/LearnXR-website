@@ -1,11 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { Link } from 'react-router-dom';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
+import { learnXRFontStyle } from '../Components/LearnXRTypography';
 import { 
   FaSchool, 
   FaUsers, 
@@ -24,8 +23,6 @@ import atmosphereVertexShader from '../shaders/atmosphereVertex.glsl?raw';
 import atmosphereFragmentShader from '../shaders/atmosphereFragment.glsl?raw';
 
 const School = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
   const canvasRef = useRef(null);
   const mainRef = useRef(null);
   const cursorRef = useRef(null);
@@ -171,10 +168,6 @@ const School = () => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  const handleLogin = () => {
-    navigate('/login');
-  };
-
   const handleContact = () => {
     window.location.href = 'mailto:admin@altiereality.com?subject=LearnXR Labs Inquiry';
   };
@@ -198,21 +191,7 @@ const School = () => {
       >
         {/* Hero Section */}
         <div className="w-full h-screen relative flex items-center justify-center">
-          <div className="h-[100vmin] z-10 flex flex-col relative items-center justify-between w-full">
-            <nav className="h-[100px] w-full flex items-center justify-between p-16 z-0">
-              <Link to="/" className="text-white text-2xl font-semibold hover:text-purple-400 transition-colors" style={learnXRFontStyle}>
-                <span className="text-white">Learn</span>
-                <span className="text-primary">XR</span>
-                <TrademarkSymbol className="ml-1" />
-              </Link>
-              <button
-                onClick={handleLogin}
-                className="px-6 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors text-lg"
-              >
-                Login
-              </button>
-            </nav>
-
+          <div className="h-[100vmin] z-10 flex flex-col relative items-center justify-center w-full">
             <div className="flex flex-col items-center justify-center text-center px-8 relative w-full max-w-5xl">
               <motion.h1
                 className="text-white text-[8rem] tracking-[0.6rem] leading-none mb-6"
@@ -223,7 +202,6 @@ const School = () => {
               >
                 <span className="text-white">Learn</span>
                 <span className="text-primary">XR</span>
-                <TrademarkSymbol className="ml-2" />
                 <span className="text-white text-4xl ml-4">Labs</span>
               </motion.h1>
               <motion.h2
@@ -265,7 +243,7 @@ const School = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.6 }}
             >
-              What's Included in <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span> Labs
+              What's Included in <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span></span> Labs
             </motion.h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
               {labFeatures.map((feature, index) => (
@@ -294,7 +272,7 @@ const School = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            Why Schools Choose <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span> Labs
+            Why Schools Choose <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span></span> Labs
           </motion.h2>
           <motion.p
             className="text-white/70 text-xl mb-12 text-center max-w-2xl"
@@ -344,7 +322,7 @@ const School = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.2 }}
             >
-              Join leading educational institutions that are revolutionizing learning with <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span> Labs. Contact us today to set up your VR learning lab.
+              Join leading educational institutions that are revolutionizing learning with <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span></span> Labs. Contact us today to set up your VR learning lab.
             </motion.p>
             <motion.div
               className="flex gap-4 justify-center flex-wrap"

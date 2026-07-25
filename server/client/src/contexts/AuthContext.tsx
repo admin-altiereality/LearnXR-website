@@ -34,6 +34,22 @@ export interface ModalContextType {
 // Re-export types from rbac for convenience
 export type { ApprovalStatus, UserProfile, UserRole };
 
+async function syncRoleClaimsForCurrentUser(): Promise<void> {
+  if (!auth?.currentUser) return;
+  try {
+    const token = await auth.currentUser.getIdToken();
+    const response = await fetch(`${getApiBaseUrl()}/user/sync-claims`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.ok) {
+      await auth.currentUser.getIdToken(true);
+    }
+  } catch {
+    // Non-blocking; storage RBAC falls back until claims sync succeeds.
+  }
+}
+
 interface AuthContextType {
   user: FirebaseUser | null;
   profile: UserProfile | null;
@@ -245,6 +261,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 demoLocation: data.demoLocation,
               };
               setProfile(profileData);
+              void syncRoleClaimsForCurrentUser();
             } else {
               // New user - profile will be created during signup
               setProfile(null);
@@ -318,7 +335,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return unsubscribe;
   }, [user]);
 
-  const signup = async (email: string, password: string, name: string, role: UserRole = 'student') => {
+  const signup = async (email: string, password: string, name: string, _role: UserRole = 'student') => {
     if (!auth) {
       throw new Error('Authentication service is not available');
     }
@@ -330,6 +347,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const now = new Date().toISOString();
       
       // Create user document with role in main users collection
+      const role: UserRole = 'student';
       const userData = {
         name,
         displayName: name,

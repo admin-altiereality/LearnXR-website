@@ -8,18 +8,18 @@ import {
   getSkyboxStylesLegacy,
   generateSkyboxLegacy
 } from '../controllers/skybox.controller';
+import { verifyFirebaseToken } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Modern API endpoints
 router.get('/styles', getSkyboxStyles);
+router.get('/health', healthCheck);
+router.get('/getSkyboxStyles', getSkyboxStylesLegacy);
+
+router.use(verifyFirebaseToken);
 router.post('/generate', generateSkybox);
 router.get('/status/:generationId', getGenerationStatus);
-router.get('/health', healthCheck);
 router.delete('/cache', clearCache);
-
-// Legacy endpoints for backward compatibility
-router.get('/getSkyboxStyles', getSkyboxStylesLegacy);
 router.post('/generateSkybox', generateSkyboxLegacy);
 
 export default router; 

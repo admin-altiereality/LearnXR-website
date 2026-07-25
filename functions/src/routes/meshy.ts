@@ -260,7 +260,7 @@ router.post('/regeneration/jobs/:jobId/retry-failed', validateFullAccess, requir
  * POST /meshy/generate
  * Requires FULL scope API key
  */
-router.post('/generate', validateFullAccess, async (req: Request, res: Response) => {
+router.post('/generate', validateFullAccess, requireContentEditor, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {

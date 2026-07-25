@@ -1,8 +1,8 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* LearnXR design system – shadcn-first, homogeneous with sidebar.
+/* LearnXR design system â€“ shadcn-first, homogeneous with sidebar.
    Page background, card, border, and text use the same palette as the sidebar for a unified look. */
 @layer base {
   :root {
@@ -35,7 +35,7 @@
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
     --sidebar: hsl(240 5.9% 10%);
-    /* Sidebar (dark) – same as --background for homogeneity */
+    /* Sidebar (dark) â€“ same as --background for homogeneity */
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 263 70% 50%;
@@ -78,7 +78,7 @@
     --border: oklch(0.929 0.013 255.508);
     --input: oklch(0.929 0.013 255.508);
     --ring: oklch(0.45 0.22 285);
-    /* Charts (light) – slightly darker for contrast on white backgrounds */
+    /* Charts (light) â€“ slightly darker for contrast on white backgrounds */
     --chart-1: var(--primary);
     --chart-2: oklch(0.62 0.17 62.48);
     --chart-3: oklch(0.64 0.18 70.08);
@@ -345,276 +345,35 @@ body {
   font-family: 'Bricolage Grotesque', system-ui, sans-serif;
 }
 
-/* Improved contrast for white text on dark backgrounds */
 .text-white {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   letter-spacing: 0.02em;
 }
 
-/* Better line height for readability */
 p, .text-1xl, .text-xl, .text-2xl {
   line-height: 1.7;
 }
 
-/* Improved font weight for better visibility */
 h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
   letter-spacing: 0.01em;
 }
 
-#canvasContainer {
-  z-index: 0;
-}
-
-/* Removed unused panel/container styles - Features section removed */
-
-/* Landing: single scroll context – lock document when landing is active */
+/* Landing: single scroll context */
 html.landing-page-active,
 body.landing-page-active {
   overflow: hidden;
   height: 100%;
 }
 
-/* Landing: prevent horizontal overflow globally */
-#main2,
-#main2 #main,
-#main2 #canvasContainer {
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-#main2 img {
-  max-width: 100%;
-  height: auto;
-}
-
-.page3-slider-container {
-  height: 42vmin;
-  max-height: 380px;
-  width: 100%;
-  max-width: 900px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  user-select: none;
-  position: relative;
-  margin-top: 1rem;
-  padding: 0 0.25rem;
-}
-
-.left-arrow,
-.right-arrow {
+html.landing-page-active .landing-root,
+body.landing-page-active .landing-root {
   height: 100%;
-  width: 10%;
-  min-width: 44px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  cursor: pointer;
-  z-index: 10;
-  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
-
-.page3-slider-content {
-  height: 100%;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-direction: row;
-  overflow: hidden;
-  position: relative;
-}
-
-.page3-slider-content .slide {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 78%;
-  max-width: 640px;
-  height: 100%;
-  opacity: 0;
-  transition: opacity 0.5s ease-in-out;
-  border-radius: 20px;
-  overflow: hidden;
-}
-
-.page3-slider-content .slide.active {
-  opacity: 1;
-  z-index: 5;
-}
-
-.media {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 25px;
-  overflow: hidden;
-}
-
-.media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.card-sections {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
-  padding: 2rem;
-  z-index: 2;
-}
-
-.lower-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.card-caption {
-  color: white;
-  font-weight: bold;
-  margin-bottom: 1rem;
-}
-
-.card-button {
-  background: rgba(0, 0, 0, 0.3);
-  color: white;
-  padding: 0.5rem 1.5rem;
-  border-radius: 20px;
-  display: inline-block;
-  margin-top: 1rem;
-  cursor: pointer;
-  border: 0.5px solid #fff;
-  width: fit-content;
-  text-align: center;
-}
-
-#main {
-  overflow-y: scroll;
-  scroll-behavior: smooth;
-}
-
-#vr-img2 {
-  animation: rotate 5s linear infinite;
-}
-
-@keyframes rotate {
-  0% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(10deg);
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-
-#page5-left img {
-  animation: rotate2 5s linear infinite;
-}
-
-@keyframes rotate2 {
-  0% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: translateY(3vh);
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-
-/* ========== Landing page: mobile-first responsiveness ========== */
-@media (max-width: 480px) {
-  #page1-content h1 {
-    font-size: 2rem !important;
-    letter-spacing: 0.02em !important;
-  }
-  #page1-content .hover-cont,
-  #page1-content a[href="/individual"],
-  #page1-content a[href="/school"] {
-    font-size: 0.875rem !important;
-  }
-  .page3-slider-content .slide {
-    width: 94%;
-    border-radius: 16px;
-  }
-  .page3-slider-container {
-    height: 38vmin;
-    max-height: 280px;
-    margin-top: 0.75rem;
-  }
-  .card-sections {
-    padding: 0.75rem 1rem;
-  }
-  .card-caption {
-    font-size: 1rem !important;
-    margin-bottom: 0.5rem;
-  }
-  #page2-para h1,
-  #page2 #lower h4 {
-    word-break: break-word;
-    overflow-wrap: break-word;
-  }
-  #footer h1, #footer h3 {
-    font-size: 1.125rem !important;
-  }
-}
-
-@media (max-width: 640px) {
-  #page1-content h1 {
-    font-size: 2.5rem !important;
-    letter-spacing: 0.03em !important;
-  }
-  .page3-slider-content .slide {
-    width: 92%;
-    border-radius: 20px;
-  }
-  .page3-slider-container {
-    height: 40vmin;
-    max-height: 320px;
-  }
-  .left-arrow,
-  .right-arrow {
-    min-width: 44px;
-    min-height: 44px;
-    width: 12%;
-  }
-  .card-sections {
-    padding: 1rem;
-  }
-}
-
-@media (min-width: 641px) and (max-width: 900px) {
-  #page1-content h1 {
-    font-size: 4rem !important;
-  }
-  .page3-slider-content .slide {
-    width: 88%;
-  }
-}
-
-/* Safe area for notched devices */
-@supports (padding: env(safe-area-inset-top)) {
-  #main2 {
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-  }
-  #main2 #main {
-    padding-left: 0;
-    padding-right: 0;
-  }
-}
-
-
 
 @layer base {
   * {
@@ -624,3 +383,4 @@ body.landing-page-active {
     @apply bg-background text-foreground;
   }
 }
+

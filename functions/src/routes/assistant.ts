@@ -9,8 +9,10 @@ import OpenAIAssistantService from '../services/openaiAssistantService';
 import TextToSpeechService from '../services/textToSpeechService';
 import LipSyncService from '../services/lipSyncService';
 import { validateReadAccess, validateFullAccess } from '../middleware/validateIn3dApiKey';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
+const requireContentEditor = requireRole(['admin', 'superadmin', 'associate']);
 const COLLECTION_CHAPTERS = 'curriculum_chapters';
 const COLLECTION_CHAPTER_TTS = 'chapter_tts';
 const TTS_STORAGE_PREFIX = 'chapter_tts';
@@ -277,7 +279,7 @@ router.get('/tts/generate', (req: Request, res: Response): void => {
  * POST /assistant/tts/regenerate-topic
  * Body: { chapterId, topicId, language: 'en'|'hi', scripts: { intro, explanation, outro } }
  */
-router.post('/tts/regenerate-topic', async (req: Request, res: Response): Promise<void> => {
+router.post('/tts/regenerate-topic', validateFullAccess, requireContentEditor, async (req: Request, res: Response): Promise<void> => {
   const requestId = (req as any).requestId;
   try {
     const { chapterId, topicId, language, scripts, regenerateOnly, draftOnly } = req.body as {

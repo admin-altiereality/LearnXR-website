@@ -4,8 +4,11 @@ import OpenAIAssistantService from '../services/openaiAssistantService';
 import TextToSpeechService from '../services/textToSpeechService';
 import LipSyncService from '../services/lipSyncService';
 import { db, storage } from '../config/firebase-admin';
+import { verifyFirebaseToken } from '../middleware/authMiddleware';
 
 const router = express.Router();
+
+router.use(verifyFirebaseToken);
 
 const COLLECTION_CHAPTERS = 'curriculum_chapters';
 const COLLECTION_CHAPTER_TTS = 'chapter_tts';

@@ -17,6 +17,7 @@ import { useSearchParams } from 'react-router-dom';
 import { signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { resolveAllowedApiBase } from '../utils/apiBaseAllowlist';
 import MainSection from '../Components/MainSection';
 
 type AuthStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -37,12 +38,7 @@ export default function MainStandalone() {
     }
 
     const urlApiBase = searchParams.get('apiBase')?.trim();
-    // When served from same-origin hosting (learnxr-evoneuralai.web.app) with a
-    // /api/** function rewrite, use the relative path '/api' to keep requests
-    // same-origin and avoid ORB in Android WebView.
-    const base = urlApiBase
-      ? urlApiBase.replace(/\/$/, '')
-      : '/api';
+    const base = resolveAllowedApiBase(urlApiBase);
     if (typeof window !== 'undefined') {
       (window as Window & { __LEARNXR_API_BASE_URL?: string }).__LEARNXR_API_BASE_URL = base;
     }

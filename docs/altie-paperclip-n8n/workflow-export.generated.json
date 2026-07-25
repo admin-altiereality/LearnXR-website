@@ -1,0 +1,161 @@
+{
+  "exportedAt": "2026-03-21T12:00:37.680Z",
+  "source": "https://n8n.altiereality.com",
+  "count": 22,
+  "workflows": [
+    {
+      "workflow_id": "0Mwe1RC5d73VtyTS",
+      "name": "LearnXR - Website Lead Intake v2",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Webhook"
+    },
+    {
+      "workflow_id": "1dbduBYAtiOmiiNc",
+      "name": "NOT tHIS ONE",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "other"
+    },
+    {
+      "workflow_id": "3fOkF1NqSTjBNPYI",
+      "name": "Demo: RAG in n8n",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Form"
+    },
+    {
+      "workflow_id": "8016ziIiTuncugmx",
+      "name": "PDF TO VR LESSON",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Webhook, Schedule"
+    },
+    {
+      "workflow_id": "9A6giGXIHjFIoxSx",
+      "name": "My workflow 3",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Form"
+    },
+    {
+      "workflow_id": "CIl23CUPd8TOKJ8C",
+      "name": "Email sender and verifier",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Manual"
+    },
+    {
+      "workflow_id": "Cpz14ZdtOOzAQvL9",
+      "name": "Copied UI interface pdf to vr lesson",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Webhook"
+    },
+    {
+      "workflow_id": "Ec0AyzI3UQ0Ah1F0",
+      "name": "reply detection",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Manual"
+    },
+    {
+      "workflow_id": "ElTX1Nzu2vkS9N38",
+      "name": "✨🤖Automate Multi-Platform Social Media Content Creation with AI",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Form"
+    },
+    {
+      "workflow_id": "FBF5c7bnrOgpToiN",
+      "name": "My workflow 2",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Webhook"
+    },
+    {
+      "workflow_id": "LjnY0nmY8hNTDY6p",
+      "name": "LearnXR - Website Lead Intake",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Webhook"
+    },
+    {
+      "workflow_id": "M2JtKrQffsQnNOYR",
+      "name": "UI INTERFACE PDF TO VR LESSON",
+      "active": true,
+      "tags": "",
+      "inferred_trigger": "Webhook"
+    },
+    {
+      "workflow_id": "NOOQPSvF8oXHkqxU",
+      "name": "My workflow",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Webhook"
+    },
+    {
+      "workflow_id": "Yc4aMmnkQyfs1NN0",
+      "name": "School data fetching",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Manual"
+    },
+    {
+      "workflow_id": "YsYQLl9bJxe3c1w2",
+      "name": "Personal_Assistant",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Schedule"
+    },
+    {
+      "workflow_id": "bJQC23r5at0P8qdA",
+      "name": "Data Scrap + Email + Whatsapp Sales Funnel",
+      "active": true,
+      "tags": "",
+      "inferred_trigger": "Webhook, Schedule, Manual"
+    },
+    {
+      "workflow_id": "bNA6y0XuqzB9hksy",
+      "name": "1 week reminder mailer",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Schedule"
+    },
+    {
+      "workflow_id": "l0OonwBFn6Gwx2FM",
+      "name": "AI WhatsApp support with human handoff using Gemini, Twilio, and Supabase RAG 2",
+      "active": true,
+      "tags": "",
+      "inferred_trigger": "other"
+    },
+    {
+      "workflow_id": "lH0g9rulfO8o1FNQ",
+      "name": "Fetcher, verifier mailer and reply detecter",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Schedule, Manual"
+    },
+    {
+      "workflow_id": "lp1UhrjHy5cZCnHo",
+      "name": "My workflow 4",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "other"
+    },
+    {
+      "workflow_id": "p9urLB4E4dnBlvWf",
+      "name": "Sentiment reply of whatsapp Message",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "other"
+    },
+    {
+      "workflow_id": "xMZyNcduxBf3qTqA",
+      "name": "VR/AR Education News to Social Media",
+      "active": false,
+      "tags": "",
+      "inferred_trigger": "Form"
+    }
+  ]
+}

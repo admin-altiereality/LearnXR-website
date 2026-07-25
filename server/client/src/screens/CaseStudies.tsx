@@ -12,7 +12,6 @@ import WorldAdoptionMap from '../Components/casestudies/WorldAdoptionMap';
 import ReportDownloadCard from '../Components/casestudies/ReportDownloadCard';
 import ReportLeadGateModal from '../Components/casestudies/ReportLeadGateModal';
 import ImpactFramework from '../Components/casestudies/ImpactFramework';
-import LogoHeader from '../Components/LogoHeader';
 import SectionErrorBoundary from '../Components/SectionErrorBoundary';
 import { INDIA_STATS, INDIA_CASE_STUDIES } from '../data/caseStudies/india';
 import { GLOBAL_STATS } from '../data/caseStudies/global';
@@ -66,8 +65,6 @@ const CaseStudies = () => {
         description="Evidence-based research on XR in education across India and the world — verified statistics, interactive maps, and downloadable reports from LearnXR."
         path="/case-studies"
       />
-
-      <LogoHeader />
 
       <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:px-10">
         {/* Hero */}

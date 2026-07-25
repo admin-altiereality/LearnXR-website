@@ -11,7 +11,6 @@ import GlobalReachMap from '../Components/partners/GlobalReachMap';
 import PartnerForm from '../Components/partners/PartnerForm';
 import SectionErrorBoundary from '../Components/SectionErrorBoundary';
 import { PROGRAM_HIGHLIGHTS } from '../data/partners';
-import LogoHeader from '../Components/LogoHeader';
 
 const SectionHeading = ({
   eyebrow,
@@ -61,8 +60,6 @@ const ChannelPartners = () => {
         description="Grow with LearnXR. Join our global channel partner program — attractive margins, territory exclusivity, training, and marketing support for immersive education."
         path="/channel-partners"
       />
-
-      <LogoHeader />
 
       <div className="relative z-10 mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:px-10">
         {/* Hero */}

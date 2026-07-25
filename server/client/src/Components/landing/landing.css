@@ -1,0 +1,39 @@
+.landing-root {
+  isolation: isolate;
+}
+
+.landing-main {
+  scroll-behavior: smooth;
+}
+
+.landing-marquee {
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+
+.landing-marquee-track {
+  animation: landing-marquee-scroll linear infinite;
+  will-change: transform;
+}
+
+@keyframes landing-marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-marquee-track {
+    animation: none;
+  }
+}
+
+@supports (padding: env(safe-area-inset-top)) {
+  .landing-root {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}

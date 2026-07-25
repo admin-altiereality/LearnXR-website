@@ -1,0 +1,10 @@
+{
+  "learnxr-website-lead": {
+    "description": "LearnXR marketing lead capture (N8N_LEAD_WEBHOOK_PATH). Align with workflow LjnY0nmY8hNTDY6p or 0Mwe1RC5d73VtyTS in n8n.",
+    "webhookPath": "learnxr-website-lead"
+  },
+  "ui-pdf-to-vr-lesson": {
+    "description": "n8nUIinterface PDF→VR lesson (VITE_N8N_WORKFLOW_ID M2JtKrQffsQnNOYR, webhook path from VITE_N8N_WEBHOOK_URL)",
+    "webhookPath": "b8608c3e"
+  }
+}

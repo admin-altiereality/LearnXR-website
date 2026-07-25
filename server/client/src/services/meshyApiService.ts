@@ -281,31 +281,11 @@ export class MeshyApiService {
   private timeout: number = 30000;
   
   constructor() {
-    this.apiKey = window.VITE_ENV.VITE_MESHY_API_KEY || '';
+    this.apiKey = '';
     this.baseUrl = window.VITE_ENV.VITE_MESHY_API_BASE_URL || 'https://api.meshy.ai/openapi/v2';
     this.proxyBaseUrl = getApiBaseUrl();
-    
-    // Check if we're in a preview channel (preview channels typically don't have env vars)
-    const isPreviewChannel = window.location.hostname.includes('--') || 
-                            window.location.hostname.includes('web.app');
-    
-    // Use proxy if:
-    // 1. API key is not available
-    // 2. Explicitly configured to use proxy
-    // 3. We're in a preview channel (safer to use proxy)
-    this.useProxy = !this.apiKey || 
-                    window.VITE_ENV.VITE_USE_MESHY_PROXY === 'true' ||
-                    (isPreviewChannel && !window.VITE_ENV.VITE_MESHY_API_KEY);
-    
-    if (!this.apiKey && !this.useProxy) {
-      console.warn('Meshy API key not configured. Will attempt to use Firebase proxy.');
-    }
-    
-    if (this.useProxy) {
-      console.log('🔧 Meshy service using Firebase proxy:', this.proxyBaseUrl);
-    } else {
-      console.log('🔧 Meshy service using direct API with client key');
-    }
+    this.useProxy = true;
+    console.log('🔧 Meshy service using Firebase proxy:', this.proxyBaseUrl);
   }
   
   /**
@@ -1171,24 +1151,6 @@ export class MeshyApiService {
         
         return await response.blob();
       },
-      
-      // Strategy 3: Using a CORS proxy service (last resort)
-      async () => {
-        console.log('🔄 Trying CORS proxy service...');
-        const corsProxyUrl = `https://cors-anywhere.herokuapp.com/${assetUrl}`;
-        const response = await fetch(corsProxyUrl, {
-          method: 'GET',
-          headers: {
-            'Origin': window.location.origin,
-          },
-        });
-        
-        if (!response.ok) {
-          throw new Error(`CORS proxy download failed: ${response.status} ${response.statusText}`);
-        }
-        
-        return await response.blob();
-      }
     ];
 
     let lastError: Error | null = null;

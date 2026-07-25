@@ -17,6 +17,7 @@ import {
   getUserSubscription,
   resetUsageForNewPeriod
 } from '../services/subscriptionService';
+import { verifyFirebaseToken } from '../middleware/authMiddleware';
 
 dotenv.config();
 
@@ -31,19 +32,15 @@ const razorpay: any = null;
 // Check if Paddle credentials are available
 const hasPaddleCredentials = process.env.PADDLE_API_KEY && process.env.PADDLE_WEBHOOK_SECRET;
 
-// Debug middleware for payment routes
+// Debug middleware for payment routes (development only)
 router.use((req, res, next) => {
-  console.log('Payment route received request:', {
-    method: req.method,
-    path: req.path,
-    originalUrl: req.originalUrl,
-    body: req.body,
-    headers: {
-      'content-type': req.headers['content-type'],
-      'x-razorpay-signature': req.headers['x-razorpay-signature'] ? 'present' : 'absent',
-      'paddle-signature': req.headers['paddle-signature'] ? 'present' : 'absent'
-    }
-  });
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Payment route received request:', {
+      method: req.method,
+      path: req.path,
+      originalUrl: req.originalUrl,
+    });
+  }
   next();
 });
 
@@ -430,7 +427,7 @@ router.post('/razorpay/webhook', express.raw({ type: 'application/json' }), asyn
  * Create or get Paddle customer
  * POST /payment/paddle/customer
  */
-router.post('/paddle/customer', async (req, res) => {
+router.post('/paddle/customer', verifyFirebaseToken, async (req, res) => {
   try {
     if (!hasPaddleCredentials) {
       return res.status(503).json({
@@ -439,9 +436,9 @@ router.post('/paddle/customer', async (req, res) => {
       });
     }
 
-    const { email, userId } = req.body;
+    const userId = req.user!.uid;
+    const { email } = req.body;
 
-    // Check if user already has a Paddle customer ID
     const subscription = await getUserSubscription(userId);
     if (subscription?.providerCustomerId && subscription?.provider === 'paddle') {
       return res.json({
@@ -495,7 +492,7 @@ router.post('/paddle/customer', async (req, res) => {
  * Get Paddle customer portal URL
  * POST /payment/paddle/portal
  */
-router.post('/paddle/portal', async (req, res) => {
+router.post('/paddle/portal', verifyFirebaseToken, async (req, res) => {
   try {
     if (!hasPaddleCredentials) {
       return res.status(503).json({
@@ -504,9 +501,16 @@ router.post('/paddle/portal', async (req, res) => {
       });
     }
 
-    const { customerId } = req.body;
+    const userId = req.user!.uid;
+    const subscription = await getUserSubscription(userId);
+    const customerId = subscription?.providerCustomerId;
+    if (!customerId || subscription?.provider !== 'paddle') {
+      return res.status(404).json({
+        success: false,
+        error: 'Paddle customer not found for this user',
+      });
+    }
 
-    // Get portal session from Paddle
     const paddleResponse = await fetch('https://api.paddle.com/customers/' + customerId + '/portal-sessions', {
       method: 'POST',
       headers: {
@@ -539,7 +543,7 @@ router.post('/paddle/portal', async (req, res) => {
  * Cancel Paddle subscription
  * POST /payment/paddle/cancel
  */
-router.post('/paddle/cancel', async (req, res) => {
+router.post('/paddle/cancel', verifyFirebaseToken, async (req, res) => {
   try {
     if (!hasPaddleCredentials) {
       return res.status(503).json({
@@ -548,7 +552,17 @@ router.post('/paddle/cancel', async (req, res) => {
       });
     }
 
-    const { subscriptionId, effectiveFrom = 'next_billing_period' } = req.body;
+    const userId = req.user!.uid;
+    const subscription = await getUserSubscription(userId);
+    const subscriptionId = subscription?.providerSubscriptionId;
+    if (!subscriptionId || subscription?.provider !== 'paddle') {
+      return res.status(404).json({
+        success: false,
+        error: 'Paddle subscription not found for this user',
+      });
+    }
+
+    const { effectiveFrom = 'next_billing_period' } = req.body;
 
     const paddleResponse = await fetch(`https://api.paddle.com/subscriptions/${subscriptionId}/cancel`, {
       method: 'POST',

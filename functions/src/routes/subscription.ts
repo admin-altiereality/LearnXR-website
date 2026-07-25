@@ -8,6 +8,8 @@ import { Router } from 'express';
 import * as admin from 'firebase-admin';
 import { initializeServices, razorpay } from '../utils/services';
 import { getSecret } from '../utils/config';
+import { verifyRazorpayPaymentSignature } from '../utils/razorpaySignature';
+import { requireRole } from '../middleware/rbac';
 
 const router = Router();
 
@@ -15,7 +17,7 @@ const router = Router();
  * GET /subscription/verify-credentials
  * Verify Razorpay credentials match dashboard (for debugging)
  */
-router.get('/verify-credentials', async (req: Request, res: Response) => {
+router.get('/verify-credentials', requireRole(['superadmin']), async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {
@@ -145,8 +147,17 @@ router.get('/verify-credentials', async (req: Request, res: Response) => {
  */
 router.post('/create', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
+  const authenticatedUid = (req as any).user?.uid as string | undefined;
+  if (!authenticatedUid) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+      requestId,
+    });
+  }
+
   const { 
-    userId, 
+    userId: bodyUserId,
     planId,           // Razorpay plan ID
     planName, 
     billingCycle, 
@@ -159,6 +170,15 @@ router.post('/create', async (req: Request, res: Response) => {
     orderId,
     paymentId
   } = req.body;
+
+  const userId = authenticatedUid;
+  if (bodyUserId && bodyUserId !== authenticatedUid) {
+    return res.status(403).json({
+      success: false,
+      error: 'Cannot create subscription for another user',
+      requestId,
+    });
+  }
   
   try {
     console.log(`[${requestId}] ========== SUBSCRIPTION CREATE REQUEST ==========`);
@@ -175,15 +195,6 @@ router.post('/create', async (req: Request, res: Response) => {
     });
     
     // Validate required fields
-    if (!userId) {
-      console.error(`[${requestId}] ❌ Missing userId`);
-      return res.status(400).json({
-        success: false,
-        error: 'userId is required',
-        requestId
-      });
-    }
-    
     if (!planId) {
       console.error(`[${requestId}] ❌ Missing planId`);
       return res.status(400).json({
@@ -241,6 +252,23 @@ router.post('/create', async (req: Request, res: Response) => {
       const subscriptionDoc = await subscriptionRef.get();
       
       if (subscriptionDoc.exists) {
+        const existing = subscriptionDoc.data();
+        if (existing?.userId && existing.userId !== userId) {
+          return res.status(403).json({
+            success: false,
+            error: 'Subscription does not belong to this user',
+            requestId,
+          });
+        }
+
+        if (orderId && paymentId && !verifyRazorpayPaymentSignature(orderId, paymentId, razorpaySignature)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid payment signature',
+            requestId,
+          });
+        }
+
         await subscriptionRef.update({
           userId,
           planId: planId,
@@ -265,6 +293,14 @@ router.post('/create', async (req: Request, res: Response) => {
     
     // SCENARIO 2: Create subscription from verified one-time payment
     if (orderId && paymentId) {
+      if (!verifyRazorpayPaymentSignature(orderId, paymentId, razorpaySignature)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid payment signature',
+          requestId,
+        });
+      }
+
       console.log(`[${requestId}] Creating subscription from verified payment`);
       const db = admin.firestore();
       
@@ -519,17 +555,35 @@ router.post('/create', async (req: Request, res: Response) => {
  */
 router.get('/:subscriptionId', async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
+  const authenticatedUid = (req as any).user?.uid as string | undefined;
   const { subscriptionId } = req.params;
+
+  if (!authenticatedUid) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+      requestId,
+    });
+  }
   
   try {
-    console.log(`[${requestId}] Fetching subscription: ${subscriptionId}`);
+    const db = admin.firestore();
+    const localDoc = await db.collection('subscriptions').doc(subscriptionId).get();
+    if (localDoc.exists && localDoc.data()?.userId !== authenticatedUid) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        requestId,
+      });
+    }
+
     initializeServices();
     
     if (!razorpay) {
       return res.status(500).json({
         success: false,
         error: 'Razorpay not configured',
-        requestId
+        requestId,
       });
     }
     
@@ -538,7 +592,7 @@ router.get('/:subscriptionId', async (req: Request, res: Response) => {
     return res.json({
       success: true,
       data: subscription,
-      requestId
+      requestId,
     });
   } catch (error: any) {
     console.error(`[${requestId}] Error fetching subscription:`, {

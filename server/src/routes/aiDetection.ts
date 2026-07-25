@@ -1,12 +1,11 @@
 import { Router } from 'express';
 import { detectPromptType, extractAssets } from '../controllers/aiDetection.controller';
+import { verifyFirebaseToken } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// AI-based prompt detection
+router.use(verifyFirebaseToken);
 router.post('/detect', detectPromptType);
-
-// Extract ONLY 3D asset phrases
 router.post('/extract-assets', extractAssets);
 
 export default router;

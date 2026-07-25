@@ -16,6 +16,7 @@ import { useSearchParams } from 'react-router-dom';
 import { signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { resolveAllowedApiBase } from '../utils/apiBaseAllowlist';
 import MainSection from '../Components/MainSection';
 
 type AuthStatus = 'idle' | 'loading' | 'waiting_token' | 'ready' | 'error';
@@ -58,9 +59,7 @@ export default function StudioStandalone() {
     setErrorMessage(null);
 
     const urlApiBase = searchParams.get('apiBase')?.trim();
-    const base = urlApiBase
-      ? urlApiBase.replace(/\/$/, '')
-      : getApiBaseUrl().replace(/\/$/, '');
+    const base = resolveAllowedApiBase(urlApiBase || getApiBaseUrl());
 
     if (urlApiBase && typeof window !== 'undefined') {
       (window as Window & { __LEARNXR_API_BASE_URL?: string }).__LEARNXR_API_BASE_URL = base;

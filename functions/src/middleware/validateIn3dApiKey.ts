@@ -8,6 +8,9 @@ import { Request, Response, NextFunction } from 'express';
 import * as admin from 'firebase-admin';
 import { validateApiKey } from '../services/apiKeyService';
 import { ValidatedApiKeyUser, ApiKeyScope } from '../types/apiKey';
+import { getUserProfile } from './rbac';
+
+const STAFF_ROLES = new Set(['admin', 'superadmin', 'associate']);
 
 // Extend Express Request type
 declare global {
@@ -41,10 +44,20 @@ export function validateIn3dApiKey(options: ValidateApiKeyOptions = {}) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const requestId = (req as any).requestId;
     
-    // If Firebase Auth is allowed and user is already authenticated, skip API key check
+    // Firebase-authenticated users may only bypass API keys for staff roles.
     if (options.allowFirebaseAuth && req.user?.uid) {
-      console.log(`[${requestId}] Using Firebase Auth, skipping API key validation`);
-      return next();
+      const profile = await getUserProfile(req.user.uid);
+      if (profile?.role && STAFF_ROLES.has(profile.role)) {
+        console.log(`[${requestId}] Staff Firebase auth accepted for generation route`);
+        return next();
+      }
+      res.status(403).json({
+        error: 'Forbidden',
+        message: 'Generation endpoints require a staff account or valid API key',
+        code: 403,
+        requestId,
+      });
+      return;
     }
 
     // Extract API key from headers
@@ -177,7 +190,7 @@ export const validateReadAccess = validateIn3dApiKey({
 export const validateFullAccess = validateIn3dApiKey({
   requiredScope: ApiKeyScope.FULL,
   requireCredits: true,
-  allowFirebaseAuth: true
+  allowFirebaseAuth: true,
 });
 
 /**

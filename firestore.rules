@@ -215,7 +215,10 @@ service cloud.firestore {
                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids != null &&
                       resource.data.managed_class_ids.hasAny(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids));
       
-      allow create: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.role == 'student'
+        && (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == null)
+        && !request.resource.data.keys().hasAny(['managed_school_id', 'managed_class_ids', 'school_id']);
       
       // Allow update if:
       // 1. User is updating their own document (but not approvalStatus or role), OR
@@ -227,7 +230,6 @@ service cloud.firestore {
       // 7. School updating approvalStatus for teachers in their school
       allow update: if (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus', 'role'])) || 
                        (isOwner(userId) && request.resource.data.approvalStatus == 'pending' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
-                       (isOwner(userId) && request.resource.data.isGuest == true && request.resource.data.approvalStatus == 'approved' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
                        isSuperadmin() ||
                        (isAdmin() && resource.data.role == 'school') ||
                        // Teacher can approve/reject students in their school (allows school_id update too)
@@ -314,10 +316,14 @@ service cloud.firestore {
         (resource.data.userId == request.auth.uid || isAdmin());
       
       allow create: if request.auth != null && 
-        request.resource.data.userId == request.auth.uid;
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.planId == 'free';
       
-      allow update: if request.auth != null && 
-        (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if request.auth != null && (
+        isAdmin() ||
+        (resource.data.userId == request.auth.uid &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'planId', 'provider', 'paymentId', 'orderId']))
+      );
       
       allow delete: if isAdmin();
     }
@@ -359,7 +365,8 @@ service cloud.firestore {
     
     // System collections - only admins and service accounts
     match /system/{document=**} {
-      allow read, write: if isAdmin() || request.auth.token.firebase.sign_in_provider == 'google.com';
+      allow read: if isAdminOrSuperadmin();
+      allow write: if false;
     }
     
     // Curriculum Chapters collection - public read access, admin/superadmin write access
@@ -551,8 +558,7 @@ service cloud.firestore {
     // Check approval first so we never need user doc (avoids failure for new users without profile yet)
     match /schools/{schoolId} {
       allow read: if isAuthenticated() && (resource.data.approvalStatus == 'approved' || canAccessSchool(schoolId));
-      allow create: if isAdminOrSuperadmin() || 
-        (isAuthenticated() && request.resource.data.createdBy == request.auth.uid);
+      allow create: if isAdminOrSuperadmin();
       allow update: if isAdminOrSuperadmin() || 
         (isAuthenticated() && canAccessSchool(schoolId) && 
          request.resource.data.createdBy == resource.data.createdBy);
@@ -605,11 +611,7 @@ service cloud.firestore {
           resource.data.class_teacher_id == request.auth.uid) &&
          // If updating teacher_ids, must include themselves
          (request.resource.data.teacher_ids == null ||
-          request.resource.data.teacher_ids.hasAny([request.auth.uid]))) ||
-        // Students can update their own student_ids
-        (isAuthenticated() && resource.data.school_id != null && request.resource.data.school_id == resource.data.school_id &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['student_ids', 'updatedAt']) &&
-         request.resource.data.student_ids.hasAny([request.auth.uid]));
+          request.resource.data.teacher_ids.hasAny([request.auth.uid])));
       allow delete: if isAdminOrSuperadmin() || 
         (isAuthenticated() && 
          resource.data.school_id != null && 
@@ -671,7 +673,6 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         resource.data.teacher_uid == request.auth.uid ||
         studentInClass(resource.data.class_id, resource.data.school_id) ||
-        studentSameSchool(resource.data.school_id) ||
         isAdminOrSuperadmin()
       );
       // Teacher (session owner) may update: status, launched_lesson, launched_scene, teacher_view, updated_at only.
@@ -832,7 +833,10 @@ service cloud.firestore {
     match /production_logs/{logId} {
       // Allow create from any client (including unauthenticated) so error-boundary and
       // pre-login errors (e.g. on /login) are captured; read remains admin-only.
-      allow create: if true;
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly(['level', 'message', 'context', 'metadata', 'userId', 'timestamp', 'url', 'userAgent'])
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 5000;
       // Admin and superadmin can read logs (for the admin UI)
       allow read: if isAdminOrSuperadmin();
       // No updates or deletes allowed (logs are immutable)

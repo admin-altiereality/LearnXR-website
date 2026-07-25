@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import * as THREE from 'three';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { learnXRFontStyle, TrademarkSymbol } from '../Components/LearnXRTypography';
+import { learnXRFontStyle } from '../Components/LearnXRTypography';
 import { 
   FaGraduationCap, 
   FaUser, 
@@ -157,10 +157,6 @@ const Individual = () => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  const handleLogin = () => {
-    navigate('/login');
-  };
-
   const handleGetStarted = () => {
     if (user) {
       navigate('/main');
@@ -188,21 +184,7 @@ const Individual = () => {
       >
         {/* Hero Section */}
         <div className="w-full h-screen relative flex items-center justify-center">
-          <div className="h-[100vmin] z-10 flex flex-col relative items-center justify-between w-full">
-            <nav className="h-[100px] w-full flex items-center justify-between p-16 z-0">
-              <Link to="/" className="text-white text-2xl font-semibold hover:text-purple-400 transition-colors" style={learnXRFontStyle}>
-                <span className="text-white">Learn</span>
-                <span className="text-primary">XR</span>
-                <TrademarkSymbol className="ml-1" />
-              </Link>
-              <button
-                onClick={handleLogin}
-                className="px-6 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-medium transition-colors text-lg"
-              >
-                Login
-              </button>
-            </nav>
-
+          <div className="h-[100vmin] z-10 flex flex-col relative items-center justify-center w-full">
             <div className="flex flex-col items-center justify-center text-center px-8 relative w-full max-w-5xl">
               <motion.h1
                 className="text-white text-[8rem] tracking-[0.6rem] leading-none mb-6"
@@ -213,7 +195,6 @@ const Individual = () => {
               >
                 <span className="text-white">Learn</span>
                 <span className="text-primary">XR</span>
-                <TrademarkSymbol className="ml-2" />
               </motion.h1>
               <motion.h2
                 className="text-white text-5xl mb-4 font-medium leading-tight"
@@ -274,7 +255,7 @@ const Individual = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            Why Choose <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span>?
+            Why Choose <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span></span>?
           </motion.h2>
           <motion.p
             className="text-white/70 text-xl mb-12 text-center max-w-2xl"
@@ -324,7 +305,7 @@ const Individual = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.2 }}
             >
-              Join thousands of learners who are already experiencing the future of education with <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span><TrademarkSymbol /></span>.
+              Join thousands of learners who are already experiencing the future of education with <span style={learnXRFontStyle}><span className="text-foreground">Learn</span><span className="text-primary">XR</span></span>.
             </motion.p>
             <motion.button
               onClick={handleGetStarted}

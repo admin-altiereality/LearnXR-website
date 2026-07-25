@@ -2,10 +2,14 @@ import express from 'express';
 import multer from 'multer';
 import { google } from 'googleapis';
 import fs from 'fs';
+import { verifyFirebaseToken } from '../middleware/authMiddleware';
+import { requireStaffRole } from '../middleware/requireStaffRole';
 
 const router = express.Router();
-
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({
+  dest: 'uploads/',
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
 const N8N_API_URL = process.env.N8N_API_URL;
@@ -13,14 +17,16 @@ const N8N_API_KEY = process.env.N8N_API_KEY;
 const SERVICE_ACCOUNT_KEYFILE =
   process.env.GOOGLE_SERVICE_ACCOUNT_KEYFILE || 'service-account.json';
 
+const ALLOWED_UPLOAD_MIME = new Set([
+  'application/pdf',
+  'text/plain',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
 let driveClient: ReturnType<typeof google.drive> | null = null;
 
 function getDriveClient() {
   if (driveClient) return driveClient;
-
-  if (!FOLDER_ID) {
-    console.warn('GOOGLE_DRIVE_FOLDER_ID is not set. /upload endpoint will fail without it.');
-  }
 
   try {
     const auth = new google.auth.GoogleAuth({
@@ -35,6 +41,9 @@ function getDriveClient() {
   return driveClient;
 }
 
+router.use(verifyFirebaseToken);
+router.use(requireStaffRole);
+
 router.get('/', (_req, res) => {
   res.json({ status: 'ok', message: 'n8n proxy is running' });
 });
@@ -48,7 +57,7 @@ router.get('/executions/:id', async (req, res) => {
 
   const { id } = req.params;
   const base = N8N_API_URL.replace(/\/$/, '');
-  const url = `${base}/api/v1/executions/${encodeURIComponent(id)}?includeData=true`;
+  const url = `${base}/api/v1/executions/${encodeURIComponent(id)}`;
 
   try {
     const apiRes = await fetch(url, {
@@ -56,7 +65,6 @@ router.get('/executions/:id', async (req, res) => {
     });
 
     const body = await apiRes.text();
-
     res.status(apiRes.status);
     try {
       res.json(JSON.parse(body));
@@ -79,7 +87,6 @@ router.get('/executions', async (req, res) => {
   const limitRaw = req.query.limit;
   const parsed = typeof limitRaw === 'string' ? parseInt(limitRaw, 10) : NaN;
   const take = Number.isFinite(parsed) && parsed > 0 && parsed <= 100 ? parsed : 10;
-
   const base = N8N_API_URL.replace(/\/$/, '');
   const url = `${base}/api/v1/executions?limit=${encodeURIComponent(take)}`;
 
@@ -89,7 +96,6 @@ router.get('/executions', async (req, res) => {
     });
 
     const body = await apiRes.text();
-
     res.status(apiRes.status);
     try {
       res.json(JSON.parse(body));
@@ -116,8 +122,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'Missing file' });
     }
 
-    const filePath = req.file.path;
+    if (!ALLOWED_UPLOAD_MIME.has(req.file.mimetype)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ message: 'Unsupported file type' });
+    }
 
+    const filePath = req.file.path;
     const driveRes = await drive.files.create({
       requestBody: {
         name: req.file.originalname,
@@ -147,4 +157,3 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 export default router;
-

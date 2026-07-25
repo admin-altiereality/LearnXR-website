@@ -198,6 +198,10 @@ export class RazorpayService {
       
       // FLOW 1: Use auth_link redirect (preferred for subscriptions)
       if (authLink) {
+        const allowed = /^https:\/\/([a-z0-9-]+\.)*razorpay\.com(\/|$)/i.test(authLink);
+        if (!allowed) {
+          throw new Error('Invalid Razorpay authorization URL received');
+        }
         console.log('🔄 Redirecting to Razorpay auth_link');
         window.location.href = authLink;
         return;

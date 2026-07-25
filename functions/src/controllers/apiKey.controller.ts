@@ -12,6 +12,7 @@ import {
   regenerateApiKey
 } from '../services/apiKeyService';
 import { ApiKeyScope } from '../types/apiKey';
+import { getUserProfile } from '../middleware/rbac';
 
 // Extend Express Request type to include user from authenticateUser middleware
 declare global {
@@ -61,6 +62,19 @@ export async function handleCreateApiKey(req: Request, res: Response): Promise<v
         requestId
       });
       return;
+    }
+
+    if (scope === ApiKeyScope.FULL) {
+      const profile = await getUserProfile(req.user.uid);
+      const staffRoles = new Set(['admin', 'superadmin', 'associate']);
+      if (!profile?.role || !staffRoles.has(profile.role)) {
+        res.status(403).json({
+          success: false,
+          error: 'Full-scope API keys require a staff account',
+          requestId,
+        });
+        return;
+      }
     }
 
     console.log(`[${requestId}] Creating API key for user ${req.user.uid}, label: ${label}, scope: ${scope}`);

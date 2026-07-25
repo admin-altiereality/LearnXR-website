@@ -5,7 +5,7 @@
 
 import React from "react";
 import { Link } from 'react-router-dom';
-import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
+import { learnXRFontStyle } from './LearnXRTypography';
 
 function MinimalFooter() {
   const currentYear = new Date().getFullYear();
@@ -18,7 +18,6 @@ function MinimalFooter() {
           <span className="font-medium" style={learnXRFontStyle}>
             <span className="text-foreground">Learn</span>
             <span className="text-primary">XR</span>
-            <TrademarkSymbol className="ml-0.5" />
           </span>
           <span className="hidden sm:inline">•</span>
           <span className="hidden sm:inline">© {currentYear} Altie Reality Private Limited</span>

@@ -1,15 +1,18 @@
 import express from 'express';
+import { requireRole } from '../middleware/rbac';
 
 const router = express.Router();
 
 const N8N_API_URL: string | undefined = process.env.N8N_API_URL;
 const N8N_API_KEY: string | undefined = process.env.N8N_API_KEY;
 
-router.get('/', (_req, res) => {
+const requireStaff = requireRole(['admin', 'superadmin', 'associate']);
+
+router.get('/', requireStaff, (_req, res) => {
   res.json({ status: 'ok', message: 'n8n proxy is running' });
 });
 
-router.get('/executions/:id', async (req, res): Promise<void> => {
+router.get('/executions/:id', requireStaff, async (req, res): Promise<void> => {
   if (!N8N_API_URL || !N8N_API_KEY) {
     res.status(500).json({
       message: 'N8N_API_URL or N8N_API_KEY is not configured on the server.',
@@ -19,7 +22,7 @@ router.get('/executions/:id', async (req, res): Promise<void> => {
 
   const { id } = req.params;
   const base = N8N_API_URL.replace(/\/$/, '');
-  const url = `${base}/api/v1/executions/${encodeURIComponent(id)}?includeData=true`;
+  const url = `${base}/api/v1/executions/${encodeURIComponent(id)}`;
 
   try {
     const apiRes = await fetch(url, {
@@ -27,7 +30,6 @@ router.get('/executions/:id', async (req, res): Promise<void> => {
     });
 
     const body = await apiRes.text();
-
     res.status(apiRes.status);
     try {
       res.json(JSON.parse(body));
@@ -37,11 +39,10 @@ router.get('/executions/:id', async (req, res): Promise<void> => {
   } catch (error) {
     console.error('Error proxying n8n execution:', error);
     res.status(500).json({ message: 'Failed to fetch execution from n8n.' });
-    return;
   }
 });
 
-router.get('/executions', async (req, res): Promise<void> => {
+router.get('/executions', requireStaff, async (req, res): Promise<void> => {
   if (!N8N_API_URL || !N8N_API_KEY) {
     res.status(500).json({
       message: 'N8N_API_URL or N8N_API_KEY is not configured on the server.',
@@ -62,7 +63,6 @@ router.get('/executions', async (req, res): Promise<void> => {
     });
 
     const body = await apiRes.text();
-
     res.status(apiRes.status);
     try {
       res.json(JSON.parse(body));
@@ -76,4 +76,3 @@ router.get('/executions', async (req, res): Promise<void> => {
 });
 
 export default router;
-

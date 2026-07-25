@@ -1569,7 +1569,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox, disableTeacherAvat
       if (serviceStatus.errors.length > 0) {
         messageHtml += '<div class="mb-3"><div class="font-semibold text-sm text-red-400">Errors:</div>';
         serviceStatus.errors.forEach(error => {
-          messageHtml += `<div class="text-xs text-red-300">• ${error}</div>`;
+          messageHtml += `<div class="text-xs text-red-300">• ${escapeForHtml(String(error))}</div>`;
         });
         messageHtml += '</div>';
       }

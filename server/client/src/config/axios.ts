@@ -2,8 +2,8 @@ import axios from 'axios';
 import { auth } from './firebase';
 import { productionLogger } from '../services/productionLogger';
 
-// Debug function to check auth state (can be called from browser console)
-if (typeof window !== 'undefined') {
+// Debug helper — development only
+if (typeof window !== 'undefined' && import.meta.env.DEV) {
   (window as any).checkAuthState = async () => {
     console.log('🔍 Checking auth state...');
     console.log('auth.currentUser:', auth.currentUser);

@@ -14,6 +14,11 @@ import { Signup } from './Components/auth/Signup';
 import { ErrorBoundary } from './Components/ErrorBoundary';
 import MainSection from './Components/MainSection';
 import MinimalFooter from './Components/MinimalFooter';
+import {
+  ConditionalMarketingFooter,
+  ConditionalMarketingHeader,
+  isMarketingRoute,
+} from './Components/landing/PublicMarketingChrome';
 import Sidebar from './Components/Sidebar';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -93,6 +98,7 @@ import XRLessonPlayerV3 from './screens/XRLessonPlayerV3';
 // Conditional Footer - Shows minimal footer on all pages except VR player, studio, and /main
 const ConditionalFooter = () => {
   const location = useLocation();
+  const { user } = useAuth();
   const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main', '/spiral'];
   
   // Hide footer completely on immersive experiences and main (environment studio) page
@@ -100,8 +106,22 @@ const ConditionalFooter = () => {
       location.pathname.startsWith('/studio/')) {
     return null;
   }
+
+  // Guest landing has its own full footer inside the fixed landing scroller
+  if (location.pathname === '/' && !user) {
+    return null;
+  }
+
+  // Shared marketing footer on other public guest pages
+  if (!user && isMarketingRoute(location.pathname)) {
+    return (
+      <div className="relative z-40">
+        <ConditionalMarketingFooter />
+      </div>
+    );
+  }
   
-  // Show minimal footer everywhere
+  // Show minimal footer everywhere else
   return (
     <div className="relative z-40">
       <MinimalFooter />
@@ -127,9 +147,8 @@ const ConditionalSidebar = () => {
     return null;
   }
   
-  // Also hide on public pages
-  const publicPages = ['/', '/careers', '/blog', '/privacy-policy', '/terms-conditions', '/refund-policy', '/help', '/case-studies', '/channel-partners'];
-  if (publicPages.includes(location.pathname) && !user) {
+  // Also hide on public marketing pages for guests
+  if (isMarketingRoute(location.pathname) && !user) {
     return null;
   }
   
@@ -455,6 +474,7 @@ function App() {
 
                 {/* Main content area – same background as sidebar for homogeneous look */}
                 <div className="relative flex-1 flex flex-col min-h-screen bg-background overflow-hidden">
+                <ConditionalMarketingHeader />
                 <main className="flex-1 bg-background">
                   <div className="">
                     <Routes>
@@ -771,9 +791,13 @@ function App() {
                           </TeacherGuard>
                         </ProtectedRoute>
                       } />
-                      <Route path="/service-status" element={<ServiceStatusPanel />} />
-                      <Route path="/test-panel" element={<MeshyTestPanel />} />
-                      <Route path="/debug-panel" element={<MeshyDebugPanel />} />
+                      {import.meta.env.DEV && (
+                        <>
+                          <Route path="/service-status" element={<ServiceStatusPanel />} />
+                          <Route path="/test-panel" element={<MeshyTestPanel />} />
+                          <Route path="/debug-panel" element={<MeshyDebugPanel />} />
+                        </>
+                      )}
                       
                       {/* Teacher Avatar Routes - Teachers and above */}
                       <Route path="/teacher-avatar-demo" element={
@@ -873,6 +897,7 @@ function App() {
 
                 {/* Main content area – same background as sidebar for homogeneous look */}
                 <div className="relative flex-1 flex flex-col min-h-screen bg-background overflow-hidden">
+                <ConditionalMarketingHeader />
                 <main className="flex-1 bg-background">
                   <div className="">
                     <Routes>

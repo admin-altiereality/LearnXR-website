@@ -60,17 +60,22 @@ export interface N8nExecutionListItem {
 }
 
 const WEBHOOK_URL = window.VITE_ENV.VITE_N8N_WEBHOOK_URL as string | undefined;
-const N8N_API_URL = window.VITE_ENV.VITE_N8N_API_URL as string | undefined;
-const N8N_API_KEY = window.VITE_ENV.VITE_N8N_API_KEY as string | undefined;
 const API_PROXY_URL =
   (window.VITE_ENV.VITE_API_PROXY_URL as string | undefined) || '/api';
 
-export const canPollExecution = Boolean(API_PROXY_URL || (N8N_API_URL && N8N_API_KEY));
+export const canPollExecution = Boolean(API_PROXY_URL);
+
+async function getProxyAuthHeaders(): Promise<HeadersInit> {
+  const { auth } = await import('../config/firebase');
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
 
 if (!WEBHOOK_URL) {
-  // eslint-disable-next-line no-console
   console.warn(
-    'VITE_N8N_WEBHOOK_URL is not set. Configure it in a .env file to connect the UI to your n8n workflow.'
+    'VITE_N8N_WEBHOOK_URL is not set. Configure it in a .env file to connect the UI to your n8n workflow.',
   );
 }
 
@@ -133,85 +138,31 @@ export async function triggerAutomation(params: {
   };
 }
 
-export async function getExecutionStatus(executionId: string): Promise<N8nExecution | null> {
-  const proxyBase = API_PROXY_URL?.replace(/\/$/, '');
-  const directBase = N8N_API_URL?.replace(/\/$/, '');
-  const url =
-    proxyBase
-      ? `${proxyBase}/n8n/executions/${encodeURIComponent(executionId)}`
-      : directBase
-      ? `${directBase}/api/v1/executions/${encodeURIComponent(executionId)}`
-      : null;
-  if (!url) return null;
+async function fetchN8nProxy(path: string): Promise<Response | null> {
+  const proxyBase = API_PROXY_URL.replace(/\/$/, '');
+  const url = `${proxyBase}${path.startsWith('/') ? path : `/${path}`}`;
   try {
-    const res = await fetch(url, {
-      headers: proxyBase
-        ? undefined
-        : N8N_API_KEY
-        ? { 'X-N8N-API-KEY': N8N_API_KEY }
-        : undefined,
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as N8nExecution;
+    return await fetch(url, { headers: await getProxyAuthHeaders() });
   } catch {
     return null;
   }
+}
+
+export async function getExecutionStatus(executionId: string): Promise<N8nExecution | null> {
+  const res = await fetchN8nProxy(`/n8n/executions/${encodeURIComponent(executionId)}`);
+  if (!res?.ok) return null;
+  return (await res.json()) as N8nExecution;
 }
 
 export async function fetchExecutionDetail(executionId: string): Promise<N8nExecution | null> {
-  const proxyBase = API_PROXY_URL?.replace(/\/$/, '');
-  const directBase = N8N_API_URL?.replace(/\/$/, '');
-  const url =
-    proxyBase
-      ? `${proxyBase}/n8n/executions/${encodeURIComponent(executionId)}`
-      : directBase
-      ? `${directBase}/api/v1/executions/${encodeURIComponent(executionId)}?includeData=true`
-      : null;
-  if (!url) return null;
-  try {
-    const res = await fetch(url, {
-      headers: proxyBase
-        ? undefined
-        : N8N_API_KEY
-        ? { 'X-N8N-API-KEY': N8N_API_KEY }
-        : undefined,
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as N8nExecution;
-  } catch {
-    return null;
-  }
+  return getExecutionStatus(executionId);
 }
 
 export async function listExecutions(limit = 10): Promise<N8nExecutionListItem[] | null> {
-  const proxyBase = API_PROXY_URL?.replace(/\/$/, '');
-  const directBase = N8N_API_URL?.replace(/\/$/, '');
-  const url =
-    proxyBase
-      ? `${proxyBase}/n8n/executions?limit=${encodeURIComponent(limit)}`
-      : directBase
-      ? `${directBase}/api/v1/executions?take=${encodeURIComponent(limit)}`
-      : null;
-  if (!url) return null;
-  try {
-    const res = await fetch(url, {
-      headers: proxyBase
-        ? undefined
-        : N8N_API_KEY
-        ? { 'X-N8N-API-KEY': N8N_API_KEY }
-        : undefined,
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as { data?: N8nExecutionListItem[] } | N8nExecutionListItem[];
-    if (Array.isArray(json)) {
-      return json;
-    }
-    if (json && Array.isArray(json.data)) {
-      return json.data;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const res = await fetchN8nProxy(`/n8n/executions?limit=${encodeURIComponent(limit)}`);
+  if (!res?.ok) return null;
+  const json = (await res.json()) as { data?: N8nExecutionListItem[] } | N8nExecutionListItem[];
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.data)) return json.data;
+  return null;
 }
-
