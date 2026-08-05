@@ -22,6 +22,7 @@ import { Progress } from '../../Components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '../../Components/ui/avatar';
 import { Button } from '../../Components/ui/button';
 import { Input } from '../../Components/ui/input';
+import { ActiveSessionCodeBadge } from '../../Components/classSession/ActiveSessionCodeBadge';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
@@ -407,6 +408,7 @@ const StudentDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <ActiveSessionCodeBadge role="student" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8 pb-6 border-b border-border">

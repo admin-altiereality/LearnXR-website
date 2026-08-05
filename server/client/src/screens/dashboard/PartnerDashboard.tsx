@@ -11,6 +11,7 @@ import { db } from '../../config/firebase';
 import { getApiBaseUrl } from '../../utils/apiConfig';
 import { removeStudentFromSession } from '../../services/classSessionService';
 import { StudentScreen360Preview } from '../../Components/StudentScreen360Preview';
+import { ActiveSessionCodeBadge } from '../../Components/classSession/ActiveSessionCodeBadge';
 import { Card, CardContent } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
 import { Badge } from '../../Components/ui/badge';
@@ -422,6 +423,7 @@ const PartnerDashboard = () => {
 
   return (
     <div className="flex-1 space-y-7 bg-gradient-to-b from-background via-background to-teal-950/[0.03] p-4 pt-6 md:p-8">
+      <ActiveSessionCodeBadge role="partner" />
       <section className="relative overflow-hidden rounded-2xl border border-teal-400/20 bg-card/75 p-5 shadow-sm backdrop-blur-xl sm:p-7">
         <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-teal-400/10 blur-3xl" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
