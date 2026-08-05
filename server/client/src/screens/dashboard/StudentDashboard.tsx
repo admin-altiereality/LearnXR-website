@@ -464,7 +464,6 @@ const StudentDashboard = () => {
         </Card>
 
         {/* Guests must use anonymous sign-in before they can join by session code. */}
-        <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
           <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
             <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
               <div className="flex items-center gap-2">

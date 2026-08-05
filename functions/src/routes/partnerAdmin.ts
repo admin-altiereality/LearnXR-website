@@ -609,7 +609,7 @@ router.get(['/schools', '/schools/'], requirePartner, async (req: Request, res: 
       return;
     }
     const snap = await db.collection('schools').where('partner_id', '==', partner.id).get();
-    const schools = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const schools: Array<Record<string, unknown> & { id: string }> = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const demoSchool = await getPartnerDemoSchool(db, partner.data);
     if (demoSchool && !schools.some((school) => school.id === demoSchool.id)) {
       schools.unshift({ id: demoSchool.id, ...demoSchool.data, isDefaultDemoSchool: true });
