@@ -1890,11 +1890,9 @@ const VRLessonPlayerInner = () => {
   }, [lastHotspotClicked]);
 
   // Report phase to class session for teacher dashboard (when student joined from class)
-  const sessionIdForReport =
-    joinedSessionId ??
-    (typeof sessionStorage !== 'undefined'
-      ? sessionStorage.getItem('learnxr_class_session_id') ?? sessionStorage.getItem('learnxr_joined_session_id')
-      : null);
+  // Only students write progress documents. Hosts may have an active session ID
+  // for view broadcast, but Firestore correctly reserves progress writes for students.
+  const sessionIdForReport = joinedSessionId ?? null;
   // Report initial progress as soon as student is in lesson with a session (so teacher sees them in "Student views")
   useEffect(() => {
     if (!sessionIdForReport || !user?.uid) return;

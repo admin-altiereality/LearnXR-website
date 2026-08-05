@@ -1972,7 +1972,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           title: lessonData.topic.topic_name || lessonData.chapter.chapter_name || '',
         });
         sessionStorage.setItem('learnxr_class_session_id', partnerSession.id);
-        contextStartLesson(lessonData);
+        contextStartLesson(lessonData.chapter, lessonData.topic);
         toast.success('Demo lesson launched to your class.');
         closeLessonModal();
         navigate('/vrlessonplayer-krpano');
