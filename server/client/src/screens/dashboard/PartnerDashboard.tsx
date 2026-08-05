@@ -227,6 +227,10 @@ const PartnerDashboard = () => {
       toast.success(`Demo session ready. Code: ${result.sessionCode}`);
       await copyText(result.sessionCode, 'Session code');
       setActiveSession({ id: result.sessionId, code: result.sessionCode, schoolId, classId });
+      sessionStorage.setItem(
+        'learnxr_partner_demo_session',
+        JSON.stringify({ id: result.sessionId, code: result.sessionCode, schoolId, classId })
+      );
       if (telemetryConsent && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async ({ coords }) => {

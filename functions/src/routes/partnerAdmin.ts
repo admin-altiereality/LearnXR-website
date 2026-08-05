@@ -811,6 +811,11 @@ router.post(['/sessions', '/sessions/'], requirePartner, async (req: Request, re
         'trial.classLaunchesUsed': used,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
+      if (typeof trial.lessonLaunchesLimit !== 'number') {
+        updates['trial.lessonLaunchesLimit'] = TRIAL_LESSON_LAUNCH_LIMIT;
+        updates['trial.lessonLaunchesUsed'] = 0;
+        updates['trial.lessonLaunchesRemaining'] = TRIAL_LESSON_LAUNCH_LIMIT;
+      }
       if (remaining <= 0) {
         updates.status = 'expired';
       }
@@ -919,7 +924,12 @@ router.post(
           error.code = 'TRIAL_INACTIVE';
           throw error;
         }
-        const remaining = Number(freshPartner.trial?.lessonLaunchesRemaining ?? 0);
+        const hasLessonEntitlement = typeof freshPartner.trial?.lessonLaunchesRemaining === 'number';
+        const remaining = Number(
+          hasLessonEntitlement
+            ? freshPartner.trial.lessonLaunchesRemaining
+            : TRIAL_LESSON_LAUNCH_LIMIT
+        );
         if (remaining <= 0) {
           const error: any = new Error('Lesson launch quota exhausted');
           error.code = 'LESSON_QUOTA_EXHAUSTED';
@@ -928,6 +938,7 @@ router.post(
         const nextRemaining = remaining - 1;
         const nextUsed = Number(freshPartner.trial?.lessonLaunchesUsed ?? 0) + 1;
         tx.update(partnerRef, {
+          'trial.lessonLaunchesLimit': Number(freshPartner.trial?.lessonLaunchesLimit ?? TRIAL_LESSON_LAUNCH_LIMIT),
           'trial.lessonLaunchesRemaining': nextRemaining,
           'trial.lessonLaunchesUsed': nextUsed,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
