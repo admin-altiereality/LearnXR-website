@@ -6,6 +6,7 @@ import { FaHandshake, FaSchool, FaCopy, FaChalkboardTeacher, FaPlay, FaLocationA
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClassSession } from '../../contexts/ClassSessionContext';
+import { useLesson } from '../../contexts/LessonContext';
 import { db } from '../../config/firebase';
 import { getApiBaseUrl } from '../../utils/apiConfig';
 import { removeStudentFromSession } from '../../services/classSessionService';
@@ -61,6 +62,7 @@ type DemoLesson = {
 const PartnerDashboard = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const { startLesson: startLessonInPlayer } = useLesson();
   const {
     activeSession: liveSession,
     activeSessionId,
@@ -343,6 +345,52 @@ const PartnerDashboard = () => {
     }
   };
 
+  const handleControlClassView = async () => {
+    const launched = liveSession?.launched_lesson;
+    if (!launched || !activeSessionId) {
+      toast.error('Launch a demo lesson before opening class view controls.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+      const bundle = await getLessonBundle({
+        chapterId: launched.chapter_id,
+        topicId: launched.topic_id,
+        lang: 'en',
+      });
+      const sourceChapter = bundle.chapter;
+      const sourceTopic = sourceChapter.topics?.find((item: any) => item.topic_id === launched.topic_id) || sourceChapter.topics?.[0];
+      if (!sourceTopic) throw new Error('The launched lesson is no longer available.');
+      startLessonInPlayer(
+        {
+          chapter_id: String(launched.chapter_id),
+          chapter_name: String(sourceChapter.chapter_name || 'Demo lesson'),
+          chapter_number: Number(sourceChapter.chapter_number) || 1,
+          curriculum: String(sourceChapter.curriculum || ''),
+          class_name: String(sourceChapter.class_name || ''),
+          subject: String(sourceChapter.subject || ''),
+        },
+        {
+          ...sourceTopic,
+          topic_id: String(sourceTopic.topic_id || launched.topic_id),
+          topic_name: String(sourceTopic.topic_name || 'Demo lesson'),
+          topic_priority: Number(sourceTopic.topic_priority) || 1,
+          learning_objective: String(sourceTopic.learning_objective || ''),
+          in3d_prompt: String(sourceTopic.in3d_prompt || ''),
+          mcqs: Array.isArray(bundle.mcqs) ? bundle.mcqs : sourceTopic.mcqs,
+          ttsAudio: Array.isArray(bundle.tts) ? bundle.tts : sourceTopic.ttsAudio,
+        }
+      );
+      sessionStorage.setItem('learnxr_class_session_id', activeSessionId);
+      navigate('/vrlessonplayer-krpano');
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not open the class view controls.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleTeacherDecision = async (teacherUid: string, approve: boolean) => {
     setBusy(true);
     try {
@@ -493,7 +541,7 @@ const PartnerDashboard = () => {
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => copyText(liveSession.session_code, 'Session code')}><FaCopy className="mr-2 h-3 w-3" /> Copy code</Button>
                 {liveSession.launched_lesson && (
-                  <Button size="sm" variant="outline" onClick={() => navigate('/vrlessonplayer-krpano')}>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={handleControlClassView}>
                     <FaEye className="mr-2 h-3 w-3" /> Control class view
                   </Button>
                 )}
