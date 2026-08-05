@@ -7,6 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
+import { PartnerLogin } from './Components/auth/PartnerLogin';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
 import { AdminGuard, QuestionPaperGuard, RoleGuard, StudioGuard, SuperAdminGuard, TeacherGuard } from './Components/auth/RoleGuard';
 import { SecretBackendLogin } from './Components/auth/SecretBackendLogin';
@@ -138,7 +139,7 @@ const ConditionalSidebar = () => {
   
   // Pages where sidebar should be hidden
   const hideSidebarRoutes = [
-    '/login', '/signup', '/forgot-password',
+    '/login', '/partner-login', '/signup', '/forgot-password',
     '/onboarding', '/approval-pending',
     '/web-preview',
     '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson'
@@ -482,6 +483,7 @@ function App() {
                     <Routes>
                       {/* Public routes - accessible to all users */}
                       <Route path="/login" element={<Login />} />
+                      <Route path="/partner-login" element={<PartnerLogin />} />
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/secretbackend" element={<SecretBackendLogin />} />
@@ -906,6 +908,7 @@ function App() {
                     <Routes>
                       {/* Public routes - accessible to all users */}
                       <Route path="/login" element={<Login />} />
+                      <Route path="/partner-login" element={<PartnerLogin />} />
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/secretbackend" element={<SecretBackendLogin />} />
@@ -1129,7 +1132,7 @@ function App() {
                         </ProtectedRoute>
                       } />
                       <Route path="/dashboard/partner" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute redirectTo="/partner-login">
                           <RoleGuard allowedRoles={['partner']}>
                             <PartnerDashboard />
                           </RoleGuard>
