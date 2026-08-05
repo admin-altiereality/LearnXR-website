@@ -74,6 +74,7 @@ const statusVariant = (status: string): 'default' | 'secondary' | 'outline' | 'd
 const PartnerRegistrations = () => {
   const { profile } = useAuth();
   const isSuperadmin = profile?.role === 'superadmin';
+  const canReviewRegistrations = profile?.role === 'admin' || isSuperadmin;
   const [registrations, setRegistrations] = useState<PartnerRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedReg, setSelectedReg] = useState<PartnerRegistration | null>(null);
@@ -134,7 +135,7 @@ const PartnerRegistrations = () => {
   };
 
   const handleApprove = async () => {
-    if (!selectedReg || !isSuperadmin) return;
+    if (!selectedReg || !canReviewRegistrations) return;
     setActionLoading(true);
     try {
       const result = await approvePartnerRegistration(selectedReg.id);
@@ -148,7 +149,7 @@ const PartnerRegistrations = () => {
         userId: result.userId,
       };
       setSelectedReg(updated);
-      if (result.partnerId) {
+      if (result.partnerId && isSuperadmin) {
         const data = await fetchPartnerRegistrationDetail(selectedReg.id);
         setDetail({
           partner: data.partner,
@@ -164,7 +165,7 @@ const PartnerRegistrations = () => {
   };
 
   const handleReject = async () => {
-    if (!selectedReg || !isSuperadmin) return;
+    if (!selectedReg || !canReviewRegistrations) return;
     setActionLoading(true);
     try {
       await rejectPartnerRegistration(selectedReg.id, rejectReason);
@@ -215,9 +216,9 @@ const PartnerRegistrations = () => {
           </h2>
           <p className="text-muted-foreground mt-1">
             Review channel partner applications.
-            {isSuperadmin
+            {canReviewRegistrations
               ? ' Approve to provision a partner login with a 6-month / 100 class-launch trial.'
-              : ' Only superadmins can approve partners.'}
+              : ' Only administrators can approve partners.'}
           </p>
         </div>
       </div>
@@ -492,7 +493,7 @@ const PartnerRegistrations = () => {
                 <Button variant="outline" onClick={() => setShowModal(false)}>
                   Close
                 </Button>
-                {isSuperadmin && selectedReg.status === 'new' && (
+                {canReviewRegistrations && selectedReg.status === 'new' && (
                   <>
                     <input
                       type="text"

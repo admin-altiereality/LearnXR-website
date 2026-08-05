@@ -1,5 +1,6 @@
 /**
  * Authenticated partner admin APIs:
+ * - Admin: approve / reject partners from CRM leads
  * - Superadmin: approve / reject / suspend partners from CRM leads
  * - Partner: me, schools, invites, demo sessions (quota-enforced), activity
  */
@@ -16,6 +17,7 @@ const TRIAL_MONTHS = 6;
 const TRIAL_LAUNCH_LIMIT = 100;
 const APP_ORIGIN = process.env.APP_ORIGIN || process.env.CLIENT_ORIGIN || 'https://learnxr.ai';
 
+const requirePartnerAdmin = requireRole(['admin', 'superadmin']);
 const requireSuperadmin = requireRole(['superadmin']);
 const requirePartner = requireRole(['partner']);
 const requirePartnerOrSuperadmin = requireRole(['partner', 'superadmin']);
@@ -86,11 +88,11 @@ async function getPartnerByUserId(uid: string): Promise<{ id: string; data: admi
 
 /**
  * POST /partners/registrations/:registrationId/approve
- * Superadmin only — provision Auth user + partner tenant + trial + invite email.
+ * Admin or superadmin — provision Auth user + partner tenant + trial + invite email.
  */
 router.post(
   ['/registrations/:registrationId/approve', '/registrations/:registrationId/approve/'],
-  requireSuperadmin,
+  requirePartnerAdmin,
   async (req: Request, res: Response): Promise<void> => {
     const { registrationId } = req.params;
     const requestId = (req as any).requestId || `partner-approve-${Date.now()}`;
@@ -132,7 +134,12 @@ router.post(
       let createdNewUser = false;
       try {
         userRecord = await admin.auth().getUserByEmail(email);
-      } catch {
+      } catch (error: unknown) {
+        const code = typeof error === 'object' && error !== null && 'code' in error
+          ? (error as { code?: string }).code
+          : undefined;
+        if (code !== 'auth/user-not-found') throw error;
+
         const tempPassword = crypto.randomBytes(24).toString('base64url');
         userRecord = await admin.auth().createUser({
           email,
@@ -254,6 +261,10 @@ router.post(
               partnerId,
               inviteLink,
               trial,
+              notification: {
+                template: 'partner_approved',
+                recipient: email,
+              },
             }),
           });
         } catch (err) {
@@ -287,7 +298,7 @@ router.post(
  */
 router.post(
   ['/registrations/:registrationId/reject', '/registrations/:registrationId/reject/'],
-  requireSuperadmin,
+  requirePartnerAdmin,
   async (req: Request, res: Response): Promise<void> => {
     const { registrationId } = req.params;
     const reason = typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 500) : '';
