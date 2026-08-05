@@ -1971,8 +1971,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
           topicId: payload.topic_id,
           title: lessonData.topic.topic_name || lessonData.chapter.chapter_name || '',
         });
+        sessionStorage.setItem('learnxr_class_session_id', partnerSession.id);
+        contextStartLesson(lessonData);
         toast.success('Demo lesson launched to your class.');
         closeLessonModal();
+        navigate('/vrlessonplayer-krpano');
       } catch (error) {
         toast.error(error?.message || 'Could not launch the demo lesson.');
       }
@@ -2012,7 +2015,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     } else {
       toast.error('Failed to launch lesson to class');
     }
-  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate]);
+  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate, contextStartLesson]);
 
   const canLaunchInClass = (
     (isTeacher && teacherClasses.length > 0 && (activeSessionId || classIdForLaunch)) ||

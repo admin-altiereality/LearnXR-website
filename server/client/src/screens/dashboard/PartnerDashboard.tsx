@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
-import { FaHandshake, FaSchool, FaCopy, FaChalkboardTeacher, FaPlay, FaLocationArrow } from 'react-icons/fa';
+import { FaHandshake, FaSchool, FaCopy, FaChalkboardTeacher, FaPlay, FaLocationArrow, FaUsers, FaUserTimes, FaEye } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
+import { useClassSession } from '../../contexts/ClassSessionContext';
 import { db } from '../../config/firebase';
+import { getApiBaseUrl } from '../../utils/apiConfig';
+import { removeStudentFromSession } from '../../services/classSessionService';
+import { StudentScreen360Preview } from '../../Components/StudentScreen360Preview';
 import { Card, CardContent } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
 import { Badge } from '../../Components/ui/badge';
@@ -55,6 +60,16 @@ type DemoLesson = {
 
 const PartnerDashboard = () => {
   const { profile } = useAuth();
+  const navigate = useNavigate();
+  const {
+    activeSession: liveSession,
+    activeSessionId,
+    progressList,
+    bindActiveSession,
+    endSession,
+    leaveSessionAsTeacher,
+    sessionLoading,
+  } = useClassSession();
   const [loading, setLoading] = useState(true);
   const [partner, setPartner] = useState<Partner | null>(null);
   const [trialActive, setTrialActive] = useState(true);
@@ -68,6 +83,9 @@ const PartnerDashboard = () => {
   const [selectedLessonId, setSelectedLessonId] = useState('');
   const [activeSession, setActiveSession] = useState<{ id: string; code: string; schoolId: string; classId: string } | null>(null);
   const [telemetryConsent, setTelemetryConsent] = useState(false);
+  const [removingStudentUid, setRemovingStudentUid] = useState<string | null>(null);
+  const [selectedStudentUid, setSelectedStudentUid] = useState<string | null>(null);
+  const [studentSkyboxUrl, setStudentSkyboxUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [schoolForm, setSchoolForm] = useState({
@@ -162,6 +180,33 @@ const PartnerDashboard = () => {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const session = activeSession ?? liveSession;
+    if (!session?.id || session.status === 'ended') return;
+    bindActiveSession(session.id);
+  }, [activeSession, liveSession?.id, liveSession?.status, bindActiveSession]);
+
+  useEffect(() => {
+    const launched = liveSession?.launched_lesson;
+    if (!launched || !progressList.length) {
+      setStudentSkyboxUrl(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({ chapterId: launched.chapter_id, topicId: launched.topic_id, lang: 'en' });
+        const topic = bundle.chapter?.topics?.find((item: any) => item.topic_id === launched.topic_id) || bundle.chapter?.topics?.[0];
+        const url = (bundle.skybox as any)?.imageUrl || (bundle.skybox as any)?.file_url || topic?.skybox_url || null;
+        if (!cancelled) setStudentSkyboxUrl(url);
+      } catch {
+        if (!cancelled) setStudentSkyboxUrl(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [liveSession?.launched_lesson, progressList.length]);
+
   const copyText = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -227,6 +272,7 @@ const PartnerDashboard = () => {
       toast.success(`Demo session ready. Code: ${result.sessionCode}`);
       await copyText(result.sessionCode, 'Session code');
       setActiveSession({ id: result.sessionId, code: result.sessionCode, schoolId, classId });
+      bindActiveSession(result.sessionId);
       sessionStorage.setItem(
         'learnxr_partner_demo_session',
         JSON.stringify({ id: result.sessionId, code: result.sessionCode, schoolId, classId })
@@ -271,6 +317,29 @@ const PartnerDashboard = () => {
       toast.error(error?.message || 'Failed to launch lesson');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleRemoveStudent = async (studentUid: string) => {
+    if (!activeSessionId || !profile?.uid) return;
+    setRemovingStudentUid(studentUid);
+    try {
+      const ok = await removeStudentFromSession(activeSessionId, profile.uid, studentUid);
+      if (ok) toast.success('Student removed from the demo session.');
+      else toast.error('Could not remove student.');
+    } finally {
+      setRemovingStudentUid(null);
+    }
+  };
+
+  const handleEndDemo = async () => {
+    const ok = await endSession();
+    if (ok) {
+      setActiveSession(null);
+      sessionStorage.removeItem('learnxr_partner_demo_session');
+      toast.success('Demo session ended.');
+    } else {
+      toast.error('Could not end the demo session.');
     }
   };
 
@@ -410,6 +479,82 @@ const PartnerDashboard = () => {
           </label>
         </CardContent>
       </Card>
+
+      {liveSession && liveSession.status !== 'ended' && (
+        <Card className="border-primary/30">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2 font-medium"><FaUsers className="text-primary" /> Live class controls</div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Session {liveSession.session_code} · {liveSession.status} · {progressList.length} connected student{progressList.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => copyText(liveSession.session_code, 'Session code')}><FaCopy className="mr-2 h-3 w-3" /> Copy code</Button>
+                {liveSession.launched_lesson && (
+                  <Button size="sm" variant="outline" onClick={() => navigate('/vrlessonplayer-krpano')}>
+                    <FaEye className="mr-2 h-3 w-3" /> Control class view
+                  </Button>
+                )}
+                <Button size="sm" variant="destructive" disabled={sessionLoading} onClick={handleEndDemo}>End session</Button>
+              </div>
+            </div>
+            {!liveSession.launched_lesson ? (
+              <p className="rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                Select an approved demo lesson above, or use Lessons → Launch in Class to begin live instruction.
+              </p>
+            ) : (
+              <p className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-primary">
+                Live lesson: {liveSession.launched_lesson.title || liveSession.launched_lesson.topic_id}. Open the launched lesson in your player to broadcast your 360° view.
+              </p>
+            )}
+            {progressList.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">No students have joined yet. Share the session code with guests or students.</p>
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-[1fr_1.3fr]">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Student roster and progress</p>
+                  {progressList.map((student) => (
+                    <div key={student.student_uid} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                      <button className="min-w-0 text-left" onClick={() => setSelectedStudentUid(student.student_uid)}>
+                        <p className="truncate text-sm font-medium">{student.display_name || student.email || `Student ${student.student_uid.slice(0, 6)}`}</p>
+                        <p className="text-xs capitalize text-muted-foreground">{student.phase || 'connected'}</p>
+                      </button>
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => setSelectedStudentUid(student.student_uid)} title="See this student's view"><FaEye className="h-3 w-3" /></Button>
+                        <Button size="sm" variant="destructive" disabled={removingStudentUid === student.student_uid} onClick={() => handleRemoveStudent(student.student_uid)} title="Remove student">
+                          {removingStudentUid === student.student_uid ? <Loader2 className="h-3 w-3 animate-spin" /> : <FaUserTimes className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-medium">Student view</p>
+                  {(() => {
+                    const student = progressList.find((item) => item.student_uid === selectedStudentUid) || progressList[0];
+                    const name = student?.display_name || student?.email || 'Student';
+                    return student?.student_view && studentSkyboxUrl ? (
+                      <StudentScreen360Preview
+                        skyboxUrl={studentSkyboxUrl}
+                        view={student.student_view}
+                        studentName={name}
+                        phaseLabel={student.phase || 'Connected'}
+                        getApiBaseUrl={getApiBaseUrl}
+                      />
+                    ) : (
+                      <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                        {student ? `${name}'s 360° view appears once they enter the live lesson.` : 'Select a student to inspect their live view.'}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-5 space-y-4">

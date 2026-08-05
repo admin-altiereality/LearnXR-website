@@ -53,8 +53,12 @@ service cloud.firestore {
     function partnerOwnsSchool(schoolId) {
       return isPartner() &&
         getUserPartnerId() != null &&
-        exists(/databases/$(database)/documents/schools/$(schoolId)) &&
-        get(/databases/$(database)/documents/schools/$(schoolId)).data.partner_id == getUserPartnerId();
+        (
+          (exists(/databases/$(database)/documents/schools/$(schoolId)) &&
+           get(/databases/$(database)/documents/schools/$(schoolId)).data.partner_id == getUserPartnerId()) ||
+          (exists(/databases/$(database)/documents/partners/$(getUserPartnerId())) &&
+           get(/databases/$(database)/documents/partners/$(getUserPartnerId())).data.demoSchoolId == schoolId)
+        );
     }
     
     // Helper function to check if asset is core (protected from admin deletion)
