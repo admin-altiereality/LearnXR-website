@@ -514,6 +514,11 @@ const PartnerRegistrations = () => {
                     </Button>
                   </>
                 )}
+                {canReviewRegistrations && selectedReg.status === 'approved' && (
+                  <Button disabled={actionLoading} onClick={handleApprove}>
+                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Resend setup email'}
+                  </Button>
+                )}
                 {isSuperadmin &&
                   selectedReg.status === 'approved' &&
                   selectedReg.partnerId &&

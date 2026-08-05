@@ -46,6 +46,41 @@ function addMonthsIso(date: Date, months: number): string {
   return d.toISOString();
 }
 
+async function sendPartnerApprovalNotification(params: {
+  requestId: string;
+  email: string;
+  contactName: string;
+  organizationName: string;
+  partnerId: string;
+  inviteLink: string | null;
+  trial: unknown;
+}): Promise<void> {
+  const webhookUrl = process.env.N8N_PARTNER_APPROVE_WEBHOOK_URL;
+  if (!webhookUrl) return;
+
+  try {
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'partner_approved',
+        email: params.email,
+        contactName: params.contactName,
+        organizationName: params.organizationName,
+        partnerId: params.partnerId,
+        inviteLink: params.inviteLink,
+        trial: params.trial,
+        notification: {
+          template: 'partner_approved',
+          recipient: params.email,
+        },
+      }),
+    });
+  } catch (error) {
+    console.error(`[${params.requestId}] Approve webhook failed (non-fatal):`, error);
+  }
+}
+
 async function writePartnerEvent(params: {
   partnerId: string;
   type: string;
@@ -109,11 +144,30 @@ router.post(
 
       const reg = regSnap.data()!;
       if (reg.status === 'approved' && reg.partnerId && reg.userId) {
+        const email = String(reg.email || '').toLowerCase().trim();
+        let inviteLink: string | null = null;
+        if (email) {
+          try {
+            inviteLink = await admin.auth().generatePasswordResetLink(email);
+          } catch (error) {
+            console.error(`[${requestId}] Failed to generate password reset link:`, error);
+          }
+          await sendPartnerApprovalNotification({
+            requestId,
+            email,
+            contactName: reg.contactName || '',
+            organizationName: reg.organizationName || '',
+            partnerId: reg.partnerId,
+            inviteLink,
+            trial: null,
+          });
+        }
         res.json({
           success: true,
-          message: 'Partner already approved',
+          message: 'Partner already approved. A new password setup email has been sent.',
           partnerId: reg.partnerId,
           userId: reg.userId,
+          inviteLink,
           alreadyApproved: true,
         });
         return;
@@ -244,31 +298,15 @@ router.post(
         console.error(`[${requestId}] Failed to generate password reset link:`, err);
       }
 
-      // Best-effort webhook for email delivery
-      const webhookUrl = process.env.N8N_PARTNER_APPROVE_WEBHOOK_URL;
-      if (webhookUrl) {
-        try {
-          await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'partner_approved',
-              email,
-              contactName: reg.contactName,
-              organizationName: reg.organizationName,
-              partnerId,
-              inviteLink,
-              trial,
-              notification: {
-                template: 'partner_approved',
-                recipient: email,
-              },
-            }),
-          });
-        } catch (err) {
-          console.error(`[${requestId}] Approve webhook failed (non-fatal):`, err);
-        }
-      }
+      await sendPartnerApprovalNotification({
+        requestId,
+        email,
+        contactName: reg.contactName || '',
+        organizationName: reg.organizationName || '',
+        partnerId,
+        inviteLink,
+        trial,
+      });
 
       res.json({
         success: true,
