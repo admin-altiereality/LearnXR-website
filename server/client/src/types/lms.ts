@@ -200,6 +200,9 @@ export interface ClassSession {
   teacher_view?: { hlookat: number; vlookat: number; fov?: number } | null;
   /** Student UIDs removed by teacher from this session (kicked out) */
   removed_student_uids?: string[];
+  /** Partner tenancy metadata for quota-governed demo sessions. */
+  partner_id?: string;
+  hosted_by_partner?: boolean;
   created_at: Timestamp | string;
   updated_at: Timestamp | string;
 }

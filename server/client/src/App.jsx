@@ -68,6 +68,7 @@ import ProductionLogs from './screens/admin/ProductionLogs';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import SchoolManagement from './screens/admin/SchoolManagement';
 import PartnerRegistrations from './screens/admin/PartnerRegistrations';
+import PartnerOversight from './screens/admin/PartnerOversight';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import PersonalizedLearning from './screens/ai/PersonalizedLearning';
 import ApiDocumentation from './screens/ApiDocumentation';
@@ -535,6 +536,13 @@ function App() {
                           <RoleGuard allowedRoles={['admin', 'superadmin']}>
                             <PartnerRegistrations />
                           </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/partner-oversight" element={
+                        <ProtectedRoute>
+                          <SuperAdminGuard>
+                            <PartnerOversight />
+                          </SuperAdminGuard>
                         </ProtectedRoute>
                       } />
                       

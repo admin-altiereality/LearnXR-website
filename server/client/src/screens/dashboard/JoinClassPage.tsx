@@ -29,6 +29,7 @@ const JoinClassPage = () => {
   const [sessions, setSessions] = useState<SessionWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
+  const [sessionCode, setSessionCode] = useState('');
 
   const schoolId = profile?.school_id || (profile as { managed_school_id?: string })?.managed_school_id;
   const isStudent = profile?.role === 'student';
@@ -102,6 +103,12 @@ const JoinClassPage = () => {
     }
   };
 
+  const handleCodeJoin = async () => {
+    const code = sessionCode.trim().toUpperCase();
+    if (!code) return;
+    await handleJoin(code);
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4 py-24">
@@ -152,17 +159,27 @@ const JoinClassPage = () => {
               Join a class
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
-              See active classes from your school and join with one click.
+              Enter the code shared by your Channel Partner to join a live demo.
             </p>
           </header>
           <Card className="rounded-xl border border-border bg-card shadow-sm">
             <CardContent className="p-8 text-center">
               <FaUsers className="h-12 w-12 text-muted-foreground/80 mx-auto mb-4" />
-              <p className="text-foreground font-medium">Join a school to see active classes</p>
-              <p className="text-sm text-muted-foreground mt-2">If you belong to a school, ask your teacher to add you to a class, or enter your school code during sign-up.</p>
-              <Button asChild className="mt-6" variant="outline">
-                <Link to="/dashboard/student">My dashboard</Link>
-              </Button>
+              <p className="text-foreground font-medium">Join with a class code</p>
+              <p className="text-sm text-muted-foreground mt-2">Guest access is available only for active Channel Partner demo sessions.</p>
+              <div className="mx-auto mt-6 flex max-w-sm flex-col gap-3 sm:flex-row">
+                <input
+                  value={sessionCode}
+                  onChange={(event) => setSessionCode(event.target.value.toUpperCase())}
+                  placeholder="ABC123"
+                  maxLength={8}
+                  className="h-10 flex-1 rounded-md border border-border bg-background px-3 font-mono uppercase tracking-widest"
+                  aria-label="Class session code"
+                />
+                <Button onClick={handleCodeJoin} disabled={!sessionCode.trim() || sessionLoading}>
+                  {sessionLoading ? 'Joining…' : 'Join class'}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

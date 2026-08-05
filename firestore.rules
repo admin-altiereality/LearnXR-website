@@ -897,6 +897,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Consent-based city/country launch telemetry. Exact coordinates are never stored.
+    match /partner_telemetry_events/{eventId} {
+      allow read: if isSuperadmin();
+      allow write: if false;
+    }
+
+    // Immutable privileged partner lifecycle and entitlement audit records.
+    match /partner_audit_log/{auditId} {
+      allow read: if isSuperadmin();
+      allow write: if false;
+    }
+
     // School admin invite tokens — claim via Cloud Function (Admin SDK)
     match /school_invites/{token} {
       allow read: if isAdminOrSuperadmin() ||

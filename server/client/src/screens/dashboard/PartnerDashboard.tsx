@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
-import { FaHandshake, FaSchool, FaCopy, FaChalkboardTeacher } from 'react-icons/fa';
+import { FaHandshake, FaSchool, FaCopy, FaChalkboardTeacher, FaPlay, FaLocationArrow } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../config/firebase';
@@ -15,7 +15,9 @@ import {
   createSchoolInvite,
   fetchPartnerActivity,
   fetchPartnerMe,
+  launchPartnerDemoLesson,
   listPartnerSchools,
+  recordPartnerLaunchTelemetry,
   startPartnerDemoSession,
 } from '../../services/partnerService';
 
@@ -43,6 +45,14 @@ type TeacherRow = {
   approvalStatus?: string;
 };
 
+type DemoLesson = {
+  id: string;
+  chapterId: string;
+  topicId: string;
+  title: string;
+  sceneId?: string;
+};
+
 const PartnerDashboard = () => {
   const { profile } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -54,6 +64,10 @@ const PartnerDashboard = () => {
   const [pendingTeachers, setPendingTeachers] = useState<TeacherRow[]>([]);
   const [classesBySchool, setClassesBySchool] = useState<Record<string, ClassRow[]>>({});
   const [selectedClassBySchool, setSelectedClassBySchool] = useState<Record<string, string>>({});
+  const [demoLessons, setDemoLessons] = useState<DemoLesson[]>([]);
+  const [selectedLessonId, setSelectedLessonId] = useState('');
+  const [activeSession, setActiveSession] = useState<{ id: string; code: string; schoolId: string; classId: string } | null>(null);
+  const [telemetryConsent, setTelemetryConsent] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [schoolForm, setSchoolForm] = useState({
@@ -101,6 +115,23 @@ const PartnerDashboard = () => {
         classMap[school.id] = classSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as ClassRow[];
       }
       setClassesBySchool(classMap);
+
+      const chapterSnap = await getDocs(collection(db, 'curriculum_chapters'));
+      const lessons = chapterSnap.docs.flatMap((chapterDoc) => {
+        const chapter = chapterDoc.data();
+        const topics = Array.isArray(chapter.topics) ? chapter.topics : [];
+        return topics
+          .filter((topic: Record<string, unknown>) => topic.isDemo === true && (topic.approval as { approved?: boolean } | undefined)?.approved !== false)
+          .map((topic: Record<string, unknown>) => ({
+            id: `${chapterDoc.id}:${String(topic.topic_id || topic.id || '')}`,
+            chapterId: chapterDoc.id,
+            topicId: String(topic.topic_id || topic.id || ''),
+            title: String(topic.title || topic.topic_name || chapter.chapter_name || chapter.title || 'Demo lesson'),
+            sceneId: typeof topic.scene_id === 'string' ? topic.scene_id : undefined,
+          }))
+          .filter((topic: DemoLesson) => Boolean(topic.topicId));
+      });
+      setDemoLessons(lessons);
 
       // Pending teachers in partner schools
       if (schoolList.length > 0) {
@@ -195,9 +226,45 @@ const PartnerDashboard = () => {
       const result = await startPartnerDemoSession(schoolId, classId);
       toast.success(`Demo session ready. Code: ${result.sessionCode}`);
       await copyText(result.sessionCode, 'Session code');
+      setActiveSession({ id: result.sessionId, code: result.sessionCode, schoolId, classId });
+      if (telemetryConsent && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async ({ coords }) => {
+            try {
+              const location = await recordPartnerLaunchTelemetry(result.sessionId, {
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+              });
+              toast.info(`Launch telemetry recorded${location.city ? ` for ${location.city}` : ''}.`);
+            } catch {
+              toast.info('Demo started. Location telemetry could not be recorded.');
+            }
+          },
+          () => toast.info('Demo started without location telemetry.'),
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+        );
+      }
       await refresh();
     } catch (err: any) {
       toast.error(err?.message || 'Failed to start demo');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLaunchLesson = async () => {
+    const lesson = demoLessons.find((item) => item.id === selectedLessonId);
+    if (!activeSession || !lesson) {
+      toast.error('Start a demo session and select an approved demo lesson first.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await launchPartnerDemoLesson(activeSession.id, lesson);
+      toast.success(`Lesson launched. ${result.lessonLaunchesRemaining} demo lesson launches remaining.`);
+      await refresh();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to launch lesson');
     } finally {
       setBusy(false);
     }
@@ -249,8 +316,7 @@ const PartnerDashboard = () => {
           <div>
             <div className="font-medium">Trial entitlement</div>
             <p className="text-sm text-muted-foreground mt-1">
-              100 class launches or 6 months — whichever comes first. Partner-hosted demos only;
-              teachers at your schools keep their own logins after the trial.
+              200 class launches and 200 approved demo lesson launches for six months. Each partner receives an isolated Altie Reality demo class.
             </p>
             {!trialActive && trialBlockReason && (
               <p className="text-sm text-destructive mt-2">{trialBlockReason}</p>
@@ -261,9 +327,15 @@ const PartnerDashboard = () => {
               {partner.status}
             </Badge>
             <div className="text-sm">
-              <span className="text-muted-foreground">Launches left </span>
+              <span className="text-muted-foreground">Classes </span>
               <span className="font-semibold">
-                {partner.trial?.classLaunchesRemaining ?? 0}/{partner.trial?.classLaunchesLimit ?? 100}
+                {partner.trial?.classLaunchesRemaining ?? 0}/{partner.trial?.classLaunchesLimit ?? 200}
+              </span>
+            </div>
+            <div className="text-sm">
+              <span className="text-muted-foreground">Lessons </span>
+              <span className="font-semibold">
+                {partner.trial?.lessonLaunchesRemaining ?? 0}/{partner.trial?.lessonLaunchesLimit ?? 200}
               </span>
             </div>
             <div className="text-sm">
@@ -271,6 +343,67 @@ const PartnerDashboard = () => {
               <span className="font-semibold">{daysLeft ?? '—'}</span>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-teal-400/30">
+        <CardContent className="p-5 space-y-4">
+          <div className="flex items-center gap-2 font-medium">
+            <FaPlay className="text-teal-400" /> Live demo classroom
+          </div>
+          {!activeSession ? (
+            <p className="text-sm text-muted-foreground">
+              Choose your isolated demo class below, then start a session to receive a student join code.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-col gap-3 rounded-lg border border-teal-400/20 bg-teal-400/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium">Session code</p>
+                  <code className="mt-1 inline-block rounded bg-background px-2 py-1 font-mono text-lg tracking-widest">
+                    {activeSession.code}
+                  </code>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => copyText(activeSession.code, 'Session code')}>
+                  <FaCopy className="mr-2 h-3 w-3" /> Copy code
+                </Button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                <select
+                  value={selectedLessonId}
+                  onChange={(event) => setSelectedLessonId(event.target.value)}
+                  className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Select an approved demo lesson</option>
+                  {demoLessons.map((lesson) => (
+                    <option key={lesson.id} value={lesson.id}>{lesson.title}</option>
+                  ))}
+                </select>
+                <Button disabled={busy || !selectedLessonId} onClick={handleLaunchLesson}>
+                  <FaPlay className="mr-2 h-3 w-3" /> Launch lesson
+                </Button>
+              </div>
+              {demoLessons.length === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  No approved demo lessons are available. Ask a Super Admin to mark lessons as demo-ready.
+                </p>
+              )}
+            </>
+          )}
+          <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={telemetryConsent}
+              onChange={(event) => setTelemetryConsent(event.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              <span className="flex items-center gap-2 font-medium"><FaLocationArrow className="text-teal-400" /> Share coarse launch location</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                With consent, LearnXR records city and country for this demo launch. Precise coordinates are discarded and launch telemetry is retained for 90 days.
+              </span>
+            </span>
+          </label>
         </CardContent>
       </Card>
 

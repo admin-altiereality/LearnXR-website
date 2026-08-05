@@ -7,6 +7,7 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import * as admin from 'firebase-admin';
 import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -454,4 +455,27 @@ export const processMeshyRegenerationJobsScheduled = onSchedule(
     const { processMeshyRegenerationJobs } = require('./services/meshyAssetRegeneration');
     await processMeshyRegenerationJobs(1);
   },
+);
+
+export const cleanupPartnerTelemetry = onSchedule(
+  {
+    schedule: 'every day 03:30',
+    region: 'us-central1',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+    invoker: 'private',
+  },
+  async () => {
+    initializeAdmin();
+    const db = admin.firestore();
+    const expired = await db
+      .collection('partner_telemetry_events')
+      .where('expiresAt', '<=', new Date())
+      .limit(250)
+      .get();
+    if (expired.empty) return;
+    const batch = db.batch();
+    expired.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+  }
 );

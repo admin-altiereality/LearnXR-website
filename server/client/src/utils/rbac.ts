@@ -129,6 +129,7 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   // Public routes
   '/': 'public',
   '/login': 'public',
+  '/partner-login': 'public',
   '/signup': 'public',
   '/forgot-password': 'public',
   '/careers': 'public',
@@ -181,6 +182,8 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   
   // Admin routes
   '/admin': 'admin',
+  '/admin/partners': 'admin',
+  '/admin/partner-oversight': 'superadmin',
   '/system-status': 'admin',
   
   // Superadmin routes

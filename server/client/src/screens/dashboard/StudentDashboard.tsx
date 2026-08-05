@@ -463,8 +463,8 @@ const StudentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Join class session - students only */}
-        {!isGuest && (
+        {/* Guests must use anonymous sign-in before they can join by session code. */}
+        <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
           <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
             <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
               <div className="flex items-center gap-2">
@@ -474,7 +474,7 @@ const StudentDashboard = () => {
                 <div>
                   <CardTitle className="text-base font-semibold text-foreground">Join a class session</CardTitle>
                   <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                    Enter the code your teacher shared to join the live session
+                    {isGuest ? 'Enter the code shared by your Channel Partner to join the live demo' : 'Enter the code your teacher shared to join the live session'}
                   </CardDescription>
                 </div>
               </div>
@@ -526,7 +526,6 @@ const StudentDashboard = () => {
               )}
             </CardContent>
           </Card>
-        )}
 
         {/* Class Teacher Information - guest sees CTA to sign up */}
         {isGuest && (

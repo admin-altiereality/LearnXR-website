@@ -14,7 +14,9 @@ import * as crypto from 'crypto';
 const router = Router();
 
 const TRIAL_MONTHS = 6;
-const TRIAL_LAUNCH_LIMIT = 100;
+const TRIAL_LAUNCH_LIMIT = 200;
+const TRIAL_LESSON_LAUNCH_LIMIT = 200;
+const DEFAULT_DEMO_SCHOOL_CODE = 'HV647R';
 const APP_ORIGIN = process.env.APP_ORIGIN || process.env.CLIENT_ORIGIN || 'https://learnxr.ai';
 
 const requirePartnerAdmin = requireRole(['admin', 'superadmin']);
@@ -97,6 +99,30 @@ async function writePartnerEvent(params: {
     meta: params.meta || {},
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+}
+
+async function writePartnerAudit(params: {
+  action: string;
+  targetPartnerId: string;
+  actorUid: string;
+  actorRole: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  reason?: string;
+}): Promise<void> {
+  await admin.firestore().collection('partner_audit_log').add({
+    ...params,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function getPartnerDemoSchool(
+  db: admin.firestore.Firestore,
+  partner: admin.firestore.DocumentData,
+): Promise<{ id: string; data: admin.firestore.DocumentData } | null> {
+  if (!partner.demoSchoolId) return null;
+  const schoolSnap = await db.collection('schools').doc(partner.demoSchoolId).get();
+  return schoolSnap.exists ? { id: schoolSnap.id, data: schoolSnap.data()! } : null;
 }
 
 function isTrialActive(trial: {
@@ -230,10 +256,39 @@ router.post(
         classLaunchesLimit: TRIAL_LAUNCH_LIMIT,
         classLaunchesUsed: 0,
         classLaunchesRemaining: TRIAL_LAUNCH_LIMIT,
+        lessonLaunchesLimit: TRIAL_LESSON_LAUNCH_LIMIT,
+        lessonLaunchesUsed: 0,
+        lessonLaunchesRemaining: TRIAL_LESSON_LAUNCH_LIMIT,
       };
 
       const partnerRef = db.collection('partners').doc();
       const partnerId = partnerRef.id;
+      const demoSchoolQuery = await db.collection('schools').where('schoolCode', '==', DEFAULT_DEMO_SCHOOL_CODE).limit(1).get();
+      let demoSchoolRef: admin.firestore.DocumentReference;
+      if (demoSchoolQuery.empty) {
+        demoSchoolRef = db.collection('schools').doc();
+        await demoSchoolRef.set({
+          name: 'Altie Reality',
+          schoolCode: DEFAULT_DEMO_SCHOOL_CODE,
+          approvalStatus: 'approved',
+          source: 'channel_partner_demo',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        demoSchoolRef = demoSchoolQuery.docs[0].ref;
+      }
+      const demoClassRef = db.collection('classes').doc();
+      await demoClassRef.set({
+        class_name: `${reg.organizationName || 'Channel Partner'} Demo`,
+        school_id: demoSchoolRef.id,
+        partner_id: partnerId,
+        teacher_ids: [],
+        student_ids: [],
+        source: 'channel_partner_demo',
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
       await partnerRef.set({
         organizationName: reg.organizationName || '',
@@ -248,7 +303,9 @@ router.post(
         registrationId,
         userId: userRecord.uid,
         trial,
-        schoolIds: [],
+        schoolIds: [demoSchoolRef.id],
+        demoSchoolId: demoSchoolRef.id,
+        demoClassId: demoClassRef.id,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         approvedAt: now.toISOString(),
         approvedBy: reviewerUid,
@@ -553,6 +610,10 @@ router.get(['/schools', '/schools/'], requirePartner, async (req: Request, res: 
     }
     const snap = await db.collection('schools').where('partner_id', '==', partner.id).get();
     const schools = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const demoSchool = await getPartnerDemoSchool(db, partner.data);
+    if (demoSchool && !schools.some((school) => school.id === demoSchool.id)) {
+      schools.unshift({ id: demoSchool.id, ...demoSchool.data, isDefaultDemoSchool: true });
+    }
     res.json({ success: true, schools });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error?.message || 'Failed to list schools' });
@@ -714,13 +775,18 @@ router.post(['/sessions', '/sessions/'], requirePartner, async (req: Request, re
     }
 
     const schoolSnap = await db.collection('schools').doc(schoolId).get();
-    if (!schoolSnap.exists || schoolSnap.data()?.partner_id !== partner.id) {
+    const isDefaultDemoSchool = partner.data.demoSchoolId === schoolId;
+    if (!schoolSnap.exists || (!isDefaultDemoSchool && schoolSnap.data()?.partner_id !== partner.id)) {
       res.status(403).json({ success: false, message: 'School not in your portfolio' });
       return;
     }
 
     const classSnap = await db.collection('classes').doc(classId).get();
-    if (!classSnap.exists || classSnap.data()?.school_id !== schoolId) {
+    if (
+      !classSnap.exists ||
+      classSnap.data()?.school_id !== schoolId ||
+      (isDefaultDemoSchool && classSnap.data()?.partner_id !== partner.id)
+    ) {
       res.status(400).json({ success: false, message: 'Class not found for this school' });
       return;
     }
@@ -814,6 +880,133 @@ router.post(['/sessions', '/sessions/'], requirePartner, async (req: Request, re
   }
 });
 
+router.post(
+  ['/sessions/:sessionId/launch-lesson', '/sessions/:sessionId/launch-lesson/'],
+  requirePartner,
+  async (req: Request, res: Response): Promise<void> => {
+    const { sessionId } = req.params;
+    const chapterId = String(req.body?.chapterId || '').trim();
+    const topicId = String(req.body?.topicId || '').trim();
+    const sceneId = String(req.body?.sceneId || '').trim();
+    const title = String(req.body?.title || '').trim().slice(0, 200);
+    if (!chapterId || !topicId) {
+      res.status(400).json({ success: false, message: 'chapterId and topicId are required' });
+      return;
+    }
+
+    const db = admin.firestore();
+    try {
+      const partner = await getPartnerByUserId(req.user!.uid);
+      if (!partner) {
+        res.status(404).json({ success: false, message: 'Partner profile not found' });
+        return;
+      }
+      const partnerRef = db.collection('partners').doc(partner.id);
+      const sessionRef = db.collection('class_sessions').doc(sessionId);
+      const result = await db.runTransaction(async (tx) => {
+        const [partnerSnap, sessionSnap] = await Promise.all([tx.get(partnerRef), tx.get(sessionRef)]);
+        if (!partnerSnap.exists || !sessionSnap.exists) throw new Error('Partner or session not found');
+        const freshPartner = partnerSnap.data()!;
+        const session = sessionSnap.data()!;
+        if (session.partner_id !== partner.id || session.hosted_by_partner !== true) {
+          const error: any = new Error('Session is not in your partner portfolio');
+          error.code = 'FORBIDDEN';
+          throw error;
+        }
+        const check = isTrialActive(freshPartner.trial);
+        if (!check.ok) {
+          const error: any = new Error(check.reason || 'Trial inactive');
+          error.code = 'TRIAL_INACTIVE';
+          throw error;
+        }
+        const remaining = Number(freshPartner.trial?.lessonLaunchesRemaining ?? 0);
+        if (remaining <= 0) {
+          const error: any = new Error('Lesson launch quota exhausted');
+          error.code = 'LESSON_QUOTA_EXHAUSTED';
+          throw error;
+        }
+        const nextRemaining = remaining - 1;
+        const nextUsed = Number(freshPartner.trial?.lessonLaunchesUsed ?? 0) + 1;
+        tx.update(partnerRef, {
+          'trial.lessonLaunchesRemaining': nextRemaining,
+          'trial.lessonLaunchesUsed': nextUsed,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        tx.update(sessionRef, {
+          status: 'active',
+          launched_lesson: { chapter_id: chapterId, topic_id: topicId, scene_id: sceneId || null, title: title || null },
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { remaining: nextRemaining, used: nextUsed, schoolId: session.school_id, classId: session.class_id };
+      });
+
+      await writePartnerEvent({
+        partnerId: partner.id,
+        type: 'lesson_launched',
+        actorUid: req.user!.uid,
+        schoolId: result.schoolId,
+        meta: { sessionId, classId: result.classId, chapterId, topicId, lessonLaunchesRemaining: result.remaining },
+      });
+      res.json({ success: true, lessonLaunchesRemaining: result.remaining, lessonLaunchesUsed: result.used });
+    } catch (error: any) {
+      const status = ['FORBIDDEN', 'TRIAL_INACTIVE', 'LESSON_QUOTA_EXHAUSTED'].includes(error?.code) ? 403 : 500;
+      res.status(status).json({ success: false, message: error?.message || 'Failed to launch demo lesson' });
+    }
+  }
+);
+
+router.post(
+  ['/sessions/:sessionId/telemetry', '/sessions/:sessionId/telemetry/'],
+  requirePartner,
+  async (req: Request, res: Response): Promise<void> => {
+    const location = req.body?.location;
+    if (req.body?.consentTelemetry !== true || typeof location?.latitude !== 'number' || typeof location?.longitude !== 'number') {
+      res.status(400).json({ success: false, message: 'Explicit telemetry consent and location are required' });
+      return;
+    }
+    const db = admin.firestore();
+    try {
+      const partner = await getPartnerByUserId(req.user!.uid);
+      const sessionSnap = await db.collection('class_sessions').doc(req.params.sessionId).get();
+      if (!partner || !sessionSnap.exists || sessionSnap.data()?.partner_id !== partner.id) {
+        res.status(403).json({ success: false, message: 'Session is not in your partner portfolio' });
+        return;
+      }
+      let city = '';
+      let country = partner.data.country || '';
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${location.latitude}&lon=${location.longitude}`,
+          { headers: { 'User-Agent': 'LearnXR partner telemetry (privacy@altiereality.com)' } }
+        );
+        if (response.ok) {
+          const result = await response.json() as { address?: Record<string, string> };
+          city = result.address?.city || result.address?.town || result.address?.village || '';
+          country = result.address?.country || country;
+        }
+      } catch {
+        // Telemetry remains useful with the partner's declared country fallback.
+      }
+      await db.collection('partner_telemetry_events').add({
+        partnerId: partner.id,
+        schoolId: sessionSnap.data()?.school_id || null,
+        sessionId: req.params.sessionId,
+        eventType: 'demo_session_started',
+        city: city || null,
+        country: country || null,
+        consentTelemetry: true,
+        consentVersion: 'partner-telemetry-v1',
+        source: 'partner_portal',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      });
+      res.json({ success: true, city: city || null, country: country || null });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to record launch telemetry' });
+    }
+  }
+);
+
 /**
  * POST /partners/teachers/:teacherUid/approve
  */
@@ -876,6 +1069,179 @@ router.post(
     }
   }
 );
+
+router.get(['/admin/list', '/admin/list/'], requireSuperadmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const db = admin.firestore();
+    const [partnersSnap, sessionsSnap] = await Promise.all([
+      db.collection('partners').get(),
+      db.collection('class_sessions').where('hosted_by_partner', '==', true).get(),
+    ]);
+    const sessionCounts = new Map<string, number>();
+    sessionsSnap.docs.forEach((doc) => {
+      const partnerId = doc.data().partner_id;
+      if (partnerId) sessionCounts.set(partnerId, (sessionCounts.get(partnerId) || 0) + 1);
+    });
+    const partners = await Promise.all(partnersSnap.docs.map(async (doc) => {
+      const data = doc.data();
+      const schools = data.schoolIds?.length || 0;
+      const daysRemaining = data.trial?.endsAt
+        ? Math.max(0, Math.ceil((new Date(data.trial.endsAt).getTime() - Date.now()) / 86_400_000))
+        : 0;
+      return { id: doc.id, ...data, schoolCount: schools, sessionCount: sessionCounts.get(doc.id) || 0, daysRemaining };
+    }));
+    res.json({ success: true, partners });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to list partners' });
+  }
+});
+
+router.post(['/:partnerId/provision-demo', '/:partnerId/provision-demo/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+  const db = admin.firestore();
+  const partnerRef = db.collection('partners').doc(req.params.partnerId);
+  try {
+    const partnerSnap = await partnerRef.get();
+    if (!partnerSnap.exists) {
+      res.status(404).json({ success: false, message: 'Partner not found' });
+      return;
+    }
+    const partner = partnerSnap.data()!;
+    if (partner.demoSchoolId && partner.demoClassId) {
+      res.json({ success: true, demoSchoolId: partner.demoSchoolId, demoClassId: partner.demoClassId, existing: true });
+      return;
+    }
+    const schoolQuery = await db.collection('schools').where('schoolCode', '==', DEFAULT_DEMO_SCHOOL_CODE).limit(1).get();
+    if (schoolQuery.empty) {
+      res.status(400).json({ success: false, message: `Default demo school ${DEFAULT_DEMO_SCHOOL_CODE} was not found` });
+      return;
+    }
+    const schoolRef = schoolQuery.docs[0].ref;
+    const classRef = db.collection('classes').doc();
+    await classRef.set({
+      class_name: `${partner.organizationName || 'Channel Partner'} Demo`,
+      school_id: schoolRef.id,
+      partner_id: partnerRef.id,
+      teacher_ids: [],
+      student_ids: [],
+      source: 'channel_partner_demo',
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await partnerRef.update({
+      demoSchoolId: schoolRef.id,
+      demoClassId: classRef.id,
+      schoolIds: admin.firestore.FieldValue.arrayUnion(schoolRef.id),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await writePartnerEvent({ partnerId: partnerRef.id, type: 'school_created', actorUid: req.user!.uid, schoolId: schoolRef.id, meta: { demoClassId: classRef.id, defaultDemoSchool: true } });
+    await writePartnerAudit({ action: 'provision_demo_class', targetPartnerId: partnerRef.id, actorUid: req.user!.uid, actorRole: req.userProfile!.role, after: { demoSchoolId: schoolRef.id, demoClassId: classRef.id } });
+    res.json({ success: true, demoSchoolId: schoolRef.id, demoClassId: classRef.id });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to provision demo class' });
+  }
+});
+
+router.get(['/admin/:partnerId/telemetry', '/admin/:partnerId/telemetry/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const snap = await admin.firestore()
+      .collection('partner_telemetry_events')
+      .where('partnerId', '==', req.params.partnerId)
+      .limit(500)
+      .get();
+    const locations = new Map<string, number>();
+    snap.docs.forEach((doc) => {
+      const data = doc.data();
+      const label = [data.city, data.country].filter(Boolean).join(', ') || 'Unknown';
+      locations.set(label, (locations.get(label) || 0) + 1);
+    });
+    res.json({ success: true, locations: Array.from(locations, ([label, launches]) => ({ label, launches })) });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to load partner telemetry' });
+  }
+});
+
+router.post(['/:partnerId/trial/quota', '/:partnerId/trial/quota/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+  const classLimit = Number(req.body?.classLaunchesLimit);
+  const lessonLimit = Number(req.body?.lessonLaunchesLimit);
+  if (!Number.isInteger(classLimit) || !Number.isInteger(lessonLimit) || classLimit < 0 || lessonLimit < 0) {
+    res.status(400).json({ success: false, message: 'Launch limits must be non-negative integers' });
+    return;
+  }
+  const ref = admin.firestore().collection('partners').doc(req.params.partnerId);
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(404).json({ success: false, message: 'Partner not found' });
+      return;
+    }
+    const trial = snap.data()?.trial || {};
+    const usedClasses = Number(trial.classLaunchesUsed || 0);
+    const usedLessons = Number(trial.lessonLaunchesUsed || 0);
+    const update = {
+      'trial.classLaunchesLimit': classLimit,
+      'trial.classLaunchesRemaining': Math.max(0, classLimit - usedClasses),
+      'trial.lessonLaunchesLimit': lessonLimit,
+      'trial.lessonLaunchesRemaining': Math.max(0, lessonLimit - usedLessons),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await ref.update(update);
+    await writePartnerEvent({ partnerId: ref.id, type: 'quota_adjusted', actorUid: req.user!.uid, meta: update });
+    await writePartnerAudit({
+      action: 'quota_adjust',
+      targetPartnerId: ref.id,
+      actorUid: req.user!.uid,
+      actorRole: req.userProfile!.role,
+      before: { trial },
+      after: update,
+      reason: typeof req.body?.reason === 'string' ? req.body.reason.slice(0, 500) : undefined,
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to update quota' });
+  }
+});
+
+router.post(['/:partnerId/trial/extend', '/:partnerId/trial/extend/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+  const months = Number(req.body?.months);
+  if (!Number.isInteger(months) || months < 1 || months > 24) {
+    res.status(400).json({ success: false, message: 'months must be between 1 and 24' });
+    return;
+  }
+  const ref = admin.firestore().collection('partners').doc(req.params.partnerId);
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(404).json({ success: false, message: 'Partner not found' });
+      return;
+    }
+    const trial = snap.data()?.trial || {};
+    const base = new Date(Math.max(Date.now(), new Date(trial.endsAt || Date.now()).getTime()));
+    const endsAt = addMonthsIso(base, months);
+    await ref.update({ 'trial.endsAt': endsAt, status: 'active', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    await writePartnerEvent({ partnerId: ref.id, type: 'trial_extended', actorUid: req.user!.uid, meta: { months, endsAt } });
+    await writePartnerAudit({ action: 'trial_extend', targetPartnerId: ref.id, actorUid: req.user!.uid, actorRole: req.userProfile!.role, before: { trial }, after: { endsAt } });
+    res.json({ success: true, endsAt });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to extend trial' });
+  }
+});
+
+router.post(['/:partnerId/reactivate', '/:partnerId/reactivate/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+  const ref = admin.firestore().collection('partners').doc(req.params.partnerId);
+  try {
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(404).json({ success: false, message: 'Partner not found' });
+      return;
+    }
+    await ref.update({ status: 'active', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    await writePartnerEvent({ partnerId: ref.id, type: 'partner_reactivated', actorUid: req.user!.uid });
+    await writePartnerAudit({ action: 'reactivate', targetPartnerId: ref.id, actorUid: req.user!.uid, actorRole: req.userProfile!.role, before: { status: snap.data()?.status }, after: { status: 'active' } });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to reactivate partner' });
+  }
+});
 
 /**
  * GET /partners/registrations/:registrationId/detail — superadmin detail with partner + schools
