@@ -29,6 +29,7 @@ const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
 const streetViewApiKey = defineSecret("GOOGLE_STREETVIEW_API_KEY");
+const n8nPartnerApproveWebhookUrl = defineSecret("N8N_PARTNER_APPROVE_WEBHOOK_URL");
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
@@ -243,7 +244,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, trellisApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey]
+    secrets: [blockadelabsApiKey, meshyApiKey, trellisApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey, n8nPartnerApproveWebhookUrl]
   },
   (req, res) => {
   // Load secrets and set as environment variables
