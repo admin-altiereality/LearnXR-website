@@ -421,56 +421,60 @@ const PartnerDashboard = () => {
   }
 
   return (
-    <div className="flex-1 space-y-6 p-4 md:p-8 pt-6">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
-          <FaHandshake className="text-primary" />
-          Partner Dashboard
-        </h2>
-        <p className="text-muted-foreground">
-          {partner.organizationName} · onboard schools, approve teachers, run demos
-        </p>
-      </div>
-
-      <Card className={!trialActive ? 'border-destructive/50' : ''}>
-        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <div className="font-medium">Trial entitlement</div>
-            <p className="text-sm text-muted-foreground mt-1">
-              200 class launches and 200 approved demo lesson launches for six months. Each partner receives an isolated Altie Reality demo class.
+    <div className="flex-1 space-y-7 bg-gradient-to-b from-background via-background to-teal-950/[0.03] p-4 pt-6 md:p-8">
+      <section className="relative overflow-hidden rounded-2xl border border-teal-400/20 bg-card/75 p-5 shadow-sm backdrop-blur-xl sm:p-7">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-teal-400/10 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-teal-400/25 bg-teal-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-400">
+              <FaHandshake className="h-3 w-3" /> Channel Partner Workspace
+            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{partner.organizationName}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Plan live demonstrations, guide classroom experiences, and monitor partner activity from one secure workspace.
             </p>
-            {!trialActive && trialBlockReason && (
-              <p className="text-sm text-destructive mt-2">{trialBlockReason}</p>
-            )}
           </div>
-          <div className="flex gap-3 flex-wrap">
-            <Badge variant={trialActive ? 'default' : 'destructive'} className="capitalize">
+          <div className="flex items-center gap-3">
+            <Badge variant={trialActive ? 'default' : 'destructive'} className="rounded-full px-3 py-1 capitalize">
               {partner.status}
             </Badge>
-            <div className="text-sm">
-              <span className="text-muted-foreground">Classes </span>
-              <span className="font-semibold">
-                {partner.trial?.classLaunchesRemaining ?? 0}/{partner.trial?.classLaunchesLimit ?? 200}
-              </span>
-            </div>
-            <div className="text-sm">
-              <span className="text-muted-foreground">Lessons </span>
-              <span className="font-semibold">
-                {partner.trial?.lessonLaunchesRemaining ?? 0}/{partner.trial?.lessonLaunchesLimit ?? 200}
-              </span>
-            </div>
-            <div className="text-sm">
-              <span className="text-muted-foreground">Days left </span>
-              <span className="font-semibold">{daysLeft ?? '—'}</span>
+            <div className="rounded-xl border border-border bg-background/70 px-3 py-2 text-right">
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Trial remaining</p>
+              <p className="text-sm font-semibold">{daysLeft ?? '—'} days</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      <Card className="border-teal-400/30">
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center gap-2 font-medium">
-            <FaPlay className="text-teal-400" /> Live demo classroom
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Card className="border-border/80 bg-card/80 shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Class launches</p>
+            <p className="mt-2 text-2xl font-bold tabular-nums">{partner.trial?.classLaunchesRemaining ?? 0}<span className="text-base font-medium text-muted-foreground"> / {partner.trial?.classLaunchesLimit ?? 200}</span></p>
+            <p className="mt-1 text-xs text-muted-foreground">Available live demo sessions</p>
+          </CardContent>
+        </Card>
+        <Card className="border-border/80 bg-card/80 shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Demo lessons</p>
+            <p className="mt-2 text-2xl font-bold tabular-nums">{partner.trial?.lessonLaunchesRemaining ?? 0}<span className="text-base font-medium text-muted-foreground"> / {partner.trial?.lessonLaunchesLimit ?? 200}</span></p>
+            <p className="mt-1 text-xs text-muted-foreground">Approved lessons ready to present</p>
+          </CardContent>
+        </Card>
+        <Card className={!trialActive ? 'border-destructive/50 bg-destructive/5' : 'border-teal-400/20 bg-teal-400/[0.04]'}>
+          <CardContent className="p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Demo environment</p>
+            <p className="mt-2 text-sm font-semibold">{partner.demoSchoolId ? 'Altie Reality demo class ready' : 'Setup required'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{trialBlockReason || 'Isolated workspace with consent-based launch telemetry'}</p>
+          </CardContent>
+        </Card>
+      </section>
+
+      <Card className="border-teal-400/30 bg-card/85 shadow-sm">
+        <CardContent className="space-y-5 p-5 sm:p-6">
+          <div className="flex items-center gap-3 font-medium">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-400/10 text-teal-400"><FaPlay className="h-4 w-4" /></span>
+            <div><p>Live demo classroom</p><p className="text-xs font-normal text-muted-foreground">Start, launch, and guide a partner session</p></div>
           </div>
           {!activeSession ? (
             <p className="text-sm text-muted-foreground">
@@ -478,7 +482,7 @@ const PartnerDashboard = () => {
             </p>
           ) : (
             <>
-              <div className="flex flex-col gap-3 rounded-lg border border-teal-400/20 bg-teal-400/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 rounded-xl border border-teal-400/20 bg-teal-400/5 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-medium">Session code</p>
                   <code className="mt-1 inline-block rounded bg-background px-2 py-1 font-mono text-lg tracking-widest">
@@ -489,7 +493,7 @@ const PartnerDashboard = () => {
                   <FaCopy className="mr-2 h-3 w-3" /> Copy code
                 </Button>
               </div>
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="grid gap-3 rounded-xl border border-border bg-background/40 p-3 sm:grid-cols-[1fr_auto]">
                 <select
                   value={selectedLessonId}
                   onChange={(event) => setSelectedLessonId(event.target.value)}
@@ -511,7 +515,7 @@ const PartnerDashboard = () => {
               )}
             </>
           )}
-          <label className="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
+          <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/20 p-3 text-sm">
             <input
               type="checkbox"
               checked={telemetryConsent}
@@ -529,8 +533,8 @@ const PartnerDashboard = () => {
       </Card>
 
       {liveSession && liveSession.status !== 'ended' && (
-        <Card className="border-primary/30">
-          <CardContent className="space-y-4 p-5">
+        <Card className="border-primary/30 bg-card/85 shadow-sm">
+          <CardContent className="space-y-5 p-5 sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2 font-medium"><FaUsers className="text-primary" /> Live class controls</div>
@@ -564,7 +568,7 @@ const PartnerDashboard = () => {
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Student roster and progress</p>
                   {progressList.map((student) => (
-                    <div key={student.student_uid} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                    <div key={student.student_uid} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/30 p-3 transition hover:border-primary/30">
                       <button className="min-w-0 text-left" onClick={() => setSelectedStudentUid(student.student_uid)}>
                         <p className="truncate text-sm font-medium">{student.display_name || student.email || `Student ${student.student_uid.slice(0, 6)}`}</p>
                         <p className="text-xs capitalize text-muted-foreground">{student.phase || 'connected'}</p>
@@ -604,10 +608,11 @@ const PartnerDashboard = () => {
         </Card>
       )}
 
-      <Card>
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center gap-2 font-medium">
-            <FaSchool /> Create school
+      <Card className="border-border/80 bg-card/85 shadow-sm">
+        <CardContent className="space-y-5 p-5 sm:p-6">
+          <div className="flex items-center gap-3 font-medium">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary"><FaSchool className="h-4 w-4" /></span>
+            <div><p>Add a school</p><p className="text-xs font-normal text-muted-foreground">Create a portfolio location for future demonstrations</p></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {(
@@ -624,7 +629,7 @@ const PartnerDashboard = () => {
               <label key={key} className="text-sm space-y-1">
                 <span className="text-muted-foreground">{label}</span>
                 <input
-                  className="w-full rounded-md border border-border bg-background px-3 py-2"
+                  className="w-full rounded-lg border border-border bg-background/70 px-3 py-2 transition focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/15"
                   value={schoolForm[key]}
                   onChange={(e) => setSchoolForm((f) => ({ ...f, [key]: e.target.value }))}
                 />
@@ -637,9 +642,9 @@ const PartnerDashboard = () => {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-5 space-y-4">
-          <div className="font-medium">My schools ({schools.length})</div>
+      <Card className="border-border/80 bg-card/85 shadow-sm">
+        <CardContent className="space-y-5 p-5 sm:p-6">
+          <div className="flex items-center justify-between"><div><p className="font-medium">Demo locations</p><p className="mt-1 text-xs text-muted-foreground">Choose a class and begin a controlled live session</p></div><Badge variant="outline">{schools.length}</Badge></div>
           {schools.length === 0 ? (
             <p className="text-sm text-muted-foreground">No schools yet. Create one above for your demo visit.</p>
           ) : (
@@ -647,7 +652,7 @@ const PartnerDashboard = () => {
               {schools.map((school) => {
                 const classes = classesBySchool[school.id] || [];
                 return (
-                  <div key={school.id} className="border border-border rounded-lg p-4 space-y-3">
+                  <div key={school.id} className="space-y-4 rounded-xl border border-border bg-background/25 p-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         <div className="font-semibold">{school.name}</div>
@@ -656,7 +661,7 @@ const PartnerDashboard = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <code className="text-sm bg-muted px-2 py-1 rounded">
+                        <code className="rounded-md bg-muted px-2 py-1 font-mono text-sm">
                           {school.schoolCode || '—'}
                         </code>
                         {school.schoolCode && (
@@ -675,7 +680,7 @@ const PartnerDashboard = () => {
                     </p>
                     <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                       <select
-                        className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-sm"
                         value={selectedClassBySchool[school.id] || ''}
                         onChange={(e) =>
                           setSelectedClassBySchool((m) => ({ ...m, [school.id]: e.target.value }))
@@ -718,10 +723,11 @@ const PartnerDashboard = () => {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center gap-2 font-medium">
-            <FaChalkboardTeacher /> Pending teachers
+      <Card className="border-border/80 bg-card/85 shadow-sm">
+        <CardContent className="space-y-5 p-5 sm:p-6">
+          <div className="flex items-center gap-3 font-medium">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary"><FaChalkboardTeacher className="h-4 w-4" /></span>
+            <div><p>Teacher approvals</p><p className="text-xs font-normal text-muted-foreground">Review educators assigned to your portfolio</p></div>
           </div>
           {pendingTeachers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No pending teachers in your schools.</p>
@@ -730,7 +736,7 @@ const PartnerDashboard = () => {
               {pendingTeachers.map((t) => (
                 <li
                   key={t.id}
-                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-border rounded-md p-3"
+                  className="flex flex-col gap-2 rounded-xl border border-border bg-background/25 p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="text-sm">
                     <div className="font-medium">{t.displayName || t.name || t.email || t.id}</div>
@@ -760,16 +766,16 @@ const PartnerDashboard = () => {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-5 space-y-3">
-          <div className="font-medium">Activity</div>
+      <Card className="border-border/80 bg-card/85 shadow-sm">
+        <CardContent className="space-y-4 p-5 sm:p-6">
+          <div><p className="font-medium">Activity timeline</p><p className="mt-1 text-xs text-muted-foreground">Recent demo, school, and teacher events</p></div>
           {events.length === 0 ? (
             <p className="text-sm text-muted-foreground">No activity yet.</p>
           ) : (
             <ul className="text-sm space-y-2 max-h-64 overflow-y-auto">
               {events.map((e) => (
-                <li key={e.id} className="flex justify-between gap-4 border-b border-border/60 pb-2">
-                  <span className="font-medium">{e.type}</span>
+                <li key={e.id} className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/20 px-3 py-2">
+                  <span className="font-medium capitalize">{e.type.replaceAll('_', ' ')}</span>
                   <span className="text-muted-foreground text-xs truncate">
                     {e.schoolId
                       ? schools.find((s) => s.id === e.schoolId)?.name || e.schoolId
