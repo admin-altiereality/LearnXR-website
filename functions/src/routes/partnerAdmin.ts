@@ -239,9 +239,7 @@ router.post(
 
       let inviteLink: string | null = null;
       try {
-        inviteLink = await admin.auth().generatePasswordResetLink(email, {
-          url: `${APP_ORIGIN}/login`,
-        });
+        inviteLink = await admin.auth().generatePasswordResetLink(email);
       } catch (err) {
         console.error(`[${requestId}] Failed to generate password reset link:`, err);
       }
