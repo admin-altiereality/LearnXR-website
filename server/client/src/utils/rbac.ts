@@ -9,7 +9,7 @@
 // Types
 // ============================================================================
 
-export type UserRole = 'student' | 'teacher' | 'school' | 'admin' | 'superadmin' | 'principal' | 'associate';
+export type UserRole = 'student' | 'teacher' | 'school' | 'admin' | 'superadmin' | 'principal' | 'associate' | 'partner';
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | null;
 
 export interface UserProfile {
@@ -46,6 +46,7 @@ export interface UserProfile {
   teacher_id?: string; // For students: primary teacher UID
   managed_class_ids?: string[]; // For teachers: classes they teach
   managed_school_id?: string; // For principals: school they manage
+  partner_id?: string; // Channel partner tenant id (role=partner)
 
   // Guest student (exploratory) - no school code, no approval, one lesson only
   isGuest?: boolean;
@@ -79,6 +80,7 @@ export const ROLE_HIERARCHY: Record<UserRole, number> = {
   school: 2,
   principal: 2,
   associate: 2,
+  partner: 2,
   admin: 3,
   superadmin: 4,
 };
@@ -92,7 +94,7 @@ export const APPROVAL_REQUIRED_ROLES: UserRole[] = ['student', 'teacher', 'schoo
 /**
  * Roles that can approve other users (hierarchical: teachers, principals, schools, admins)
  */
-export const CAN_APPROVE_ROLES: UserRole[] = ['teacher', 'principal', 'school', 'admin', 'superadmin'];
+export const CAN_APPROVE_ROLES: UserRole[] = ['teacher', 'principal', 'school', 'partner', 'admin', 'superadmin'];
 
 /**
  * Roles that can approve chapters/content (admin and superadmin)
@@ -109,13 +111,13 @@ export const STUDENT_ONBOARDING_ROLES: UserRole[] = ['student'];
  * Defines which roles can access which route categories
  */
 export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
-  public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
-  auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
-  lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate'],
+  public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
+  auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
+  lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   create: ['teacher', 'admin', 'superadmin'], // School administrators removed
   studio: ['admin', 'superadmin', 'associate'], // Associate can refine lessons (no delete)
   developer: ['admin', 'superadmin'],
-  class_management: ['teacher', 'school', 'principal', 'admin', 'superadmin'],
+  class_management: ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'],
   admin: ['admin', 'superadmin'],
   superadmin: ['superadmin'],
 };
@@ -190,6 +192,10 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   
   // Associate dashboard (staff only)
   '/dashboard/associate': 'studio',
+
+  // Partner dashboard (channel partners)
+  '/dashboard/partner': 'auth',
+  '/invite/school': 'public',
   
   // Secret backend login - no category (public route, role check after login)
   '/secretbackend': 'public',
@@ -248,6 +254,12 @@ export function canApproveUser(approver: UserProfile | null, targetUser: UserPro
     // For APPROVED teachers: Check if they're in the same school
     return approver.school_id === targetUser.school_id || 
            approver.managed_school_id === targetUser.school_id;
+  }
+
+  // Partners can approve teachers in schools they own (school_id match checked by caller/rules)
+  if (approver.role === 'partner' && targetUser.role === 'teacher') {
+    if (targetUser.approvalStatus === 'pending') return true;
+    return Boolean(approver.partner_id && targetUser.school_id);
   }
   
   // Principals can approve teachers in their school
@@ -362,8 +374,13 @@ export function canGuestWrite(profile: UserProfile | null): boolean {
 export function isApproved(profile: UserProfile | null): boolean {
   if (!profile) return false;
   
-  // Admin and superadmin don't need approval
-  if (profile.role === 'admin' || profile.role === 'superadmin') {
+  // Admin, superadmin, associate, and partner skip approval gates
+  if (
+    profile.role === 'admin' ||
+    profile.role === 'superadmin' ||
+    profile.role === 'associate' ||
+    profile.role === 'partner'
+  ) {
     return true;
   }
   
@@ -466,8 +483,13 @@ export function hasCompletedSchoolOnboarding(profile: UserProfile | null): boole
 export function hasCompletedOnboarding(profile: UserProfile | null): boolean {
   if (!profile) return false;
   
-  // Admin, superadmin, and associate don't need onboarding (staff roles)
-  if (profile.role === 'admin' || profile.role === 'superadmin' || profile.role === 'associate') {
+  // Admin, superadmin, associate, and partner don't need public onboarding
+  if (
+    profile.role === 'admin' ||
+    profile.role === 'superadmin' ||
+    profile.role === 'associate' ||
+    profile.role === 'partner'
+  ) {
     return true;
   }
   
@@ -658,6 +680,8 @@ export function getDefaultPage(role: UserRole): string {
       return '/lessons';
     case 'associate':
       return '/dashboard/associate';
+    case 'partner':
+      return '/dashboard/partner';
     case 'admin':
     case 'superadmin':
       return '/studio/content';
@@ -782,6 +806,7 @@ export const ROLE_DISPLAY_NAMES: Record<UserRole, string> = {
   school: 'School Administrator',
   principal: 'Principal',
   associate: 'Associate',
+  partner: 'Channel Partner',
   admin: 'Administrator',
   superadmin: 'Super Administrator',
 };
@@ -792,6 +817,7 @@ export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   school: 'Manage school-wide content and teachers',
   principal: 'School principal with administrative access',
   associate: 'Associate user with limited access',
+  partner: 'Onboard demo schools and run classroom demos',
   admin: 'Full platform administration access',
   superadmin: 'Complete system control and user approvals',
 };
@@ -802,6 +828,7 @@ export const ROLE_COLORS: Record<UserRole, { bg: string; text: string; border: s
   school: { bg: 'bg-primary/10', text: 'text-primary', border: 'border-primary/30' },
   principal: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/30' },
   associate: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30' },
+  partner: { bg: 'bg-teal-500/10', text: 'text-teal-400', border: 'border-teal-500/30' },
   admin: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
   superadmin: { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/30' },
 };

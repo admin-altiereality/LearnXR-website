@@ -22,6 +22,7 @@ import { syncAllQueues } from './services/n8nLessonBuilderQueue';
 // Used by AI Teacher Support, Personalized Learning, and other AI features.
 const blockadelabsApiKey = defineSecret("BLOCKADE_API_KEY");
 const meshyApiKey = defineSecret("MESHY_API_KEY");
+const trellisApiKey = defineSecret("TRELLIS_API_KEY");
 // Razorpay secrets removed - payment system not needed
 const openaiApiKey = defineSecret("OPENAI_API_KEY");
 const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
@@ -144,7 +145,13 @@ const getApp = (): express.Application => {
     const reportRoutes = require('./routes/reports').default;
     app.use('/linkedin', linkedinRoutes);
     app.use('/leads', publicLeadLimiter, leadRoutes);
-    app.use('/partners', publicLeadLimiter, partnerRoutes);
+    // Rate-limit only public partner registration; authenticated partner APIs mount after auth.
+    app.use('/partners', (req: Request, res: Response, next: NextFunction) => {
+      const isRegister = req.method === 'POST' && /^\/register\/?$/.test(req.path);
+      if (isRegister) return publicLeadLimiter(req, res, next);
+      return next();
+    });
+    app.use('/partners', partnerRoutes);
     app.use('/reports', publicLeadLimiter, reportRoutes);
     app.use('/auth', authTokenRoutes); // custom-token exchange for standalone VR player (GET)
     app.use('/auth', authRoutes);
@@ -164,6 +171,7 @@ const getApp = (): express.Application => {
     const healthRoutes = require('./routes/health').default;
     const skyboxRoutes = require('./routes/skybox').default;
     const meshyRoutes = require('./routes/meshy').default;
+    const trellisRoutes = require('./routes/trellis').default;
     const paymentRoutes = require('./routes/payment').default;
     const subscriptionRoutes = require('./routes/subscription').default;
     const userRoutes = require('./routes/user').default;
@@ -180,11 +188,14 @@ const getApp = (): express.Application => {
     const lessonBundleRoutes = require('./routes/lessonBundle').default;
     const n8nRoutes = require('./routes/n8n').default;
     const n8nBuilderRoutes = require('./routes/n8nBuilder').default;
+    const partnerAdminRoutes = require('./routes/partnerAdmin').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
+    app.use('/partners', partnerAdminRoutes);
     app.use('/skybox', skyboxRoutes);
     app.use('/meshy', meshyRoutes);
+    app.use('/trellis', trellisRoutes);
     app.use('/payment', paymentRoutes);
     app.use('/subscription', subscriptionRoutes);
     app.use('/user', userRoutes);
@@ -232,7 +243,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey]
+    secrets: [blockadelabsApiKey, meshyApiKey, trellisApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -240,6 +251,7 @@ export const api = onRequest(
   try {
     let blockadeKey: string | undefined;
     let meshyKey: string | undefined;
+    let trellisKey: string | undefined;
     // Razorpay removed - payment system not needed
     let openaiKey: string | undefined;
     let openaiAvatarKey: string | undefined;
@@ -261,6 +273,15 @@ export const api = onRequest(
       }
     } catch (err: any) {
       console.error('Error accessing MESHY_API_KEY:', err?.message || err);
+    }
+
+    try {
+      trellisKey = trellisApiKey.value();
+      if (trellisKey) {
+        trellisKey = trellisKey.trim().replace(/\r?\n/g, '').replace(/\s+/g, '');
+      }
+    } catch (err: any) {
+      console.error('Error accessing TRELLIS_API_KEY:', err?.message || err);
     }
     
     try {
@@ -316,6 +337,10 @@ export const api = onRequest(
       process.env.MESHY_API_KEY = meshyKey;
       console.log('🔑 Meshy API key cleaned and set, length:', meshyKey.length);
     }
+    if (trellisKey) {
+      process.env.TRELLIS_API_KEY = trellisKey;
+      console.log('🔑 Trellis API key cleaned and set, length:', trellisKey.length);
+    }
     // Razorpay removed - payment system not needed
     if (openaiKey) {
       process.env.OPENAI_API_KEY = openaiKey;
@@ -362,6 +387,8 @@ export const api = onRequest(
       hasLinkedInToken: !!linkedinToken,
       linkedinTokenLength: linkedinToken?.length || 0,
       hasLinkedInURN: !!linkedinURN,
+      hasTrellis: !!trellisKey,
+      trellisKeyLength: trellisKey?.length || 0,
       hasStreetViewKey: !!streetViewKey
     });
     
@@ -369,7 +396,8 @@ export const api = onRequest(
     const { initializeServices } = require('./utils/services');
     initializeServices({
       blockadelabsApiKey: blockadeKey,
-      meshyApiKey: meshyKey
+      meshyApiKey: meshyKey,
+      trellisApiKey: trellisKey
       // Razorpay removed - payment system not needed
     });
   } catch (error: any) {

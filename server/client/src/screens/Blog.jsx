@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import image1 from '../../public/assests/Gearningupimg.jpg';
-import image2 from '../../public/assests/Bitspilanis.jpg';
-import image4 from '../../public/assests/evoneural.jpg';
-import image5 from '../../public/assests/startup.jpg';
+const image1 = '/assests/Gearningupimg.jpg';
+const image2 = '/assests/Bitspilanis.jpg';
+const image4 = '/assests/evoneural.jpg';
+const image5 = '/assests/startup.jpg';
 import { 
   FaTrophy, 
   FaRocket, 

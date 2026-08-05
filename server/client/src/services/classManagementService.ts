@@ -32,9 +32,16 @@ export async function createClass(
     return null;
   }
 
-  // Allow teachers, school administrators, principals, and admins to create classes
-  if (profile.role !== 'school' && profile.role !== 'principal' && profile.role !== 'teacher' && profile.role !== 'admin' && profile.role !== 'superadmin') {
-    toast.error('Only teachers, school administrators, principals and admins can create classes');
+  // Allow teachers, school administrators, principals, partners, and admins to create classes
+  if (
+    profile.role !== 'school' &&
+    profile.role !== 'principal' &&
+    profile.role !== 'teacher' &&
+    profile.role !== 'partner' &&
+    profile.role !== 'admin' &&
+    profile.role !== 'superadmin'
+  ) {
+    toast.error('Only teachers, school administrators, principals, partners and admins can create classes');
     return null;
   }
 
@@ -44,9 +51,8 @@ export async function createClass(
     ? profile.managed_school_id 
     : (profile.school_id || profile.managed_school_id);
   
-  // For all roles except superadmin, verify they're creating for their own school
-  // Superadmin can create classes for any school
-  if (profile.role !== 'superadmin') {
+  // Superadmin / partner: school ownership enforced by Firestore (partner_id) or admin scope
+  if (profile.role !== 'superadmin' && profile.role !== 'partner') {
     if (!mySchoolId) {
       toast.error('Unable to determine your school. Please contact support.');
       return null;
@@ -513,7 +519,14 @@ export async function getSchoolClasses(
     return [];
   }
 
-  if (profile.role !== 'school' && profile.role !== 'principal' && profile.role !== 'admin' && profile.role !== 'superadmin') {
+  if (
+    profile.role !== 'school' &&
+    profile.role !== 'principal' &&
+    profile.role !== 'partner' &&
+    profile.role !== 'admin' &&
+    profile.role !== 'superadmin' &&
+    profile.role !== 'teacher'
+  ) {
     return [];
   }
 

@@ -30,7 +30,7 @@ declare global {
 /**
  * User roles in the system
  */
-export type UserRole = 'student' | 'teacher' | 'principal' | 'admin' | 'superadmin' | 'school' | 'associate';
+export type UserRole = 'student' | 'teacher' | 'principal' | 'admin' | 'superadmin' | 'school' | 'associate' | 'partner';
 
 /**
  * Interface for user profile
@@ -95,6 +95,8 @@ export function canAccessSchool(userProfile: UserProfile, schoolId: string): boo
   if (userProfile.school_id === schoolId) {
     return true;
   }
+
+  // Partner ownership is verified against schools.partner_id by callers / Admin SDK paths
   
   return false;
 }

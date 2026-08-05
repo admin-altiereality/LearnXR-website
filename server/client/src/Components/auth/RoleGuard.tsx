@@ -69,6 +69,7 @@ export const RoleGuard = ({
           principal: 2,
           school: 2,
           associate: 2,
+          partner: 2,
           admin: 3,
           superadmin: 4,
         };

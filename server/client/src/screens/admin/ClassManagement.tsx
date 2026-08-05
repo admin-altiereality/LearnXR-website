@@ -24,6 +24,7 @@ import {
   setClassTeacher,
 } from '../../services/classManagementService';
 import { getSchoolById, getAllSchools } from '../../services/schoolManagementService';
+import { listPartnerSchools } from '../../services/partnerService';
 import { getAvailableSubjects, getAvailableCurriculums } from '../../lib/firebase/queries/curriculumChapters';
 import { createCurriculumChangeRequest } from '../../services/curriculumChangeRequestService';
 import type { Class, School } from '../../types/lms';
@@ -82,7 +83,9 @@ const ClassManagement = () => {
     ? profile.managed_school_id
     : (profile?.school_id || profile?.managed_school_id);
   const isSuperadmin = profile?.role === 'superadmin';
-  const schoolId = profileSchoolId ?? (isSuperadmin ? selectedSchoolId : null);
+  const isPartner = profile?.role === 'partner';
+  const canPickSchool = isSuperadmin || isPartner;
+  const schoolId = profileSchoolId ?? (canPickSchool ? selectedSchoolId : null);
 
   useEffect(() => {
     if (!profile) return;
@@ -194,11 +197,29 @@ const ClassManagement = () => {
     };
   }, [profile, schoolId]);
 
-  // Load all schools for superadmin school selector
+  // Load schools for superadmin / partner school selector
   useEffect(() => {
-    if (!profile || !isSuperadmin) return;
-    getAllSchools(profile).then(setAllSchools);
-  }, [profile, isSuperadmin]);
+    if (!profile) return;
+    if (isSuperadmin) {
+      getAllSchools(profile).then(setAllSchools);
+      return;
+    }
+    if (isPartner) {
+      listPartnerSchools()
+        .then((res) =>
+          setAllSchools(
+            (res.schools || []).map((s) => ({
+              id: s.id,
+              name: String(s.name || 'School'),
+              createdAt: '',
+              updatedAt: '',
+              createdBy: '',
+            })) as School[]
+          )
+        )
+        .catch(() => setAllSchools([]));
+    }
+  }, [profile, isSuperadmin, isPartner]);
 
   // Load school for boardAffiliation (curriculum)
   useEffect(() => {
@@ -347,8 +368,8 @@ const ClassManagement = () => {
     );
   }
 
-  // Superadmin without a profile school must select a school first
-  if (!schoolId && isSuperadmin) {
+  // Superadmin / partner without a fixed school must select a school first
+  if (!schoolId && canPickSchool) {
     return (
       <div className="min-h-screen bg-background pt-24 pb-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -360,7 +381,11 @@ const ClassManagement = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-foreground">Select a school</h2>
-                  <p className="text-muted-foreground text-sm">Choose a school to manage classes, students, and teachers.</p>
+                  <p className="text-muted-foreground text-sm">
+                    {isPartner
+                      ? 'Choose one of your partner schools to manage classes.'
+                      : 'Choose a school to manage classes, students, and teachers.'}
+                  </p>
                 </div>
               </div>
               <Select
@@ -380,7 +405,11 @@ const ClassManagement = () => {
                 </SelectContent>
               </Select>
               {allSchools.length === 0 && (
-                <p className="text-muted-foreground text-sm mt-2">No schools found. Create schools from School Management first.</p>
+                <p className="text-muted-foreground text-sm mt-2">
+                  {isPartner
+                    ? 'No schools in your portfolio yet. Create one from the Partner Dashboard.'
+                    : 'No schools found. Create schools from School Management first.'}
+                </p>
               )}
             </CardContent>
           </Card>

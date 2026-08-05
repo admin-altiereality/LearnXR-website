@@ -64,7 +64,7 @@ const normalizeRole = (role: string | undefined): UserRole => {
     return 'superadmin';
   }
   // Handle common variations
-  if (['student', 'teacher', 'school', 'admin', 'superadmin', 'principal', 'associate'].includes(raw)) {
+  if (['student', 'teacher', 'school', 'admin', 'superadmin', 'principal', 'associate', 'partner'].includes(raw)) {
     return raw as UserRole;
   }
   return 'student'; // Default fallback
@@ -110,7 +110,7 @@ const Sidebar = () => {
   };
 
   // Don't render sidebar on these pages
-  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/xrlessonplayer', '/learnxr/lesson'];
+  const hiddenPages = ['/login', '/signup', '/forgot-password', '/onboarding', '/approval-pending', '/secretbackend', '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/xrlessonplayer', '/learnxr/lesson', '/invite/school'];
   if (hiddenPages.some(page => location.pathname.startsWith(page)) || !user) {
     return null;
   }
@@ -121,6 +121,7 @@ const Sidebar = () => {
   const isPrincipal = userRole === 'principal';
   const isSchool = userRole === 'school';
   const isAssociate = userRole === 'associate';
+  const isPartner = userRole === 'partner';
   const [schoolCode, setSchoolCode] = useState<string | null>(null);
 
   // Fetch school code for School Admin and Teacher
@@ -156,6 +157,14 @@ const Sidebar = () => {
     if (isAssociate) {
       items.push({ path: '/dashboard/associate', label: 'Dashboard', icon: FaTachometerAlt });
       items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+      return items;
+    }
+
+    // Partner: dashboard, lessons, class management
+    if (isPartner) {
+      items.push({ path: '/dashboard/partner', label: 'Dashboard', icon: FaTachometerAlt });
+      items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       return items;
     }
 
@@ -251,6 +260,7 @@ const Sidebar = () => {
       case 'principal': return FaSchool;
       case 'school': return FaSchool;
       case 'associate': return FaUser;
+      case 'partner': return FaHandshake;
       case 'admin': return FaShieldAlt;
       case 'superadmin': return FaCrown;
       default: return FaUser;
@@ -265,6 +275,7 @@ const Sidebar = () => {
       case 'principal': return 'text-indigo-400';
       case 'school': return 'text-primary';
       case 'associate': return 'text-cyan-400';
+      case 'partner': return 'text-teal-400';
       case 'admin': return 'text-amber-400';
       case 'superadmin': return 'text-rose-400';
       default: return 'text-gray-400';
@@ -278,6 +289,7 @@ const Sidebar = () => {
       case 'principal': return 'bg-indigo-500/20';
       case 'school': return 'bg-primary/20';
       case 'associate': return 'bg-cyan-500/20';
+      case 'partner': return 'bg-teal-500/20';
       case 'admin': return 'bg-amber-500/20';
       case 'superadmin': return 'bg-rose-500/20';
       default: return 'bg-gray-500/20';
@@ -349,7 +361,7 @@ const Sidebar = () => {
       <div className="flex h-full flex-col">
         <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-2">
           <Link
-            to={isAdminOrSuperadmin ? '/studio/content' : isAssociate ? '/dashboard/associate' : '/lessons'}
+            to={isAdminOrSuperadmin ? '/studio/content' : isAssociate ? '/dashboard/associate' : isPartner ? '/dashboard/partner' : '/lessons'}
             className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-sidebar-accent"
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">

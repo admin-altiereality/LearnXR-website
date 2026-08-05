@@ -74,11 +74,13 @@ import WebAppShowcase from './screens/WebAppShowcase';
 import CaseStudies from './screens/CaseStudies';
 import ChannelPartners from './screens/ChannelPartners';
 import AssociateDashboard from './screens/dashboard/AssociateDashboard';
+import PartnerDashboard from './screens/dashboard/PartnerDashboard';
 import JoinClassPage from './screens/dashboard/JoinClassPage';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
 import SchoolDashboard from './screens/dashboard/SchoolDashboard';
 import StudentDashboard from './screens/dashboard/StudentDashboard';
 import TeacherDashboard from './screens/dashboard/TeacherDashboard';
+import SchoolInviteAccept from './screens/SchoolInviteAccept';
 import DeveloperSettings from './screens/DeveloperSettings';
 import N8nWorkflows from './screens/N8nWorkflows';
 import N8nLessonBuilder from './screens/studio/N8nLessonBuilder';
@@ -498,6 +500,7 @@ function App() {
                       <Route path="/web-preview" element={<WebAppShowcase />} />
                       <Route path="/case-studies" element={<CaseStudies />} />
                       <Route path="/channel-partners" element={<ChannelPartners />} />
+                      <Route path="/invite/school" element={<SchoolInviteAccept />} />
                       <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
                       <Route path="/studio-standalone" element={<StudioStandalone />} />
                       <Route path="/main-standalone" element={<MainStandalone />} />
@@ -921,6 +924,7 @@ function App() {
                       <Route path="/web-preview" element={<WebAppShowcase />} />
                       <Route path="/case-studies" element={<CaseStudies />} />
                       <Route path="/channel-partners" element={<ChannelPartners />} />
+                      <Route path="/invite/school" element={<SchoolInviteAccept />} />
                       <Route path="/vrplayer-standalone" element={<VRPlayerStandalone />} />
                       <Route path="/studio-standalone" element={<StudioStandalone />} />
                       <Route path="/main-standalone" element={<MainStandalone />} />
@@ -1124,6 +1128,13 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/dashboard/partner" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['partner']}>
+                            <PartnerDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Personalized Learning (AI) - Students only */}
                       <Route path="/personalized-learning" element={
@@ -1137,10 +1148,10 @@ function App() {
                       {/* AI Teacher Support - Merged into Create page (/main), redirect for backward compatibility */}
                       <Route path="/teacher-support" element={<Navigate to="/main" replace />} />
                       
-                      {/* Class Management - Teachers, School Administrator, Principal, Admin */}
+                      {/* Class Management - Teachers, School Administrator, Principal, Partner, Admin */}
                       <Route path="/admin/classes" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'school', 'principal', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin']}>
                             <ClassManagement />
                           </RoleGuard>
                         </ProtectedRoute>

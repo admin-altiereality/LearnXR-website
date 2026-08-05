@@ -150,7 +150,25 @@ class ProductionLogger {
         return;
       }
 
-      const raw = { ...entry, timestamp: serverTimestamp() };
+      // Firestore rules allow only these top-level keys; nest extras under metadata.
+      const metadata: Record<string, unknown> = {
+        ...(entry.metadata ? this.sanitizeMetadata(entry.metadata) : {}),
+      };
+      if (entry.sessionId) metadata.sessionId = entry.sessionId;
+      if (entry.userEmail) metadata.userEmail = entry.userEmail;
+      if (entry.error) metadata.error = entry.error;
+
+      const raw: Record<string, unknown> = {
+        level: entry.level,
+        message: entry.message,
+        timestamp: serverTimestamp(),
+      };
+      if (entry.context !== undefined) raw.context = entry.context;
+      if (entry.userId !== undefined) raw.userId = entry.userId;
+      if (entry.url !== undefined) raw.url = entry.url;
+      if (entry.userAgent !== undefined) raw.userAgent = entry.userAgent;
+      if (Object.keys(metadata).length > 0) raw.metadata = metadata;
+
       const payload = this.stripUndefined(raw) as Record<string, unknown>;
       if (Object.keys(payload).length === 0) return;
       await addDoc(collection(db, 'production_logs'), payload);

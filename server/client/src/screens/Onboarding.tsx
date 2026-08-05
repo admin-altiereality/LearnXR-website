@@ -553,8 +553,10 @@ const Onboarding = () => {
           state: studentData.state || null,
           languagePreference: studentData.languagePreference,
           learningPreferences: studentData.learningPreferences,
-          approvalStatus: isGuestStudent ? 'approved' : 'pending',
-          ...(isGuestStudent ? { isGuest: true } : {}),
+          // Guests keep approvalStatus null from create; RBAC trusts isGuest (do not self-set approved)
+          ...(isGuestStudent
+            ? { isGuest: true }
+            : { approvalStatus: 'pending' as const }),
         };
         console.log('✅ Student onboarding data prepared', {
           schoolId: isGuestStudent ? null : studentData.schoolId,

@@ -382,7 +382,11 @@ const StudentDashboard = () => {
   };
 
   useEffect(() => {
-    if (!user?.uid || !profile) return;
+    if (!user?.uid || !profile || profile.isGuest) {
+      setEvaluation(null);
+      setEvaluationLoading(false);
+      return;
+    }
     setEvaluationLoading(true);
     getStudentEvaluation(user.uid)
       .then(setEvaluation)

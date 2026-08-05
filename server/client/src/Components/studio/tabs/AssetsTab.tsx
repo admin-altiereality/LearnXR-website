@@ -23,7 +23,9 @@ import type { LanguageCode } from '../../../types/curriculum';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLessonDraftStore } from '../../../stores/lessonDraftStore';
 import { TextTo3DUnified } from './TextTo3DUnified';
+import { ImageTo3DPanel } from './ImageTo3DPanel';
 import { AssetManager } from '../../../services/assets/assetManager';
+import { studioGenerationJobManager } from '../../../services/studioGenerationJobStore';
 import { usePermissions } from '../../../hooks/usePermissions';
 import { PermissionGate } from '../../PermissionGate';
 import { useAssetCache } from '../../../hooks/useAssetCache';
@@ -109,6 +111,38 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
   
   // Text-to-3D section
   const [showTextTo3D, setShowTextTo3D] = useState(false);
+  const [generationProvider, setGenerationProvider] = useState<'meshy' | 'trellis'>('meshy');
+  const [generationUiReady, setGenerationUiReady] = useState(false);
+
+  // Restore panel open state + provider after navigation
+  useEffect(() => {
+    if (!chapterId || !topicId) return;
+    const prefs = studioGenerationJobManager.getUiPrefs(chapterId, topicId);
+    if (prefs) {
+      setShowTextTo3D(prefs.showPanel);
+      setGenerationProvider(prefs.provider);
+    } else {
+      const hasTrellisJob = Boolean(studioGenerationJobManager.getTrellisJob(chapterId, topicId));
+      const hasMeshyJob = studioGenerationJobManager.listMeshyJobs(chapterId, topicId).some(
+        (job) => !['completed', 'failed'].includes(job.phase)
+      );
+      if (hasTrellisJob || hasMeshyJob) {
+        setShowTextTo3D(true);
+        setGenerationProvider(hasTrellisJob ? 'trellis' : 'meshy');
+      }
+    }
+    setGenerationUiReady(true);
+  }, [chapterId, topicId]);
+
+  useEffect(() => {
+    if (!chapterId || !topicId || !generationUiReady) return;
+    studioGenerationJobManager.setUiPrefs({
+      chapterId,
+      topicId,
+      showPanel: showTextTo3D,
+      provider: generationProvider,
+    });
+  }, [chapterId, topicId, showTextTo3D, generationProvider, generationUiReady]);
 
   // Draft store (must be before any early returns to satisfy Rules of Hooks)
   const assetsDirty = useLessonDraftStore((s) => s.dirtyTabs.assets3d === true);
@@ -532,7 +566,7 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
         >
           <div className="flex items-center gap-2">
             <Package className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium text-foreground">Generate 3D Assets (Text-to-3D & Script-to-3D)</span>
+            <span className="text-sm font-medium text-foreground">Generate 3D Assets</span>
           </div>
           {showTextTo3D ? (
             <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -541,14 +575,47 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
           )}
         </button>
         {showTextTo3D && (
-          <div className="px-4 py-4 bg-muted">
-            <TextTo3DUnified
-              chapterId={chapterId}
-              topicId={topicId}
-              language={language}
-              bundle={bundle}
-              onAssetGenerated={handleRefresh}
-            />
+          <div className="px-4 py-4 bg-muted space-y-4">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-background/70 p-1 w-fit">
+              <button
+                type="button"
+                onClick={() => setGenerationProvider('meshy')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  generationProvider === 'meshy'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                Meshy
+              </button>
+              <button
+                type="button"
+                onClick={() => setGenerationProvider('trellis')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  generationProvider === 'trellis'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                }`}
+              >
+                Trellis 2
+              </button>
+            </div>
+
+            {generationProvider === 'meshy' ? (
+              <TextTo3DUnified
+                chapterId={chapterId}
+                topicId={topicId}
+                language={language}
+                bundle={bundle}
+                onAssetGenerated={handleRefresh}
+              />
+            ) : (
+              <ImageTo3DPanel
+                chapterId={chapterId}
+                topicId={topicId}
+                onAssetGenerated={handleRefresh}
+              />
+            )}
           </div>
         )}
       </div>

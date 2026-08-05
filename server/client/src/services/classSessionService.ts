@@ -102,17 +102,18 @@ export async function createSession(
 }
 
 /**
- * Launch a curriculum lesson to the class. Only session owner can call.
+ * Launch a curriculum lesson to the class.
+ * Host authorization is enforced by Firestore rules (owner, managing teacher, school/principal).
  */
 export async function launchLesson(
   sessionId: string,
-  teacherUid: string,
+  _teacherUid: string,
   payload: LaunchedLesson
 ): Promise<boolean> {
   try {
     const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
     const snap = await getDoc(sessionRef);
-    if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
+    if (!snap.exists()) return false;
 
     await updateDoc(sessionRef, {
       launched_lesson: stripUndefinedDeep(payload),
@@ -128,17 +129,18 @@ export async function launchLesson(
 }
 
 /**
- * Launch current Create-page scene to the class. Only session owner can call.
+ * Launch current Create-page scene to the class.
+ * Host authorization is enforced by Firestore rules.
  */
 export async function launchScene(
   sessionId: string,
-  teacherUid: string,
+  _teacherUid: string,
   payload: LaunchedScene
 ): Promise<boolean> {
   try {
     const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
     const snap = await getDoc(sessionRef);
-    if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
+    if (!snap.exists()) return false;
 
     await updateDoc(sessionRef, {
       launched_scene: stripUndefinedDeep(payload),
@@ -175,11 +177,7 @@ export async function updateTeacherView(
         _teacherViewValidCache.set(cacheKey, false);
         return false;
       }
-      if (snap.data()?.teacher_uid !== teacherUid) {
-        console.warn('updateTeacherView: UID mismatch', { expected: snap.data()?.teacher_uid, got: teacherUid });
-        _teacherViewValidCache.set(cacheKey, false);
-        return false;
-      }
+      // Host check is enforced by Firestore rules on update
       _teacherViewValidCache.set(cacheKey, true);
     }
 
@@ -197,13 +195,13 @@ export async function updateTeacherView(
 }
 
 /**
- * End the session. Only session owner can call.
+ * End the session. Host authorization is enforced by Firestore rules.
  */
-export async function endSession(sessionId: string, teacherUid: string): Promise<boolean> {
+export async function endSession(sessionId: string, _teacherUid: string): Promise<boolean> {
   try {
     const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
     const snap = await getDoc(sessionRef);
-    if (!snap.exists() || snap.data()?.teacher_uid !== teacherUid) return false;
+    if (!snap.exists()) return false;
 
     await updateDoc(sessionRef, {
       status: 'ended',

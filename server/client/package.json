@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "build:firebase": "npm run build",
+    "build:reliable": "node scripts/reliable-hosting-build.mjs",
     "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting",
     "deploy:firebase:channel": "npm run build:firebase && firebase hosting:channel:deploy",
     "icons:android": "node scripts/generate-android-icons.js"

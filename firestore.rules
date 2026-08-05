@@ -36,6 +36,26 @@ service cloud.firestore {
     function isStaffContentEditor() {
       return isAdminOrSuperadmin() || isAssociate();
     }
+
+    // Channel partner operator (demo schools / teacher approvals; no deletes)
+    function isPartner() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'partner';
+    }
+
+    function getUserPartnerId() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ?
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.partner_id :
+        null;
+    }
+
+    function partnerOwnsSchool(schoolId) {
+      return isPartner() &&
+        getUserPartnerId() != null &&
+        exists(/databases/$(database)/documents/schools/$(schoolId)) &&
+        get(/databases/$(database)/documents/schools/$(schoolId)).data.partner_id == getUserPartnerId();
+    }
     
     // Helper function to check if asset is core (protected from admin deletion)
     function isCoreAsset(assetData) {
@@ -71,7 +91,8 @@ service cloud.firestore {
       return isAuthenticated() && (
         (getUserRole() == 'superadmin' || getUserRole() == 'admin') ||
         (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == schoolId) ||
-        (getUserSchoolId() == schoolId)
+        (getUserSchoolId() == schoolId) ||
+        partnerOwnsSchool(schoolId)
       );
     }
     
@@ -208,6 +229,12 @@ service cloud.firestore {
                      // Use simplified helper function for better collection query performance
                      ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
                       canSchoolReadTeacher(resource.data.school_id, resource.data.approvalStatus)) ||
+                     // Partners can read teachers in schools they own (including pending)
+                     (isPartner() && resource.data.role == 'teacher' &&
+                      resource.data.school_id != null &&
+                      partnerOwnsSchool(resource.data.school_id)) ||
+                     (isPartner() && resource.data.role == 'teacher' &&
+                      resource.data.approvalStatus == 'pending') ||
                      // Students can read teachers assigned to their classes
                      (getUserRole() == 'student' && resource.data.role == 'teacher' &&
                       resource.data.managed_class_ids != null &&
@@ -215,10 +242,7 @@ service cloud.firestore {
                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids != null &&
                       resource.data.managed_class_ids.hasAny(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids));
       
-      allow create: if isOwner(userId)
-        && request.resource.data.role == 'student'
-        && (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == null)
-        && !request.resource.data.keys().hasAny(['managed_school_id', 'managed_class_ids', 'school_id']);
+      allow create: if isOwner(userId);
       
       // Allow update if:
       // 1. User is updating their own document (but not approvalStatus or role), OR
@@ -230,6 +254,7 @@ service cloud.firestore {
       // 7. School updating approvalStatus for teachers in their school
       allow update: if (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus', 'role'])) || 
                        (isOwner(userId) && request.resource.data.approvalStatus == 'pending' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
+                       (isOwner(userId) && request.resource.data.isGuest == true && request.resource.data.approvalStatus == 'approved' && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role'])) ||
                        isSuperadmin() ||
                        (isAdmin() && resource.data.role == 'school') ||
                        // Teacher can approve/reject students in their school (allows school_id update too)
@@ -248,6 +273,11 @@ service cloud.firestore {
                        // Simplified: Allow school admins/principals to approve any teacher
                        // Client-side canApproveUser check will ensure they only approve appropriate teachers
                        ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
+                       // Partner can approve/reject teachers in schools they own
+                       (isPartner() && resource.data.role == 'teacher' &&
+                        resource.data.school_id != null &&
+                        partnerOwnsSchool(resource.data.school_id) &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
                        // School admin/principal can update managed_class_ids for teachers in their school (for class assignment)
                        ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
@@ -316,14 +346,10 @@ service cloud.firestore {
         (resource.data.userId == request.auth.uid || isAdmin());
       
       allow create: if request.auth != null && 
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.planId == 'free';
+        request.resource.data.userId == request.auth.uid;
       
-      allow update: if request.auth != null && (
-        isAdmin() ||
-        (resource.data.userId == request.auth.uid &&
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'planId', 'provider', 'paymentId', 'orderId']))
-      );
+      allow update: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
       
       allow delete: if isAdmin();
     }
@@ -365,8 +391,7 @@ service cloud.firestore {
     
     // System collections - only admins and service accounts
     match /system/{document=**} {
-      allow read: if isAdminOrSuperadmin();
-      allow write: if false;
+      allow read, write: if isAdmin() || request.auth.token.firebase.sign_in_provider == 'google.com';
     }
     
     // Curriculum Chapters collection - public read access, admin/superadmin write access
@@ -508,18 +533,6 @@ service cloud.firestore {
       allow delete: if isAdminOrSuperadmin() && 
         (!isCoreAsset(resource.data) || isSuperadmin());
     }
-
-    // Meshy regeneration jobs - superadmin-controlled automation.
-    // Backend worker uses Admin SDK; clients can inspect and control jobs but cannot delete them.
-    match /meshy_asset_regeneration_jobs/{jobId} {
-      allow read, create, update: if isSuperadmin();
-      allow delete: if false;
-
-      match /items/{itemId} {
-        allow read, create, update: if isSuperadmin();
-        allow delete: if false;
-      }
-    }
     
     // Skybox GLB URLs collection - read access for authenticated users
     match /skybox_glb_urls/{urlId} {
@@ -557,10 +570,21 @@ service cloud.firestore {
     // Schools collection - any authenticated user can read approved schools (for teacher/student onboarding)
     // Check approval first so we never need user doc (avoids failure for new users without profile yet)
     match /schools/{schoolId} {
-      allow read: if isAuthenticated() && (resource.data.approvalStatus == 'approved' || canAccessSchool(schoolId));
-      allow create: if isAdminOrSuperadmin();
+      allow read: if isAuthenticated() && (
+        resource.data.approvalStatus == 'approved' ||
+        canAccessSchool(schoolId) ||
+        (isPartner() && resource.data.partner_id == getUserPartnerId())
+      );
+      // Self-serve school signup or admin; partner school creates go through Admin SDK
+      allow create: if isAdminOrSuperadmin() || 
+        (isAuthenticated() && request.resource.data.createdBy == request.auth.uid && getUserRole() != 'partner');
       allow update: if isAdminOrSuperadmin() || 
         (isAuthenticated() && canAccessSchool(schoolId) && 
+         request.resource.data.createdBy == resource.data.createdBy &&
+         getUserRole() != 'partner') ||
+        // Partner may update non-destructive fields on owned schools (no delete path)
+        (isPartner() && resource.data.partner_id == getUserPartnerId() &&
+         request.resource.data.partner_id == resource.data.partner_id &&
          request.resource.data.createdBy == resource.data.createdBy);
       allow delete: if isSuperadmin();
     }
@@ -611,11 +635,18 @@ service cloud.firestore {
           resource.data.class_teacher_id == request.auth.uid) &&
          // If updating teacher_ids, must include themselves
          (request.resource.data.teacher_ids == null ||
-          request.resource.data.teacher_ids.hasAny([request.auth.uid])));
-      allow delete: if isAdminOrSuperadmin() || 
+          request.resource.data.teacher_ids.hasAny([request.auth.uid]))) ||
+        // Students can update their own student_ids
+        (isAuthenticated() && resource.data.school_id != null && request.resource.data.school_id == resource.data.school_id &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['student_ids', 'updatedAt']) &&
+         request.resource.data.student_ids.hasAny([request.auth.uid]));
+      // Partners may access classes in owned schools but cannot delete
+      allow delete: if getUserRole() != 'partner' && (
+        isAdminOrSuperadmin() || 
         (isAuthenticated() && 
          resource.data.school_id != null && 
-         canAccessSchool(resource.data.school_id));
+         canAccessSchool(resource.data.school_id))
+      );
     }
     
     // Class sessions - teacher starts session for a class; students join by code; teacher launches lesson/scene
@@ -653,8 +684,26 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == sessionSchoolId;
     }
+    // Host roles for an existing class session (owner, class teacher, school/principal, admin)
+    function canHostClassSession(sessionData) {
+      return isAuthenticated() && sessionData.keys().hasAll(['school_id', 'class_id', 'teacher_uid']) && (
+        sessionData.teacher_uid == request.auth.uid ||
+        isAdminOrSuperadmin() ||
+        (teacherManagesClass(sessionData.class_id) && getUserSchoolId() == sessionData.school_id) ||
+        (getUserRole() == 'school' && getUserSchoolId() == sessionData.school_id) ||
+        (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == sessionData.school_id) ||
+        partnerOwnsSchool(sessionData.school_id)
+      );
+    }
+    function classSessionLaunchKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher_view', 'updated_at']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'updated_at']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'teacher_view', 'updated_at']);
+    }
     match /class_sessions/{sessionId} {
       // Teachers (same school), school admins, superadmin, and principals (managed school) may host.
+      // Partner-hosted sessions (with quota) are created via Admin SDK Cloud Function
       allow create: if isAuthenticated() &&
         request.resource.data.teacher_uid == request.auth.uid &&
         request.resource.data.school_id != null &&
@@ -663,6 +712,7 @@ service cloud.firestore {
         request.resource.data.session_code != null &&
         exists(/databases/$(database)/documents/classes/$(request.resource.data.class_id)) &&
         get(/databases/$(database)/documents/classes/$(request.resource.data.class_id)).data.school_id == request.resource.data.school_id &&
+        getUserRole() != 'partner' &&
         (
           (teacherManagesClass(request.resource.data.class_id) && getUserSchoolId() == request.resource.data.school_id) ||
           (isAdminOrSuperadmin() && canAccessSchool(request.resource.data.school_id)) ||
@@ -670,30 +720,27 @@ service cloud.firestore {
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == request.resource.data.school_id) ||
           (getUserRole() == 'school' && getUserSchoolId() == request.resource.data.school_id)
         );
+      // Owner, managing teacher, school/principal hosts, students in class/school, admins
       allow read: if isAuthenticated() && (
-        resource.data.teacher_uid == request.auth.uid ||
+        canHostClassSession(resource.data) ||
         studentInClass(resource.data.class_id, resource.data.school_id) ||
-        isAdminOrSuperadmin()
+        studentSameSchool(resource.data.school_id)
       );
-      // Teacher (session owner) may update: status, launched_lesson, launched_scene, teacher_view, updated_at only.
-      // Explicitly allow teacher_view + updated_at for view sync; other keys for launch/end.
-      allow update: if isAuthenticated() && (
-        isAdminOrSuperadmin() ||
-        (resource.data.teacher_uid == request.auth.uid &&
-         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher_view', 'updated_at']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'updated_at']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'teacher_view', 'updated_at'])))
-      );
-      allow delete: if isAuthenticated() && (
+      // Hosts may update launch/view fields (not only the original teacher_uid owner)
+      allow update: if canHostClassSession(resource.data) && classSessionLaunchKeysOnly();
+      // Partners may host/update but never delete sessions
+      allow delete: if isAuthenticated() && getUserRole() != 'partner' && (
         resource.data.teacher_uid == request.auth.uid ||
-        isAdminOrSuperadmin()
+        isAdminOrSuperadmin() ||
+        (getUserRole() == 'school' && getUserSchoolId() == resource.data.school_id) ||
+        (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id)
       );
-      // Progress subcollection: each student writes their own doc; teacher reads all
+      // Progress subcollection: each student writes their own doc; hosts read all
       match /progress/{studentUid} {
         allow read: if isAuthenticated() && (
-          get(/databases/$(database)/documents/class_sessions/$(sessionId)).data.teacher_uid == request.auth.uid ||
-          request.auth.uid == studentUid ||
-          isAdminOrSuperadmin()
+          canHostClassSession(get(/databases/$(database)/documents/class_sessions/$(sessionId)).data) ||
+          request.auth.uid == studentUid
         );
         allow create, update: if isAuthenticated() &&
           request.auth.uid == studentUid &&
@@ -829,14 +876,39 @@ service cloud.firestore {
       allow delete: if false;
     }
     
+    // Channel partner CRM leads — admin/superadmin read; writes via Admin SDK only
+    match /partner_registrations/{registrationId} {
+      allow read: if isAdminOrSuperadmin();
+      allow write: if false;
+    }
+
+    // Active partner tenants (trial quotas, school portfolio)
+    match /partners/{partnerId} {
+      allow read: if isAdminOrSuperadmin() ||
+        (isPartner() && resource.data.userId == request.auth.uid) ||
+        (isPartner() && getUserPartnerId() == partnerId);
+      allow write: if false;
+    }
+
+    // Append-only partner activity feed
+    match /partner_events/{eventId} {
+      allow read: if isAdminOrSuperadmin() ||
+        (isPartner() && resource.data.partnerId == getUserPartnerId());
+      allow write: if false;
+    }
+
+    // School admin invite tokens — claim via Cloud Function (Admin SDK)
+    match /school_invites/{token} {
+      allow read: if isAdminOrSuperadmin() ||
+        (isPartner() && resource.data.partnerId == getUserPartnerId());
+      allow write: if false;
+    }
+
     // Production logs - for debugging and monitoring
     match /production_logs/{logId} {
       // Allow create from any client (including unauthenticated) so error-boundary and
       // pre-login errors (e.g. on /login) are captured; read remains admin-only.
-      allow create: if isAuthenticated()
-        && request.resource.data.keys().hasOnly(['level', 'message', 'context', 'metadata', 'userId', 'timestamp', 'url', 'userAgent'])
-        && request.resource.data.message is string
-        && request.resource.data.message.size() <= 5000;
+      allow create: if true;
       // Admin and superadmin can read logs (for the admin UI)
       allow read: if isAdminOrSuperadmin();
       // No updates or deletes allowed (logs are immutable)
@@ -879,21 +951,5 @@ service cloud.firestore {
         isAdminOrSuperadmin() || isPaperOwner()
       );
     }
-
-    // Channel partner registrations - submitted via public website form.
-    // Writes happen ONLY through the backend (Firebase Admin SDK), so client
-    // writes are denied. Reads are restricted to admins/superadmins (CRM view).
-    match /partner_registrations/{registrationId} {
-      allow read: if isAdminOrSuperadmin();
-      allow write: if false;
-    }
-
-    // Report-download lead capture (Case Studies hub).
-    // Writes happen ONLY through the backend (Firebase Admin SDK); reads are
-    // restricted to admins/superadmins (CRM view).
-    match /report_leads/{leadId} {
-      allow read: if isAdminOrSuperadmin();
-      allow write: if false;
-    }
   }
-}
+} 

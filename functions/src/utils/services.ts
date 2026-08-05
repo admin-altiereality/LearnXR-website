@@ -34,6 +34,7 @@ export const initializeAdmin = () => {
 // Service state
 export let BLOCKADE_API_KEY = '';
 export let MESHY_API_KEY = '';
+export let TRELLIS_API_KEY = '';
 export let razorpay: any = null;
 
 // Helper function to clean secrets (remove whitespace, newlines, etc.)
@@ -48,6 +49,7 @@ const cleanSecret = (secret: string | undefined): string => {
 export const initializeServices = (secrets?: {
   blockadelabsApiKey?: string;
   meshyApiKey?: string;
+  trellisApiKey?: string;
   razorpayKeyId?: string;
   razorpayKeySecret?: string;
 }) => {
@@ -87,6 +89,24 @@ export const initializeServices = (secrets?: {
   } catch (error) {
     console.error('Failed to configure Meshy API key:', error);
     MESHY_API_KEY = '';
+  }
+
+  try {
+    const apiKey = secrets?.trellisApiKey || getSecret('TRELLIS_API_KEY');
+    if (apiKey) {
+      TRELLIS_API_KEY = cleanSecret(apiKey);
+      console.log('Trellis API key configured successfully, length:', TRELLIS_API_KEY.length);
+    } else {
+      console.warn('TRELLIS_API_KEY not found', {
+        hasProvided: !!secrets?.trellisApiKey,
+        hasEnv: !!process.env.TRELLIS_API_KEY,
+        envValue: process.env.TRELLIS_API_KEY ? '***' : 'empty'
+      });
+      TRELLIS_API_KEY = '';
+    }
+  } catch (error) {
+    console.error('Failed to configure Trellis API key:', error);
+    TRELLIS_API_KEY = '';
   }
 
   try {

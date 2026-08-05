@@ -476,6 +476,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     activeSession,
     startSession,
     endSession,
+    leaveSessionAsTeacher,
     launchLesson: launchLessonToClass,
   } = useClassSession();
   const [sessionCodeInput, setSessionCodeInput] = useState('');
@@ -1947,16 +1948,32 @@ const Lessons = ({ setBackgroundSkybox }) => {
       subject: String(lessonData.chapter.subject ?? ''),
       lang: lessonData.language || selectedLanguage,
     };
+    // Stale session IDs (e.g. from another account) leave activeSessionId set but
+    // activeSession null after permission-denied — drop and create a fresh session.
     let sessionId = activeSessionId;
+    if (sessionId && !activeSession) {
+      leaveSessionAsTeacher?.();
+      sessionId = null;
+    }
     if (!sessionId && startSession && classIdForLaunch) {
       const newId = await startSession(classIdForLaunch);
       if (!newId) {
-        toast.error('Could not start class session. Check your connection.');
+        toast.error('Could not start class session. Check that you manage this class.');
         return;
       }
       sessionId = newId;
     }
-    const ok = await launchLessonToClass(payload, sessionId ?? undefined);
+    if (!sessionId) {
+      toast.error('No class available to start a session.');
+      return;
+    }
+    let ok = await launchLessonToClass(payload, sessionId);
+    // One retry with a brand-new session if the first launch was blocked
+    if (!ok && startSession && classIdForLaunch) {
+      leaveSessionAsTeacher?.();
+      const retryId = await startSession(classIdForLaunch);
+      if (retryId) ok = await launchLessonToClass(payload, retryId);
+    }
     if (ok) {
       toast.success('Lesson launched to class');
       closeLessonModal();
@@ -1964,7 +1981,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     } else {
       toast.error('Failed to launch lesson to class');
     }
-  }, [isTeacher, activeSessionId, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate]);
+  }, [isTeacher, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate]);
 
   const canLaunchInClass = isTeacher && teacherClasses.length > 0 && lessonData?.chapter && lessonData?.topic && canLaunchLesson && (activeSessionId || classIdForLaunch);
 

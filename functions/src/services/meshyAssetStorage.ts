@@ -37,6 +37,7 @@ export interface FinalizeGeneratedAssetInput {
   thumbnailUrl?: string;
   textureUrls?: TextureUrls[];
   metadata?: Record<string, unknown>;
+  persistSourceModelUrls?: boolean;
 }
 
 export interface FinalizeAnimatedAssetInput {
@@ -367,6 +368,13 @@ async function writeAssetRecord(
       Object.entries(params.storageFiles.textures).map(([key, value]) => [key, value.storagePath])
     );
   }
+  const metadataSource = params.metadata?.provider === 'trellis2'
+    ? 'trellis2_image_to_3d_asset'
+    : params.sourceCollection === 'avatar_to_3d_assets'
+      ? 'avatar_to_3d_asset'
+      : params.sourceCollection === MESHY_ASSETS_COLLECTION
+        ? 'meshy_asset'
+        : 'text_to_3d_asset';
 
   const assetData = cleanForFirestore({
     asset_id: params.assetId,
@@ -401,7 +409,7 @@ async function writeAssetRecord(
     asset_repair_status: 'ready',
     metadata: {
       ...(params.metadata || {}),
-      source: params.sourceCollection === 'avatar_to_3d_assets' ? 'avatar_to_3d_asset' : 'text_to_3d_asset',
+      source: metadataSource,
       source_asset_id: params.sourceAssetId,
       source_collection: params.sourceCollection,
       art_style: params.artStyle,
@@ -514,7 +522,7 @@ export async function finalizeGeneratedAsset(
     meshyId: input.meshyId,
     meshyPreviewId: input.meshyPreviewId,
     storageFiles,
-    sourceModelUrls: modelUrls,
+    sourceModelUrls: input.persistSourceModelUrls === false ? undefined : modelUrls,
     sourceThumbnailUrl: input.thumbnailUrl,
     artStyle: input.artStyle,
     aiModel: input.aiModel,

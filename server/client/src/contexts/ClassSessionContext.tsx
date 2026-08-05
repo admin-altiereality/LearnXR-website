@@ -95,14 +95,13 @@ async function resolveSchoolIdForClassSession(
 export function ClassSessionProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY_ACTIVE_SESSION) : null
-  );
+  // Do not trust sessionStorage until validated against the signed-in user.
+  // Blind restore caused permission-denied on subscribe/launch when the stored
+  // session belonged to another account (e.g. school → teacher switch).
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<ClassSession | null>(null);
   const [progressList, setProgressList] = useState<SessionStudentProgress[]>([]);
-  const [joinedSessionId, setJoinedSessionId] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY_JOINED_SESSION) : null
-  );
+  const [joinedSessionId, setJoinedSessionId] = useState<string | null>(null);
   const [joinedSession, setJoinedSession] = useState<ClassSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -121,7 +120,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     setJoinedSession(null);
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
-      sessionStorage.removeItem('learnxr_class_session_id');
+      sessionStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
     }
   }, []);
 
@@ -161,13 +160,17 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
       setSessionLoading(true);
       try {
         const ok = await apiLaunchLesson(sessionId, user.uid, payload);
-        if (!ok) setSessionError('Failed to launch lesson.');
+        if (!ok) {
+          setSessionError('Failed to launch lesson. Start a new class session and try again.');
+          // Drop stale/inaccessible session so the next launch creates a fresh one.
+          if (sessionId === activeSessionId) leaveSessionAsTeacher();
+        }
         return ok;
       } finally {
         setSessionLoading(false);
       }
     },
-    [activeSessionId, user?.uid]
+    [activeSessionId, user?.uid, leaveSessionAsTeacher]
   );
 
   const launchScene = useCallback(
@@ -223,28 +226,39 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     [user?.uid, profile]
   );
 
-  // Teacher: subscribe to active session (everyone with activeSessionId from storage may get this)
+  // Teacher: subscribe to active session; clear stale IDs on permission-denied
   useEffect(() => {
     if (!activeSessionId) {
       setActiveSession(null);
       setProgressList([]);
       return;
     }
-    const unsubSession = subscribeSession(activeSessionId, setActiveSession);
+    const handleSubscribeError = (err: Error) => {
+      const code = err && 'code' in err ? (err as { code?: string }).code : undefined;
+      if (code === 'permission-denied') {
+        leaveSessionAsTeacher();
+        setSessionError('Previous class session is no longer accessible. Start a new session to launch.');
+      }
+    };
+    const unsubSession = subscribeSession(activeSessionId, setActiveSession, handleSubscribeError);
     return () => {
       unsubSession();
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, leaveSessionAsTeacher]);
 
-  // Teacher only: subscribe to progress when this user owns the session (avoids permission-denied for students who have learnxr_class_session_id set from a launched lesson)
+  // Host: subscribe to progress once session doc is readable (students must not use activeSessionId)
   useEffect(() => {
-    if (!activeSessionId || !activeSession || activeSession.teacher_uid !== user?.uid) {
+    if (!activeSessionId || !activeSession || !user?.uid) {
+      setProgressList([]);
+      return;
+    }
+    if (profile?.role === 'student') {
       setProgressList([]);
       return;
     }
     const unsubProgress = subscribeSessionProgress(activeSessionId, setProgressList);
     return () => unsubProgress();
-  }, [activeSessionId, activeSession?.teacher_uid, user?.uid]);
+  }, [activeSessionId, activeSession, user?.uid, profile?.role]);
 
   // Student: subscribe to joined session; on permission error clear state so user can retry
   useEffect(() => {
@@ -282,24 +296,49 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     navigate('/dashboard/student', { replace: true });
   }, [joinedSession?.removed_student_uids, user?.uid, leaveSessionAsStudent, navigate]);
 
-  // Restore session from storage on load (e.g. after refresh) – validate still exists
+  // Restore session from storage only after auth is ready, and only if this user owns it
   useEffect(() => {
-    if (!user?.uid) return;
-    const storedActive = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY_ACTIVE_SESSION) : null;
-    const storedJoined = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEY_JOINED_SESSION) : null;
-    if (storedActive && !activeSessionId) {
-      getSession(storedActive).then((s) => {
-        if (s && s.teacher_uid === user.uid && s.status !== 'ended') setActiveSessionId(storedActive);
-        else if (typeof window !== 'undefined') sessionStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
-      });
-    }
-    if (storedJoined && !joinedSessionId) {
-      getSession(storedJoined).then((s) => {
-        if (s && s.status !== 'ended') setJoinedSessionId(storedJoined);
-        else if (typeof window !== 'undefined') sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
-      });
-    }
-  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!user?.uid || typeof window === 'undefined') return;
+    let cancelled = false;
+    const storedActive = sessionStorage.getItem(STORAGE_KEY_ACTIVE_SESSION);
+    const storedJoined = sessionStorage.getItem(STORAGE_KEY_JOINED_SESSION);
+
+    (async () => {
+      if (storedActive) {
+        try {
+          const s = await getSession(storedActive);
+          if (cancelled) return;
+          // Any session the signed-in user can read (host rules) may be restored
+          if (s && s.status !== 'ended') {
+            setActiveSessionId(storedActive);
+          } else {
+            sessionStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
+          }
+        } catch {
+          if (!cancelled) sessionStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
+        }
+      }
+      if (storedJoined && profile?.role === 'student') {
+        try {
+          const s = await getSession(storedJoined);
+          if (cancelled) return;
+          if (s && s.status !== 'ended') {
+            setJoinedSessionId(storedJoined);
+          } else {
+            sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
+          }
+        } catch {
+          if (!cancelled) sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
+        }
+      } else if (storedJoined && profile?.role && profile.role !== 'student') {
+        sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, profile?.role]);
 
   const value: ClassSessionContextValue = {
     activeSessionId,

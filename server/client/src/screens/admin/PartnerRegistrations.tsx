@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -13,6 +13,13 @@ import {
   DialogTitle,
 } from '../../Components/ui/dialog';
 import { Badge } from '../../Components/ui/badge';
+import { toast } from 'react-toastify';
+import {
+  approvePartnerRegistration,
+  rejectPartnerRegistration,
+  fetchPartnerRegistrationDetail,
+  suspendPartner,
+} from '../../services/partnerService';
 
 interface PartnerRegistration {
   id: string;
@@ -34,6 +41,9 @@ interface PartnerRegistration {
   status: string;
   submittedAt: string;
   createdAt?: any;
+  partnerId?: string;
+  userId?: string;
+  rejectionReason?: string;
 }
 
 const tierBadgeVariant = (tier: string): 'default' | 'secondary' | 'outline' => {
@@ -55,43 +65,137 @@ const formatTierLabel = (tier: string): string => {
   return labels[tier] ?? tier.replace('-', ' ').toUpperCase();
 };
 
+const statusVariant = (status: string): 'default' | 'secondary' | 'outline' | 'destructive' => {
+  if (status === 'approved') return 'default';
+  if (status === 'rejected') return 'destructive';
+  return 'outline';
+};
+
 const PartnerRegistrations = () => {
   const { profile } = useAuth();
+  const isSuperadmin = profile?.role === 'superadmin';
   const [registrations, setRegistrations] = useState<PartnerRegistration[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedReg, setSelectedReg] = useState<PartnerRegistration | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [detail, setDetail] = useState<{
+    partner: any;
+    schools: any[];
+    events: any[];
+  } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
+
+  const loadRegistrations = useCallback(async () => {
+    try {
+      const q = query(collection(db, 'partner_registrations'), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      })) as PartnerRegistration[];
+      setRegistrations(data);
+    } catch (error) {
+      console.error('Error loading partner registrations:', error);
+      toast.error('Unable to load partner registrations. Check Firestore rules.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!profile) return;
-    
-    // Only admin/superadmin can access
     if (profile.role !== 'admin' && profile.role !== 'superadmin') {
       setLoading(false);
       return;
     }
-
-    const loadRegistrations = async () => {
-      try {
-        const q = query(
-          collection(db, 'partner_registrations'),
-          orderBy('createdAt', 'desc')
-        );
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as PartnerRegistration[];
-        setRegistrations(data);
-      } catch (error) {
-        console.error("Error loading partner registrations:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadRegistrations();
-  }, [profile]);
+  }, [profile, loadRegistrations]);
+
+  const openDetails = async (reg: PartnerRegistration) => {
+    setSelectedReg(reg);
+    setShowModal(true);
+    setDetail(null);
+    setLastInviteLink(null);
+    setRejectReason('');
+    if (isSuperadmin && (reg.status === 'approved' || reg.partnerId)) {
+      try {
+        const data = await fetchPartnerRegistrationDetail(reg.id);
+        setDetail({
+          partner: data.partner,
+          schools: data.schools || [],
+          events: data.events || [],
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!selectedReg || !isSuperadmin) return;
+    setActionLoading(true);
+    try {
+      const result = await approvePartnerRegistration(selectedReg.id);
+      toast.success(result.message || 'Partner approved');
+      if (result.inviteLink) setLastInviteLink(result.inviteLink);
+      await loadRegistrations();
+      const updated = {
+        ...selectedReg,
+        status: 'approved',
+        partnerId: result.partnerId,
+        userId: result.userId,
+      };
+      setSelectedReg(updated);
+      if (result.partnerId) {
+        const data = await fetchPartnerRegistrationDetail(selectedReg.id);
+        setDetail({
+          partner: data.partner,
+          schools: data.schools || [],
+          events: data.events || [],
+        });
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Approve failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!selectedReg || !isSuperadmin) return;
+    setActionLoading(true);
+    try {
+      await rejectPartnerRegistration(selectedReg.id, rejectReason);
+      toast.success('Registration rejected');
+      setSelectedReg({ ...selectedReg, status: 'rejected', rejectionReason: rejectReason });
+      await loadRegistrations();
+    } catch (err: any) {
+      toast.error(err?.message || 'Reject failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSuspend = async () => {
+    if (!selectedReg?.partnerId || !isSuperadmin) return;
+    setActionLoading(true);
+    try {
+      await suspendPartner(selectedReg.partnerId);
+      toast.success('Partner suspended');
+      const data = await fetchPartnerRegistrationDetail(selectedReg.id);
+      setDetail({
+        partner: data.partner,
+        schools: data.schools || [],
+        events: data.events || [],
+      });
+    } catch (err: any) {
+      toast.error(err?.message || 'Suspend failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -110,7 +214,10 @@ const PartnerRegistrations = () => {
             Partner Registrations
           </h2>
           <p className="text-muted-foreground mt-1">
-            Manage channel partner applications and inquiries.
+            Review channel partner applications.
+            {isSuperadmin
+              ? ' Approve to provision a partner login with a 6-month / 100 class-launch trial.'
+              : ' Only superadmins can approve partners.'}
           </p>
         </div>
       </div>
@@ -135,9 +242,12 @@ const PartnerRegistrations = () => {
                       </h3>
                       <p className="text-sm text-muted-foreground">{reg.country}</p>
                     </div>
-                    <Badge variant={tierBadgeVariant(reg.tier)}>
-                      {formatTierLabel(reg.tier)}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant={tierBadgeVariant(reg.tier)}>{formatTierLabel(reg.tier)}</Badge>
+                      <Badge variant={statusVariant(reg.status || 'new')} className="capitalize">
+                        {reg.status || 'new'}
+                      </Badge>
+                    </div>
                   </div>
 
                   <div className="space-y-2 mb-4">
@@ -159,14 +269,7 @@ const PartnerRegistrations = () => {
                     <div className="text-xs text-muted-foreground">
                       Score: <span className="font-medium text-foreground">{reg.leadScore}</span>
                     </div>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        setSelectedReg(reg);
-                        setShowModal(true);
-                      }}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => openDetails(reg)}>
                       View Details
                     </Button>
                   </div>
@@ -190,37 +293,66 @@ const PartnerRegistrations = () => {
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4 bg-muted/30 p-4 rounded-lg">
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Contact Person</div>
+                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                    Contact Person
+                  </div>
                   <div className="font-medium">{selectedReg.contactName}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Status</div>
-                  <Badge variant="outline" className="capitalize">{selectedReg.status || 'New'}</Badge>
+                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                    Status
+                  </div>
+                  <Badge variant={statusVariant(selectedReg.status || 'new')} className="capitalize">
+                    {selectedReg.status || 'New'}
+                  </Badge>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Email Address</div>
+                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                    Email Address
+                  </div>
                   <div className="font-medium flex items-center gap-2">
                     <FaEnvelope className="text-muted-foreground/50" />
-                    <a href={`mailto:${selectedReg.email}`} className="text-primary hover:underline">{selectedReg.email}</a>
+                    <a href={`mailto:${selectedReg.email}`} className="text-primary hover:underline">
+                      {selectedReg.email}
+                    </a>
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Phone Number</div>
+                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                    Phone Number
+                  </div>
                   <div className="font-medium flex items-center gap-2">
                     <FaPhone className="text-muted-foreground/50" />
-                    <a href={`tel:${selectedReg.phone}`} className="text-primary hover:underline">{selectedReg.phone}</a>
+                    <a href={`tel:${selectedReg.phone}`} className="text-primary hover:underline">
+                      {selectedReg.phone}
+                    </a>
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Location</div>
-                  <div className="font-medium">{selectedReg.country} {selectedReg.region ? `(${selectedReg.region})` : ''}</div>
+                  <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                    Location
+                  </div>
+                  <div className="font-medium">
+                    {selectedReg.country} {selectedReg.region ? `(${selectedReg.region})` : ''}
+                  </div>
                 </div>
                 {selectedReg.website && (
                   <div>
-                    <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">Website</div>
+                    <div className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
+                      Website
+                    </div>
                     <div className="font-medium flex items-center gap-2">
                       <FaGlobe className="text-muted-foreground/50" />
-                      <a href={selectedReg.website.startsWith('http') ? selectedReg.website : `https://${selectedReg.website}`} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                      <a
+                        href={
+                          selectedReg.website.startsWith('http')
+                            ? selectedReg.website
+                            : `https://${selectedReg.website}`
+                        }
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                      >
                         {selectedReg.website}
                       </a>
                     </div>
@@ -230,7 +362,9 @@ const PartnerRegistrations = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-card border border-border p-4 rounded-lg">
-                  <div className="text-sm font-medium mb-2 border-b border-border pb-2">Business Profile</div>
+                  <div className="text-sm font-medium mb-2 border-b border-border pb-2">
+                    Business Profile
+                  </div>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Partner Type:</span>
@@ -275,22 +409,118 @@ const PartnerRegistrations = () => {
 
               <div className="space-y-4">
                 <div>
-                  <h4 className="text-sm font-medium border-b border-border pb-2 mb-2">Current Portfolio</h4>
+                  <h4 className="text-sm font-medium border-b border-border pb-2 mb-2">
+                    Current Portfolio
+                  </h4>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/20 p-3 rounded-md">
                     {selectedReg.currentPortfolio || <span className="italic">Not provided</span>}
                   </p>
                 </div>
-                
                 <div>
-                  <h4 className="text-sm font-medium border-b border-border pb-2 mb-2">Message / Inquiry</h4>
+                  <h4 className="text-sm font-medium border-b border-border pb-2 mb-2">
+                    Message / Inquiry
+                  </h4>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap bg-muted/20 p-3 rounded-md">
                     {selectedReg.message || <span className="italic">Not provided</span>}
                   </p>
                 </div>
               </div>
-              
-              <div className="flex justify-end pt-4 border-t border-border mt-2">
-                <Button variant="outline" onClick={() => setShowModal(false)}>Close</Button>
+
+              {detail?.partner && (
+                <div className="space-y-3 border border-border rounded-lg p-4">
+                  <h4 className="text-sm font-medium">Partner tenant</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      Status: <span className="font-medium capitalize">{detail.partner.status}</span>
+                    </div>
+                    <div>
+                      Schools: <span className="font-medium">{detail.schools.length}</span>
+                    </div>
+                    <div>
+                      Launches left:{' '}
+                      <span className="font-medium">
+                        {detail.partner.trial?.classLaunchesRemaining ?? '—'}
+                      </span>
+                    </div>
+                    <div>
+                      Trial ends:{' '}
+                      <span className="font-medium text-xs">
+                        {detail.partner.trial?.endsAt
+                          ? new Date(detail.partner.trial.endsAt).toLocaleDateString()
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                  {detail.schools.length > 0 && (
+                    <ul className="text-sm space-y-1 mt-2">
+                      {detail.schools.map((s) => (
+                        <li key={s.id} className="text-muted-foreground">
+                          {s.name}{' '}
+                          <span className="font-mono text-xs text-foreground">
+                            ({s.schoolCode || 'no code'})
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {detail.events.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs uppercase text-muted-foreground mb-1">Recent activity</div>
+                      <ul className="text-xs space-y-1 max-h-32 overflow-y-auto">
+                        {detail.events.slice(0, 15).map((e) => (
+                          <li key={e.id}>
+                            <span className="font-medium">{e.type}</span>
+                            {e.schoolId ? ` · school ${e.schoolId.slice(0, 6)}…` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {lastInviteLink && (
+                <div className="bg-muted/40 border border-border rounded-lg p-3 text-sm break-all">
+                  <div className="font-medium mb-1">Password setup link (share securely)</div>
+                  <a href={lastInviteLink} className="text-primary hover:underline">
+                    {lastInviteLink}
+                  </a>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-4 border-t border-border mt-2">
+                <Button variant="outline" onClick={() => setShowModal(false)}>
+                  Close
+                </Button>
+                {isSuperadmin && selectedReg.status === 'new' && (
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Rejection reason (optional)"
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      className="flex-1 min-w-[160px] rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    />
+                    <Button
+                      variant="destructive"
+                      disabled={actionLoading}
+                      onClick={handleReject}
+                    >
+                      {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Reject'}
+                    </Button>
+                    <Button disabled={actionLoading} onClick={handleApprove}>
+                      {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Approve partner'}
+                    </Button>
+                  </>
+                )}
+                {isSuperadmin &&
+                  selectedReg.status === 'approved' &&
+                  selectedReg.partnerId &&
+                  detail?.partner?.status !== 'suspended' && (
+                    <Button variant="destructive" disabled={actionLoading} onClick={handleSuspend}>
+                      Suspend partner
+                    </Button>
+                  )}
               </div>
             </div>
           )}

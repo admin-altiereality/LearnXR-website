@@ -27,6 +27,8 @@ export interface School {
   principal_id?: string; // Principal UID assigned to this school
   approvalStatus?: 'pending' | 'approved' | 'rejected'; // School approval status
   schoolCode?: string; // Unique 6-character school code for teacher/student onboarding
+  partner_id?: string; // Channel partner who onboarded this school
+  source?: 'partner_demo' | 'self_serve' | 'admin';
   createdAt: Timestamp | string;
   updatedAt: Timestamp | string;
   createdBy: string; // Principal/Admin UID who created the school
