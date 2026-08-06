@@ -907,6 +907,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Teacher/partner-authored lessons (Street View, Create-page scenes, Spiral scenes).
+    // Owner-launchable immediately without review; all writes go through Cloud Functions.
+    match /user_generated_lessons/{lessonId} {
+      allow read: if isAuthenticated() &&
+        (isAdminOrSuperadmin() || resource.data.ownerUid == request.auth.uid);
+      allow write: if false;
+    }
+
     // Immutable privileged partner lifecycle and entitlement audit records.
     match /partner_audit_log/{auditId} {
       allow read: if isSuperadmin();
@@ -946,7 +954,8 @@ service cloud.firestore {
             (getUserRole() == 'principal' &&
               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
-            (getUserRole() == 'teacher' && getUserSchoolId() == resource.data.school_id)
+            (getUserRole() == 'teacher' && getUserSchoolId() == resource.data.school_id) ||
+            partnerOwnsSchool(resource.data.school_id)
           );
       }
 
@@ -956,7 +965,7 @@ service cloud.firestore {
 
       allow create: if isAuthenticated() &&
         request.resource.data.created_by_uid == request.auth.uid &&
-        getUserRole() in ['teacher', 'school', 'principal', 'admin', 'superadmin'];
+        getUserRole() in ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'];
 
       allow update: if isAuthenticated() && (
         isAdminOrSuperadmin() ||

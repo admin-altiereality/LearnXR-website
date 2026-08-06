@@ -161,11 +161,13 @@ const Sidebar = () => {
       return items;
     }
 
-    // Partner: dashboard, lessons, class management
+    // Partner: dashboard, lessons, class management, create tools, question papers
     if (isPartner) {
       items.push({ path: '/dashboard/partner', label: 'Dashboard', icon: FaTachometerAlt });
       items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
+      items.push({ path: '/main', label: 'Create', icon: FaFlask });
+      items.push({ path: '/question-paper/library', label: 'Question Papers', icon: FaClipboardList });
       return items;
     }
 

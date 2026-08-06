@@ -249,7 +249,7 @@ export async function startPartnerDemoSession(
 
 export async function launchPartnerDemoLesson(
   sessionId: string,
-  lesson: { chapterId: string; topicId: string; sceneId?: string; title?: string },
+  lesson: { chapterId: string; topicId: string; sceneId?: string; title?: string; lessonType?: 'curriculum' | 'user_generated' },
 ): Promise<{ success: boolean; lessonLaunchesRemaining: number; lessonLaunchesUsed: number }> {
   const response = await fetch(`${getApiBaseUrl()}/partners/sessions/${sessionId}/launch-lesson`, {
     method: 'POST',

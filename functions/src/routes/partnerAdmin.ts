@@ -894,6 +894,7 @@ router.post(
     const topicId = String(req.body?.topicId || '').trim();
     const sceneId = String(req.body?.sceneId || '').trim();
     const title = String(req.body?.title || '').trim().slice(0, 200);
+    const lessonType = req.body?.lessonType === 'user_generated' ? 'user_generated' : 'curriculum';
     if (!chapterId || !topicId) {
       res.status(400).json({ success: false, message: 'chapterId and topicId are required' });
       return;
@@ -945,7 +946,13 @@ router.post(
         });
         tx.update(sessionRef, {
           status: 'active',
-          launched_lesson: { chapter_id: chapterId, topic_id: topicId, scene_id: sceneId || null, title: title || null },
+          launched_lesson: {
+            chapter_id: chapterId,
+            topic_id: topicId,
+            scene_id: sceneId || null,
+            title: title || null,
+            lesson_type: lessonType,
+          },
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
         });
         return { remaining: nextRemaining, used: nextUsed, schoolId: session.school_id, classId: session.class_id };

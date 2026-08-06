@@ -11,8 +11,8 @@
 import { Blob } from 'buffer';
 import Busboy from 'busboy';
 import { Router, Request, Response as ExpressResponse, NextFunction } from 'express';
-import { validateFullAccess } from '../middleware/validateIn3dApiKey';
-import { requireRole } from '../middleware/rbac';
+import { requireLessonAuthorAccess } from '../middleware/lessonAuthorAccess';
+import { assertLessonAuthorAccess } from '../services/userGeneratedLessons';
 import { errorResponse, ErrorCode, HTTP_STATUS, successResponse } from '../utils/apiResponse';
 import { initializeServices, TRELLIS_API_KEY } from '../utils/services';
 import { finalizeGeneratedAsset, type FinalizeGeneratedAssetInput } from '../services/meshyAssetStorage';
@@ -25,8 +25,6 @@ const DEFAULT_DECIMATION_TARGET = 300000;
 const DEFAULT_TEXTURE_SIZE = 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const ALLOWED_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
-
-const requireContentEditor = requireRole(['admin', 'superadmin', 'associate']);
 
 interface TrellisUploadedFile {
   fieldname: string;
@@ -358,8 +356,7 @@ async function getOutputUrl(jobId: string, outputFile: 'asset.glb' | 'preview.mp
 
 router.post(
   '/generations',
-  validateFullAccess,
-  requireContentEditor,
+  requireLessonAuthorAccess,
   uploadImage,
   async (req: Request, res: ExpressResponse) => {
     const requestId = (req as any).requestId;
@@ -418,7 +415,7 @@ router.post(
   }
 );
 
-router.get('/generations/:jobId', validateFullAccess, requireContentEditor, async (req: Request, res: ExpressResponse) => {
+router.get('/generations/:jobId', requireLessonAuthorAccess, async (req: Request, res: ExpressResponse) => {
   const requestId = (req as any).requestId;
 
   try {
@@ -441,7 +438,7 @@ router.get('/generations/:jobId', validateFullAccess, requireContentEditor, asyn
   }
 });
 
-router.post('/generations/:jobId/finalize', validateFullAccess, requireContentEditor, async (req: Request, res: ExpressResponse) => {
+router.post('/generations/:jobId/finalize', requireLessonAuthorAccess, async (req: Request, res: ExpressResponse) => {
   const requestId = (req as any).requestId;
 
   try {
@@ -475,6 +472,22 @@ router.post('/generations/:jobId/finalize', validateFullAccess, requireContentEd
         { requestId }
       );
       return res.status(statusCode).json(response);
+    }
+
+    const authenticatedUserId = (req as any).user?.uid as string | undefined;
+    if (authenticatedUserId) {
+      try {
+        await assertLessonAuthorAccess({ uid: authenticatedUserId, role: req.userProfile?.role, chapterId, topicId });
+      } catch (accessError: any) {
+        const { statusCode, response } = errorResponse(
+          'Forbidden',
+          accessError?.message || 'You do not have permission to finalize this asset.',
+          ErrorCode.FORBIDDEN,
+          HTTP_STATUS.FORBIDDEN,
+          { requestId }
+        );
+        return res.status(statusCode).json(response);
+      }
     }
 
     const glbUrl = await getOutputUrl(jobId, 'asset.glb');

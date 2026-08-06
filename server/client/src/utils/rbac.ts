@@ -114,7 +114,7 @@ export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
   public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
-  create: ['teacher', 'admin', 'superadmin'], // School administrators removed
+  create: ['teacher', 'partner', 'admin', 'superadmin'], // School administrators removed
   studio: ['admin', 'superadmin', 'associate'], // Associate can refine lessons (no delete)
   developer: ['admin', 'superadmin'],
   class_management: ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'],

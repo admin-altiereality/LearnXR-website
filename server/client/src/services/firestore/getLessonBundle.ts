@@ -576,8 +576,10 @@ export async function getLessonBundle(params: {
   topicId?: string; // Optional: specific topic to extract data from
   userId?: string; // Optional: when Associate, fetch and overlay their draft
   userRole?: string; // Optional: must be 'associate' to overlay draft
+  /** 'user_generated' fetches from user_generated_lessons instead of curriculum_chapters (Street View / Create-scene / Spiral-scene drafts). */
+  source?: 'curriculum' | 'user_generated';
 }): Promise<LessonBundle> {
-  const { chapterId, lang, topicId, userId, userRole } = params;
+  const { chapterId, lang, topicId, userId, userRole, source = 'curriculum' } = params;
 
   const cacheKey = CacheManager.getBundleKey(chapterId, topicId, lang);
   const cached = cacheManager.get<LessonBundle>(cacheKey);
@@ -607,18 +609,53 @@ export async function getLessonBundle(params: {
   console.log(`[getLessonBundle] Fetching bundle for chapter ${chapterId}, language ${lang}`);
 
   try {
-    // Step 1: Fetch chapter document
-    const chapterRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId);
-    const chapterSnap = await getDoc(chapterRef);
+    // Step 1: Fetch chapter document (or, for a user-generated lesson, wrap its
+    // draft in the same { id, topics: [...] } shape the rest of this pipeline expects).
+    let chapterData: any;
+    if (source === 'user_generated') {
+      const lessonRef = doc(db, 'user_generated_lessons', chapterId);
+      const lessonSnap = await getDoc(lessonRef);
+      if (!lessonSnap.exists()) {
+        throw new Error(`Lesson ${chapterId} not found`);
+      }
+      const lessonData = lessonSnap.data() as Record<string, any>;
+      chapterData = {
+        id: lessonSnap.id,
+        chapter_name: lessonData.title || 'My Lesson',
+        chapter_number: 1,
+        curriculum: lessonData.curriculum || '',
+        class_name: lessonData.class_name || '',
+        subject: lessonData.subject || '',
+        topics: [
+          {
+            topic_id: chapterId,
+            topic_name: lessonData.title || 'My Lesson',
+            topic_priority: 1,
+            learning_objective: '',
+            skybox_url: lessonData.skybox_url || '',
+            skybox_glb_url: lessonData.skybox_glb_url || lessonData.skybox_url || '',
+            asset_urls: Array.isArray(lessonData.asset_urls) ? lessonData.asset_urls : [],
+            asset_ids: Array.isArray(lessonData.asset_ids) ? lessonData.asset_ids : [],
+            sharedAssets: {
+              meshy_asset_ids: Array.isArray(lessonData.meshy_asset_ids) ? lessonData.meshy_asset_ids : [],
+              asset_ids: Array.isArray(lessonData.asset_ids) ? lessonData.asset_ids : [],
+            },
+          },
+        ],
+      };
+    } else {
+      const chapterRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId);
+      const chapterSnap = await getDoc(chapterRef);
 
-    if (!chapterSnap.exists()) {
-      throw new Error(`Chapter ${chapterId} not found`);
+      if (!chapterSnap.exists()) {
+        throw new Error(`Chapter ${chapterId} not found`);
+      }
+
+      chapterData = {
+        id: chapterSnap.id,
+        ...chapterSnap.data(),
+      };
     }
-
-    const chapterData = {
-      id: chapterSnap.id,
-      ...chapterSnap.data(),
-    };
 
     console.log(`[getLessonBundle] Chapter loaded:`, {
       id: chapterData.id,

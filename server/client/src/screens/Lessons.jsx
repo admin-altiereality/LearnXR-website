@@ -1453,6 +1453,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           chapterId: launched.chapter_id,
           lang: effectiveLang,
           topicId: launched.topic_id,
+          source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
         });
         if (cancelled) return;
         const fullData = bundle.chapter;

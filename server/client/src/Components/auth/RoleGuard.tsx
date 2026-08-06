@@ -194,7 +194,7 @@ export const SuperAdminGuard = ({ children }: { children: React.ReactNode }) => 
  * Students are explicitly blocked from the AI Question Paper Generator.
  */
 export const QuestionPaperGuard = ({ children }: { children: React.ReactNode }) => (
-  <RoleGuard allowedRoles={['teacher', 'principal', 'school', 'admin', 'superadmin']}>
+  <RoleGuard allowedRoles={['teacher', 'principal', 'school', 'partner', 'admin', 'superadmin']}>
     {children}
   </RoleGuard>
 );

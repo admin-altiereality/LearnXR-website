@@ -199,7 +199,12 @@ const PartnerDashboard = () => {
     (async () => {
       try {
         const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
-        const bundle = await getLessonBundle({ chapterId: launched.chapter_id, topicId: launched.topic_id, lang: 'en' });
+        const bundle = await getLessonBundle({
+          chapterId: launched.chapter_id,
+          topicId: launched.topic_id,
+          lang: 'en',
+          source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
+        });
         const topic = bundle.chapter?.topics?.find((item: any) => item.topic_id === launched.topic_id) || bundle.chapter?.topics?.[0];
         const url = (bundle.skybox as any)?.imageUrl || (bundle.skybox as any)?.file_url || topic?.skybox_url || null;
         if (!cancelled) setStudentSkyboxUrl(url);
@@ -359,6 +364,7 @@ const PartnerDashboard = () => {
         chapterId: launched.chapter_id,
         topicId: launched.topic_id,
         lang: 'en',
+        source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
       });
       const sourceChapter = bundle.chapter;
       const sourceTopic = sourceChapter.topics?.find((item: any) => item.topic_id === launched.topic_id) || sourceChapter.topics?.[0];

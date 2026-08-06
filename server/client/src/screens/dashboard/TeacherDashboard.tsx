@@ -716,6 +716,7 @@ const TeacherDashboard = () => {
         chapterId: launched.chapter_id,
         topicId: launched.topic_id,
         lang: 'en',
+        source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
       });
       const fullData = bundle.chapter;
       const topic = fullData.topics?.find((t: any) => t.topic_id === launched.topic_id) || fullData.topics?.[0];
@@ -819,6 +820,7 @@ const TeacherDashboard = () => {
           chapterId: launched.chapter_id,
           topicId: launched.topic_id,
           lang: 'en',
+          source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
         });
         if (cancelled) return;
         const topic = bundle.chapter?.topics?.find((t: any) => t.topic_id === launched.topic_id) || bundle.chapter?.topics?.[0];

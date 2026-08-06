@@ -557,7 +557,7 @@ function App() {
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'partner', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
@@ -974,7 +974,7 @@ function App() {
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'partner', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}

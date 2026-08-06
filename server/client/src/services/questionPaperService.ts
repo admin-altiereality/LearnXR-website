@@ -169,6 +169,8 @@ export interface ListPapersOptions {
   /** Owner filter — defaults to the current user */
   uid?: string;
   schoolId?: string;
+  /** Multiple schools (e.g. a partner's portfolio). Uses a Firestore 'in' filter (max 30). */
+  schoolIds?: string[];
   subject?: string;
   classFilter?: string;
   limit?: number;
@@ -185,7 +187,11 @@ export async function listQuestionPapers(opts: ListPapersOptions = {}): Promise<
     if (!uid) return [];
     filters.push(where('created_by_uid', '==', uid));
   }
-  if (opts.schoolId) filters.push(where('school_id', '==', opts.schoolId));
+  if (opts.schoolIds && opts.schoolIds.length > 0) {
+    filters.push(where('school_id', 'in', opts.schoolIds.slice(0, 30)));
+  } else if (opts.schoolId) {
+    filters.push(where('school_id', '==', opts.schoolId));
+  }
   if (opts.subject) filters.push(where('subject', '==', opts.subject));
 
   let q: Query<DocumentData> = collection(db, COLLECTION);

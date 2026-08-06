@@ -944,6 +944,7 @@ const VRLessonPlayerInner = () => {
           let chapterId = params.get('chapterId');
           let topicId = params.get('topicId');
           const lang = params.get('lang') || 'en';
+          let lessonSource = 'curriculum';
           if (sessionId) sessionStorage.setItem('learnxr_class_session_id', sessionId);
           if (sessionId && (!chapterId || !topicId)) {
             try {
@@ -953,6 +954,7 @@ const VRLessonPlayerInner = () => {
               if (launched) {
                 chapterId = chapterId || launched.chapter_id;
                 topicId = topicId || launched.topic_id;
+                if (launched.lesson_type === 'user_generated') lessonSource = 'user_generated';
               }
             } catch (e) {
               console.warn('Could not load session for URL sessionId:', e);
@@ -960,7 +962,7 @@ const VRLessonPlayerInner = () => {
           }
           if (chapterId && topicId) {
             try {
-              const bundle = await getLessonBundle({ chapterId, topicId, lang });
+              const bundle = await getLessonBundle({ chapterId, topicId, lang, source: lessonSource });
               const fullData = bundle.chapter;
               const topic = fullData.topics?.find((t: any) => t.topic_id === topicId) || fullData.topics?.[0];
               if (!topic) { setInitPhase('ready'); setDataInitialized(true); return; }
