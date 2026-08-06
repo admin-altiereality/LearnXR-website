@@ -234,6 +234,9 @@ const Sidebar = () => {
     if (isAdminOrSuperadmin) {
       items.push({ path: '/admin/approvals', label: 'Approvals', icon: FaUserCheck });
       items.push({ path: '/admin/lesson-edit-requests', label: 'Lesson Edit Requests', icon: FaEdit });
+      if (isSuperadmin) {
+        items.push({ path: '/admin/user-lessons', label: 'Community Lessons Review', icon: FaMapMarkerAlt });
+      }
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });

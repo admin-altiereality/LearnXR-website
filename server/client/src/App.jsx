@@ -65,6 +65,7 @@ import TermsConditions from './screens/TermsConditions';
 import SmoothScroll from './Components/SmoothScroll';
 import ClassManagement from './screens/admin/ClassManagement';
 import LessonEditRequests from './screens/admin/LessonEditRequests';
+import UserGeneratedLessons from './screens/admin/UserGeneratedLessons';
 import ProductionLogs from './screens/admin/ProductionLogs';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import SchoolManagement from './screens/admin/SchoolManagement';
@@ -1207,6 +1208,13 @@ function App() {
                           <AdminGuard>
                             <LessonEditRequests />
                           </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/user-lessons" element={
+                        <ProtectedRoute>
+                          <SuperAdminGuard>
+                            <UserGeneratedLessons />
+                          </SuperAdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/admin/partners" element={
