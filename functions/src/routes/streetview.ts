@@ -214,7 +214,7 @@ router.post('/generate-skybox', async (req: Request, res: Response) => {
 });
 
 /**
- * Places Autocomplete proxy
+ * Places Autocomplete proxy — returns general place suggestions (any Street View).
  */
 router.get('/places-autocomplete', async (req: Request, res: Response) => {
   try {
@@ -271,7 +271,7 @@ router.get('/places-autocomplete', async (req: Request, res: Response) => {
 });
 
 /**
- * Place Details proxy
+ * Place Details proxy — returns geometry for any place (no walkable/rating gate).
  */
 router.get('/place-details', async (req: Request, res: Response) => {
   try {

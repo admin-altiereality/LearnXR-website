@@ -38,6 +38,8 @@ import History from './screens/History';
 import Individual from './screens/Individual';
 import Landing from './screens/Landing';
 import Lessons from './screens/Lessons';
+import Lessons360 from './screens/Lessons360';
+import LessonsVr360 from './screens/LessonsVr360';
 import Profile from './screens/Profile';
 import School from './screens/School';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
@@ -558,7 +560,7 @@ function App() {
 
                       <Route path="/create/street-view" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin', 'associate']}>
                             <StreetViewLessonCreator />
                           </RoleGuard>
                         </ProtectedRoute>
@@ -683,6 +685,24 @@ function App() {
                               setBackgroundSkybox={setBackgroundSkybox}
                               className="w-full"
                             />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      {/* 360 Lessons - AirPano embeds */}
+                      <Route path="/lessons/360" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <Lessons360 />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      {/* 360 Video - equirectangular VR360 tours */}
+                      <Route path="/lessons/vr360" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <LessonsVr360 />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
@@ -983,7 +1003,7 @@ function App() {
 
                       <Route path="/create/street-view" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin', 'associate']}>
                             <StreetViewLessonCreator />
                           </RoleGuard>
                         </ProtectedRoute>
@@ -1110,6 +1130,24 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+
+                      {/* 360 Lessons - AirPano embeds */}
+                      <Route path="/lessons/360" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <Lessons360 />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      {/* 360 Video - equirectangular VR360 tours */}
+                      <Route path="/lessons/vr360" element={
+                        <ProtectedRoute>
+                          <RoleGuard>
+                            <LessonsVr360 />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Profile - All authenticated users */}
                       <Route path="/profile" element={
@@ -1212,9 +1250,9 @@ function App() {
                       } />
                       <Route path="/admin/user-lessons" element={
                         <ProtectedRoute>
-                          <SuperAdminGuard>
+                          <RoleGuard allowedRoles={['associate', 'superadmin']}>
                             <UserGeneratedLessons />
-                          </SuperAdminGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/admin/partners" element={

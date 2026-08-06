@@ -9,12 +9,17 @@ async function authHeaders(): Promise<Record<string, string>> {
 export interface StreetViewPlacePrediction {
   place_id: string;
   description: string;
+  rating?: number;
+  user_ratings_total?: number;
+  walkable?: boolean;
+  link_count?: number;
 }
 
 export interface PlacesAutocompleteResult {
   success: boolean;
   predictions?: StreetViewPlacePrediction[];
   error?: string;
+  filter?: { minRating: number; walkableOnly: boolean };
 }
 
 export interface PlaceDetailsResult {
@@ -22,6 +27,11 @@ export interface PlaceDetailsResult {
   lat?: number;
   lng?: number;
   formatted_address?: string;
+  rating?: number;
+  user_ratings_total?: number;
+  walkable?: boolean;
+  panoId?: string;
+  link_count?: number;
   error?: string;
 }
 
@@ -46,6 +56,7 @@ export async function fetchPlaceSuggestions(input: string): Promise<PlacesAutoco
     return {
       success: true,
       predictions: data.predictions || [],
+      filter: data.filter,
     };
   } catch (err: any) {
     return {
@@ -78,6 +89,11 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetailsRe
       lat: data.lat,
       lng: data.lng,
       formatted_address: data.formatted_address,
+      rating: data.rating,
+      user_ratings_total: data.user_ratings_total,
+      walkable: data.walkable,
+      panoId: data.panoId,
+      link_count: data.link_count,
     };
   } catch (err: any) {
     return {
@@ -86,4 +102,3 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetailsRe
     };
   }
 }
-

@@ -156,15 +156,36 @@ export async function launchScene(
 }
 
 /**
- * Update teacher view (hlookat, vlookat, fov) for student sync in Krpano. Only session owner can call.
- * Caches UID validation per session to avoid repeated getDoc on every view change.
+ * Update teacher/host view for student sync in Krpano / VR360.
+ * Host authorization is enforced by Firestore rules.
+ * Caches session existence per session+uid to avoid repeated getDoc on every drag.
+ *
+ * Pass `force: true` (or an explicit `sync_id`) for “Direct class to my view” so
+ * students re-apply even when look-at values match the last applied snapshot.
+ *
+ * Uses dotted field paths so continuous drag updates never wipe an in-flight
+ * Direct `sync_id` / playhead (full-object replace was racing students).
  */
 const _teacherViewValidCache = new Map<string, boolean>();
+/** Skip non-force host broadcasts briefly after Direct so students can apply cleanly. */
+let _directViewCooldownUntil = 0;
+const DIRECT_VIEW_COOLDOWN_MS = 2800;
+
+export type TeacherViewUpdate = {
+  hlookat: number;
+  vlookat: number;
+  fov?: number;
+  /** When true, assigns a fresh sync_id so students always re-apply. */
+  force?: boolean;
+  sync_id?: number;
+  video_time?: number;
+  playing?: boolean;
+};
 
 export async function updateTeacherView(
   sessionId: string,
   teacherUid: string,
-  view: { hlookat: number; vlookat: number; fov?: number }
+  view: TeacherViewUpdate
 ): Promise<boolean> {
   try {
     const cacheKey = `${sessionId}:${teacherUid}`;
@@ -183,10 +204,33 @@ export async function updateTeacherView(
 
     if (!_teacherViewValidCache.get(cacheKey)) return false;
 
-    await updateDoc(sessionRef, {
-      teacher_view: view,
+    const { force, ...rest } = view;
+    const isDirect = force === true || typeof rest.sync_id === 'number';
+
+    // Continuous drag must not clobber / race an explicit Direct snapshot.
+    if (!isDirect && Date.now() < _directViewCooldownUntil) {
+      return true;
+    }
+
+    const updates: Record<string, unknown> = {
+      'teacher_view.hlookat': rest.hlookat,
+      'teacher_view.vlookat': rest.vlookat,
+      'teacher_view.fov': rest.fov ?? 90,
       updated_at: serverTimestamp(),
-    });
+    };
+    if (typeof rest.video_time === 'number' && Number.isFinite(rest.video_time)) {
+      updates['teacher_view.video_time'] = rest.video_time;
+    }
+    if (typeof rest.playing === 'boolean') {
+      updates['teacher_view.playing'] = rest.playing;
+    }
+    if (isDirect) {
+      updates['teacher_view.sync_id'] =
+        typeof rest.sync_id === 'number' ? rest.sync_id : Date.now();
+      _directViewCooldownUntil = Date.now() + DIRECT_VIEW_COOLDOWN_MS;
+    }
+
+    await updateDoc(sessionRef, updates);
     return true;
   } catch (err) {
     console.error('classSessionService.updateTeacherView:', err);

@@ -197,8 +197,12 @@ export interface ClassSession {
   launched_lesson: LaunchedLesson | null;
   /** Set when teacher sends scene from Create page */
   launched_scene: LaunchedScene | null;
-  /** Teacher-controlled view (hlookat, vlookat) for student sync in Krpano lessons */
-  teacher_view?: { hlookat: number; vlookat: number; fov?: number } | null;
+  /**
+   * Teacher/host-controlled view for student sync (Krpano / 360 video).
+   * `sync_id` bumps on explicit “Direct class to my view” so students re-apply
+   * even when hlookat/vlookat/fov are unchanged (they may have looked away).
+   */
+  teacher_view?: TeacherSessionView | null;
   /** Student UIDs removed by teacher from this session (kicked out) */
   removed_student_uids?: string[];
   /** Partner tenancy metadata for quota-governed demo sessions. */
@@ -236,6 +240,23 @@ export interface SessionStudentView {
   fov?: number;
 }
 
+/** Host view broadcast to students (orientation + optional force token / playback). */
+export interface TeacherSessionView {
+  hlookat: number;
+  vlookat: number;
+  fov?: number;
+  /** Monotonic id — changes force students to re-apply even if look-at is identical. */
+  sync_id?: number;
+  /** Optional 360-video playhead (seconds) when directing a VR360 tour. */
+  video_time?: number;
+  /** Optional 360-video play/pause when directing a VR360 tour. */
+  playing?: boolean;
+}
+
+/**
+ * Student progress within a class session (subcollection progress/{student_uid}).
+ * Teacher sees live phase per student.
+ */
 export interface SessionStudentProgress {
   student_uid: string;
   display_name?: string;

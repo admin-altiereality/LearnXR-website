@@ -389,14 +389,21 @@ export class MeshyApiService {
     options: RequestInit = {},
     retryCount: number = 0
   ): Promise<Response> {
-    // Map Meshy API endpoints to proxy routes
+    // fetch defaults method to GET when omitted — match that so status polls map correctly
+    const method = String(options.method || 'GET').toUpperCase();
+
+    // Map Meshy openapi/v2 paths → Firebase /meshy/* proxy routes
     let proxyEndpoint = '';
-    if (endpoint === '/text-to-3d' && options.method === 'POST') {
+    if (endpoint === '/text-to-3d' && method === 'POST') {
       proxyEndpoint = `${this.proxyBaseUrl}/meshy/generate`;
-    } else if (endpoint.startsWith('/text-to-3d/') && options.method === 'GET') {
-      const taskId = endpoint.replace('/text-to-3d/', '');
+    } else if (
+      endpoint.startsWith('/text-to-3d/') &&
+      method === 'GET' &&
+      !endpoint.includes('/cancel')
+    ) {
+      const taskId = endpoint.replace(/^\/text-to-3d\//, '').split('/')[0];
       proxyEndpoint = `${this.proxyBaseUrl}/meshy/status/${taskId}`;
-    } else if (endpoint.includes('/cancel') && options.method === 'POST') {
+    } else if (endpoint.includes('/cancel') && method === 'POST') {
       const taskId = endpoint.split('/')[2];
       proxyEndpoint = `${this.proxyBaseUrl}/meshy/cancel/${taskId}`;
     } else {
@@ -411,7 +418,7 @@ export class MeshyApiService {
       : {};
 
     const proxyOptions: RequestInit = {
-      method: options.method || 'GET',
+      method,
       headers: {
         'Content-Type': 'application/json',
         ...firebaseAuthHeader,
@@ -743,12 +750,15 @@ export class MeshyApiService {
     
     let attempts = 0;
     let currentInterval = baseIntervalMs;
+    let consecutiveErrors = 0;
+    const maxConsecutiveErrors = 5;
     
     console.log(`🔄 Starting polling for task ${taskId}`);
     
     while (attempts < maxAttempts) {
       try {
         const status = await this.getGenerationStatus(taskId);
+        consecutiveErrors = 0;
         
         // Log progress
         if (status.progress !== undefined) {
@@ -778,15 +788,28 @@ export class MeshyApiService {
       } catch (error) {
         console.error(`❌ Error polling task ${taskId}:`, error);
         attempts++;
-        
-        // If it's a network error, wait longer before retrying
-        if (error instanceof Error && (
-          error.message.includes('network') || 
-          error.message.includes('fetch') ||
-          error.message.includes('timeout')
-        )) {
-          await new Promise(resolve => setTimeout(resolve, currentInterval * 2));
+        consecutiveErrors++;
+
+        const message = error instanceof Error ? error.message : String(error);
+        const nonRetryable =
+          message.includes('Unsupported proxy endpoint') ||
+          message.includes('Invalid task ID') ||
+          message.includes('not configured') ||
+          message.startsWith('Generation failed:') ||
+          message === 'Generation was cancelled';
+
+        if (nonRetryable) {
+          throw error instanceof Error ? error : new Error(message);
         }
+
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          throw new Error(
+            `Polling stopped after ${maxConsecutiveErrors} consecutive errors: ${message}`
+          );
+        }
+
+        await new Promise(resolve => setTimeout(resolve, currentInterval * 2));
+        currentInterval = Math.min(currentInterval * 1.2, 30000);
       }
     }
     

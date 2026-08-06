@@ -165,7 +165,21 @@ export async function getPanoramaMetadata(
 
   const data = await requestJson(`${TILE_API_BASE}/streetview/metadata?${q.toString()}`, { method: 'GET' });
 
-  return {
+  // Omit optional fields when absent — Firestore rejects explicit `undefined` values.
+  const links: PanoramaLink[] = Array.isArray(data.links)
+    ? data.links.map((l: any) => {
+        const link: PanoramaLink = {
+          panoId: String(l.panoId),
+          heading: Number(l.heading) || 0,
+        };
+        if (typeof l.text === 'string' && l.text.length > 0) {
+          link.text = l.text;
+        }
+        return link;
+      })
+    : [];
+
+  const metadata: PanoramaMetadata = {
     panoId: String(data.panoId),
     lat: Number(data.lat),
     lng: Number(data.lng),
@@ -176,16 +190,15 @@ export async function getPanoramaMetadata(
     heading: Number(data.heading) || 0,
     tilt: Number(data.tilt) || 90,
     roll: Number(data.roll) || 0,
-    copyright: data.copyright || undefined,
-    date: data.date || undefined,
-    links: Array.isArray(data.links)
-      ? data.links.map((l: any) => ({
-          panoId: String(l.panoId),
-          heading: Number(l.heading) || 0,
-          text: l.text || undefined,
-        }))
-      : [],
+    links,
   };
+  if (typeof data.copyright === 'string' && data.copyright.length > 0) {
+    metadata.copyright = data.copyright;
+  }
+  if (typeof data.date === 'string' && data.date.length > 0) {
+    metadata.date = data.date;
+  }
+  return metadata;
 }
 
 async function fetchTileBuffer(apiKey: string, session: TileSession, panoId: string, z: number, x: number, y: number): Promise<Buffer> {
@@ -295,8 +308,15 @@ export async function getOrStitchPanorama(
   const skyboxUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 
   const skyboxUrls = { ...(cached?.skyboxUrls || {}), [zoom]: skyboxUrl };
+  // Strip undefined from nested metadata (e.g. missing link text) before Firestore write.
+  const firestoreSafeMetadata = JSON.parse(JSON.stringify(metadata)) as PanoramaMetadata;
   await cacheRef.set(
-    { panoId, metadata, skyboxUrls, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    {
+      panoId,
+      metadata: firestoreSafeMetadata,
+      skyboxUrls,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
     { merge: true }
   );
 

@@ -23,11 +23,16 @@ const PartnerOversight = () => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (selectedId?: string | null) => {
     setLoading(true);
     try {
       const result = await listPartnerOversight();
-      setPartners(result.partners || []);
+      const nextPartners = result.partners || [];
+      setPartners(nextPartners);
+      if (selectedId) {
+        const refreshed = nextPartners.find((partner) => partner.id === selectedId) || null;
+        setSelected(refreshed);
+      }
     } catch (error: any) {
       toast.error(error?.message || 'Failed to load partner oversight');
     } finally {
@@ -55,9 +60,13 @@ const PartnerOversight = () => {
     if (!selected) return;
     setBusy(true);
     try {
-      await updatePartnerQuota(selected.id, { classLaunchesLimit: 200, lessonLaunchesLimit: 200, reason: 'Standard Channel Partner entitlement' });
+      await updatePartnerQuota(selected.id, {
+        classLaunchesLimit: 200,
+        lessonLaunchesLimit: 200,
+        reason: 'Demo entitlement (200 class launches / 200 lesson launches)',
+      });
       toast.success('Partner quotas set to 200 classes and 200 lessons.');
-      await load();
+      await load(selected.id);
     } catch (error: any) {
       toast.error(error?.message || 'Failed to update quotas');
     } finally {
@@ -71,7 +80,7 @@ const PartnerOversight = () => {
     try {
       await extendPartnerTrial(selected.id, 6);
       toast.success('Trial extended by six months.');
-      await load();
+      await load(selected.id);
     } catch (error: any) {
       toast.error(error?.message || 'Failed to extend trial');
     } finally {
@@ -85,7 +94,7 @@ const PartnerOversight = () => {
     try {
       await provisionPartnerDemoClass(selected.id);
       toast.success('Isolated Altie Reality demo class is ready.');
-      await load();
+      await load(selected.id);
     } catch (error: any) {
       toast.error(error?.message || 'Failed to provision demo class');
     } finally {
@@ -104,7 +113,7 @@ const PartnerOversight = () => {
           <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl"><FaChartLine className="text-teal-400" /> Channel Partner Oversight</h2>
           <p className="mt-1 text-sm text-muted-foreground">Lifecycle, isolated demos, launch quotas, and consented launch geography.</p>
         </div>
-        <Button variant="outline" onClick={load}><FaSyncAlt className="mr-2 h-3 w-3" /> Refresh</Button>
+        <Button variant="outline" onClick={() => load(selected?.id)}><FaSyncAlt className="mr-2 h-3 w-3" /> Refresh</Button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
@@ -142,6 +151,13 @@ const PartnerOversight = () => {
                 <div>
                   <p className="font-semibold">{selected.organizationName}</p>
                   <p className="text-xs text-muted-foreground">{selected.email}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Classes {selected.trial?.classLaunchesUsed ?? 0}/{selected.trial?.classLaunchesLimit ?? 200}
+                    {' · '}
+                    Lessons {selected.trial?.lessonLaunchesUsed ?? 0}/{selected.trial?.lessonLaunchesLimit ?? 200}
+                    {' · '}
+                    {selected.daysRemaining} days left
+                  </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" disabled={busy} onClick={resetQuota}>Set 200/200 quotas</Button>

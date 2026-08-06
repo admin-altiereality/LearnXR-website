@@ -2,24 +2,22 @@
  * Street View Tour Creator — teachers and partners walk through real-world
  * Google Street View locations (official Tile API "links" hopping, mirroring
  * StreetVision/OculusStreetView), bookmark stops along the way, attach
- * floating 3D assets and voiceover narration per stop, then launch the
- * resulting guided tour to their class or submit it for Super Admin review.
+ * floating 3D assets (Meshy text-to-3D or Trellis 2 image-to-3D) per stop,
+ * then launch the guided tour directly to class (no Super Admin approval required).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import {
   ArrowLeft,
   Loader2,
   MapPin,
   Rocket,
-  Send,
   Sparkles,
   Trash2,
-  Mic,
   Plus,
   ChevronUp,
   ChevronDown,
@@ -28,10 +26,10 @@ import {
 import { Button } from '../../Components/ui/button';
 import { Input } from '../../Components/ui/input';
 import { Label } from '../../Components/ui/label';
-import { Textarea } from '../../Components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '../../Components/ui/card';
 import { StreetViewMapPicker } from '../../Components/studio/StreetViewMapPicker';
 import { AssetLibraryPicker } from '../../Components/create/AssetLibraryPicker';
+import { ImageTo3DPanel } from '../../Components/studio/tabs/ImageTo3DPanel';
 import { StreetViewPanoramaViewer, type PanoramaLink } from '../../Components/streetview/StreetViewPanoramaViewer';
 import { fetchPlaceSuggestions, fetchPlaceDetails, type StreetViewPlacePrediction } from '../../services/streetViewPlacesService';
 import {
@@ -44,8 +42,6 @@ import {
   reorderTourStops,
   addTourStopAsset,
   removeTourStopAsset,
-  generateTourStopVoiceover,
-  submitLessonForReview,
   type TourStop,
   type TourTileZoom,
 } from '../../services/userLessonService';
@@ -67,10 +63,12 @@ const ZOOM_OPTIONS: { value: TourTileZoom; label: string }[] = [
   { value: 4, label: 'High' },
 ];
 
+type AssetGenProvider = 'meshy' | 'trellis';
+
 export default function StreetViewLessonCreator() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { activeSessionId, startSession, launchLesson: launchLessonToClass } = useClassSession();
+  const { activeSessionId, startSession, launchLesson: launchLessonToClass, bindActiveSession } = useClassSession();
   const { startLesson: contextStartLesson } = useLesson();
   const isPartner = profile?.role === 'partner';
 
@@ -97,11 +95,9 @@ export default function StreetViewLessonCreator() {
   const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
   const [genPrompt, setGenPrompt] = useState('');
   const [generatingAsset, setGeneratingAsset] = useState(false);
-  const [voiceoverScript, setVoiceoverScript] = useState('');
-  const [generatingVoiceover, setGeneratingVoiceover] = useState(false);
+  const [assetGenProvider, setAssetGenProvider] = useState<AssetGenProvider>('meshy');
 
   const [launching, setLaunching] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentViewRef = useRef(currentView);
@@ -181,7 +177,6 @@ export default function StreetViewLessonCreator() {
     setCurrentPanoId(stop.panoId);
     setCurrentSkyboxUrl(stop.skyboxUrl);
     setCurrentLinks(stop.links);
-    setVoiceoverScript(stop.voiceover?.script || '');
   };
 
   const handleAddStop = async () => {
@@ -289,51 +284,80 @@ export default function StreetViewLessonCreator() {
   };
 
   const handleGenerateAsset = async () => {
-    if (!genPrompt.trim() || !selectedStop || !lessonId) {
+    if (!genPrompt.trim() || !selectedStop) {
       toast.error('Select a stop and describe the 3D object you want to generate.');
       return;
     }
     setGeneratingAsset(true);
     try {
-      const asset = await meshyApiService.generateTexturedAsset({ prompt: genPrompt.trim() });
+      const id = await ensureDraft();
+      // Teachers/partners must finalize with chapterId === topicId === lessonId
+      const asset = await meshyApiService.generateTexturedAsset({
+        prompt: genPrompt.trim(),
+        ai_model: 'meshy-6',
+        target_formats: ['glb'],
+      });
       if (!asset.downloadUrl) throw new Error('Generation did not return a usable 3D model.');
       const persisted = await meshyApiService.finalizeGeneratedAsset({
         sourceAssetId: asset.id,
         sourceCollection: 'meshy_assets',
-        chapterId: lessonId,
-        topicId: lessonId,
+        chapterId: id,
+        topicId: id,
         name: genPrompt.trim().slice(0, 100),
         prompt: genPrompt.trim(),
         aiModel: 'meshy-6',
+        meshyId: asset.id,
         modelUrls: { glb: asset.downloadUrl },
         thumbnailUrl: asset.thumbnailUrl,
       });
-      const persistedId = String(persisted.asset_id || persisted.id || '');
-      await attachAssetToSelectedStop(persistedId, asset.downloadUrl);
+      const persistedId = String(persisted.asset_id || persisted.id || asset.id || '');
+      const glbUrl = String(
+        (persisted as { render_url?: string; glb_url?: string }).render_url ||
+          (persisted as { render_url?: string; glb_url?: string }).glb_url ||
+          asset.downloadUrl
+      );
+      await attachAssetToSelectedStop(persistedId, glbUrl);
       setGenPrompt('');
+      toast.success('Meshy 3D asset generated and placed.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate 3D asset.');
+      toast.error(err instanceof Error ? err.message : 'Failed to generate 3D asset with Meshy.');
     } finally {
       setGeneratingAsset(false);
     }
   };
 
-  const handleGenerateVoiceover = async () => {
-    if (!selectedStop || !lessonId || !voiceoverScript.trim()) {
-      toast.error('Select a stop and write a narration script first.');
-      return;
-    }
-    setGeneratingVoiceover(true);
+  const attachLatestLessonAsset = useCallback(async () => {
+    if (!lessonId || !selectedStop) return;
     try {
-      const res = await generateTourStopVoiceover(lessonId, selectedStop.id, voiceoverScript.trim());
-      setStops((prev) => prev.map((s) => (s.id === selectedStop.id ? { ...s, voiceover: res.voiceover } : s)));
-      toast.success('Voiceover generated.');
+      // Finalize may still be flushing to Firestore — brief wait, then pick newest for this draft.
+      await new Promise((r) => setTimeout(r, 1200));
+      const snap = await getDocs(query(collection(db, 'meshy_assets'), where('chapter_id', '==', lessonId), limit(25)));
+      if (snap.empty) {
+        toast.info('Asset saved to library — pick it with “Pick from library” if it did not attach automatically.');
+        return;
+      }
+      const sorted = [...snap.docs].sort((a, b) => {
+        const ta = (a.data() as { created_at?: { toMillis?: () => number }; updated_at?: { toMillis?: () => number } }).created_at?.toMillis?.()
+          || (a.data() as { updated_at?: { toMillis?: () => number } }).updated_at?.toMillis?.()
+          || 0;
+        const tb = (b.data() as { created_at?: { toMillis?: () => number }; updated_at?: { toMillis?: () => number } }).created_at?.toMillis?.()
+          || (b.data() as { updated_at?: { toMillis?: () => number } }).updated_at?.toMillis?.()
+          || 0;
+        return tb - ta;
+      });
+      const docSnap = sorted[0];
+      const data = docSnap.data() as { render_url?: string; glb_url?: string; asset_id?: string };
+      const glbUrl = data.render_url || data.glb_url || '';
+      if (!glbUrl) {
+        toast.error('Generated asset has no usable 3D model URL.');
+        return;
+      }
+      await attachAssetToSelectedStop(String(data.asset_id || docSnap.id), glbUrl);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to generate voiceover.');
-    } finally {
-      setGeneratingVoiceover(false);
+      console.warn('Auto-attach Trellis asset failed:', err);
+      toast.info('Asset saved — use “Pick from library” to place it on this stop.');
     }
-  };
+  }, [lessonId, selectedStop]);
 
   const handleLaunch = async () => {
     if (!lessonId || stops.length === 0) {
@@ -345,8 +369,8 @@ export default function StreetViewLessonCreator() {
       const firstStop = stops[0];
       const firstStopTopicId = `${lessonId}__stop_${firstStop.id}`;
 
-      // Fetch the fully-resolved bundle (assets3d, tts) rather than hand-rolling the topic, so
-      // 3D assets and voiceover render immediately just like they would after a stop switch.
+      // Fetch the fully-resolved bundle (assets3d) rather than hand-rolling the topic, so
+      // 3D assets render immediately just like they would after a stop switch.
       const bundle = await getLessonBundle({ chapterId: lessonId, topicId: firstStopTopicId, lang: 'en', source: 'user_generated' });
       const topic = bundle.chapter.topics?.find((t: any) => t.topic_id === firstStopTopicId) || bundle.chapter.topics?.[0];
       const cleanChapter = {
@@ -382,20 +406,29 @@ export default function StreetViewLessonCreator() {
         const rawSession = sessionStorage.getItem('learnxr_partner_demo_session');
         let partnerSession = rawSession ? JSON.parse(rawSession) : null;
         if (!partnerSession?.id) {
-          // Auto-start a demo session (provision the partner's demo school/class if needed)
-          // so launching never requires a separate manual step on the Partner Dashboard.
+          // Auto-start a demo session so launching never requires a separate Partner Dashboard step.
           const me = await fetchPartnerMe();
           if (!me.trialActive) {
             toast.error(me.trialBlockReason || 'Your Channel Partner trial is inactive.');
             return;
           }
-          const provisioned = await provisionPartnerDemoClass(me.partner.id);
-          const started = await startPartnerDemoSession(provisioned.demoSchoolId, provisioned.demoClassId);
+          let demoSchoolId = me.partner.demoSchoolId;
+          let demoClassId = me.partner.demoClassId;
+          if (!demoSchoolId || !demoClassId) {
+            const provisioned = await provisionPartnerDemoClass(me.partner.id);
+            demoSchoolId = provisioned.demoSchoolId;
+            demoClassId = provisioned.demoClassId;
+          }
+          if (!demoSchoolId || !demoClassId) {
+            toast.error('Demo class is not set up for your partner account.');
+            return;
+          }
+          const started = await startPartnerDemoSession(demoSchoolId, demoClassId);
           partnerSession = {
             id: started.sessionId,
             code: started.sessionCode,
-            schoolId: provisioned.demoSchoolId,
-            classId: provisioned.demoClassId,
+            schoolId: demoSchoolId,
+            classId: demoClassId,
           };
           sessionStorage.setItem('learnxr_partner_demo_session', JSON.stringify(partnerSession));
           toast.success(`Demo session started. Code: ${started.sessionCode}`);
@@ -407,6 +440,7 @@ export default function StreetViewLessonCreator() {
           lessonType: 'user_generated',
         });
         sessionId = partnerSession.id;
+        bindActiveSession(partnerSession.id);
       } else {
         const classId = profile?.managed_class_ids?.[0] || profile?.class_ids?.[0];
         sessionId = activeSessionId;
@@ -461,22 +495,6 @@ export default function StreetViewLessonCreator() {
     }
   };
 
-  const handleSubmitForReview = async () => {
-    if (!lessonId || stops.length === 0) {
-      toast.error('Add at least one stop before submitting for review.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await submitLessonForReview(lessonId);
-      toast.success('Submitted for Super Admin review.');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to submit for review.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -492,8 +510,9 @@ export default function StreetViewLessonCreator() {
             Street View Tour Creator
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Walk through real-world Street View locations, bookmark stops, and add floating 3D
-            models and voiceover narration to build an immersive guided tour.
+            Search Street View locations, bookmark stops, add 3D models (Meshy or Trellis 2), then launch
+            straight to your class — no Super Admin approval needed.
+            {isPartner ? ' Each demo class launch uses 1 of your 50 Street View class credits.' : ''}
           </p>
         </header>
 
@@ -533,7 +552,7 @@ export default function StreetViewLessonCreator() {
               <CardContent className="space-y-3">
                 <div className="relative">
                   <Input
-                    placeholder="Search for a place to start walking from…"
+                    placeholder="Search for a place to explore in Street View…"
                     value={placeQuery}
                     onChange={(e) => setPlaceQuery(e.target.value)}
                   />
@@ -551,6 +570,11 @@ export default function StreetViewLessonCreator() {
                         </button>
                       ))}
                     </div>
+                  )}
+                  {!searching && placeQuery.trim().length >= 2 && predictions.length === 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      No places matched. Try a landmark, address, or city attraction.
+                    </p>
                   )}
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={() => setMapPickerOpen(true)}>
@@ -581,24 +605,84 @@ export default function StreetViewLessonCreator() {
                   <CardTitle className="text-base">Editing: {selectedStop.label}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <Label className="text-xs">3D assets floating at this stop</Label>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Button type="button" variant="outline" size="sm" onClick={() => setLibraryPickerOpen(true)}>
                         Pick from library
                       </Button>
-                      <span className="text-xs text-muted-foreground">Look where you want it placed, then pick an asset.</span>
+                      <span className="text-xs text-muted-foreground">Look where you want it placed, then pick or generate an asset.</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        placeholder="Or describe a new 3D object to generate…"
-                        value={genPrompt}
-                        onChange={(e) => setGenPrompt(e.target.value)}
+
+                    <div className="flex items-center gap-2 rounded-lg border border-border bg-background/70 p-1 w-fit">
+                      <button
+                        type="button"
+                        onClick={() => setAssetGenProvider('meshy')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          assetGenProvider === 'meshy'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                        }`}
+                      >
+                        Meshy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAssetGenProvider('trellis')}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          assetGenProvider === 'trellis'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                        }`}
+                      >
+                        Trellis 2
+                      </button>
+                    </div>
+
+                    {assetGenProvider === 'meshy' ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">Text-to-3D with Meshy. Generation can take a few minutes.</p>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="Describe a new 3D object to generate…"
+                            value={genPrompt}
+                            onChange={(e) => setGenPrompt(e.target.value)}
+                            disabled={generatingAsset}
+                          />
+                          <Button type="button" variant="outline" onClick={() => void handleGenerateAsset()} disabled={generatingAsset || !genPrompt.trim()}>
+                            {generatingAsset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : lessonId ? (
+                      <ImageTo3DPanel
+                        chapterId={lessonId}
+                        topicId={lessonId}
+                        onAssetGenerated={() => {
+                          void attachLatestLessonAsset();
+                        }}
                       />
-                      <Button type="button" variant="outline" onClick={handleGenerateAsset} disabled={generatingAsset}>
-                        {generatingAsset ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                      </Button>
-                    </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">Add a stop first so we can save Trellis assets to this tour draft.</p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              await ensureDraft();
+                              toast.success('Draft ready — upload an image for Trellis 2.');
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : 'Could not create draft.');
+                            }
+                          }}
+                        >
+                          Prepare draft for Trellis
+                        </Button>
+                      </div>
+                    )}
+
                     {selectedStop.assets.length > 0 && (
                       <ul className="space-y-1">
                         {selectedStop.assets.map((asset) => (
@@ -610,25 +694,6 @@ export default function StreetViewLessonCreator() {
                           </li>
                         ))}
                       </ul>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs flex items-center gap-1">
-                      <Mic className="w-3 h-3" /> Voiceover narration
-                    </Label>
-                    <Textarea
-                      placeholder="Write what the narrator should say at this stop…"
-                      value={voiceoverScript}
-                      onChange={(e) => setVoiceoverScript(e.target.value)}
-                      rows={3}
-                    />
-                    <Button type="button" size="sm" variant="outline" onClick={handleGenerateVoiceover} disabled={generatingVoiceover}>
-                      {generatingVoiceover ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mic className="w-4 h-4 mr-2" />}
-                      Generate voiceover
-                    </Button>
-                    {selectedStop.voiceover?.audioUrl && (
-                      <audio controls src={selectedStop.voiceover.audioUrl} className="w-full h-8 mt-1" />
                     )}
                   </div>
                 </CardContent>
@@ -701,14 +766,13 @@ export default function StreetViewLessonCreator() {
             </Card>
 
             <div className="flex flex-col gap-2">
-              <Button variant="outline" onClick={handleSubmitForReview} disabled={submitting || stops.length === 0}>
-                {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                Submit for Super Admin review
-              </Button>
               <Button onClick={handleLaunch} disabled={launching || stops.length === 0}>
                 {launching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Rocket className="w-4 h-4 mr-2" />}
                 Save &amp; Launch to my class
               </Button>
+              <p className="text-xs text-muted-foreground">
+                Launches immediately — no Super Admin approval required.
+              </p>
             </div>
           </div>
         </div>

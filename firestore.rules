@@ -665,6 +665,15 @@ service cloud.firestore {
            get(/databases/$(database)/documents/classes/$(classId)).data.shared_with_teachers.hasAny([request.auth.uid]))
         );
     }
+    // Helper: guest who joined this partner demo (join API stamps last_partner_demo_session_id)
+    function guestInPartnerSession(sessionData, sessionId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserRole() == 'student' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isGuest == true &&
+        sessionData.hosted_by_partner == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.last_partner_demo_session_id == sessionId;
+    }
     // Helper: student is in this class - allow if user.class_ids contains classId OR class.student_ids contains student
     function studentInClass(classId, schoolId) {
       return isAuthenticated() &&
@@ -724,11 +733,13 @@ service cloud.firestore {
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == request.resource.data.school_id) ||
           (getUserRole() == 'school' && getUserSchoolId() == request.resource.data.school_id)
         );
-      // Owner, managing teacher, school/principal hosts, students in class/school, admins
+      // Owner, managing teacher, school/principal hosts, students in class/school, admins,
+      // and guests who joined a partner-hosted demo by code
       allow read: if isAuthenticated() && (
         canHostClassSession(resource.data) ||
         studentInClass(resource.data.class_id, resource.data.school_id) ||
-        studentSameSchool(resource.data.school_id)
+        studentSameSchool(resource.data.school_id) ||
+        guestInPartnerSession(resource.data, sessionId)
       );
       // Hosts may update launch/view fields (not only the original teacher_uid owner)
       allow update: if canHostClassSession(resource.data) && classSessionLaunchKeysOnly();
@@ -750,7 +761,16 @@ service cloud.firestore {
           request.auth.uid == studentUid &&
           request.resource.data.student_uid == request.auth.uid &&
           exists(/databases/$(database)/documents/class_sessions/$(sessionId)) &&
-          studentInClass(get(/databases/$(database)/documents/class_sessions/$(sessionId)).data.class_id, get(/databases/$(database)/documents/class_sessions/$(sessionId)).data.school_id);
+          (
+            studentInClass(
+              get(/databases/$(database)/documents/class_sessions/$(sessionId)).data.class_id,
+              get(/databases/$(database)/documents/class_sessions/$(sessionId)).data.school_id
+            ) ||
+            guestInPartnerSession(
+              get(/databases/$(database)/documents/class_sessions/$(sessionId)).data,
+              sessionId
+            )
+          );
         allow delete: if false;
       }
     }

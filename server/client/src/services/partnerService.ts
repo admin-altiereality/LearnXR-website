@@ -249,8 +249,21 @@ export async function startPartnerDemoSession(
 
 export async function launchPartnerDemoLesson(
   sessionId: string,
-  lesson: { chapterId: string; topicId: string; sceneId?: string; title?: string; lessonType?: 'curriculum' | 'user_generated' },
-): Promise<{ success: boolean; lessonLaunchesRemaining: number; lessonLaunchesUsed: number }> {
+  lesson: {
+    chapterId: string;
+    topicId: string;
+    sceneId?: string;
+    title?: string;
+    lessonType?: 'curriculum' | 'user_generated' | 'vr360_video';
+    vr360TourId?: string;
+  },
+): Promise<{
+  success: boolean;
+  lessonLaunchesRemaining: number;
+  lessonLaunchesUsed: number;
+  countedLessonQuota?: boolean;
+  classLaunchesRemaining?: number;
+}> {
   const response = await fetch(`${getApiBaseUrl()}/partners/sessions/${sessionId}/launch-lesson`, {
     method: 'POST',
     headers: await authHeaders(),

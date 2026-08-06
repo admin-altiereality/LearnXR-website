@@ -127,7 +127,7 @@ export async function assertLessonAuthorAccess(params: {
     throw err;
   }
 
-  if (chapterId !== topicId) {
+  if (chapterId !== topicId && !(typeof topicId === 'string' && topicId.startsWith(`${chapterId}__stop_`))) {
     const err: any = new Error('Teachers and partners may only generate assets for their own draft lessons.');
     err.code = 'FORBIDDEN';
     throw err;

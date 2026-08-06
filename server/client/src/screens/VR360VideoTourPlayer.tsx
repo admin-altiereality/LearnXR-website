@@ -2,6 +2,7 @@
  * 360° equirectangular video VR tour.
  * - Primary: krpano (videoplayer.js) for WebVR, drag, and class view sync.
  * - Fallback: Three.js + video texture if krpano fails to start.
+ * - Live class: host overlay + Direct class to my view (orientation + playhead).
  */
 
 import { OrbitControls, useVideoTexture } from '@react-three/drei';
@@ -13,6 +14,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import * as THREE from 'three';
 import { getVr360TourById, type Vr360Player, type Vr360TourItem } from '../config/vr360Tours';
 import { useAuth } from '../contexts/AuthContext';
+import { useClassSession } from '../contexts/ClassSessionContext';
 import {
   reportSessionProgress,
   reportStudentView,
@@ -22,7 +24,9 @@ import {
 import { getStorageSafely } from '../utils/firebaseStorage';
 import { buildKrpano360VideoXml } from '../lib/krpano/buildKrpano360VideoXml';
 import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
+import { applyTeacherViewToKrpano } from '../lib/krpano/applyTeacherView';
 import { Button } from '../Components/ui/button';
+import { LiveClassHostOverlay, type HostLookat } from '../Components/classSession/LiveClassHostOverlay';
 
 const VR360_TOUR_KEY = 'learnxr_vr360_tour';
 const KRPANO_TARGET_ID = 'vr360-krpano-embed';
@@ -38,6 +42,72 @@ export interface Vr360TourSessionPayload {
 }
 
 type KrpanoApi = { call: (a: string) => void; get?: (path: string) => unknown };
+
+function readPartnerDemoSessionId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem('learnxr_partner_demo_session');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string };
+    return typeof parsed?.id === 'string' ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
+
+function readKrpanoVideoTime(k: KrpanoApi | null): number | null {
+  if (!k?.get) return null;
+  for (const path of ['plugin[video].time', 'plugin[video].getTime()', 'plugin[video].t']) {
+    try {
+      const raw = k.get(path);
+      const n = typeof raw === 'number' ? raw : Number(raw);
+      if (Number.isFinite(n) && n >= 0) return n;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+function seekKrpanoVideo(k: KrpanoApi | null, timeSec: number, playing?: boolean) {
+  if (!k?.call || !Number.isFinite(timeSec)) return;
+  try {
+    k.call(`set(plugin[video].time,${timeSec});`);
+  } catch {
+    try {
+      k.call(`plugin[video].seekto(${timeSec});`);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (typeof playing === 'boolean') {
+    try {
+      k.call(playing ? 'plugin[video].play();' : 'plugin[video].pause();');
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function readLiveLookat(k: KrpanoApi | null, playing: boolean): HostLookat | null {
+  if (!k?.get) return null;
+  try {
+    const h = Number(k.get('view.hlookat'));
+    const v = Number(k.get('view.vlookat'));
+    const fov = Number(k.get('view.fov'));
+    if (!Number.isFinite(h) || !Number.isFinite(v)) return null;
+    const videoTime = readKrpanoVideoTime(k);
+    return {
+      hlookat: h,
+      vlookat: v,
+      fov: Number.isFinite(fov) ? fov : 90,
+      ...(videoTime != null ? { video_time: videoTime } : {}),
+      playing,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function VideoSphere({ url, muted, playing }: { url: string; muted: boolean; playing: boolean }) {
   const texture = useVideoTexture(url, { muted, start: false, crossOrigin: 'anonymous', loop: true, playsInline: true });
@@ -90,6 +160,14 @@ const VR360VideoTourPlayer = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, profile } = useAuth();
+  const {
+    activeSessionId,
+    activeSession,
+    joinedSessionId,
+    joinedSession,
+    progressList,
+    bindActiveSession,
+  } = useClassSession();
   const [payload, setPayload] = useState<Vr360TourSessionPayload | null>(null);
   const [mergedTour, setMergedTour] = useState<Vr360TourItem | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -99,18 +177,91 @@ const VR360VideoTourPlayer = () => {
   const [urlError, setUrlError] = useState<string | null>(null);
   const [engine, setEngine] = useState<'krpano' | 'three' | 'pending'>('pending');
   const [inKrpanoVr, setInKrpanoVr] = useState(false);
+  const [hostLookat, setHostLookat] = useState<HostLookat | null>(null);
+  const [sessionSnap, setSessionSnap] = useState(activeSession || joinedSession);
   const krpanoRef = useRef<KrpanoApi | null>(null);
   const lastTeacherSend = useRef(0);
   const lastStudentReport = useRef(0);
+  const lastAppliedTeacherView = useRef<{ h: number; v: number; fov: number; syncId: number | null } | null>(null);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
 
   const syncRef = useRef({
-    isTeacher: false,
+    isHost: false,
     isStudent: false,
     classSessionId: null as string | null,
     userId: null as string | null,
   });
 
   const effectivePlayer: Vr360Player = payload?.player ?? mergedTour?.player ?? 'krpano';
+
+  const storedClassSessionId =
+    typeof window !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null;
+  const storedJoinedSessionId =
+    typeof window !== 'undefined' ? sessionStorage.getItem('learnxr_joined_session_id') : null;
+  const partnerDemoId = readPartnerDemoSessionId();
+  // Students arrive with joinedSessionId; hosts with activeSessionId / partner demo.
+  const classSessionId =
+    activeSessionId ||
+    joinedSessionId ||
+    partnerDemoId ||
+    storedClassSessionId ||
+    storedJoinedSessionId;
+
+  // Bind host session into context so roster / overlay stay live
+  useEffect(() => {
+    if (!classSessionId || !bindActiveSession) return;
+    if (activeSessionId !== classSessionId) {
+      const role = profile?.role;
+      if (role === 'teacher' || role === 'partner' || role === 'admin' || role === 'superadmin' || role === 'principal' || role === 'school') {
+        bindActiveSession(classSessionId);
+      }
+    }
+  }, [classSessionId, activeSessionId, bindActiveSession, profile?.role]);
+
+  useEffect(() => {
+    // Prefer live context docs when they match this session
+    if (activeSessionId === classSessionId && activeSession) {
+      setSessionSnap(activeSession);
+      return;
+    }
+    if (joinedSessionId === classSessionId && joinedSession) {
+      setSessionSnap(joinedSession);
+    }
+  }, [activeSession, activeSessionId, joinedSession, joinedSessionId, classSessionId]);
+
+  // Single session subscription for host roster + student teacher_view when context isn't bound
+  useEffect(() => {
+    if (!classSessionId) return;
+    if (
+      (activeSessionId === classSessionId && activeSession) ||
+      (joinedSessionId === classSessionId && joinedSession)
+    ) {
+      return;
+    }
+    return subscribeSession(classSessionId, (session) => {
+      setSessionSnap(session);
+    });
+  }, [classSessionId, activeSessionId, activeSession, joinedSessionId, joinedSession]);
+
+  const isHost = Boolean(
+    classSessionId &&
+      user?.uid &&
+      (sessionSnap?.teacher_uid === user.uid ||
+        (profile?.role === 'partner' &&
+          (sessionSnap?.hosted_by_partner === true || Boolean(partnerDemoId))) ||
+        (profile?.role === 'teacher' &&
+          Boolean(activeSessionId === classSessionId || storedClassSessionId === classSessionId)))
+  );
+  const isStudent = Boolean(
+    classSessionId &&
+      user?.uid &&
+      !isHost &&
+      sessionSnap?.teacher_uid !== user.uid &&
+      (profile?.role === 'student' || Boolean(joinedSessionId || storedJoinedSessionId))
+  );
+  const reportEnabled = isStudent;
+  const showHostOverlay = Boolean(isHost && !inKrpanoVr && classSessionId);
 
   useEffect(() => {
     const fromState = (location.state as { vr360?: Vr360TourSessionPayload } | null)?.vr360;
@@ -208,20 +359,14 @@ const VR360VideoTourPlayer = () => {
     };
   }, [payload, mergedTour?.videoStoragePath]);
 
-  const classSessionId =
-    typeof window !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null;
-  const isTeacher = profile?.role === 'teacher' && !!classSessionId && !!user?.uid;
-  const isStudent = profile?.role === 'student' && !!classSessionId && !!user?.uid;
-  const reportEnabled = isStudent;
-
   useEffect(() => {
     syncRef.current = {
-      isTeacher,
+      isHost,
       isStudent,
       classSessionId,
       userId: user?.uid ?? null,
     };
-  }, [isTeacher, isStudent, classSessionId, user?.uid]);
+  }, [isHost, isStudent, classSessionId, user?.uid]);
 
   useEffect(() => {
     (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, f: number) => void }).__krpanoOnViewChange = (
@@ -236,10 +381,12 @@ const VR360VideoTourPlayer = () => {
         lastStudentReport.current = t;
         void reportStudentView(r.classSessionId, r.userId, { hlookat: h, vlookat: v, fov: f });
       }
-      if (r.isTeacher && r.classSessionId && r.userId) {
+      if (r.isHost && r.classSessionId && r.userId) {
         const t = Date.now();
         if (t - lastTeacherSend.current < TEACHER_VIEW_MS) return;
         lastTeacherSend.current = t;
+        setHostLookat({ hlookat: h, vlookat: v, fov: f, playing: playingRef.current });
+        // Continuous drag — no force/sync_id
         void updateTeacherView(r.classSessionId, r.userId, { hlookat: h, vlookat: v, fov: f });
       }
     };
@@ -259,25 +406,50 @@ const VR360VideoTourPlayer = () => {
     return () => clearInterval(id);
   }, [reportEnabled, classSessionId, user?.uid, profile?.displayName, profile?.name, user?.email]);
 
-  // Student: follow teacher_view
+  // Student: follow teacher_view (orientation + optional video playhead on force Direct)
+  const teacherView = sessionSnap?.teacher_view;
   useEffect(() => {
-    if (!isStudent || !classSessionId) return;
-    return subscribeSession(classSessionId, (session) => {
-      const tv = session?.teacher_view;
-      if (!tv) return;
-      const k = krpanoRef.current;
-      if (!k?.call) return;
-      const h = Number(tv.hlookat);
-      const v = Number(tv.vlookat);
-      const f = tv.fov != null ? Number(tv.fov) : 80;
-      if (!Number.isFinite(h) || !Number.isFinite(v)) return;
-      try {
-        k.call(`tween(view.hlookat,${h},view.vlookat,${v},view.fov,${f},time=0.28)`);
-      } catch {
-        /* ignore */
+    if (!isStudent || !teacherView) return;
+    const k = krpanoRef.current;
+    if (!k?.call) return;
+    const h = Number(teacherView.hlookat);
+    const v = Number(teacherView.vlookat);
+    const f = teacherView.fov != null ? Number(teacherView.fov) : 80;
+    const syncId =
+      typeof teacherView.sync_id === 'number' && Number.isFinite(teacherView.sync_id)
+        ? teacherView.sync_id
+        : null;
+    if (!Number.isFinite(h) || !Number.isFinite(v)) return;
+    const prev = lastAppliedTeacherView.current;
+    const isNewDirect = syncId != null && syncId !== prev?.syncId;
+    if (prev && prev.h === h && prev.v === v && prev.fov === f && !isNewDirect) {
+      return;
+    }
+    lastAppliedTeacherView.current = { h, v, fov: f, syncId };
+    applyTeacherViewToKrpano(
+      k,
+      { hlookat: h, vlookat: v, fov: f, sync_id: syncId ?? undefined },
+      { force: isNewDirect }
+    );
+    // Playback state only on explicit Direct (new sync_id) to avoid fighting local pause/play
+    if (isNewDirect) {
+      if (typeof teacherView.video_time === 'number' && Number.isFinite(teacherView.video_time)) {
+        seekKrpanoVideo(k, teacherView.video_time, typeof teacherView.playing === 'boolean' ? teacherView.playing : undefined);
+      } else if (typeof teacherView.playing === 'boolean') {
+        seekKrpanoVideo(k, readKrpanoVideoTime(k) ?? 0, teacherView.playing);
       }
-    });
-  }, [isStudent, classSessionId]);
+      if (typeof teacherView.playing === 'boolean') setPlaying(teacherView.playing);
+    }
+  }, [
+    isStudent,
+    teacherView?.hlookat,
+    teacherView?.vlookat,
+    teacherView?.fov,
+    teacherView?.sync_id,
+    teacherView?.video_time,
+    teacherView?.playing,
+    engine,
+  ]);
 
   // Sync WebXR / krpano VR state so the toolbar can toggle Enter / Exit
   useEffect(() => {
@@ -330,6 +502,33 @@ const VR360VideoTourPlayer = () => {
     navigate('/lessons', { replace: true });
   }, [navigate]);
 
+  const getLiveHostView = useCallback((): HostLookat | null => {
+    return readLiveLookat(krpanoRef.current, playingRef.current) || hostLookat;
+  }, [hostLookat]);
+
+  // Keep krpano video transport in sync with toolbar Play/Pause + Mute
+  useEffect(() => {
+    if (engine !== 'krpano') return;
+    const k = krpanoRef.current;
+    if (!k?.call) return;
+    try {
+      k.call(playing ? 'plugin[video].play();' : 'plugin[video].pause();');
+    } catch {
+      /* ignore */
+    }
+  }, [playing, engine]);
+
+  useEffect(() => {
+    if (engine !== 'krpano') return;
+    const k = krpanoRef.current;
+    if (!k?.call) return;
+    try {
+      k.call(`set(plugin[video].muted,${muted ? 'true' : 'false'});`);
+    } catch {
+      /* ignore */
+    }
+  }, [muted, engine]);
+
   // krpano embed
   useEffect(() => {
     if (!resolvedUrl) return;
@@ -340,6 +539,7 @@ const VR360VideoTourPlayer = () => {
 
     krpanoRef.current = null;
     setEngine('pending');
+    lastAppliedTeacherView.current = null;
 
     let removed = false;
     const run = async () => {
@@ -422,52 +622,77 @@ const VR360VideoTourPlayer = () => {
 
   const showKrpano = effectivePlayer !== 'three' && (engine === 'krpano' || engine === 'pending');
   const showThree = engine === 'three' || effectivePlayer === 'three';
+  const hostSessionCode = sessionSnap?.session_code || activeSession?.session_code || null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black">
       {/*
         pointer-events-none on the bar so krpano’s own “Enter VR” layer receives clicks; children use pointer-events-auto.
       */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-2 p-3 bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
-        <Button variant="secondary" size="sm" onClick={onBack} className="gap-2 pointer-events-auto shrink-0" type="button">
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-2 p-3 sm:p-4 bg-gradient-to-b from-black/75 via-black/35 to-transparent pointer-events-none">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onBack}
+          className="gap-2 pointer-events-auto shrink-0 border-white/10 bg-zinc-950/70 text-white hover:bg-zinc-900/80"
+          type="button"
+        >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          <span className="hidden xs:inline sm:inline">Back</span>
         </Button>
-        <div className="flex items-center gap-2 text-sm text-white/90 truncate max-w-[50%] select-none min-w-0">
-          <Video className="h-4 w-4 shrink-0" />
-          <span className="truncate">{payload.title}</span>
+        <div className="flex min-w-0 max-w-[46%] items-center gap-2 truncate text-sm text-white/90 select-none">
+          <Video className="h-4 w-4 shrink-0 text-teal-300/90" />
+          <span className="truncate font-medium tracking-tight">{payload.title}</span>
         </div>
-        <div className="flex items-center gap-1 pointer-events-auto shrink-0">
+        <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
           {showKrpano && engine === 'krpano' && (
             <Button
               variant={inKrpanoVr ? 'secondary' : 'default'}
               size="sm"
-              className="gap-1.5"
+              className="gap-1.5 border-white/10"
               type="button"
               onClick={inKrpanoVr ? handleExitVr : handleEnterVr}
               aria-pressed={inKrpanoVr}
               aria-label={inKrpanoVr ? 'Exit VR' : 'Enter VR'}
             >
               {inKrpanoVr ? <X className="h-4 w-4" /> : <Glasses className="h-4 w-4" />}
-              {inKrpanoVr ? 'Exit VR' : 'Enter VR'}
+              <span className="hidden sm:inline">{inKrpanoVr ? 'Exit VR' : 'Enter VR'}</span>
             </Button>
           )}
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setMuted((m) => !m)}
-            className="gap-1"
+            className="gap-1 border-white/10 bg-zinc-950/70 text-white hover:bg-zinc-900/80"
             type="button"
             aria-label={muted ? 'Unmute' : 'Mute'}
           >
             {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => setPlaying((p) => !p)} className="gap-1" type="button">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setPlaying((p) => !p)}
+            className="gap-1 border-white/10 bg-zinc-950/70 text-white hover:bg-zinc-900/80"
+            type="button"
+          >
             {playing ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            {playing ? 'Pause' : 'Play'}
+            <span className="hidden sm:inline">{playing ? 'Pause' : 'Play'}</span>
           </Button>
         </div>
       </div>
+
+      {showHostOverlay && (
+        <LiveClassHostOverlay
+          session={sessionSnap || activeSession}
+          sessionId={classSessionId}
+          hostUid={user?.uid ?? null}
+          progressList={progressList}
+          sessionCode={hostSessionCode}
+          hostView={hostLookat || sessionSnap?.teacher_view || null}
+          getLiveHostView={getLiveHostView}
+        />
+      )}
 
       {showKrpano && (
         <>

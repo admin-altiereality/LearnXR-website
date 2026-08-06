@@ -95,7 +95,7 @@ async function resolveSchoolIdForClassSession(
 
 export function ClassSessionProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   // Do not trust sessionStorage until validated against the signed-in user.
   // Blind restore caused permission-denied on subscribe/launch when the stored
   // session belonged to another account (e.g. school → teacher switch).
@@ -222,6 +222,12 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
         if (result.sessionId) {
           setJoinedSessionId(result.sessionId);
           if (typeof window !== 'undefined') sessionStorage.setItem(STORAGE_KEY_JOINED_SESSION, result.sessionId);
+          // Refresh so guest/school class links from the join API are visible immediately
+          try {
+            await refreshProfile();
+          } catch {
+            // non-fatal — Auth onSnapshot will usually pick up the Admin write
+          }
           return true;
         }
         setSessionError(result.errorMessage ?? 'Invalid or expired code, or you are not in this class.');
@@ -230,7 +236,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
         setSessionLoading(false);
       }
     },
-    [user?.uid, profile]
+    [user?.uid, profile, refreshProfile]
   );
 
   // Teacher: subscribe to active session; clear stale IDs on permission-denied
@@ -263,28 +269,67 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
       setProgressList([]);
       return;
     }
-    const unsubProgress = subscribeSessionProgress(activeSessionId, setProgressList);
+    const removed = new Set(
+      Array.isArray(activeSession.removed_student_uids) ? activeSession.removed_student_uids : []
+    );
+    const unsubProgress = subscribeSessionProgress(activeSessionId, (list) => {
+      setProgressList(list.filter((s) => s?.student_uid && !removed.has(s.student_uid)));
+    });
     return () => unsubProgress();
-  }, [activeSessionId, activeSession, user?.uid, profile?.role]);
+  }, [activeSessionId, activeSession, activeSession?.removed_student_uids, user?.uid, profile?.role]);
 
-  // Student: subscribe to joined session; on permission error clear state so user can retry
+  // Student: subscribe to joined session; retry briefly after join (guest school link can lag)
   useEffect(() => {
     if (!joinedSessionId) {
       setJoinedSession(null);
       return;
     }
-    const handleSubscribeError = (err: Error) => {
-      const code = err && 'code' in err ? (err as { code?: string }).code : undefined;
-      if (code === 'permission-denied') {
-        setSessionError('Could not load session. If you just joined, try again in a moment.');
-        setJoinedSessionId(null);
-        setJoinedSession(null);
-        if (typeof window !== 'undefined') sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
-      }
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsub: (() => void) | null = null;
+    let attempts = 0;
+    const maxAttempts = 4;
+
+    const startSubscribe = () => {
+      if (cancelled) return;
+      unsub?.();
+      unsub = subscribeSession(
+        joinedSessionId,
+        (session) => {
+          if (!cancelled) setJoinedSession(session);
+        },
+        (err: Error) => {
+          const code = err && 'code' in err ? (err as { code?: string }).code : undefined;
+          if (code !== 'permission-denied' || cancelled) return;
+          if (attempts < maxAttempts) {
+            attempts += 1;
+            retryTimer = setTimeout(() => {
+              void (async () => {
+                try {
+                  await refreshProfile();
+                } catch {
+                  // non-fatal
+                }
+                if (!cancelled) startSubscribe();
+              })();
+            }, 500 * attempts);
+            return;
+          }
+          setSessionError('Could not load session. If you just joined, try the code again in a moment.');
+          setJoinedSessionId(null);
+          setJoinedSession(null);
+          if (typeof window !== 'undefined') sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
+        }
+      );
     };
-    const unsub = subscribeSession(joinedSessionId, setJoinedSession, handleSubscribeError);
-    return () => unsub();
-  }, [joinedSessionId]);
+
+    startSubscribe();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      unsub?.();
+    };
+  }, [joinedSessionId, refreshProfile]);
 
   // When teacher ends the session, student sees status 'ended' → leave session and redirect to dashboard
   useEffect(() => {
@@ -315,8 +360,15 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
         try {
           const s = await getSession(storedActive);
           if (cancelled) return;
-          // Any session the signed-in user can read (host rules) may be restored
-          if (s && s.status !== 'ended') {
+          const isHostRole =
+            profile?.role === 'teacher' ||
+            profile?.role === 'partner' ||
+            profile?.role === 'admin' ||
+            profile?.role === 'superadmin' ||
+            profile?.role === 'principal' ||
+            profile?.role === 'school';
+          // Never restore teacher/host active session from storage for students (shared key pollution)
+          if (s && s.status !== 'ended' && isHostRole) {
             setActiveSessionId(storedActive);
           } else {
             sessionStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
@@ -336,6 +388,22 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
           }
         } catch {
           if (!cancelled) sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);
+        }
+      } else if (
+        !storedJoined &&
+        storedActive &&
+        profile?.role === 'student'
+      ) {
+        // Lessons launch historically wrote the active key for students — recover follow sync.
+        try {
+          const s = await getSession(storedActive);
+          if (cancelled) return;
+          if (s && s.status !== 'ended') {
+            setJoinedSessionId(storedActive);
+            sessionStorage.setItem(STORAGE_KEY_JOINED_SESSION, storedActive);
+          }
+        } catch {
+          /* ignore */
         }
       } else if (storedJoined && profile?.role && profile.role !== 'student') {
         sessionStorage.removeItem(STORAGE_KEY_JOINED_SESSION);

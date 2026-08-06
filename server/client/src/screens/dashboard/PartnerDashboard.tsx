@@ -27,6 +27,7 @@ import {
   recordPartnerLaunchTelemetry,
   startPartnerDemoSession,
 } from '../../services/partnerService';
+import { listMyLessons, type UserGeneratedLesson } from '../../services/userLessonService';
 
 type SchoolRow = {
   id: string;
@@ -58,7 +59,10 @@ type DemoLesson = {
   topicId: string;
   title: string;
   sceneId?: string;
+  lessonType?: 'curriculum' | 'user_generated';
 };
+
+const STREET_VIEW_CLASS_LAUNCH_LIMIT = 50;
 
 const PartnerDashboard = () => {
   const { profile } = useAuth();
@@ -88,6 +92,7 @@ const PartnerDashboard = () => {
   const [telemetryConsent, setTelemetryConsent] = useState(false);
   const [removingStudentUid, setRemovingStudentUid] = useState<string | null>(null);
   const [selectedStudentUid, setSelectedStudentUid] = useState<string | null>(null);
+  const [studentViewOn, setStudentViewOn] = useState(false);
   const [studentSkyboxUrl, setStudentSkyboxUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -138,7 +143,7 @@ const PartnerDashboard = () => {
       setClassesBySchool(classMap);
 
       const chapterSnap = await getDocs(collection(db, 'curriculum_chapters'));
-      const lessons = chapterSnap.docs.flatMap((chapterDoc) => {
+      const curriculumLessons = chapterSnap.docs.flatMap((chapterDoc) => {
         const chapter = chapterDoc.data();
         const topics = Array.isArray(chapter.topics) ? chapter.topics : [];
         return topics
@@ -149,10 +154,35 @@ const PartnerDashboard = () => {
             topicId: String(topic.topic_id || topic.id || ''),
             title: String(topic.title || topic.topic_name || chapter.chapter_name || chapter.title || 'Demo lesson'),
             sceneId: typeof topic.scene_id === 'string' ? topic.scene_id : undefined,
+            lessonType: 'curriculum' as const,
           }))
           .filter((topic: DemoLesson) => Boolean(topic.topicId));
       });
-      setDemoLessons(lessons);
+
+      // Partner-owned Street View tours are launchable immediately (no Super Admin approval).
+      let streetViewLessons: DemoLesson[] = [];
+      try {
+        const mine = await listMyLessons();
+        streetViewLessons = (mine.lessons || [])
+          .filter((lesson: UserGeneratedLesson) => {
+            const stops = lesson.streetViewTour?.stops;
+            return lesson.source === 'street_view' && Array.isArray(stops) && stops.length > 0;
+          })
+          .map((lesson: UserGeneratedLesson) => {
+            const firstStop = lesson.streetViewTour!.stops[0];
+            return {
+              id: `ug:${lesson.id}`,
+              chapterId: lesson.id,
+              topicId: `${lesson.id}__stop_${firstStop.id}`,
+              title: `${lesson.title || 'Street View tour'} (Street View)`,
+              lessonType: 'user_generated' as const,
+            };
+          });
+      } catch (err) {
+        console.warn('Could not load Street View tours for partner dashboard', err);
+      }
+
+      setDemoLessons([...streetViewLessons, ...curriculumLessons]);
 
       // Pending teachers in partner schools
       if (schoolList.length > 0) {
@@ -189,9 +219,24 @@ const PartnerDashboard = () => {
     bindActiveSession(session.id);
   }, [activeSession, liveSession?.id, liveSession?.status, bindActiveSession]);
 
+  const visibleProgress = useMemo(() => {
+    const removed = new Set(
+      Array.isArray(liveSession?.removed_student_uids) ? liveSession.removed_student_uids : []
+    );
+    return progressList.filter((s) => s?.student_uid && !removed.has(s.student_uid));
+  }, [progressList, liveSession?.removed_student_uids]);
+
+  useEffect(() => {
+    if (!selectedStudentUid) return;
+    if (!visibleProgress.some((s) => s.student_uid === selectedStudentUid)) {
+      setSelectedStudentUid(null);
+      setStudentViewOn(false);
+    }
+  }, [visibleProgress, selectedStudentUid]);
+
   useEffect(() => {
     const launched = liveSession?.launched_lesson;
-    if (!launched || !progressList.length) {
+    if (!launched || !visibleProgress.length) {
       setStudentSkyboxUrl(null);
       return;
     }
@@ -213,7 +258,7 @@ const PartnerDashboard = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [liveSession?.launched_lesson, progressList.length]);
+  }, [liveSession?.launched_lesson, visibleProgress.length]);
 
   const copyText = async (text: string, label: string) => {
     try {
@@ -313,13 +358,25 @@ const PartnerDashboard = () => {
   const handleLaunchLesson = async () => {
     const lesson = demoLessons.find((item) => item.id === selectedLessonId);
     if (!activeSession || !lesson) {
-      toast.error('Start a demo session and select an approved demo lesson first.');
+      toast.error('Start a demo session and select a Street View tour or lesson first.');
       return;
     }
     setBusy(true);
     try {
-      const result = await launchPartnerDemoLesson(activeSession.id, lesson);
-      toast.success(`Lesson launched. ${result.lessonLaunchesRemaining} demo lesson launches remaining.`);
+      const result = await launchPartnerDemoLesson(activeSession.id, {
+        chapterId: lesson.chapterId,
+        topicId: lesson.topicId,
+        sceneId: lesson.sceneId,
+        title: lesson.title,
+        lessonType: lesson.lessonType || 'curriculum',
+      });
+      if (lesson.lessonType === 'user_generated') {
+        toast.success(
+          `Street View tour launched. ${(result as { classLaunchesRemaining?: number }).classLaunchesRemaining ?? partner?.trial?.classLaunchesRemaining ?? 0} class launches remaining.`
+        );
+      } else {
+        toast.success(`Lesson launched. ${result.lessonLaunchesRemaining} demo lesson launches remaining.`);
+      }
       await refresh();
     } catch (error: any) {
       toast.error(error?.message || 'Failed to launch lesson');
@@ -457,16 +514,16 @@ const PartnerDashboard = () => {
       <section className="grid gap-3 sm:grid-cols-3">
         <Card className="border-border/80 bg-card/80 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Class launches</p>
-            <p className="mt-2 text-2xl font-bold tabular-nums">{partner.trial?.classLaunchesRemaining ?? 0}<span className="text-base font-medium text-muted-foreground"> / {partner.trial?.classLaunchesLimit ?? 200}</span></p>
-            <p className="mt-1 text-xs text-muted-foreground">Available live demo sessions</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Street View class launches</p>
+            <p className="mt-2 text-2xl font-bold tabular-nums">{partner.trial?.classLaunchesRemaining ?? 0}<span className="text-base font-medium text-muted-foreground"> / {partner.trial?.classLaunchesLimit ?? STREET_VIEW_CLASS_LAUNCH_LIMIT}</span></p>
+            <p className="mt-1 text-xs text-muted-foreground">1 live demo session = 1 credit (no double-count on tour launch)</p>
           </CardContent>
         </Card>
         <Card className="border-border/80 bg-card/80 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Demo lessons</p>
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Curriculum demo lessons</p>
             <p className="mt-2 text-2xl font-bold tabular-nums">{partner.trial?.lessonLaunchesRemaining ?? 0}<span className="text-base font-medium text-muted-foreground"> / {partner.trial?.lessonLaunchesLimit ?? 200}</span></p>
-            <p className="mt-1 text-xs text-muted-foreground">Approved lessons ready to present</p>
+            <p className="mt-1 text-xs text-muted-foreground">Approved curriculum demos only</p>
           </CardContent>
         </Card>
         <Card className={!trialActive ? 'border-destructive/50 bg-destructive/5' : 'border-teal-400/20 bg-teal-400/[0.04]'}>
@@ -501,24 +558,27 @@ const PartnerDashboard = () => {
                   <FaCopy className="mr-2 h-3 w-3" /> Copy code
                 </Button>
               </div>
-              <div className="grid gap-3 rounded-xl border border-border bg-background/40 p-3 sm:grid-cols-[1fr_auto]">
+              <div className="grid gap-3 rounded-xl border border-border bg-background/40 p-3 sm:grid-cols-[1fr_auto_auto]">
                 <select
                   value={selectedLessonId}
                   onChange={(event) => setSelectedLessonId(event.target.value)}
                   className="rounded-md border border-border bg-background px-3 py-2 text-sm"
                 >
-                  <option value="">Select an approved demo lesson</option>
+                  <option value="">Select a Street View tour or lesson</option>
                   {demoLessons.map((lesson) => (
                     <option key={lesson.id} value={lesson.id}>{lesson.title}</option>
                   ))}
                 </select>
+                <Button variant="outline" disabled={busy} onClick={() => navigate('/create/street-view')}>
+                  Create Street View
+                </Button>
                 <Button disabled={busy || !selectedLessonId} onClick={handleLaunchLesson}>
-                  <FaPlay className="mr-2 h-3 w-3" /> Launch lesson
+                  <FaPlay className="mr-2 h-3 w-3" /> Launch
                 </Button>
               </div>
               {demoLessons.length === 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  No approved demo lessons are available. Ask a Super Admin to mark lessons as demo-ready.
+                <p className="text-xs text-muted-foreground">
+                  No Street View tours yet. Create one to launch immediately — Super Admin approval is not required.
                 </p>
               )}
             </>
@@ -547,7 +607,7 @@ const PartnerDashboard = () => {
               <div>
                 <div className="flex items-center gap-2 font-medium"><FaUsers className="text-primary" /> Live class controls</div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Session {liveSession.session_code} · {liveSession.status} · {progressList.length} connected student{progressList.length === 1 ? '' : 's'}
+                  Session {liveSession.session_code} · {liveSession.status} · {visibleProgress.length} connected student{visibleProgress.length === 1 ? '' : 's'}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -562,27 +622,39 @@ const PartnerDashboard = () => {
             </div>
             {!liveSession.launched_lesson ? (
               <p className="rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
-                Select an approved demo lesson above, or use Lessons → Launch in Class to begin live instruction.
+                Launch a Street View tour or curriculum lesson above, or open Street View Tour Creator to start live instruction.
               </p>
             ) : (
               <p className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm text-primary">
                 Live lesson: {liveSession.launched_lesson.title || liveSession.launched_lesson.topic_id}. Open the launched lesson in your player to broadcast your 360° view.
               </p>
             )}
-            {progressList.length === 0 ? (
+            {visibleProgress.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">No students have joined yet. Share the session code with guests or students.</p>
             ) : (
               <div className="grid gap-3 lg:grid-cols-[1fr_1.3fr]">
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Student roster and progress</p>
-                  {progressList.map((student) => (
+                  {visibleProgress.map((student) => (
                     <div key={student.student_uid} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/30 p-3 transition hover:border-primary/30">
                       <button className="min-w-0 text-left" onClick={() => setSelectedStudentUid(student.student_uid)}>
                         <p className="truncate text-sm font-medium">{student.display_name || student.email || `Student ${student.student_uid.slice(0, 6)}`}</p>
                         <p className="text-xs capitalize text-muted-foreground">{student.phase || 'connected'}</p>
                       </button>
                       <div className="flex gap-1">
-                        <Button size="sm" variant="outline" onClick={() => setSelectedStudentUid(student.student_uid)} title="See this student's view"><FaEye className="h-3 w-3" /></Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSelectedStudentUid(student.student_uid);
+                            setStudentViewOn((on) =>
+                              selectedStudentUid === student.student_uid && on ? false : true
+                            );
+                          }}
+                          title="See this student's view"
+                        >
+                          <FaEye className="h-3 w-3" />
+                        </Button>
                         <Button size="sm" variant="destructive" disabled={removingStudentUid === student.student_uid} onClick={() => handleRemoveStudent(student.student_uid)} title="Remove student">
                           {removingStudentUid === student.student_uid ? <Loader2 className="h-3 w-3 animate-spin" /> : <FaUserTimes className="h-3 w-3" />}
                         </Button>
@@ -591,9 +663,25 @@ const PartnerDashboard = () => {
                   ))}
                 </div>
                 <div>
-                  <p className="mb-2 text-sm font-medium">Student view</p>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">Student view</p>
+                    <Button
+                      size="sm"
+                      variant={studentViewOn ? 'default' : 'outline'}
+                      onClick={() => setStudentViewOn((v) => !v)}
+                    >
+                      {studentViewOn ? 'On' : 'Off'}
+                    </Button>
+                  </div>
                   {(() => {
-                    const student = progressList.find((item) => item.student_uid === selectedStudentUid) || progressList[0];
+                    if (!studentViewOn) {
+                      return (
+                        <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                          Student view is off. Select a student and turn it on to inspect their live 360° view.
+                        </div>
+                      );
+                    }
+                    const student = visibleProgress.find((item) => item.student_uid === selectedStudentUid) || null;
                     const name = student?.display_name || student?.email || 'Student';
                     return student?.student_view && studentSkyboxUrl ? (
                       <StudentScreen360Preview

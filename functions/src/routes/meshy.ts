@@ -481,9 +481,9 @@ router.post('/generate', requireLessonAuthorAccess, async (req: Request, res: Re
 /**
  * Get generation status
  * GET /meshy/status/:taskId
- * Requires READ or FULL scope
+ * Same auth as /generate: lesson authors (teacher/partner/staff) or FULL API key
  */
-router.get('/status/:taskId', validateFullAccess, async (req: Request, res: Response) => {
+router.get('/status/:taskId', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const { taskId } = req.params;
 
@@ -558,9 +558,9 @@ router.get('/status/:taskId', validateFullAccess, async (req: Request, res: Resp
 /**
  * Cancel a generation task
  * POST /meshy/cancel/:taskId
- * Requires FULL scope
+ * Same auth as /generate: lesson authors (teacher/partner/staff) or FULL API key
  */
-router.post('/cancel/:taskId', validateFullAccess, async (req: Request, res: Response) => {
+router.post('/cancel/:taskId', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const { taskId } = req.params;
 
@@ -638,8 +638,9 @@ router.post('/cancel/:taskId', validateFullAccess, async (req: Request, res: Res
  * Create a rigging task
  * POST /meshy/rigging
  * Body: { input_task_id?: string, model_url?: string, height_meters?: number }
+ * Same auth as /generate: lesson authors or FULL API key
  */
-router.post('/rigging', validateFullAccess, async (req: Request, res: Response) => {
+router.post('/rigging', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   try {
     initializeServices();
@@ -702,8 +703,9 @@ router.post('/rigging', validateFullAccess, async (req: Request, res: Response) 
 /**
  * Get rigging task status and result
  * GET /meshy/rigging/:id
+ * Same auth as /generate: lesson authors or FULL API key
  */
-router.get('/rigging/:id', validateFullAccess, async (req: Request, res: Response) => {
+router.get('/rigging/:id', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const { id } = req.params;
   try {
@@ -762,8 +764,9 @@ router.get('/rigging/:id', validateFullAccess, async (req: Request, res: Respons
  * Create an animation task
  * POST /meshy/animations
  * Body: { rig_task_id: string, action_id: number, post_process?: object }
+ * Same auth as /generate: lesson authors or FULL API key
  */
-router.post('/animations', validateFullAccess, async (req: Request, res: Response) => {
+router.post('/animations', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   try {
     initializeServices();
@@ -824,8 +827,9 @@ router.post('/animations', validateFullAccess, async (req: Request, res: Respons
 /**
  * Get animation task status and result
  * GET /meshy/animations/:id
+ * Same auth as /generate: lesson authors or FULL API key
  */
-router.get('/animations/:id', validateFullAccess, async (req: Request, res: Response) => {
+router.get('/animations/:id', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const { id } = req.params;
   try {

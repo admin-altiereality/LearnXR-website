@@ -103,6 +103,9 @@ router.post('/join', async (req, res) => {
         message: 'Too many join attempts. Please wait before trying another code.',
       });
     }
+    const isGuestPartnerJoin =
+      userData.isGuest === true && sessionData.hosted_by_partner === true;
+
     if (userData.isGuest === true && sessionData.hosted_by_partner !== true) {
       return res.status(403).json({
         success: false,
@@ -111,7 +114,12 @@ router.post('/join', async (req, res) => {
       });
     }
 
-    if (userData.school_id && userData.school_id !== sessionSchoolId) {
+    // Guests may move between partner demo schools via session code; enrolled students stay school-bound.
+    if (
+      !isGuestPartnerJoin &&
+      userData.school_id &&
+      userData.school_id !== sessionSchoolId
+    ) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
@@ -139,23 +147,39 @@ router.post('/join', async (req, res) => {
     }
     const userClassIds: string[] = Array.isArray(userData.class_ids) ? userData.class_ids : [];
     const classStudentIds: string[] = Array.isArray(classData.student_ids) ? classData.student_ids : [];
-    const inClass = userClassIds.includes(sessionClassId) || classStudentIds.includes(uid);
 
-    // If user is not yet linked to the class, link them now (session code is the shared secret)
+    // If user is not yet linked to the class, link them now (session code is the shared secret).
+    // Firestore batches allow only one write per document — merge user fields into a single update.
     const batch = db.batch();
-    let needsUpdate = false;
+    let needsUserUpdate = false;
+    let needsClassUpdate = false;
+    const userUpdates: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
 
-    if (!userData.school_id) {
-      batch.update(userRef, { school_id: sessionSchoolId, updatedAt: new Date().toISOString() });
-      needsUpdate = true;
-    }
+    // Relink guests onto the current partner demo school/class when they switch demos.
+    if (isGuestPartnerJoin) {
+      if (userData.school_id !== sessionSchoolId) {
+        userUpdates.school_id = sessionSchoolId;
+        needsUserUpdate = true;
+      }
+      if (!userClassIds.includes(sessionClassId) || userClassIds.length !== 1) {
+        userUpdates.class_ids = [sessionClassId];
+        needsUserUpdate = true;
+      }
+      userUpdates.last_partner_demo_session_id = sessionId;
+      userUpdates.last_partner_demo_joined_at = new Date().toISOString();
+      needsUserUpdate = true;
+    } else {
+      if (!userData.school_id) {
+        userUpdates.school_id = sessionSchoolId;
+        needsUserUpdate = true;
+      }
 
-    if (!userClassIds.includes(sessionClassId)) {
-      batch.update(userRef, {
-        class_ids: admin.firestore.FieldValue.arrayUnion(sessionClassId),
-        updatedAt: new Date().toISOString(),
-      });
-      needsUpdate = true;
+      if (!userClassIds.includes(sessionClassId)) {
+        userUpdates.class_ids = admin.firestore.FieldValue.arrayUnion(sessionClassId);
+        needsUserUpdate = true;
+      }
     }
 
     if (!classStudentIds.includes(uid)) {
@@ -163,12 +187,14 @@ router.post('/join', async (req, res) => {
         student_ids: admin.firestore.FieldValue.arrayUnion(uid),
         updatedAt: new Date().toISOString(),
       });
-      needsUpdate = true;
+      needsClassUpdate = true;
     }
 
-    if (!inClass && needsUpdate) {
-      await batch.commit();
-    } else if (needsUpdate) {
+    if (needsUserUpdate) {
+      batch.update(userRef, userUpdates);
+    }
+
+    if (needsUserUpdate || needsClassUpdate) {
       await batch.commit();
     }
 
@@ -258,6 +284,13 @@ router.post('/:sessionId/remove-student', async (req, res) => {
       removed_student_uids: admin.firestore.FieldValue.arrayUnion(studentUid),
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     });
+
+    // Drop their live progress doc so the host roster does not keep showing them
+    try {
+      await db.collection('class_sessions').doc(sessionId).collection('progress').doc(studentUid).delete();
+    } catch (progressErr) {
+      console.warn('Failed to delete removed student progress doc:', progressErr);
+    }
 
     return res.json({
       success: true,

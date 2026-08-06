@@ -144,6 +144,7 @@ const StudentDashboard = () => {
               fromClassSession: true,
             })
           );
+          sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
           sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
           setTimeout(() => navigate('/vr360-videotour'), 200);
         } catch (err) {
@@ -245,7 +246,7 @@ const StudentDashboard = () => {
           ttsAudio,
         };
         sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-        sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
         if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
         setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
       } catch (err) {
@@ -267,7 +268,7 @@ const StudentDashboard = () => {
       const fullLessonData = buildCreateSceneActiveLesson(scene as LaunchedScene);
       sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
       sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
-      sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
+      sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
       const ch = fullLessonData.chapter as Record<string, string>;
       const tp = fullLessonData.topic as Record<string, unknown>;
       if (typeof contextStartLesson === 'function') contextStartLesson(ch, tp);
@@ -503,7 +504,14 @@ const StudentDashboard = () => {
                       className="shrink-0"
                       onClick={async () => {
                         const ok = await joinSession(sessionCodeInput.trim());
-                        if (ok) setSessionCodeInput('');
+                        if (ok) {
+                          setSessionCodeInput('');
+                          toast.success(
+                            isGuest
+                              ? 'Joined the partner demo. The lesson opens when they launch it.'
+                              : 'Joined the class. The lesson opens when your teacher launches it.'
+                          );
+                        }
                       }}
                       disabled={sessionJoinLoading || !sessionCodeInput.trim()}
                     >
@@ -519,7 +527,9 @@ const StudentDashboard = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
                   <p className="text-sm font-medium text-primary flex items-center gap-2">
                     <FaCheckCircle className="h-4 w-4 shrink-0" />
-                    Joined. Waiting for teacher to launch a lesson…
+                    {joinedSession?.launched_lesson || joinedSession?.launched_scene
+                      ? 'Lesson launching… stay on this page'
+                      : 'Joined. Waiting for the host to launch a lesson…'}
                   </p>
                   <Button size="sm" variant="outline" onClick={leaveSessionAsStudent} className="shrink-0">
                     Leave session

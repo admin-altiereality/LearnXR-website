@@ -5,8 +5,6 @@ import { db } from '../config/firebase';
 import {
   FaBookOpen,
   FaFlask,
-  FaHistory,
-  FaCubes,
   FaSignOutAlt,
   FaChevronLeft,
   FaChevronRight,
@@ -27,11 +25,12 @@ import {
   FaLightbulb,
   FaSun,
   FaMoon,
-  FaClipboardList,
   FaStar,
   FaHandshake,
   FaChartLine,
-  FaMapMarkerAlt
+  FaMapMarkerAlt,
+  FaGlobeAmericas,
+  FaVideo
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -49,8 +48,6 @@ import {
 import { SchoolCodeBlock } from './SchoolCodeBlock';
 import { FaCopy } from 'react-icons/fa';
 import { toast } from 'react-toastify';
-import { canEditLesson, hasMinimumRole } from '../utils/rbac';
-
 interface NavItem {
   path: string;
   label: string;
@@ -146,38 +143,50 @@ const Sidebar = () => {
   // can launch the voice-first creator without seeing the full Create page.
   const canUseSpiral = isStudent || isTeacher || isAdminOrSuperadmin;
 
-  // Build navigation items based on role according to the spec:
-  // Associate: Dashboard, Lessons only (refine lessons, submit for approval)
-  // Student: Dashboard, Lessons, Profile
-  // Teacher: Dashboard, Lessons, Create, Explore, History, Studio, Profile, Settings
-  // Principal: Dashboard, Lessons, Profile, Settings
-  // Admin/Superadmin: Dashboard (Content), Lessons, Create, Explore, History, Approvals, System, Profile, Settings
+  // Build navigation items based on role.
+  // Shared lesson nomenclature: Curriculum Lesson / Around the World 360 / Video XR Lesson.
+  // Associate-only tools: Create Lesson, n8n Lesson Builder, Community Lessons Review.
   const getNavItems = (): NavItem[] => {
     const items: NavItem[] = [];
 
-    // Associate: only Dashboard and Lessons
+    // Associate: lessons + Create Lesson, n8n, Community Lessons Review
     if (isAssociate) {
       items.push({ path: '/dashboard/associate', label: 'Dashboard', icon: FaTachometerAlt });
-      items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+      items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
+      items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
+      items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+      items.push({ path: '/create/street-view', label: 'Create Lesson', icon: FaMapMarkerAlt });
+      items.push({ path: '/studio/n8n-lesson-builder', label: 'n8n Lesson Builder', icon: FaFlask });
+      items.push({ path: '/admin/user-lessons', label: 'Community Lessons Review', icon: FaMapMarkerAlt });
       return items;
     }
 
-    // Partner: dashboard, lessons, class management, create tools, question papers
+    // Partner: dashboard, lesson links first, class management last
     if (isPartner) {
       items.push({ path: '/dashboard/partner', label: 'Dashboard', icon: FaTachometerAlt });
-      items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+      items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
+      items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
+      items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+      items.push({ path: '/create/street-view', label: 'Create Lesson', icon: FaMapMarkerAlt });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
-      items.push({ path: '/main', label: 'Create', icon: FaFlask });
-      items.push({ path: '/create/street-view', label: 'Street View Lesson', icon: FaMapMarkerAlt });
-      items.push({ path: '/question-paper/library', label: 'Question Papers', icon: FaClipboardList });
+      return items;
+    }
+
+    // Teacher: same lesson-first sidepanel as Partner, plus student approvals
+    if (isTeacher) {
+      items.push({ path: '/dashboard/teacher', label: 'Dashboard', icon: FaTachometerAlt });
+      items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
+      items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
+      items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+      items.push({ path: '/create/street-view', label: 'Create Lesson', icon: FaMapMarkerAlt });
+      items.push({ path: '/teacher/approvals', label: 'Student Approvals', icon: FaUserCheck });
+      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       return items;
     }
 
     // LMS Dashboards - role-based
     if (isStudent) {
       items.push({ path: '/dashboard/student', label: 'Dashboard', icon: FaTachometerAlt });
-    } else if (isTeacher) {
-      items.push({ path: '/dashboard/teacher', label: 'Dashboard', icon: FaTachometerAlt });
     } else if (isPrincipal) {
       items.push({ path: '/dashboard/principal', label: 'Dashboard', icon: FaTachometerAlt });
     } else if (isSchool) {
@@ -187,41 +196,23 @@ const Sidebar = () => {
       items.push({ path: '/studio/content', label: 'Dashboard', icon: FaTachometerAlt });
     }
 
-    // Lessons - everyone can see
-    items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
+    // Lessons - shared nomenclature across dashboards
+    items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
+    items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
+    items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
 
     // AI Tutor (Personalized Learning) - students only; routes to /personalized-learning
     if (isStudent) {
       items.push({ path: '/personalized-learning', label: 'AI Tutor', icon: FaLightbulb });
     }
 
-    // AI Teacher Support merged into Create page (top-right panel) - no separate nav item
-
-    // Creator tools - teachers, schools, admin, superadmin (includes AI Teacher Support panel in top-right)
+    // Creator tools - admin/superadmin Create page only (Street View / Explore / History removed from sidebar)
     if (canCreate) {
       items.push({ path: '/main', label: 'Create', icon: FaFlask });
-      items.push({ path: '/create/street-view', label: 'Street View Lesson', icon: FaMapMarkerAlt });
     }
     // Spiral (Kids) - voice-first minimal creator for LKG / Class 1 students.
-    // Kept alongside the existing Create entry so both old and new pages coexist
-    // until we retire `/main`.
     if (canUseSpiral) {
       items.push({ path: '/spiral', label: 'Create (Kids)', icon: FaStar });
-    }
-    if (canCreate) {
-      items.push({ path: '/explore', label: 'Explore', icon: FaCubes });
-      items.push({ path: '/history', label: 'History', icon: FaHistory });
-      // Studio / Chapter Editor - admin and superadmin only (no school)
-    }
-
-    // AI Question Paper - teacher, school, principal, admin, superadmin
-    if (isTeacher || isSchool || isPrincipal || isAdminOrSuperadmin) {
-      items.push({ path: '/question-paper/library', label: 'Question Papers', icon: FaClipboardList });
-    }
-
-    // Teacher tools - approve students
-    if (isTeacher) {
-      items.push({ path: '/teacher/approvals', label: 'Student Approvals', icon: FaUserCheck });
     }
 
     // School administrator tools - approve teachers, manage classes
@@ -234,22 +225,14 @@ const Sidebar = () => {
     if (isAdminOrSuperadmin) {
       items.push({ path: '/admin/approvals', label: 'Approvals', icon: FaUserCheck });
       items.push({ path: '/admin/lesson-edit-requests', label: 'Lesson Edit Requests', icon: FaEdit });
-      if (isSuperadmin) {
-        items.push({ path: '/admin/user-lessons', label: 'Community Lessons Review', icon: FaMapMarkerAlt });
-      }
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });
-      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
       items.push({ path: '/admin/partners', label: 'Partner Registrations', icon: FaHandshake });
       if (isSuperadmin) {
         items.push({ path: '/admin/partner-oversight', label: 'Partner Oversight', icon: FaChartLine });
       }
+      items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/system-status', label: 'System', icon: FaServer });
-    }
-
-    // Studio tools - n8n Lesson Builder for studio roles (admin, superadmin, associate)
-    if (profile && (canEditLesson(profile) || hasMinimumRole(profile, 'associate'))) {
-      items.push({ path: '/studio/n8n-lesson-builder', label: 'n8n Lesson Builder', icon: FaFlask });
     }
 
     // Principal can also access class management, student approvals, and teacher approvals

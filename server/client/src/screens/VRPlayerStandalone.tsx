@@ -13,6 +13,7 @@ import { signInWithCustomToken } from 'firebase/auth';
 import { buildKrpanoXml } from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano } from '../lib/krpano/embedKrpano';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
+import { applyTeacherViewToKrpano } from '../lib/krpano/applyTeacherView';
 import { getApiBaseUrl, getProxyAssetUrl, getProxyAssetUrlForThreejs } from '../utils/apiConfig';
 import { auth } from '../config/firebase';
 import {
@@ -439,17 +440,25 @@ export default function VRPlayerStandalone() {
     return () => unsub();
   }, [sessionId, firebaseAuthReady]);
 
-  const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number } | null>(null);
+  const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number; syncId: number | null } | null>(null);
   useEffect(() => {
     if (!isStudentInSession || !joinedSession?.teacher_view || !krpanoViewerRef.current?.call) return;
     const tv = joinedSession.teacher_view;
     const h = Number(tv.hlookat); const v = Number(tv.vlookat); const fov = Number(tv.fov ?? 90);
+    const syncId = typeof tv.sync_id === 'number' && Number.isFinite(tv.sync_id) ? tv.sync_id : null;
     if (Number.isNaN(h) || Number.isNaN(v)) return;
     const prev = lastTeacherViewRef.current;
-    if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
-    lastTeacherViewRef.current = { h, v, fov };
-    krpanoViewerRef.current.call(`tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=0.28)`);
-  }, [isStudentInSession, joinedSession?.teacher_view?.hlookat, joinedSession?.teacher_view?.vlookat, joinedSession?.teacher_view?.fov]);
+    const isNewDirect = syncId != null && syncId !== prev?.syncId;
+    if (prev && prev.h === h && prev.v === v && prev.fov === fov && !isNewDirect) {
+      return;
+    }
+    lastTeacherViewRef.current = { h, v, fov, syncId };
+    applyTeacherViewToKrpano(
+      krpanoViewerRef.current,
+      { hlookat: h, vlookat: v, fov, sync_id: syncId ?? undefined },
+      { force: isNewDirect }
+    );
+  }, [isStudentInSession, joinedSession?.teacher_view?.hlookat, joinedSession?.teacher_view?.vlookat, joinedSession?.teacher_view?.fov, joinedSession?.teacher_view?.sync_id]);
 
   useEffect(() => {
     if (isTeacherMode || isViewOnly || !sessionId || !studentUid || !firebaseAuthReady) return;
@@ -806,7 +815,7 @@ export default function VRPlayerStandalone() {
       {status === 'ready' && lessonReady && !showWelcomeScreen && (
         <>
           {/* ─── CENTRED BOTTOM DRAWER ─── */}
-          {showDrawer && (
+          {showDrawer && (hudVisible || drawerOpen) && (
             <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none flex justify-center pb-3 px-3">
               {/* Drawer container — max-w keeps it from reaching joypad on right */}
               <div

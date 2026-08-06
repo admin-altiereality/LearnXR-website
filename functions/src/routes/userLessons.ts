@@ -20,6 +20,7 @@ import {
   type UserGeneratedLessonSource,
   type StreetViewTour,
   type TourStop,
+  type TourStopAsset,
 } from '../services/userGeneratedLessons';
 import {
   getTileSession,
@@ -429,11 +430,15 @@ router.post(
         links: metadata.links,
         assets: [],
         voiceover: null,
-        copyright: metadata.copyright,
+        ...(metadata.copyright ? { copyright: metadata.copyright } : {}),
       };
 
       const updatedTour: StreetViewTour = { stops: [...tour.stops, stop], tileZoom: zoom };
-      await draft.ref.update({ streetViewTour: updatedTour, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      // JSON round-trip drops any residual undefined nested fields before Firestore write.
+      await draft.ref.update({
+        streetViewTour: JSON.parse(JSON.stringify(updatedTour)),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
       res.json({ success: true, stop });
     } catch (error: any) {
@@ -573,20 +578,32 @@ router.post(
         return;
       }
       const stop = { ...tour.stops[idx] };
-      const asset = {
+      // Only include defined optional fields — Firestore rejects `undefined` values.
+      const asset: TourStopAsset = {
         id: randomUUID(),
-        assetId,
         glbUrl,
         ath: Number(req.body?.ath) || 0,
         atv: Number(req.body?.atv) || 0,
-        depth: req.body?.depth !== undefined ? Number(req.body.depth) : undefined,
-        scale: req.body?.scale !== undefined ? Number(req.body.scale) : undefined,
-        rotationY: req.body?.rotationY !== undefined ? Number(req.body.rotationY) : undefined,
+        ...(assetId ? { assetId } : {}),
+        ...(req.body?.depth !== undefined && req.body?.depth !== null && req.body?.depth !== ''
+          ? { depth: Number(req.body.depth) }
+          : {}),
+        ...(req.body?.scale !== undefined && req.body?.scale !== null && req.body?.scale !== ''
+          ? { scale: Number(req.body.scale) }
+          : {}),
+        ...(req.body?.rotationY !== undefined && req.body?.rotationY !== null && req.body?.rotationY !== ''
+          ? { rotationY: Number(req.body.rotationY) }
+          : {}),
       };
       stop.assets = [...(stop.assets || []), asset];
       const stops = [...tour.stops];
       stops[idx] = stop;
-      await draft.ref.update({ 'streetViewTour.stops': stops, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      // JSON round-trip drops any residual undefined nested fields before Firestore write
+      // (same pattern as POST /stops — existing stop.links[].text can be undefined).
+      await draft.ref.update({
+        'streetViewTour.stops': JSON.parse(JSON.stringify(stops)),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
       res.json({ success: true, asset });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error?.message || 'Failed to attach asset to stop' });
@@ -620,7 +637,10 @@ router.delete(
       stop.assets = (stop.assets || []).filter((a) => a.id !== req.params.assetInstanceId);
       const stops = [...tour.stops];
       stops[idx] = stop;
-      await draft.ref.update({ 'streetViewTour.stops': stops, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      await draft.ref.update({
+        'streetViewTour.stops': JSON.parse(JSON.stringify(stops)),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error?.message || 'Failed to remove asset from stop' });

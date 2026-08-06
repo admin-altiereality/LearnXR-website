@@ -19,10 +19,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano, removeKrpano } from '../lib/krpano/embedKrpano';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
+import { applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
 import { reportSessionProgress, updateTeacherView, reportStudentView, launchLesson as launchLessonToSession } from '../services/classSessionService';
+import { LiveClassHostOverlay } from '../Components/classSession/LiveClassHostOverlay';
 import type { SessionLessonPhase, SessionQuizAnswer } from '../types/lms';
 import { auth, db } from '../config/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
@@ -67,6 +69,8 @@ import {
   Mic,
   Glasses,
   Clock,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import { Progress } from '../Components/ui/progress';
 import { Button } from '../Components/ui/button';
@@ -579,12 +583,12 @@ function LessonSceneIntegrated({
   onAssetLoad?: () => void;
   onAssetError?: (err: any) => void;
   onViewChange?: (h: number, v: number, fov: number) => void;
-  teacherView?: { hlookat: number; vlookat: number; fov?: number } | null;
+  teacherView?: { hlookat: number; vlookat: number; fov?: number; sync_id?: number } | null;
   skyboxOptional?: boolean;
 }) {
   const { camera } = useThree();
   const lastSentRef = useRef(0);
-  const lastAppliedRef = useRef<{ h: number; v: number; fov: number } | null>(null);
+  const lastAppliedRef = useRef<{ h: number; v: number; fov: number; syncId: number | null } | null>(null);
   const lastLogRef = useRef(0);
 
   useFrame(() => {
@@ -602,10 +606,14 @@ function LessonSceneIntegrated({
       const h = Number(teacherView.hlookat);
       const v = Number(teacherView.vlookat);
       const fov = Number(teacherView.fov ?? 75);
+      const syncId =
+        typeof teacherView.sync_id === 'number' && Number.isFinite(teacherView.sync_id)
+          ? teacherView.sync_id
+          : null;
       if (Number.isNaN(h) || Number.isNaN(v)) return;
       const prev = lastAppliedRef.current;
-      if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
-      lastAppliedRef.current = { h, v, fov };
+      if (prev && prev.h === h && prev.v === v && prev.fov === fov && prev.syncId === syncId) return;
+      lastAppliedRef.current = { h, v, fov, syncId };
       const radius = Math.max(0.1, camera.position.length());
       applyTeacherViewToCamera(persp, h, v, radius);
       if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && Date.now() - lastLogRef.current > 2000) {
@@ -871,6 +879,8 @@ const VRLessonPlayerInner = () => {
   const activeSessionId = classSession?.activeSessionId ?? null;
   const activeSession = classSession?.activeSession ?? null;
   const joinedSession = classSession?.joinedSession ?? null;
+  const bindActiveSession = classSession?.bindActiveSession;
+  const progressList = classSession?.progressList ?? [];
 
   // Extract from context with safety - use stable defaults
   const activeLesson = lessonContext?.activeLesson ?? null;
@@ -946,7 +956,13 @@ const VRLessonPlayerInner = () => {
           let topicId = params.get('topicId');
           const lang = params.get('lang') || 'en';
           let lessonSource = 'curriculum';
-          if (sessionId) sessionStorage.setItem('learnxr_class_session_id', sessionId);
+          if (sessionId) {
+            // Hosts use active key; students need joined key for teacher_view follow.
+            sessionStorage.setItem('learnxr_class_session_id', sessionId);
+            if (!sessionStorage.getItem('learnxr_joined_session_id')) {
+              sessionStorage.setItem('learnxr_joined_session_id', sessionId);
+            }
+          }
           if (sessionId && (!chapterId || !topicId)) {
             try {
               const sessionSnap = await getDoc(doc(db, 'class_sessions', sessionId));
@@ -1199,19 +1215,33 @@ const VRLessonPlayerInner = () => {
     return fromContext || fromStorage;
   }, [activeLesson, extraLessonData]);
   
-  // Get the best available lesson data (context takes priority)
+  // Prefer extraLessonData when it has a newer tour stop / topic (loadTourStop updates extra, not always LessonContext)
   const effectiveLesson = useMemo(() => {
-    if (activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id) {
-      return activeLesson;
+    const fromExtra =
+      extraLessonData?.chapter && extraLessonData?.topic
+        ? {
+            chapter: extraLessonData.chapter,
+            topic: extraLessonData.topic,
+            startedAt: extraLessonData.startedAt || new Date().toISOString(),
+          }
+        : null;
+    const fromContext =
+      activeLesson?.chapter?.chapter_id && activeLesson?.topic?.topic_id ? activeLesson : null;
+
+    if (fromExtra && fromContext) {
+      const extraTopicId = String(fromExtra.topic?.topic_id || '');
+      const ctxTopicId = String(fromContext.topic?.topic_id || '');
+      if (extraTopicId && extraTopicId !== ctxTopicId) return fromExtra;
+      if (fromExtra.topic?.isTourStop === true) {
+        return {
+          ...fromContext,
+          chapter: fromExtra.chapter || fromContext.chapter,
+          topic: { ...fromContext.topic, ...fromExtra.topic },
+        };
+      }
     }
-    if (extraLessonData?.chapter && extraLessonData?.topic) {
-      return {
-        chapter: extraLessonData.chapter,
-        topic: extraLessonData.topic,
-        startedAt: extraLessonData.startedAt || new Date().toISOString(),
-      };
-    }
-    return null;
+    if (fromContext) return fromContext;
+    return fromExtra;
   }, [activeLesson, extraLessonData]);
 
   // Refs
@@ -1236,6 +1266,7 @@ const VRLessonPlayerInner = () => {
   const showMcqResultRef = useRef(false);
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
+  const [hostLookat, setHostLookat] = useState<{ hlookat: number; vlookat: number; fov: number } | null>(null);
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
   const [isQuestDevice, setIsQuestDevice] = useState(false);
   const [lastHotspotClicked, setLastHotspotClicked] = useState<string | null>(null);
@@ -1401,6 +1432,17 @@ const VRLessonPlayerInner = () => {
   
   const currentMcq = mcqs[currentMcqIndex];
 
+  /** Hide empty Intro/Learn/Summary + audio chrome unless lesson has real voiceover/script or quiz. */
+  const hasLessonNarrationOrQuiz = useMemo(() => {
+    const topic = effectiveLesson?.topic as Record<string, unknown> | undefined;
+    const ttsAudio = Array.isArray(topic?.ttsAudio) ? (topic!.ttsAudio as Array<{ audio_url?: string; audioUrl?: string }>) : [];
+    const hasStopVoiceover = ttsAudio.some((t) => Boolean(String(t?.audio_url || t?.audioUrl || '').trim()));
+    const hasScripts = scripts.some((s) => typeof s === 'string' && s.trim().length > 0);
+    const hasTtsAudio = ttsData.some((t) => Boolean(String(t.audioUrl || '').trim()));
+    const hasQuiz = mcqs.length > 0;
+    return hasScripts || hasStopVoiceover || hasTtsAudio || hasQuiz;
+  }, [scripts, ttsData, effectiveLesson?.topic, mcqs.length]);
+
   // All content ready: skybox, 3D assets (in krpano), TTS, and script data must be loaded before Start Lesson (Quest + Web).
   const allReady = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
@@ -1556,14 +1598,19 @@ const VRLessonPlayerInner = () => {
       
       setSkyboxLoading(true);
       setSkyboxError(null);
-      // Resolve skybox URL: topic, sharedAssets, or bundle/top-level from extraLessonData (teacher launch)
+      // Prefer extraLessonData skybox when tour stop navigation has advanced past LessonContext
       const skyboxUrl =
+        (extraLessonData as any)?.topic?.skybox_url ||
+        (extraLessonData as any)?.skybox_url ||
         topic?.skybox_url ||
         topic?.sharedAssets?.skybox_url ||
-        (extraLessonData as any)?.skybox_url ||
-        (extraLessonData as any)?.topic?.skybox_url ||
         '';
-      const skyboxId = topic?.skybox_id || topic?.sharedAssets?.skybox_id || (extraLessonData as any)?.skybox_id || '';
+      const skyboxId =
+        (extraLessonData as any)?.topic?.skybox_id ||
+        topic?.skybox_id ||
+        topic?.sharedAssets?.skybox_id ||
+        (extraLessonData as any)?.skybox_id ||
+        '';
       const hasSkybox = !!(skyboxUrl || skyboxId);
       if (hasSkybox) {
         setSceneReady(false);
@@ -2079,6 +2126,10 @@ const VRLessonPlayerInner = () => {
   }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio]);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
+    // Never fight live class Direct / teacher follow with phase lookto on students.
+    if (joinedSessionId && joinedSession?.teacher_view && user?.uid && joinedSession.teacher_uid !== user.uid) {
+      return;
+    }
     const phase = lessonPhase as string;
     if (phase !== 'intro' && phase !== 'explanation' && phase !== 'outro') return;
 
@@ -2092,28 +2143,83 @@ const VRLessonPlayerInner = () => {
     const action = `tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=${time})`;
     krpanoViewerRef.current.call(action);
     log('👁️', `Guided lookto [${phase}]`, { h, v, fov });
-  }, [lessonPhase, useKrpanoView, extraLessonData?.topic?.lookatByPhase]);
+  }, [
+    lessonPhase,
+    useKrpanoView,
+    extraLessonData?.topic?.lookatByPhase,
+    joinedSessionId,
+    joinedSession?.teacher_view,
+    joinedSession?.teacher_uid,
+    user?.uid,
+  ]);
 
   const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
+  const partnerSessionMeta = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = sessionStorage.getItem('learnxr_partner_demo_session');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { code?: string; id?: string };
+      if (!parsed?.id && !parsed?.code) return null;
+      return {
+        id: typeof parsed.id === 'string' ? parsed.id : null,
+        code: typeof parsed.code === 'string' ? parsed.code : null,
+      };
+    } catch {
+      return null;
+    }
+  }, [activeSessionId, activeSession?.session_code, profile?.role]);
+
+  const hostSessionCode = useMemo(() => {
+    if (activeSession?.session_code) return activeSession.session_code;
+    return partnerSessionMeta?.code || null;
+  }, [activeSession?.session_code, partnerSessionMeta?.code]);
+
+  const isClassHost = Boolean(
+    isTeacherInSession ||
+      (profile?.role === 'partner' && (partnerSessionMeta?.id || partnerSessionMeta?.code || activeSession?.hosted_by_partner)) ||
+      (activeSessionId &&
+        activeSession &&
+        user?.uid &&
+        (activeSession.teacher_uid === user.uid ||
+          (profile?.role === 'partner' && activeSession.hosted_by_partner === true)))
+  );
+
+  // Restore host session from storage (partner demo or generic class session id).
+  useEffect(() => {
+    if (!bindActiveSession || activeSessionId) return;
+    const storedClass = typeof window !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null;
+    const id = partnerSessionMeta?.id || storedClass;
+    if (!id) return;
+    if (profile?.role === 'partner' || profile?.role === 'teacher' || profile?.role === 'admin' || profile?.role === 'superadmin') {
+      bindActiveSession(id);
+    }
+  }, [bindActiveSession, activeSessionId, partnerSessionMeta?.id, profile?.role]);
+
+  const showLiveClassHostOverlay = Boolean(!isInKrpanoVR && isClassHost);
+
   const useIntegratedSceneEarly = !!((skyboxData?.imageUrl ?? skyboxData?.file_url) && assetUrl && isGlbOrGltfUrl(assetUrl));
   const useModelOnlySceneEarly = !!(assetUrl && isGlbOrGltfUrl(assetUrl) && !(skyboxData?.imageUrl ?? skyboxData?.file_url));
   const useThreeScene = useIntegratedSceneEarly || useModelOnlySceneEarly;
-  // Teacher: broadcast view to students. Krpano: use onviewchange only (per krpano docs – no polling).
+  // Host (teacher or partner): broadcast view to students. Krpano: onviewchange only (no polling).
+  const hostSessionIdForSync = activeSessionId || partnerSessionMeta?.id || null;
   useEffect(() => {
-    if (!isTeacherInSession || (!useKrpanoView && !useThreeScene) || !activeSessionId || !user?.uid) return;
+    if (!isClassHost || (!useKrpanoView && !useThreeScene) || !hostSessionIdForSync || !user?.uid) return;
     let lastSent = 0;
     const throttleMs = 100;
     const sendView = (h: number, v: number, fov: number) => {
       const now = Date.now();
       if (now - lastSent < throttleMs) return;
       lastSent = now;
-      updateTeacherView(activeSessionId, user!.uid, { hlookat: h, vlookat: v, fov }).catch((err) => {
-        console.warn('[ViewSync] Teacher updateTeacherView failed:', err);
+      setHostLookat({ hlookat: h, vlookat: v, fov });
+      // Continuous drag sync — no force/sync_id (that is reserved for “Direct class to my view”).
+      updateTeacherView(hostSessionIdForSync, user!.uid, { hlookat: h, vlookat: v, fov }).catch((err) => {
+        console.warn('[ViewSync] Host updateTeacherView failed:', err);
       });
     };
     viewSyncSendRef.current = sendView;
     if (typeof process !== 'undefined' && process.env.NODE_ENV === 'development' && useThreeScene && !useKrpanoView) {
-      console.debug('[ViewSync] Teacher Three.js scene callback registered; drag will send view to students.');
+      console.debug('[ViewSync] Host Three.js scene callback registered; drag will send view to students.');
     }
     if (useKrpanoView) {
       (window as unknown as { __krpanoOnViewChange?: (h: number, v: number, fov: number) => void }).__krpanoOnViewChange = sendView;
@@ -2121,6 +2227,8 @@ const VRLessonPlayerInner = () => {
       if (viewer?.call) viewer.call('sync_view_to_js');
       const t = setTimeout(() => {
         krpanoViewerRef.current?.call?.('sync_view_to_js');
+        const live = readKrpanoLookat(krpanoViewerRef.current);
+        if (live) setHostLookat(live);
       }, 500);
       return () => {
         clearTimeout(t);
@@ -2129,24 +2237,35 @@ const VRLessonPlayerInner = () => {
       };
     }
     return () => { viewSyncSendRef.current = () => {}; };
-  }, [isTeacherInSession, useKrpanoView, useThreeScene, activeSessionId, user?.uid]);
+  }, [isClassHost, useKrpanoView, useThreeScene, hostSessionIdForSync, user?.uid]);
 
   // Student: follow teacher view (krpano view.hlookat / view.vlookat / view.fov per docs)
   const teacherView = joinedSession?.teacher_view;
   const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
-  const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number } | null>(null);
+  const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number; syncId: number | null } | null>(null);
   useEffect(() => {
     if (!isStudentInSession || !useKrpanoView || !teacherView || !krpanoViewerRef.current?.call) return;
     const h = Number(teacherView.hlookat);
     const v = Number(teacherView.vlookat);
     const fov = Number(teacherView.fov) || 90;
+    const syncId =
+      typeof teacherView.sync_id === 'number' && Number.isFinite(teacherView.sync_id)
+        ? teacherView.sync_id
+        : null;
     if (Number.isNaN(h) || Number.isNaN(v)) return;
     const prev = lastTeacherViewRef.current;
-    if (prev && prev.h === h && prev.v === v && prev.fov === fov) return;
-    lastTeacherViewRef.current = { h, v, fov };
-    krpanoViewerRef.current.call(`tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=0.28)`);
-    log('👁️', 'Following teacher view', { h, v, fov });
-  }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov]);
+    const isNewDirect = syncId != null && syncId !== prev?.syncId;
+    if (prev && prev.h === h && prev.v === v && prev.fov === fov && !isNewDirect) {
+      return;
+    }
+    lastTeacherViewRef.current = { h, v, fov, syncId };
+    const ok = applyTeacherViewToKrpano(
+      krpanoViewerRef.current,
+      { hlookat: h, vlookat: v, fov, sync_id: syncId ?? undefined },
+      { force: isNewDirect }
+    );
+    log('👁️', 'Following teacher view', { h, v, fov, syncId, isNewDirect, ok });
+  }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov, teacherView?.sync_id, sceneReady]);
 
   // Student: report view on onviewchange (throttled) so teacher preview matches student drag; was: report to session so teacher can see “what they see” (throttled)
   useEffect(() => {
@@ -2182,6 +2301,25 @@ const VRLessonPlayerInner = () => {
       : 'curriculum';
   const [tourStopTopics, setTourStopTopics] = useState<Array<{ topicId: string; label: string }>>([]);
   const tourChapterIdRef = useRef<string | null>(null);
+  const classAutoStartRef = useRef(false);
+  const [isPhoneViewport, setIsPhoneViewport] = useState(false);
+  /** Phone: lesson chrome (mute/chat/stop/panel) collapsed until user expands. */
+  const [mobileHudExpanded, setMobileHudExpanded] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sync = () => {
+      const ua = navigator.userAgent || '';
+      const uaMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+      const phone = uaMobile || window.innerWidth < 768;
+      setIsPhoneViewport(phone);
+      if (!phone) setMobileHudExpanded(true);
+      else setMobileHudExpanded(false);
+    };
+    sync();
+    window.addEventListener('resize', sync);
+    return () => window.removeEventListener('resize', sync);
+  }, []);
 
   useEffect(() => {
     const chapterId = extraLessonData?.chapter?.chapter_id;
@@ -2209,7 +2347,24 @@ const VRLessonPlayerInner = () => {
     })();
   }, [isTourStop, tourLessonSource, extraLessonData?.chapter?.chapter_id]);
 
-  const currentStopIndex = tourStopTopics.findIndex((t) => t.topicId === extraLessonData?.topic?.topic_id);
+  const currentStopIndex = useMemo(() => {
+    const tid = String(extraLessonData?.topic?.topic_id || '');
+    const byId = tourStopTopics.findIndex((t) => t.topicId === tid);
+    if (byId >= 0) return byId;
+    const byLaunch = tourStopTopics.findIndex(
+      (t) => t.topicId === String(activeSession?.launched_lesson?.topic_id || joinedSession?.launched_lesson?.topic_id || '')
+    );
+    if (byLaunch >= 0) return byLaunch;
+    const stopIdx = extraLessonData?.topic?.isTourStopIndex;
+    if (typeof stopIdx === 'number' && stopIdx >= 0 && stopIdx < tourStopTopics.length) return stopIdx;
+    return -1;
+  }, [
+    tourStopTopics,
+    extraLessonData?.topic?.topic_id,
+    extraLessonData?.topic?.isTourStopIndex,
+    activeSession?.launched_lesson?.topic_id,
+    joinedSession?.launched_lesson?.topic_id,
+  ]);
 
   /** Fetches the given stop's topic and swaps the active lesson data in place (skybox/assets/voiceover). */
   const loadTourStop = useCallback(
@@ -2221,27 +2376,35 @@ const VRLessonPlayerInner = () => {
         const bundle = await getLessonBundle({ chapterId, topicId, lang, source: tourLessonSource });
         const topic = bundle.chapter.topics?.find((t: any) => t.topic_id === topicId) || bundle.chapter.topics?.[0];
         if (!topic) return;
+        const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
         const nextData = {
           ...extraLessonData,
           topic: {
             ...extraLessonData?.topic,
-            topic_id: topicId,
+            ...topic,
+            topic_id: topic.topic_id || topicId,
             topic_name: topic.topic_name,
-            skybox_url: bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '',
-            skybox_glb_url: bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '',
+            skybox_url: skyboxUrl,
+            skybox_glb_url: bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || skyboxUrl,
             asset_urls: Array.isArray(topic.asset_urls) ? topic.asset_urls : [],
             asset_ids: Array.isArray(topic.asset_ids) ? topic.asset_ids : [],
             assetPlacements: Array.isArray(topic.assetPlacements) ? topic.assetPlacements : [],
             avatar_intro: topic.avatar_intro || '',
+            streetViewStop: topic.streetViewStop || extraLessonData?.topic?.streetViewStop,
+            isTourStop: true,
+            isTourStopIndex: topic.isTourStopIndex,
             ttsAudio: Array.isArray(bundle.tts) && bundle.tts.length > 0
               ? bundle.tts.map((t: any) => ({ id: t.id, script_type: t.script_type || 'intro', audio_url: t.audio_url, language: t.language || lang }))
-              : [],
-            isTourStop: true,
+              : (Array.isArray(topic.ttsAudio) ? topic.ttsAudio : []),
+            language: lang,
           },
           assets3d: Array.isArray(bundle.assets3d) ? bundle.assets3d : [],
         };
         setExtraLessonData(nextData);
         sessionStorage.setItem('activeLesson', JSON.stringify(nextData));
+        // Keep the live lesson running — only refresh panorama/content for the new stop
+        setShowWelcomeScreen(false);
+        setLessonReady(true);
         setPhase('intro');
       } catch (err) {
         console.warn('[StreetViewTour] Failed to load stop:', err);
@@ -2256,13 +2419,43 @@ const VRLessonPlayerInner = () => {
       const target = tourStopTopics[targetIndex];
       if (!target) return;
       await loadTourStop(target.topicId);
-      if (isTeacherInSession && activeSessionId && user?.uid && activeSession?.launched_lesson) {
-        launchLessonToSession(activeSessionId, user.uid, { ...activeSession.launched_lesson, topic_id: target.topicId }).catch((err) => {
+      const sessionId = activeSessionId || partnerSessionMeta?.id;
+      const launched = activeSession?.launched_lesson;
+      if (!isClassHost || !sessionId || !user?.uid || !launched) return;
+
+      // Partners: Admin API keeps quota/rules consistent; teachers use client session update.
+      if (profile?.role === 'partner' || activeSession?.hosted_by_partner) {
+        try {
+          const { launchPartnerDemoLesson } = await import('../services/partnerService');
+          await launchPartnerDemoLesson(sessionId, {
+            chapterId: launched.chapter_id,
+            topicId: target.topicId,
+            title: target.label,
+            lessonType: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
+          });
+        } catch (err) {
+          console.warn('[StreetViewTour] Partner broadcast failed, falling back to session write:', err);
+          launchLessonToSession(sessionId, user.uid, { ...launched, topic_id: target.topicId }).catch((e) => {
+            console.warn('[StreetViewTour] Failed to broadcast stop change:', e);
+          });
+        }
+      } else {
+        launchLessonToSession(sessionId, user.uid, { ...launched, topic_id: target.topicId }).catch((err) => {
           console.warn('[StreetViewTour] Failed to broadcast stop change:', err);
         });
       }
     },
-    [tourStopTopics, loadTourStop, isTeacherInSession, activeSessionId, user?.uid, activeSession?.launched_lesson]
+    [
+      tourStopTopics,
+      loadTourStop,
+      isClassHost,
+      activeSessionId,
+      partnerSessionMeta?.id,
+      user?.uid,
+      activeSession?.launched_lesson,
+      activeSession?.hosted_by_partner,
+      profile?.role,
+    ]
   );
 
   // Student: follow the teacher's active stop while already inside the player
@@ -2472,6 +2665,13 @@ const VRLessonPlayerInner = () => {
     }
   }, [setPhase, profile, effectiveLesson]);
 
+  // Live class students: skip the welcome gate and enter the lesson as soon as content is ready
+  useEffect(() => {
+    if (!isStudentInSession || !showWelcomeScreen || !allReady || classAutoStartRef.current) return;
+    classAutoStartRef.current = true;
+    void handleStartLesson();
+  }, [isStudentInSession, showWelcomeScreen, allReady, handleStartLesson]);
+
   // Stop lesson and return to welcome screen
   const handleStopLesson = useCallback(() => {
     log('⏹️', 'User clicked Stop Lesson');
@@ -2510,19 +2710,23 @@ const VRLessonPlayerInner = () => {
         });
         
         if (languageFilteredTTS.length > 0) {
-          const convertedTTS: TTSData[] = languageFilteredTTS.map((tts: any) => ({
-            id: tts.id || '',
-            section: tts.script_type || tts.section || 'full',
-            audioUrl: tts.audio_url || tts.audioUrl || tts.url || '',
-            text: tts.text || tts.script_text || '',
-          }));
-          
-          setTtsData(convertedTTS);
-          setTtsStatus('ready');
-          log('✅', `Loaded ${convertedTTS.length} TTS entries from bundle (language: ${lessonLanguage})`, {
-            ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, hasAudio: !!t.audioUrl })),
-          });
-          return;
+          const convertedTTS: TTSData[] = languageFilteredTTS
+            .map((tts: any) => ({
+              id: tts.id || '',
+              section: tts.script_type || tts.section || 'full',
+              audioUrl: tts.audio_url || tts.audioUrl || tts.url || '',
+              text: tts.text || tts.script_text || '',
+            }))
+            .filter((tts) => Boolean(String(tts.audioUrl || '').trim()));
+
+          if (convertedTTS.length > 0) {
+            setTtsData(convertedTTS);
+            setTtsStatus('ready');
+            log('✅', `Loaded ${convertedTTS.length} TTS entries from bundle (language: ${lessonLanguage})`, {
+              ttsDetails: convertedTTS.map(t => ({ id: t.id, section: t.section, hasAudio: !!t.audioUrl })),
+            });
+            return;
+          }
         } else {
           log('⚠️', `No TTS found in bundle for language ${lessonLanguage}`, {
             totalTTS: ttsAudioFromStorage.length,
@@ -2535,6 +2739,8 @@ const VRLessonPlayerInner = () => {
       const ttsIds = extraLessonData?.topic?.tts_ids || extraLessonData?.chapter?.tts_ids || [];
       if (ttsIds.length === 0) {
         log('⚠️', 'No TTS IDs found');
+        setTtsData([]);
+        setTtsStatus('ready');
         return;
       }
       
@@ -3740,7 +3946,7 @@ const VRLessonPlayerInner = () => {
                 }}
                 onAssetLoad={() => setAssetLoading(false)}
                 onAssetError={() => setAssetLoading(false)}
-                onViewChange={isTeacherInSession && useIntegratedScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
+                onViewChange={isClassHost && useIntegratedScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
                 teacherView={isStudentInSession && useIntegratedScene ? teacherView : undefined}
               />
             </Suspense>
@@ -3762,7 +3968,7 @@ const VRLessonPlayerInner = () => {
                   setSceneReady(true);
                 }}
                 onAssetError={() => setAssetLoading(false)}
-                onViewChange={isTeacherInSession && useModelOnlyScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
+                onViewChange={isClassHost && useModelOnlyScene ? (h, v, fov) => viewSyncSendRef.current?.(h, v, fov) : undefined}
                 teacherView={isStudentInSession && useModelOnlyScene ? teacherView : undefined}
                 skyboxOptional
               />
@@ -3802,55 +4008,27 @@ const VRLessonPlayerInner = () => {
 
       </div>
 
-      {/* Teacher: you control where the class looks */}
-      <AnimatePresence>
-        {isTeacherInSession && (useKrpanoView || useIntegratedScene || useModelOnlyScene) && sceneReady && !showWelcomeScreen && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="absolute top-20 left-4 z-30 pointer-events-none"
-          >
-            <div className="flex items-center gap-2 px-3 py-2 bg-primary/20 border border-primary/50 rounded-xl text-primary text-sm font-medium shadow-lg">
-              <Target className="w-4 h-4 flex-shrink-0" />
-              <span>You control where the class looks — drag the view to direct students.</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Street View Tour: teacher-controlled Next/Previous Stop navigation */}
-      {isTourStop && tourStopTopics.length > 1 && sceneReady && !showWelcomeScreen && (
-        <div className="absolute top-4 right-4 z-30 flex items-center gap-2 px-3 py-2 bg-black/50 border border-white/10 rounded-xl text-white text-sm">
-          <span className="opacity-80">
-            Stop {currentStopIndex >= 0 ? currentStopIndex + 1 : '?'} of {tourStopTopics.length}
-          </span>
-          {isTeacherInSession && (
-            <div className="flex items-center gap-1 ml-1">
-              <button
-                type="button"
-                onClick={() => goToTourStop(currentStopIndex - 1)}
-                disabled={currentStopIndex <= 0}
-                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10"
-              >
-                ← Prev
-              </button>
-              <button
-                type="button"
-                onClick={() => goToTourStop(currentStopIndex + 1)}
-                disabled={currentStopIndex < 0 || currentStopIndex >= tourStopTopics.length - 1}
-                className="px-2 py-1 rounded-lg bg-primary/70 hover:bg-primary disabled:opacity-30 disabled:hover:bg-primary/70"
-              >
-                Next →
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Live class host controls — class code, roster, student view, redirect */}
+      {showLiveClassHostOverlay && (
+        <LiveClassHostOverlay
+          session={activeSession}
+          sessionId={activeSessionId || partnerSessionMeta?.id || null}
+          hostUid={user?.uid ?? null}
+          progressList={progressList}
+          sessionCode={hostSessionCode}
+          hostView={hostLookat || activeSession?.teacher_view || null}
+          getLiveHostView={() => {
+            const live = readKrpanoLookat(krpanoViewerRef.current);
+            if (live) return live;
+            return hostLookat || activeSession?.teacher_view || null;
+          }}
+          skyboxUrlOverride={skyboxImageUrl || null}
+        />
       )}
 
       {/* Drag Hint (student or when not in class session) */}
       <AnimatePresence>
-        {showDragHint && sceneReady && (skyboxImageUrl || useModelOnlyScene) && !(isTeacherInSession && (useKrpanoView || useIntegratedScene || useModelOnlyScene)) && (
+        {showDragHint && sceneReady && (skyboxImageUrl || useModelOnlyScene) && !(isTeacherInSession && (useKrpanoView || useIntegratedScene || useModelOnlyScene)) && !(isPhoneViewport && isStudentInSession) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -3868,43 +4046,114 @@ const VRLessonPlayerInner = () => {
       {/* Exit Button */}
       <button
         onClick={handleExit}
-        className="absolute top-4 left-4 z-40 flex items-center gap-2 px-4 py-2.5 
-                 bg-card/90 hover:bg-destructive/80 backdrop-blur-sm 
-                 text-foreground rounded-xl border border-border transition-all"
+        className={`absolute z-40 flex items-center gap-2 bg-card/90 hover:bg-destructive/80 backdrop-blur-sm 
+                 text-foreground rounded-xl border border-border transition-all ${
+                   isPhoneViewport
+                     ? 'top-[max(0.75rem,env(safe-area-inset-top))] left-[max(0.75rem,env(safe-area-inset-left))] p-2.5'
+                     : 'top-4 left-4 px-4 py-2.5'
+                 }`}
+        aria-label="Exit"
       >
         <LogOut className="w-5 h-5" />
-        <span className="font-medium">Exit</span>
+        {!isPhoneViewport && <span className="font-medium">Exit</span>}
       </button>
 
-      {/* Top Bar - use effectiveLesson (from context or sessionStorage) so dashboard-open works */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40">
-        <div className="flex items-center gap-4 px-6 py-3 bg-card/90 backdrop-blur-xl rounded-2xl border border-border">
-          <div className="flex items-center gap-3">
-            <GraduationCap className="w-5 h-5 text-primary" />
-            <div>
+      {/* Top Bar — compact / hidden on phone when HUD collapsed */}
+      {!(isPhoneViewport && isStudentInSession) && !(isPhoneViewport && !mobileHudExpanded) && (
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 max-w-[min(100vw-8rem,20rem)] pointer-events-none">
+        <div className="flex items-center gap-4 px-4 sm:px-6 py-2 sm:py-3 bg-card/90 backdrop-blur-xl rounded-2xl border border-border">
+          <div className="flex items-center gap-3 min-w-0">
+            <GraduationCap className="w-5 h-5 text-primary shrink-0" />
+            <div className="min-w-0">
               <h1 className="text-sm font-semibold text-foreground truncate max-w-[200px]">
                 {effectiveLesson?.topic?.topic_name || 'Unknown Topic'}
               </h1>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{effectiveLesson?.chapter?.subject || 'Unknown'}</span>
+                <span className="text-xs text-muted-foreground truncate">{effectiveLesson?.chapter?.subject || 'Unknown'}</span>
                 <span className="text-xs text-primary">• {getPhaseLabel()}</span>
               </div>
             </div>
           </div>
           
-          <div className="w-24">
+          <div className="w-16 sm:w-24 shrink-0">
             <Progress value={getPhaseProgress()} className="h-1.5" />
           </div>
         </div>
       </div>
+      )}
 
-      {/* Top Right Controls */}
-      <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
-        {/* Stop Lesson Button - Only show when lesson is running */}
-        {lessonReady && !showWelcomeScreen && (
+      {/* Phone: minimized controls chip — tap to expand full lesson HUD */}
+      {isPhoneViewport && !mobileHudExpanded && lessonReady && !showWelcomeScreen && !isInKrpanoVR && !(isPhoneViewport && isStudentInSession && !isClassHost) && (
+        <button
+          type="button"
+          onClick={() => setMobileHudExpanded(true)}
+          className="absolute z-40 right-[max(0.75rem,env(safe-area-inset-right))] bottom-[max(1.25rem,env(safe-area-inset-bottom))] flex items-center gap-2 rounded-2xl border border-white/15 bg-zinc-950/80 px-3.5 py-2.5 text-white shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl active:scale-[0.98]"
+          aria-label="Show lesson controls"
+        >
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10">
+            <GraduationCap className="h-4 w-4 text-primary" />
+          </span>
+          <span className="text-left leading-tight">
+            <span className="block text-[9px] font-semibold uppercase tracking-[0.14em] text-white/45">Controls</span>
+            <span className="block text-xs font-semibold text-white/90">{getPhaseLabel()}</span>
+          </span>
+          <ChevronUp className="h-4 w-4 text-white/40" />
+        </button>
+      )}
+
+      {/* Top Right Controls — tour stop + Stop/mute/chat in one row (avoids absolute overlap) */}
+      {(!isPhoneViewport || mobileHudExpanded) && (
+      <div
+        className={`absolute z-40 flex max-w-[min(100vw-4.5rem,36rem)] flex-wrap items-center justify-end gap-2 ${
+          isPhoneViewport
+            ? 'top-[max(0.75rem,env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))]'
+            : 'top-4 right-4'
+        }`}
+      >
+        {isPhoneViewport && mobileHudExpanded && (
+          <button
+            type="button"
+            onClick={() => setMobileHudExpanded(false)}
+            className="shrink-0 p-2.5 rounded-xl bg-card/90 border border-border text-foreground"
+            aria-label="Minimize controls"
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
+        {/* Street View Tour: teacher-controlled Next/Previous Stop navigation */}
+        {isTourStop && tourStopTopics.length > 1 && sceneReady && !showWelcomeScreen && (
+          <div className="flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-black/55 border border-white/10 rounded-xl text-white text-xs sm:text-sm">
+            <span className="opacity-90 whitespace-nowrap font-medium">
+              Stop {currentStopIndex >= 0 ? currentStopIndex + 1 : '?'} / {tourStopTopics.length}
+            </span>
+            {isClassHost && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => goToTourStop(Math.max(0, currentStopIndex) - 1)}
+                  disabled={currentStopIndex <= 0}
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10 whitespace-nowrap"
+                >
+                  ← Prev
+                </button>
+                <button
+                  type="button"
+                  onClick={() => goToTourStop((currentStopIndex < 0 ? 0 : currentStopIndex) + 1)}
+                  disabled={currentStopIndex >= tourStopTopics.length - 1}
+                  className="px-2 py-1 rounded-lg bg-primary/70 hover:bg-primary disabled:opacity-30 disabled:hover:bg-primary/70 whitespace-nowrap"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Stop Lesson Button - hosts / solo; hide for live-class students on phone */}
+        {lessonReady && !showWelcomeScreen && !(isPhoneViewport && isStudentInSession) && (
           <button
             onClick={handleStopLesson}
-            className="flex items-center gap-2 px-3 py-2.5 rounded-xl transition-colors 
+            className="flex shrink-0 items-center gap-2 px-3 py-2.5 rounded-xl transition-colors 
                      bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30"
             title="Stop lesson and return to start"
           >
@@ -3915,7 +4164,7 @@ const VRLessonPlayerInner = () => {
         
         <button
           onClick={() => setIsMuted(!isMuted)}
-          className={`p-2.5 rounded-xl transition-colors ${
+          className={`shrink-0 p-2.5 rounded-xl transition-colors ${
             isMuted ? 'bg-red-500/20 text-red-400' : 'bg-card/90 text-foreground hover:bg-card'
           } border border-border`}
           title={isMuted ? 'Unmute' : 'Mute'}
@@ -3923,16 +4172,19 @@ const VRLessonPlayerInner = () => {
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </button>
         
+        {!(isPhoneViewport && isStudentInSession) && (
         <button
           onClick={() => setShowChat(!showChat)}
-          className={`p-2.5 rounded-xl transition-colors ${
+          className={`shrink-0 p-2.5 rounded-xl transition-colors ${
             showChat ? 'bg-primary/20 text-primary' : 'bg-card/90 text-foreground hover:bg-card'
           } border border-border`}
           title="Ask questions"
         >
           <MessageSquare className="w-5 h-5" />
         </button>
+        )}
       </div>
+      )}
 
       {/* Avatar Panel - hidden for now; set SHOW_TEACHER_AVATAR true to re-enable */}
       {SHOW_TEACHER_AVATAR && (
@@ -4134,9 +4386,15 @@ const VRLessonPlayerInner = () => {
         )}
       </AnimatePresence>
 
-      {/* Main Content Panel - Minimal & Compact (hidden when krpano WebVR is active) */}
-      {!isInKrpanoVR && (
-      <div className="absolute left-4 bottom-4 right-[220px] md:right-[260px] z-20 max-w-md">
+      {/* Main Content Panel — bottom-left stack (clears krpano controllers + avatar on the right) */}
+      {!isInKrpanoVR && hasLessonNarrationOrQuiz && !(isPhoneViewport && isStudentInSession) && (!isPhoneViewport || mobileHudExpanded) && (
+      <div
+        className={`absolute z-20 max-w-md w-[min(28rem,calc(100vw-2rem))] ${
+          isPhoneViewport
+            ? 'bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))]'
+            : 'bottom-4 left-4'
+        }`}
+      >
         {/* Voiceover Player - Simple Controls */}
         <div className="mb-2">
           <VoiceoverPlayer

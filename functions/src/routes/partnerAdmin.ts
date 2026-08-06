@@ -14,7 +14,9 @@ import * as crypto from 'crypto';
 const router = Router();
 
 const TRIAL_MONTHS = 6;
-const TRIAL_LAUNCH_LIMIT = 200;
+/** Demo / Channel Partner Street View class launches (one session start = one credit). */
+const TRIAL_LAUNCH_LIMIT = 50;
+/** Curriculum demo lesson launches (separate from Street View class launches). */
 const TRIAL_LESSON_LAUNCH_LIMIT = 200;
 const DEFAULT_DEMO_SCHOOL_CODE = 'HV647R';
 const APP_ORIGIN = process.env.APP_ORIGIN || process.env.CLIENT_ORIGIN || 'https://learnxr.ai';
@@ -48,6 +50,18 @@ function addMonthsIso(date: Date, months: number): string {
   return d.toISOString();
 }
 
+async function generatePartnerPasswordSetupLink(email: string): Promise<string | null> {
+  try {
+    return await admin.auth().generatePasswordResetLink(email, {
+      url: `${APP_ORIGIN}/partner-login`,
+      handleCodeInApp: false,
+    });
+  } catch (error) {
+    console.error('Failed to generate partner password setup link:', error);
+    return null;
+  }
+}
+
 async function sendPartnerApprovalNotification(params: {
   requestId: string;
   email: string;
@@ -67,10 +81,12 @@ async function sendPartnerApprovalNotification(params: {
       body: JSON.stringify({
         type: 'partner_approved',
         email: params.email,
+        username: params.email,
         contactName: params.contactName,
         organizationName: params.organizationName,
         partnerId: params.partnerId,
         inviteLink: params.inviteLink,
+        passwordSetupLink: params.inviteLink,
         trial: params.trial,
         notification: {
           template: 'partner_approved',
@@ -173,11 +189,7 @@ router.post(
         const email = String(reg.email || '').toLowerCase().trim();
         let inviteLink: string | null = null;
         if (email) {
-          try {
-            inviteLink = await admin.auth().generatePasswordResetLink(email);
-          } catch (error) {
-            console.error(`[${requestId}] Failed to generate password reset link:`, error);
-          }
+          inviteLink = await generatePartnerPasswordSetupLink(email);
           await sendPartnerApprovalNotification({
             requestId,
             email,
@@ -348,12 +360,7 @@ router.post(
         meta: { registrationId, email, createdNewUser },
       });
 
-      let inviteLink: string | null = null;
-      try {
-        inviteLink = await admin.auth().generatePasswordResetLink(email);
-      } catch (err) {
-        console.error(`[${requestId}] Failed to generate password reset link:`, err);
-      }
+      const inviteLink = await generatePartnerPasswordSetupLink(email);
 
       await sendPartnerApprovalNotification({
         requestId,
@@ -894,7 +901,14 @@ router.post(
     const topicId = String(req.body?.topicId || '').trim();
     const sceneId = String(req.body?.sceneId || '').trim();
     const title = String(req.body?.title || '').trim().slice(0, 200);
-    const lessonType = req.body?.lessonType === 'user_generated' ? 'user_generated' : 'curriculum';
+    const rawLessonType = String(req.body?.lessonType || '').trim();
+    const lessonType =
+      rawLessonType === 'user_generated'
+        ? 'user_generated'
+        : rawLessonType === 'vr360_video'
+          ? 'vr360_video'
+          : 'curriculum';
+    const vr360TourId = String(req.body?.vr360TourId || '').trim();
     if (!chapterId || !topicId) {
       res.status(400).json({ success: false, message: 'chapterId and topicId are required' });
       return;
@@ -925,37 +939,59 @@ router.post(
           error.code = 'TRIAL_INACTIVE';
           throw error;
         }
-        const hasLessonEntitlement = typeof freshPartner.trial?.lessonLaunchesRemaining === 'number';
-        const remaining = Number(
-          hasLessonEntitlement
-            ? freshPartner.trial.lessonLaunchesRemaining
-            : TRIAL_LESSON_LAUNCH_LIMIT
-        );
-        if (remaining <= 0) {
-          const error: any = new Error('Lesson launch quota exhausted');
-          error.code = 'LESSON_QUOTA_EXHAUSTED';
-          throw error;
+
+        // Street View / user-generated tours already consumed one class-launch credit when the
+        // demo session started — do not double-count against lesson launches.
+        let nextRemaining = Number(freshPartner.trial?.lessonLaunchesRemaining ?? TRIAL_LESSON_LAUNCH_LIMIT);
+        let nextUsed = Number(freshPartner.trial?.lessonLaunchesUsed ?? 0);
+        if (lessonType !== 'user_generated') {
+          const hasLessonEntitlement = typeof freshPartner.trial?.lessonLaunchesRemaining === 'number';
+          const remaining = Number(
+            hasLessonEntitlement
+              ? freshPartner.trial.lessonLaunchesRemaining
+              : TRIAL_LESSON_LAUNCH_LIMIT
+          );
+          if (remaining <= 0) {
+            const error: any = new Error('Lesson launch quota exhausted');
+            error.code = 'LESSON_QUOTA_EXHAUSTED';
+            throw error;
+          }
+          nextRemaining = remaining - 1;
+          nextUsed = Number(freshPartner.trial?.lessonLaunchesUsed ?? 0) + 1;
+          tx.update(partnerRef, {
+            'trial.lessonLaunchesLimit': Number(freshPartner.trial?.lessonLaunchesLimit ?? TRIAL_LESSON_LAUNCH_LIMIT),
+            'trial.lessonLaunchesRemaining': nextRemaining,
+            'trial.lessonLaunchesUsed': nextUsed,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
         }
-        const nextRemaining = remaining - 1;
-        const nextUsed = Number(freshPartner.trial?.lessonLaunchesUsed ?? 0) + 1;
-        tx.update(partnerRef, {
-          'trial.lessonLaunchesLimit': Number(freshPartner.trial?.lessonLaunchesLimit ?? TRIAL_LESSON_LAUNCH_LIMIT),
-          'trial.lessonLaunchesRemaining': nextRemaining,
-          'trial.lessonLaunchesUsed': nextUsed,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+
+        const launchedLesson: Record<string, unknown> = {
+          chapter_id: chapterId,
+          topic_id: topicId,
+          scene_id: sceneId || null,
+          title: title || null,
+          lesson_type: lessonType,
+        };
+        if (lessonType === 'vr360_video') {
+          // topic_id is usually "tour-<id>"; prefer explicit body field when present
+          const fromTopic =
+            topicId.startsWith('tour-') ? topicId.slice('tour-'.length) : '';
+          launchedLesson.vr360_tour_id = vr360TourId || fromTopic || null;
+        }
         tx.update(sessionRef, {
           status: 'active',
-          launched_lesson: {
-            chapter_id: chapterId,
-            topic_id: topicId,
-            scene_id: sceneId || null,
-            title: title || null,
-            lesson_type: lessonType,
-          },
+          launched_lesson: launchedLesson,
           updated_at: admin.firestore.FieldValue.serverTimestamp(),
         });
-        return { remaining: nextRemaining, used: nextUsed, schoolId: session.school_id, classId: session.class_id };
+        return {
+          remaining: nextRemaining,
+          used: nextUsed,
+          schoolId: session.school_id,
+          classId: session.class_id,
+          countedLessonQuota: lessonType !== 'user_generated',
+          classLaunchesRemaining: Number(freshPartner.trial?.classLaunchesRemaining ?? 0),
+        };
       });
 
       await writePartnerEvent({
@@ -963,9 +999,24 @@ router.post(
         type: 'lesson_launched',
         actorUid: req.user!.uid,
         schoolId: result.schoolId,
-        meta: { sessionId, classId: result.classId, chapterId, topicId, lessonLaunchesRemaining: result.remaining },
+        meta: {
+          sessionId,
+          classId: result.classId,
+          chapterId,
+          topicId,
+          lessonType,
+          countedLessonQuota: result.countedLessonQuota,
+          lessonLaunchesRemaining: result.remaining,
+          classLaunchesRemaining: result.classLaunchesRemaining,
+        },
       });
-      res.json({ success: true, lessonLaunchesRemaining: result.remaining, lessonLaunchesUsed: result.used });
+      res.json({
+        success: true,
+        lessonLaunchesRemaining: result.remaining,
+        lessonLaunchesUsed: result.used,
+        countedLessonQuota: result.countedLessonQuota,
+        classLaunchesRemaining: result.classLaunchesRemaining,
+      });
     } catch (error: any) {
       const status = ['FORBIDDEN', 'TRIAL_INACTIVE', 'LESSON_QUOTA_EXHAUSTED'].includes(error?.code) ? 403 : 500;
       res.status(status).json({ success: false, message: error?.message || 'Failed to launch demo lesson' });
@@ -1114,10 +1165,20 @@ router.get(['/admin/list', '/admin/list/'], requireSuperadmin, async (_req: Requ
   }
 });
 
-router.post(['/:partnerId/provision-demo', '/:partnerId/provision-demo/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+router.post(
+  ['/:partnerId/provision-demo', '/:partnerId/provision-demo/'],
+  requirePartnerOrSuperadmin,
+  async (req: Request, res: Response): Promise<void> => {
   const db = admin.firestore();
   const partnerRef = db.collection('partners').doc(req.params.partnerId);
   try {
+    if (req.userProfile!.role === 'partner') {
+      const own = await getPartnerByUserId(req.user!.uid);
+      if (!own || own.id !== req.params.partnerId) {
+        res.status(403).json({ success: false, message: 'Forbidden' });
+        return;
+      }
+    }
     const partnerSnap = await partnerRef.get();
     if (!partnerSnap.exists) {
       res.status(404).json({ success: false, message: 'Partner not found' });

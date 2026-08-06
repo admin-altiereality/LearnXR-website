@@ -114,7 +114,7 @@ export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
   public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
-  create: ['teacher', 'partner', 'admin', 'superadmin'], // School administrators removed
+  create: ['teacher', 'partner', 'admin', 'superadmin', 'associate'], // Associate: Create Lesson (street-view)
   studio: ['admin', 'superadmin', 'associate'], // Associate can refine lessons (no delete)
   developer: ['admin', 'superadmin'],
   class_management: ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'],
@@ -149,8 +149,9 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   '/vrlessonplayer': 'lessons',
   '/xrlessonplayer': 'lessons',
   
-  // Create routes (teacher, school, admin, superadmin) - no Studio/Chapter Editor
+  // Create routes (teacher, partner, admin, superadmin, associate) - no Studio/Chapter Editor
   '/main': 'create',
+  '/create/street-view': 'create',
   '/explore': 'create',
   '/history': 'create',
   '/3d-generate': 'create',
@@ -164,6 +165,8 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   '/studio/content': 'studio',
   '/studio': 'studio',
   '/studio/n8n-lesson-builder': 'studio',
+  // Community Lessons Review — associate + admin/superadmin (via studio roles)
+  '/admin/user-lessons': 'studio',
   
   // Developer / API Keys - admin, superadmin only
   '/developer': 'developer',

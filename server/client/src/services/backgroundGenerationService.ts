@@ -652,12 +652,25 @@ class BackgroundGenerationService {
     console.log(`🚀 Starting background polling for task ${task.id} (taskId: ${task.taskId})`);
 
     let attempts = 0;
+    let consecutiveErrors = 0;
     let currentInterval = 3000;
     const maxAttempts = 120;
+    const maxConsecutiveErrors = 5;
+
+    const failPolling = async (errorMessage: string) => {
+      this.stopPolling(task.id);
+      task.status = 'failed';
+      task.error = errorMessage;
+      task.message = `Generation failed: ${errorMessage}`;
+      this.updateTask(task);
+      await this.updateMeshyJobInFirestore(task.jobId, task);
+      this.notifyProgress(task, onProgress);
+    };
 
     const poll = async () => {
       try {
         const status = await meshyApiService.getGenerationStatus(task.taskId!);
+        consecutiveErrors = 0;
         
         // Update progress
         if (status.progress !== undefined) {
@@ -739,20 +752,27 @@ class BackgroundGenerationService {
       } catch (error) {
         console.error(`Error polling task ${task.taskId}:`, error);
         attempts++;
-        
-        if (attempts < maxAttempts) {
-          const delay = currentInterval * 2;
-          const timeoutId = setTimeout(poll, delay);
-          this.pollingIntervals.set(task.id, timeoutId);
-        } else {
-          this.stopPolling(task.id);
-          task.status = 'failed';
-          task.error = error instanceof Error ? error.message : 'Polling failed';
-          task.message = `Generation failed: ${task.error}`;
-          this.updateTask(task);
-          await this.updateMeshyJobInFirestore(task.jobId, task);
-          this.notifyProgress(task, onProgress);
+        consecutiveErrors++;
+
+        const message = error instanceof Error ? error.message : 'Polling failed';
+        const nonRetryable =
+          message.includes('Unsupported proxy endpoint') ||
+          message.includes('Invalid task ID') ||
+          message.includes('not configured');
+
+        if (nonRetryable || consecutiveErrors >= maxConsecutiveErrors || attempts >= maxAttempts) {
+          await failPolling(
+            nonRetryable || consecutiveErrors >= maxConsecutiveErrors
+              ? message
+              : 'Generation timed out'
+          );
+          return;
         }
+
+        const delay = currentInterval * 2;
+        currentInterval = Math.min(currentInterval * 1.2, 30000);
+        const timeoutId = setTimeout(poll, delay);
+        this.pollingIntervals.set(task.id, timeoutId);
       }
     };
 
