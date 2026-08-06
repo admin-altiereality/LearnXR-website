@@ -7,6 +7,7 @@
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import * as admin from 'firebase-admin';
 import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -29,6 +30,7 @@ const openaiAvatarApiKey = defineSecret("OPENAI_AVATAR_API_KEY");
 const linkedinAccessToken = defineSecret("LINKEDIN_ACCESS_TOKEN");
 const linkedinCompanyURN = defineSecret("LINKEDIN_COMPANY_URN");
 const streetViewApiKey = defineSecret("GOOGLE_STREETVIEW_API_KEY");
+const n8nPartnerApproveWebhookUrl = defineSecret("N8N_PARTNER_APPROVE_WEBHOOK_URL");
 // Lazy Express app creation - only initialize when function is called
 // NOTE: Do NOT recreate the Express app per request — that causes repeated module loads
 // and can balloon memory usage (which surfaces as intermittent 500s and missing CORS headers
@@ -139,6 +141,15 @@ const getApp = (): express.Application => {
       legacyHeaders: false,
     });
 
+    // Cost control for Street View + user-generated-lesson content creation.
+    const contentGenerationLimiter = rateLimit({
+      windowMs: 60 * 60 * 1000,
+      max: 30,
+      message: { success: false, error: 'Too many generation requests. Please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
     // Mount public routes FIRST (before authentication)
     const leadRoutes = require('./routes/leads').default;
     const partnerRoutes = require('./routes/partners').default;
@@ -189,6 +200,7 @@ const getApp = (): express.Application => {
     const n8nRoutes = require('./routes/n8n').default;
     const n8nBuilderRoutes = require('./routes/n8nBuilder').default;
     const partnerAdminRoutes = require('./routes/partnerAdmin').default;
+    const userLessonsRoutes = require('./routes/userLessons').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -209,7 +221,23 @@ const getApp = (): express.Application => {
     app.use('/lms', lmsRoutes);
     app.use('/ai-education', aiEducationRoutes);
     app.use('/assessment', assessmentRoutes);
+    // Rate-limit only the costly Street View tile-fetch + stitch operation; autocomplete/place-details stay unthrottled.
+    app.use('/streetview', (req: Request, res: Response, next: NextFunction) => {
+      const isGenerate = req.method === 'POST' && /^\/generate-skybox\/?$/.test(req.path);
+      if (isGenerate) return contentGenerationLimiter(req, res, next);
+      return next();
+    });
     app.use('/streetview', streetviewRoutes);
+    app.use('/user-lessons', (req: Request, res: Response, next: NextFunction) => {
+      const isGenerate =
+        req.method === 'POST' &&
+        (/^\/[^/]+\/street-view\/?$/.test(req.path) ||
+          /^\/[^/]+\/streetview-tour\/(explore|walk|stops)\/?$/.test(req.path) ||
+          /^\/[^/]+\/streetview-tour\/stops\/[^/]+\/voiceover\/?$/.test(req.path));
+      if (isGenerate) return contentGenerationLimiter(req, res, next);
+      return next();
+    });
+    app.use('/user-lessons', userLessonsRoutes);
     app.use('/pdf', pdfRoutes);
     app.use('/api/pdf', pdfRoutes);
     app.use('/lesson-bundle', lessonBundleRoutes);
@@ -243,7 +271,7 @@ export const api = onRequest(
     cors: true, // Allow all origins (handled more specifically in Express CORS middleware)
     region: 'us-central1',
     invoker: 'public',
-    secrets: [blockadelabsApiKey, meshyApiKey, trellisApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey]
+    secrets: [blockadelabsApiKey, meshyApiKey, trellisApiKey, openaiApiKey, openaiAvatarApiKey, linkedinAccessToken, linkedinCompanyURN, streetViewApiKey, n8nPartnerApproveWebhookUrl]
   },
   (req, res) => {
   // Load secrets and set as environment variables
@@ -453,4 +481,27 @@ export const processMeshyRegenerationJobsScheduled = onSchedule(
     const { processMeshyRegenerationJobs } = require('./services/meshyAssetRegeneration');
     await processMeshyRegenerationJobs(1);
   },
+);
+
+export const cleanupPartnerTelemetry = onSchedule(
+  {
+    schedule: 'every day 03:30',
+    region: 'us-central1',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+    invoker: 'private',
+  },
+  async () => {
+    initializeAdmin();
+    const db = admin.firestore();
+    const expired = await db
+      .collection('partner_telemetry_events')
+      .where('expiresAt', '<=', new Date())
+      .limit(250)
+      .get();
+    if (expired.empty) return;
+    const batch = db.batch();
+    expired.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+  }
 );

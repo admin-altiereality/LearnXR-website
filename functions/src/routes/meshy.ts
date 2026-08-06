@@ -9,6 +9,8 @@ import axios from 'axios';
 import { initializeServices, MESHY_API_KEY } from '../utils/services';
 import { validateFullAccess } from '../middleware/validateIn3dApiKey';
 import { requireRole } from '../middleware/rbac';
+import { requireLessonAuthorAccess } from '../middleware/lessonAuthorAccess';
+import { assertLessonAuthorAccess } from '../services/userGeneratedLessons';
 import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils/apiResponse';
 import {
   backfillAssets,
@@ -45,19 +47,45 @@ router.options('*', (req: Request, res: Response) => {
   res.status(204).send();
 });
 
-const requireContentEditor = requireRole(['admin', 'superadmin', 'associate']);
 const requireSuperadmin = requireRole(['superadmin']);
 
 /**
  * Persist Meshy output files into Firebase Storage and register a renderable asset.
  * POST /meshy/finalize-generated-asset
  */
-router.post('/finalize-generated-asset', validateFullAccess, requireContentEditor, async (req: Request, res: Response) => {
+router.post('/finalize-generated-asset', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
 
   try {
     const assetKind = String(req.body?.assetKind || 'generated');
     const authenticatedUserId = (req as any).user?.uid as string | undefined;
+
+    // Ownership check: staff may target any curriculum chapter; teachers/partners
+    // may only finalize assets into a draft lesson they own.
+    if (assetKind !== 'animation' && assetKind !== 'uploaded' && authenticatedUserId) {
+      const chapterId = String((req.body as FinalizeGeneratedAssetInput)?.chapterId || '').trim();
+      const topicId = String((req.body as FinalizeGeneratedAssetInput)?.topicId || '').trim();
+      if (chapterId && topicId) {
+        try {
+          await assertLessonAuthorAccess({
+            uid: authenticatedUserId,
+            role: req.userProfile?.role,
+            chapterId,
+            topicId,
+          });
+        } catch (accessError: any) {
+          const { statusCode, response } = errorResponse(
+            'Forbidden',
+            accessError?.message || 'You do not have permission to finalize this asset.',
+            ErrorCode.FORBIDDEN,
+            HTTP_STATUS.FORBIDDEN,
+            { requestId }
+          );
+          setCorsHeaders(res);
+          return res.status(statusCode).json(response);
+        }
+      }
+    }
 
     if (assetKind === 'animation') {
       const result = await finalizeAnimatedAsset(req, req.body as FinalizeAnimatedAssetInput);
@@ -260,7 +288,7 @@ router.post('/regeneration/jobs/:jobId/retry-failed', validateFullAccess, requir
  * POST /meshy/generate
  * Requires FULL scope API key
  */
-router.post('/generate', validateFullAccess, requireContentEditor, async (req: Request, res: Response) => {
+router.post('/generate', requireLessonAuthorAccess, async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {

@@ -114,7 +114,7 @@ export const ROUTE_PERMISSIONS: Record<RouteCategory, UserRole[]> = {
   public: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   auth: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
   lessons: ['student', 'teacher', 'principal', 'school', 'admin', 'superadmin', 'associate', 'partner'],
-  create: ['teacher', 'admin', 'superadmin'], // School administrators removed
+  create: ['teacher', 'partner', 'admin', 'superadmin'], // School administrators removed
   studio: ['admin', 'superadmin', 'associate'], // Associate can refine lessons (no delete)
   developer: ['admin', 'superadmin'],
   class_management: ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'],
@@ -129,6 +129,7 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   // Public routes
   '/': 'public',
   '/login': 'public',
+  '/partner-login': 'public',
   '/signup': 'public',
   '/forgot-password': 'public',
   '/careers': 'public',
@@ -181,6 +182,8 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   
   // Admin routes
   '/admin': 'admin',
+  '/admin/partners': 'admin',
+  '/admin/partner-oversight': 'superadmin',
   '/system-status': 'admin',
   
   // Superadmin routes

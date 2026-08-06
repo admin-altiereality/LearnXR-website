@@ -1,4 +1,10 @@
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { auth } from '../config/firebase';
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 export interface StreetViewPlacePrediction {
   place_id: string;
@@ -29,7 +35,7 @@ export async function fetchPlaceSuggestions(input: string): Promise<PlacesAutoco
   const url = `${base}/streetview/places-autocomplete?input=${encodeURIComponent(trimmed)}`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: await authHeaders() });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) {
       return {
@@ -59,7 +65,7 @@ export async function fetchPlaceDetails(placeId: string): Promise<PlaceDetailsRe
   const url = `${base}/streetview/place-details?place_id=${encodeURIComponent(trimmed)}`;
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: await authHeaders() });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.success === false) {
       return {

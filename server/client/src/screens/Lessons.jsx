@@ -60,6 +60,7 @@ import {
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
 import { buildCreateSceneActiveLesson } from '../utils/buildCreateSceneActiveLesson';
+import { launchPartnerDemoLesson } from '../services/partnerService';
 
 // Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
 const GUEST_DEMO_CHAPTERS_LIMIT = 200; // Max chapters to scan for demo topics (client-side filter)
@@ -490,10 +491,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const [vrHostClassId, setVrHostClassId] = useState('');
   const isStudent = profile?.role === 'student';
   const isTeacher = profile?.role === 'teacher';
+  const isPartner = profile?.role === 'partner';
   const isPrincipal = profile?.role === 'principal';
   const isSchoolStaff = profile?.role === 'school';
   const isHostVr =
-    isTeacher || isAdminOnly(profile) || isSuperadmin(profile) || isPrincipal || isSchoolStaff;
+    isTeacher || isPartner || isAdminOnly(profile) || isSuperadmin(profile) || isPrincipal || isSchoolStaff;
   const isGuest = !!(profile?.isGuest === true && profile?.role === 'student');
 
   const hostClassesForVr = useMemo(() => {
@@ -1008,6 +1010,14 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 chapter,
               });
             }
+          } else if (isPartner) {
+            // Channel partners can launch only content explicitly approved for demos.
+            if (isDemoTopic && shouldShowTopic) {
+              allTopics.push({
+                topic,
+                chapter,
+              });
+            }
           } else if (isStudent || isTeacher) {
             // Students and teachers: approved topics OR legacy (chapter approved, no topic approval field)
             if (shouldShowTopic) {
@@ -1443,6 +1453,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
           chapterId: launched.chapter_id,
           lang: effectiveLang,
           topicId: launched.topic_id,
+          source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
         });
         if (cancelled) return;
         const fullData = bundle.chapter;
@@ -1939,7 +1950,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
   // Launch current lesson to class: create session if needed, then launch and go to dashboard
   const handleLaunchInClass = useCallback(async () => {
-    if (!isTeacher || !launchLessonToClass || !lessonData?.chapter || !lessonData?.topic) return;
+    if ((!isTeacher && !isPartner) || !lessonData?.chapter || !lessonData?.topic) return;
     const payload = {
       chapter_id: String(lessonData.chapter.chapter_id ?? ''),
       topic_id: String(lessonData.topic.topic_id ?? ''),
@@ -1948,6 +1959,30 @@ const Lessons = ({ setBackgroundSkybox }) => {
       subject: String(lessonData.chapter.subject ?? ''),
       lang: lessonData.language || selectedLanguage,
     };
+    if (isPartner) {
+      try {
+        const rawSession = sessionStorage.getItem('learnxr_partner_demo_session');
+        const partnerSession = rawSession ? JSON.parse(rawSession) : null;
+        if (!partnerSession?.id) {
+          toast.error('Start a Channel Partner demo session from your Partner Dashboard first.');
+          return;
+        }
+        await launchPartnerDemoLesson(partnerSession.id, {
+          chapterId: payload.chapter_id,
+          topicId: payload.topic_id,
+          title: lessonData.topic.topic_name || lessonData.chapter.chapter_name || '',
+        });
+        sessionStorage.setItem('learnxr_class_session_id', partnerSession.id);
+        contextStartLesson(lessonData.chapter, lessonData.topic);
+        toast.success('Demo lesson launched to your class.');
+        closeLessonModal();
+        navigate('/vrlessonplayer-krpano');
+      } catch (error) {
+        toast.error(error?.message || 'Could not launch the demo lesson.');
+      }
+      return;
+    }
+    if (!launchLessonToClass) return;
     // Stale session IDs (e.g. from another account) leave activeSessionId set but
     // activeSession null after permission-denied — drop and create a fresh session.
     let sessionId = activeSessionId;
@@ -1981,9 +2016,12 @@ const Lessons = ({ setBackgroundSkybox }) => {
     } else {
       toast.error('Failed to launch lesson to class');
     }
-  }, [isTeacher, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate]);
+  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate, contextStartLesson]);
 
-  const canLaunchInClass = isTeacher && teacherClasses.length > 0 && lessonData?.chapter && lessonData?.topic && canLaunchLesson && (activeSessionId || classIdForLaunch);
+  const canLaunchInClass = (
+    (isTeacher && teacherClasses.length > 0 && (activeSessionId || classIdForLaunch)) ||
+    (isPartner && Boolean(sessionStorage.getItem('learnxr_partner_demo_session')))
+  ) && lessonData?.chapter && lessonData?.topic && canLaunchLesson;
 
   const handlePlayVr360Tour = useCallback(
     (tour) => {
@@ -2223,7 +2261,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
               </div>
             </div>
 
-            {isTeacher && (
+            {(isTeacher || isPartner) && (
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-xl border bg-primary/5 border-primary/25">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-primary/15">
@@ -2232,7 +2270,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   <div>
                     <p className="text-sm font-semibold text-primary">Launch in Class</p>
                     <p className="text-xs text-muted-foreground">
-                      Send this lesson to your class (starts a session if needed)
+                      {isPartner ? 'Send this approved demo lesson to your active partner session' : 'Send this lesson to your class (starts a session if needed)'}
                     </p>
                   </div>
                 </div>
@@ -2241,7 +2279,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
                   variant={canLaunchInClass ? 'default' : 'secondary'}
                   onClick={handleLaunchInClass}
                   disabled={!canLaunchInClass}
-                  title={!canLaunchLesson ? 'Wait for lesson to load' : teacherClasses.length === 0 ? 'Add a class to launch lessons' : ''}
+                  title={!canLaunchLesson ? 'Wait for lesson to load' : isPartner ? 'Start a demo session from the Partner Dashboard first' : teacherClasses.length === 0 ? 'Add a class to launch lessons' : ''}
                   className="w-full sm:w-auto"
                 >
                   {sessionJoinLoading ? (

@@ -45,6 +45,7 @@ interface ClassSessionContextValue {
   launchScene: (payload: LaunchedScene, sessionIdOverride?: string) => Promise<boolean>;
   endSession: () => Promise<boolean>;
   leaveSessionAsTeacher: () => void;
+  bindActiveSession: (sessionId: string) => void;
 
   // Student
   joinedSessionId: string | null;
@@ -113,6 +114,12 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     setActiveSession(null);
     setProgressList([]);
     if (typeof window !== 'undefined') sessionStorage.removeItem(STORAGE_KEY_ACTIVE_SESSION);
+  }, []);
+
+  const bindActiveSession = useCallback((sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setSessionError(null);
+    if (typeof window !== 'undefined') sessionStorage.setItem(STORAGE_KEY_ACTIVE_SESSION, sessionId);
   }, []);
 
   const leaveSessionAsStudent = useCallback(() => {
@@ -349,6 +356,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     launchScene,
     endSession,
     leaveSessionAsTeacher,
+        bindActiveSession,
     joinedSessionId,
     joinedSession,
     joinSession,

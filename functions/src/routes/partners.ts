@@ -202,7 +202,16 @@ const handlePartnerRegister = async (req: Request, res: Response): Promise<void>
       await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ registrationId, ...registration, createdAt: undefined }),
+        body: JSON.stringify({
+          type: 'partner_application_received',
+          registrationId,
+          ...registration,
+          createdAt: undefined,
+          notification: {
+            template: 'partner_application_received',
+            recipient: email,
+          },
+        }),
       });
     } catch (error) {
       console.error(`[${requestId}] Partner webhook forward failed (non-fatal):`, error);

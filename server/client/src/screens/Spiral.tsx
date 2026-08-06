@@ -45,6 +45,7 @@ import type { SpiralSuggestion } from '../services/spiralContentSearch';
 import type { Vr360TourItem } from '../config/vr360Tours';
 import { topicIdForVr360TourId, VR360_TOUR_CHAPTER_ID } from '../config/vr360Tours';
 import { resolveGenerated3DAssetUrl } from '../utils/generatedAssetUrl';
+import { createDraftLesson, updateDraftLesson, submitLessonForReview } from '../services/userLessonService';
 
 interface SkyboxStyle {
   id: number | string;
@@ -218,6 +219,7 @@ const Spiral = () => {
   const [isMuted, setIsMuted] = useState<boolean>(false);
   /** Compact teacher FAB: expandable panel for class + launch */
   const [teacherLaunchPanelOpen, setTeacherLaunchPanelOpen] = useState(false);
+  const [submittingSceneForReview, setSubmittingSceneForReview] = useState(false);
   const isMutedRef = useRef<boolean>(false);
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -906,6 +908,37 @@ const Spiral = () => {
     return startSession(classId);
   }, [activeSessionId, selectedClassId, startSession, teacherClasses]);
 
+  const submitGeneratedSceneForReview = useCallback(async () => {
+    if (!isTeacher) return;
+    const currentSkybox = generatedVariations[currentVariationIndex];
+    const skyboxImageUrl = currentSkybox?.file_url || currentSkybox?.image || currentSkybox?.image_jpg;
+    if (!skyboxImageUrl) {
+      toast.error('Create a 360 world before submitting this scene.');
+      return;
+    }
+    setSubmittingSceneForReview(true);
+    try {
+      const meshyPayloadUrl = resolveGenerated3DAssetUrl(generated3DAsset as Record<string, unknown>) || undefined;
+      const skyboxGlbPayload =
+        (typeof currentSkybox?.stored_glb_url === 'string' && currentSkybox.stored_glb_url) ||
+        (typeof currentSkybox?.glb_url === 'string' && currentSkybox.glb_url) ||
+        skyboxImageUrl;
+      const title = sceneContext.skyboxTitle || sceneContext.skyboxPrompt || currentSkybox?.title || 'Spiral generated scene';
+      const { lessonId } = await createDraftLesson(title, 'spiral_scene');
+      await updateDraftLesson(lessonId, {
+        skybox_url: skyboxImageUrl,
+        skybox_glb_url: skyboxGlbPayload,
+        asset_urls: meshyPayloadUrl ? [meshyPayloadUrl] : [],
+      });
+      await submitLessonForReview(lessonId);
+      toast.success('Scene submitted for Super Admin review.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not submit this scene for review.');
+    } finally {
+      setSubmittingSceneForReview(false);
+    }
+  }, [currentVariationIndex, generated3DAsset, generatedVariations, isTeacher, sceneContext.skyboxPrompt, sceneContext.skyboxTitle]);
+
   const launchGeneratedSceneToClass = useCallback(async () => {
     if (!isTeacher) return;
     const currentSkybox = generatedVariations[currentVariationIndex];
@@ -1397,6 +1430,16 @@ const Spiral = () => {
                 className="mt-3 w-full rounded-full bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {activeSessionId ? 'Launch to class' : 'Start session & launch'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void submitGeneratedSceneForReview();
+                }}
+                disabled={submittingSceneForReview}
+                className="mt-2 w-full rounded-full border border-white/20 bg-transparent px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Submit for review
               </button>
             </div>
           )}

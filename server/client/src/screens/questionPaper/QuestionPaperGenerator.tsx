@@ -37,6 +37,7 @@ import { getQuestionPaperAutofill } from '../../services/questionPaperAutofill';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { listPartnerSchools } from '../../services/partnerService';
 
 type Step = 'source' | 'blueprint' | 'preview';
 
@@ -83,6 +84,25 @@ const QuestionPaperGenerator = () => {
   const [generatedModel, setGeneratedModel] = useState<string | undefined>();
   const [chapter, setChapter] = useState<ChapterLite | null>(null);
   const [autofilled, setAutofilled] = useState(false);
+
+  // Partners don't have a single profile.school_id — they choose from their own portfolio.
+  const isPartner = profile?.role === 'partner';
+  const [partnerSchools, setPartnerSchools] = useState<Array<{ id: string; name?: string }>>([]);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
+
+  useEffect(() => {
+    if (!isPartner) return;
+    (async () => {
+      try {
+        const res = await listPartnerSchools();
+        const schools = (res.schools || []).map((s) => ({ id: s.id, name: s.name as string | undefined }));
+        setPartnerSchools(schools);
+        if (schools.length > 0) setSelectedSchoolId((prev) => prev || schools[0].id);
+      } catch (err) {
+        console.warn('[QuestionPaperGenerator] Failed to load partner schools', err);
+      }
+    })();
+  }, [isPartner]);
 
   // Load chapter if provided via ?chapterId
   useEffect(() => {
@@ -192,7 +212,7 @@ const QuestionPaperGenerator = () => {
           answer_key: answerKey,
           model: generatedModel,
           status,
-          school_id: profile?.school_id ?? undefined,
+          school_id: isPartner ? selectedSchoolId || undefined : profile?.school_id ?? undefined,
         });
         toast.success('Question paper saved.');
         navigate(`/question-paper/view/${paper.id}`);
@@ -202,7 +222,7 @@ const QuestionPaperGenerator = () => {
         setSaving(false);
       }
     },
-    [blueprint, source, questions, answerKey, generatedModel, profile?.school_id, navigate]
+    [blueprint, source, questions, answerKey, generatedModel, profile?.school_id, isPartner, selectedSchoolId, navigate]
   );
 
   const StepIndicator = () => (
@@ -271,6 +291,29 @@ const QuestionPaperGenerator = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {isPartner && (
+                <div>
+                  <Label htmlFor="qp-partner-school" className="mb-2 block">
+                    School (from your portfolio)
+                  </Label>
+                  <select
+                    id="qp-partner-school"
+                    value={selectedSchoolId}
+                    onChange={(e) => setSelectedSchoolId(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    {partnerSchools.length === 0 && <option value="">No schools yet</option>}
+                    {partnerSchools.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name || s.id}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    This question paper will be scoped to the selected school in your portfolio.
+                  </p>
+                </div>
+              )}
               {chapter ? (
                 <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-1">
                   <div className="text-sm font-medium">{chapter.title ?? 'Chapter'}</div>

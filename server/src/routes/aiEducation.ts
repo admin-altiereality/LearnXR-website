@@ -270,7 +270,7 @@ router.post('/teacher-support/lesson-plan', async (req, res) => {
       });
     }
     const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
-    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+    if (!['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'].includes(roleNorm)) {
       return res.status(403).json({ success: false, error: 'Only teachers and above can use this feature' });
     }
 
@@ -311,7 +311,7 @@ router.post('/teacher-support/content-suggestions', async (req, res) => {
       });
     }
     const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
-    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+    if (!['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'].includes(roleNorm)) {
       return res.status(403).json({ success: false, error: 'Only teachers and above can use this feature' });
     }
 
@@ -351,7 +351,7 @@ router.post('/teacher-support/rubric', async (req, res) => {
       });
     }
     const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
-    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+    if (!['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'].includes(roleNorm)) {
       return res.status(403).json({ success: false, error: 'Only teachers and above can use this feature' });
     }
 
@@ -393,7 +393,7 @@ router.post('/generate-mcq', async (req, res) => {
       });
     }
     const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
-    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+    if (!['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'].includes(roleNorm)) {
       return res.status(403).json({ success: false, error: 'Only teachers and above can generate MCQs' });
     }
 
@@ -475,7 +475,7 @@ router.post('/generate-question-paper', async (req, res) => {
       });
     }
     const roleNorm = (profile.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
-    if (!['teacher', 'school', 'principal', 'admin', 'superadmin'].includes(roleNorm)) {
+    if (!['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'].includes(roleNorm)) {
       return res.status(403).json({
         success: false,
         error: 'Only teachers, principals, school admins, or administrators can generate question papers.',

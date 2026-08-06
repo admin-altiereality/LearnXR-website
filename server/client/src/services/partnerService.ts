@@ -247,6 +247,100 @@ export async function startPartnerDemoSession(
   return data;
 }
 
+export async function launchPartnerDemoLesson(
+  sessionId: string,
+  lesson: { chapterId: string; topicId: string; sceneId?: string; title?: string; lessonType?: 'curriculum' | 'user_generated' },
+): Promise<{ success: boolean; lessonLaunchesRemaining: number; lessonLaunchesUsed: number }> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/sessions/${sessionId}/launch-lesson`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(lesson),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to launch demo lesson');
+  return data;
+}
+
+export async function recordPartnerLaunchTelemetry(
+  sessionId: string,
+  location: { latitude: number; longitude: number },
+): Promise<{ success: boolean; city?: string; country?: string }> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/sessions/${sessionId}/telemetry`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({ consentTelemetry: true, location }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to record launch location');
+  return data;
+}
+
+export interface PartnerOversightSummary extends Partner {
+  schoolCount: number;
+  sessionCount: number;
+  daysRemaining: number;
+}
+
+export async function listPartnerOversight(): Promise<{ success: boolean; partners: PartnerOversightSummary[] }> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/admin/list`, {
+    headers: await authHeaders(),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to load partner oversight');
+  return data;
+}
+
+export async function fetchPartnerTelemetry(partnerId: string): Promise<{
+  success: boolean;
+  locations: Array<{ label: string; launches: number }>;
+}> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/admin/${partnerId}/telemetry`, {
+    headers: await authHeaders(),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to load partner telemetry');
+  return data;
+}
+
+export async function updatePartnerQuota(
+  partnerId: string,
+  limits: { classLaunchesLimit: number; lessonLaunchesLimit: number; reason?: string },
+): Promise<{ success: boolean }> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/${partnerId}/trial/quota`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify(limits),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to update partner quota');
+  return data;
+}
+
+export async function extendPartnerTrial(
+  partnerId: string,
+  months: number,
+): Promise<{ success: boolean }> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/${partnerId}/trial/extend`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({ months }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to extend partner trial');
+  return data;
+}
+
+export async function provisionPartnerDemoClass(partnerId: string): Promise<{ success: boolean; demoSchoolId: string; demoClassId: string }> {
+  const response = await fetch(`${getApiBaseUrl()}/partners/${partnerId}/provision-demo`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to provision the partner demo class');
+  return data;
+}
+
 export async function approvePartnerTeacher(
   teacherUid: string,
   approve = true,

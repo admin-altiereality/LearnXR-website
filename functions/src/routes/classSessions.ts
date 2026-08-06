@@ -7,6 +7,19 @@ import express from 'express';
 import * as admin from 'firebase-admin';
 
 const router = express.Router();
+const guestJoinAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function canAttemptGuestJoin(key: string): boolean {
+  const now = Date.now();
+  const current = guestJoinAttempts.get(key);
+  if (!current || current.resetAt < now) {
+    guestJoinAttempts.set(key, { count: 1, resetAt: now + 15 * 60 * 1000 });
+    return true;
+  }
+  if (current.count >= 10) return false;
+  current.count += 1;
+  return true;
+}
 
 /**
  * POST /class-sessions/join
@@ -81,6 +94,20 @@ router.post('/join', async (req, res) => {
         success: false,
         error: 'Forbidden',
         message: 'Only students can join a class session',
+      });
+    }
+    if (userData.isGuest === true && !canAttemptGuestJoin(uid)) {
+      return res.status(429).json({
+        success: false,
+        error: 'Too Many Requests',
+        message: 'Too many join attempts. Please wait before trying another code.',
+      });
+    }
+    if (userData.isGuest === true && sessionData.hosted_by_partner !== true) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'Guests can only join partner demo sessions with a valid code.',
       });
     }
 
@@ -209,11 +236,13 @@ router.post('/:sessionId/remove-student', async (req, res) => {
 
     const userRef = db.collection('users').doc(uid);
     const userSnap = await userRef.get();
-    if (userSnap.exists && (userSnap.data()?.role as string) !== 'teacher') {
+    const role = userSnap.data()?.role as string | undefined;
+    const isPartnerSessionOwner = role === 'partner' && sessionData.hosted_by_partner === true && sessionData.teacher_uid === uid;
+    if (userSnap.exists && role !== 'teacher' && !isPartnerSessionOwner) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: 'Only teachers can remove students from a session',
+        message: 'Only the session host can remove students from a session',
       });
     }
 

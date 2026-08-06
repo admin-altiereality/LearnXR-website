@@ -19,9 +19,13 @@ export type PartnerEventType =
   | 'teacher_approved'
   | 'teacher_rejected'
   | 'demo_started'
+  | 'lesson_launched'
   | 'demo_ended'
   | 'quota_exhausted'
-  | 'trial_expired';
+  | 'trial_expired'
+  | 'trial_extended'
+  | 'quota_adjusted'
+  | 'partner_reactivated';
 
 export interface PartnerTrial {
   startsAt: string;
@@ -29,6 +33,9 @@ export interface PartnerTrial {
   classLaunchesLimit: number;
   classLaunchesUsed: number;
   classLaunchesRemaining: number;
+  lessonLaunchesLimit: number;
+  lessonLaunchesUsed: number;
+  lessonLaunchesRemaining: number;
 }
 
 export interface Partner {
@@ -46,6 +53,8 @@ export interface Partner {
   userId: string;
   trial: PartnerTrial;
   schoolIds: string[];
+  demoSchoolId?: string;
+  demoClassId?: string;
   createdAt?: unknown;
   approvedAt?: string;
   approvedBy?: string;

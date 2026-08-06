@@ -266,7 +266,7 @@ router.get('/personalized-learning/recommendations', async (req, res) => {
 
 // --- Teacher Support (teachers and above) ---
 
-const TEACHER_ROLES = ['teacher', 'school', 'principal', 'admin', 'superadmin'];
+const TEACHER_ROLES = ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'];
 
 function canUseTeacherSupport(profile: { role?: string } | null | undefined): boolean {
   if (!profile) return false;

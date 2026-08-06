@@ -99,6 +99,12 @@ const ChannelPartners = () => {
               >
                 See the evidence
               </Link>
+              <Link
+                to="/partner-login"
+                className="inline-flex items-center gap-2 rounded-full border border-teal-400/60 px-5 py-2.5 text-sm font-semibold text-teal-400 transition hover:bg-teal-400/10"
+              >
+                Partner login
+              </Link>
             </div>
           </AnimatedSection>
 

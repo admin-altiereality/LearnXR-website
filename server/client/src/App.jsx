@@ -7,6 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import * as THREE from "three";
 import { ForgotPassword } from './Components/auth/ForgotPassword';
 import { Login } from './Components/auth/Login';
+import { PartnerLogin } from './Components/auth/PartnerLogin';
 import { ProtectedRoute } from './Components/auth/ProtectedRoute';
 import { AdminGuard, QuestionPaperGuard, RoleGuard, StudioGuard, SuperAdminGuard, TeacherGuard } from './Components/auth/RoleGuard';
 import { SecretBackendLogin } from './Components/auth/SecretBackendLogin';
@@ -53,6 +54,7 @@ import ApprovalPending from './screens/ApprovalPending';
 import AssetGenerator from './screens/AssetGenerator';
 import HelpChat from './screens/HelpChat';
 import ThreeDGenerate from './screens/MeshyGenerate';
+import StreetViewLessonCreator from './screens/create/StreetViewLessonCreator';
 import Onboarding from './screens/Onboarding';
 import { PreviewScene } from './screens/PreviewScene';
 import PrivacyPolicy from './screens/PrivacyPolicy';
@@ -63,10 +65,12 @@ import TermsConditions from './screens/TermsConditions';
 import SmoothScroll from './Components/SmoothScroll';
 import ClassManagement from './screens/admin/ClassManagement';
 import LessonEditRequests from './screens/admin/LessonEditRequests';
+import UserGeneratedLessons from './screens/admin/UserGeneratedLessons';
 import ProductionLogs from './screens/admin/ProductionLogs';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import SchoolManagement from './screens/admin/SchoolManagement';
 import PartnerRegistrations from './screens/admin/PartnerRegistrations';
+import PartnerOversight from './screens/admin/PartnerOversight';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
 import PersonalizedLearning from './screens/ai/PersonalizedLearning';
 import ApiDocumentation from './screens/ApiDocumentation';
@@ -138,7 +142,7 @@ const ConditionalSidebar = () => {
   
   // Pages where sidebar should be hidden
   const hideSidebarRoutes = [
-    '/login', '/signup', '/forgot-password',
+    '/login', '/partner-login', '/signup', '/forgot-password',
     '/onboarding', '/approval-pending',
     '/web-preview',
     '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson'
@@ -482,6 +486,7 @@ function App() {
                     <Routes>
                       {/* Public routes - accessible to all users */}
                       <Route path="/login" element={<Login />} />
+                      <Route path="/partner-login" element={<PartnerLogin />} />
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/secretbackend" element={<SecretBackendLogin />} />
@@ -535,6 +540,13 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+                      <Route path="/admin/partner-oversight" element={
+                        <ProtectedRoute>
+                          <SuperAdminGuard>
+                            <PartnerOversight />
+                          </SuperAdminGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       <Route path="/3d-generate" element={
                         <ProtectedRoute>
@@ -544,10 +556,18 @@ function App() {
                         </ProtectedRoute>
                       } />
 
+                      <Route path="/create/street-view" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                            <StreetViewLessonCreator />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'partner', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
@@ -906,6 +926,7 @@ function App() {
                     <Routes>
                       {/* Public routes - accessible to all users */}
                       <Route path="/login" element={<Login />} />
+                      <Route path="/partner-login" element={<PartnerLogin />} />
                       <Route path="/signup" element={<Signup />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/secretbackend" element={<SecretBackendLogin />} />
@@ -960,10 +981,18 @@ function App() {
                         </ProtectedRoute>
                       } />
 
+                      <Route path="/create/street-view" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                            <StreetViewLessonCreator />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'partner', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
@@ -1129,7 +1158,7 @@ function App() {
                         </ProtectedRoute>
                       } />
                       <Route path="/dashboard/partner" element={
-                        <ProtectedRoute>
+                        <ProtectedRoute redirectTo="/partner-login">
                           <RoleGuard allowedRoles={['partner']}>
                             <PartnerDashboard />
                           </RoleGuard>
@@ -1179,6 +1208,13 @@ function App() {
                           <AdminGuard>
                             <LessonEditRequests />
                           </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/user-lessons" element={
+                        <ProtectedRoute>
+                          <SuperAdminGuard>
+                            <UserGeneratedLessons />
+                          </SuperAdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/admin/partners" element={
