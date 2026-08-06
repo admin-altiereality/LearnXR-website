@@ -229,7 +229,11 @@ const getApp = (): express.Application => {
     });
     app.use('/streetview', streetviewRoutes);
     app.use('/user-lessons', (req: Request, res: Response, next: NextFunction) => {
-      const isGenerate = req.method === 'POST' && /^\/[^/]+\/street-view\/?$/.test(req.path);
+      const isGenerate =
+        req.method === 'POST' &&
+        (/^\/[^/]+\/street-view\/?$/.test(req.path) ||
+          /^\/[^/]+\/streetview-tour\/(explore|walk|stops)\/?$/.test(req.path) ||
+          /^\/[^/]+\/streetview-tour\/stops\/[^/]+\/voiceover\/?$/.test(req.path));
       if (isGenerate) return contentGenerationLimiter(req, res, next);
       return next();
     });

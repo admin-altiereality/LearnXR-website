@@ -10,13 +10,25 @@
 
 import { Request, Response, Router } from 'express';
 import * as admin from 'firebase-admin';
+import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/rbac';
 import { fetchAndStitchStreetView } from '../services/streetViewImagery';
 import {
   USER_LESSONS_COLLECTION,
+  MAX_TOUR_STOPS,
   promoteUserGeneratedLesson,
   type UserGeneratedLessonSource,
+  type StreetViewTour,
+  type TourStop,
 } from '../services/userGeneratedLessons';
+import {
+  getTileSession,
+  getPanoramaMetadata,
+  getOrStitchPanorama,
+  searchPanoId,
+  type TileZoomLevel,
+} from '../services/streetViewTileApi';
+import TextToSpeechService from '../services/textToSpeechService';
 
 const router = Router();
 
@@ -222,6 +234,444 @@ router.post(
   }
 );
 
+function clampTileZoom(value: unknown): TileZoomLevel {
+  const n = Number(value);
+  if (n === 2 || n === 4) return n;
+  return 3;
+}
+
+function requireStreetViewApiKey(res: Response): string | null {
+  const apiKey = (process.env.GOOGLE_STREETVIEW_API_KEY || '').trim();
+  if (!apiKey) {
+    res.status(503).json({ success: false, message: 'Google Street View API key is not configured on the server' });
+    return null;
+  }
+  return apiKey;
+}
+
+function tileApiErrorStatus(message: string): number {
+  if (message.includes('No Street View')) return 404;
+  if (message.includes('quota')) return 429;
+  if (message.includes('API key') || message.includes('denied') || message.includes('enabled')) return 503;
+  return 500;
+}
+
+/**
+ * POST /user-lessons/:id/streetview-tour/explore — resolve a location (lat/lng or panoId)
+ * to a stitched skybox + metadata + links, powering the live "walk" explorer UI.
+ */
+router.post(
+  ['/:id/streetview-tour/explore', '/:id/streetview-tour/explore/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    const apiKey = requireStreetViewApiKey(res);
+    if (!apiKey) return;
+
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+
+      const panoIdInput = String(req.body?.panoId || '').trim();
+      const lat = req.body?.lat;
+      const lng = req.body?.lng;
+      const hasLocation = typeof lat === 'number' && typeof lng === 'number' && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+      if (!panoIdInput && !hasLocation) {
+        res.status(400).json({ success: false, message: 'Provide either a panorama ID or a valid lat/lng location.' });
+        return;
+      }
+
+      const zoom = clampTileZoom(req.body?.zoom);
+      const session = await getTileSession(apiKey);
+
+      let panoId = panoIdInput;
+      if (!panoId) {
+        panoId = (await searchPanoId(apiKey, session, lat, lng)) || '';
+        if (!panoId) {
+          res.status(404).json({ success: false, message: 'No Street View imagery available near this location.' });
+          return;
+        }
+      }
+
+      const metadata = await getPanoramaMetadata(apiKey, session, { panoId });
+      const cached = await getOrStitchPanorama(apiKey, session, panoId, zoom, metadata);
+      const skyboxUrl = cached.skyboxUrls[zoom]!;
+
+      res.json({
+        success: true,
+        panoId,
+        lat: metadata.lat,
+        lng: metadata.lng,
+        heading: metadata.heading,
+        skyboxUrl,
+        links: metadata.links,
+        copyright: metadata.copyright || null,
+        zoom,
+      });
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message : 'Street View exploration failed';
+      res.status(tileApiErrorStatus(message)).json({ success: false, message });
+    }
+  }
+);
+
+/**
+ * POST /user-lessons/:id/streetview-tour/walk — hop to a linked neighboring panorama.
+ * Identical response shape to `explore`; kept as a separate route for clarity in client code
+ * and so a future rate-limit tier can be tuned independently of the initial search.
+ */
+router.post(
+  ['/:id/streetview-tour/walk', '/:id/streetview-tour/walk/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    const apiKey = requireStreetViewApiKey(res);
+    if (!apiKey) return;
+
+    const toPanoId = String(req.body?.toPanoId || '').trim();
+    if (!toPanoId) {
+      res.status(400).json({ success: false, message: 'toPanoId is required' });
+      return;
+    }
+
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+
+      const zoom = clampTileZoom(req.body?.zoom);
+      const session = await getTileSession(apiKey);
+      const metadata = await getPanoramaMetadata(apiKey, session, { panoId: toPanoId });
+      const cached = await getOrStitchPanorama(apiKey, session, toPanoId, zoom, metadata);
+      const skyboxUrl = cached.skyboxUrls[zoom]!;
+
+      res.json({
+        success: true,
+        panoId: toPanoId,
+        lat: metadata.lat,
+        lng: metadata.lng,
+        heading: metadata.heading,
+        skyboxUrl,
+        links: metadata.links,
+        copyright: metadata.copyright || null,
+        zoom,
+      });
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message : 'Street View walk failed';
+      res.status(tileApiErrorStatus(message)).json({ success: false, message });
+    }
+  }
+);
+
+function getTour(data: admin.firestore.DocumentData): StreetViewTour {
+  const tour = data.streetViewTour as StreetViewTour | undefined;
+  return tour && Array.isArray(tour.stops) ? tour : { stops: [], tileZoom: 3 };
+}
+
+/**
+ * POST /user-lessons/:id/streetview-tour/stops — append a new stop, bookmarking the
+ * currently-explored panorama (already stitched/cached by explore or walk).
+ */
+router.post(
+  ['/:id/streetview-tour/stops', '/:id/streetview-tour/stops/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    const apiKey = requireStreetViewApiKey(res);
+    if (!apiKey) return;
+
+    const panoId = String(req.body?.panoId || '').trim();
+    if (!panoId) {
+      res.status(400).json({ success: false, message: 'panoId is required' });
+      return;
+    }
+
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+
+      const tour = getTour(draft.data);
+      if (tour.stops.length >= MAX_TOUR_STOPS) {
+        res.status(400).json({ success: false, message: `A tour may have at most ${MAX_TOUR_STOPS} stops.` });
+        return;
+      }
+
+      const zoom = clampTileZoom(req.body?.zoom ?? tour.tileZoom);
+      const session = await getTileSession(apiKey);
+      const metadata = await getPanoramaMetadata(apiKey, session, { panoId });
+      const cached = await getOrStitchPanorama(apiKey, session, panoId, zoom, metadata);
+      const skyboxUrl = cached.skyboxUrls[zoom]!;
+
+      const stop: TourStop = {
+        id: randomUUID(),
+        order: tour.stops.length + 1,
+        panoId,
+        lat: metadata.lat,
+        lng: metadata.lng,
+        heading: Number(req.body?.heading) || 0,
+        pitch: Number(req.body?.pitch) || 0,
+        label: typeof req.body?.label === 'string' ? req.body.label.trim().slice(0, 200) : `Stop ${tour.stops.length + 1}`,
+        skyboxUrl,
+        links: metadata.links,
+        assets: [],
+        voiceover: null,
+        copyright: metadata.copyright,
+      };
+
+      const updatedTour: StreetViewTour = { stops: [...tour.stops, stop], tileZoom: zoom };
+      await draft.ref.update({ streetViewTour: updatedTour, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+      res.json({ success: true, stop });
+    } catch (error: any) {
+      const message = typeof error?.message === 'string' ? error.message : 'Failed to add tour stop';
+      res.status(tileApiErrorStatus(message)).json({ success: false, message });
+    }
+  }
+);
+
+const STOP_PATCHABLE_FIELDS = ['label', 'heading', 'pitch'] as const;
+
+/**
+ * PATCH /user-lessons/:id/streetview-tour/stops/:stopId — rename/adjust an existing stop.
+ */
+router.patch(
+  ['/:id/streetview-tour/stops/:stopId', '/:id/streetview-tour/stops/:stopId/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const tour = getTour(draft.data);
+      const idx = tour.stops.findIndex((s) => s.id === req.params.stopId);
+      if (idx === -1) {
+        res.status(404).json({ success: false, message: 'Stop not found' });
+        return;
+      }
+      const stop = { ...tour.stops[idx] };
+      for (const field of STOP_PATCHABLE_FIELDS) {
+        if (req.body?.[field] === undefined) continue;
+        (stop as any)[field] = field === 'label' ? String(req.body[field]).trim().slice(0, 200) : Number(req.body[field]);
+      }
+      const stops = [...tour.stops];
+      stops[idx] = stop;
+      await draft.ref.update({ 'streetViewTour.stops': stops, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      res.json({ success: true, stop });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to update stop' });
+    }
+  }
+);
+
+/**
+ * DELETE /user-lessons/:id/streetview-tour/stops/:stopId — remove a stop and renumber the rest.
+ */
+router.delete(
+  ['/:id/streetview-tour/stops/:stopId', '/:id/streetview-tour/stops/:stopId/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const tour = getTour(draft.data);
+      const remaining = tour.stops.filter((s) => s.id !== req.params.stopId).map((s, i) => ({ ...s, order: i + 1 }));
+      await draft.ref.update({ 'streetViewTour.stops': remaining, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to delete stop' });
+    }
+  }
+);
+
+/**
+ * POST /user-lessons/:id/streetview-tour/stops/reorder — persist a new stop order.
+ * Body: { stopIds: string[] } — the full list of stop IDs in the desired order.
+ */
+router.post(
+  ['/:id/streetview-tour/stops/reorder', '/:id/streetview-tour/stops/reorder/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    const stopIds = Array.isArray(req.body?.stopIds) ? req.body.stopIds.map((v: unknown) => String(v)) : [];
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const tour = getTour(draft.data);
+      const byId = new Map<string, TourStop>(tour.stops.map((s): [string, TourStop] => [s.id, s]));
+      const reordered = stopIds
+        .map((id: string) => byId.get(id))
+        .filter((s: TourStop | undefined): s is TourStop => !!s)
+        .map((s: TourStop, i: number) => ({ ...s, order: i + 1 }));
+      if (reordered.length !== tour.stops.length) {
+        res.status(400).json({ success: false, message: 'stopIds must include every existing stop exactly once' });
+        return;
+      }
+      await draft.ref.update({ 'streetViewTour.stops': reordered, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      res.json({ success: true, stops: reordered });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to reorder stops' });
+    }
+  }
+);
+
+/**
+ * POST /user-lessons/:id/streetview-tour/stops/:stopId/assets — place a floating 3D asset on a stop.
+ */
+router.post(
+  ['/:id/streetview-tour/stops/:stopId/assets', '/:id/streetview-tour/stops/:stopId/assets/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    const assetId = typeof req.body?.assetId === 'string' ? req.body.assetId.trim() : undefined;
+    const glbUrl = String(req.body?.glbUrl || '').trim();
+    if (!glbUrl) {
+      res.status(400).json({ success: false, message: 'glbUrl is required' });
+      return;
+    }
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const tour = getTour(draft.data);
+      const idx = tour.stops.findIndex((s) => s.id === req.params.stopId);
+      if (idx === -1) {
+        res.status(404).json({ success: false, message: 'Stop not found' });
+        return;
+      }
+      const stop = { ...tour.stops[idx] };
+      const asset = {
+        id: randomUUID(),
+        assetId,
+        glbUrl,
+        ath: Number(req.body?.ath) || 0,
+        atv: Number(req.body?.atv) || 0,
+        depth: req.body?.depth !== undefined ? Number(req.body.depth) : undefined,
+        scale: req.body?.scale !== undefined ? Number(req.body.scale) : undefined,
+        rotationY: req.body?.rotationY !== undefined ? Number(req.body.rotationY) : undefined,
+      };
+      stop.assets = [...(stop.assets || []), asset];
+      const stops = [...tour.stops];
+      stops[idx] = stop;
+      await draft.ref.update({ 'streetViewTour.stops': stops, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      res.json({ success: true, asset });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to attach asset to stop' });
+    }
+  }
+);
+
+/**
+ * DELETE /user-lessons/:id/streetview-tour/stops/:stopId/assets/:assetInstanceId
+ */
+router.delete(
+  ['/:id/streetview-tour/stops/:stopId/assets/:assetInstanceId', '/:id/streetview-tour/stops/:stopId/assets/:assetInstanceId/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const tour = getTour(draft.data);
+      const idx = tour.stops.findIndex((s) => s.id === req.params.stopId);
+      if (idx === -1) {
+        res.status(404).json({ success: false, message: 'Stop not found' });
+        return;
+      }
+      const stop = { ...tour.stops[idx] };
+      stop.assets = (stop.assets || []).filter((a) => a.id !== req.params.assetInstanceId);
+      const stops = [...tour.stops];
+      stops[idx] = stop;
+      await draft.ref.update({ 'streetViewTour.stops': stops, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to remove asset from stop' });
+    }
+  }
+);
+
+/**
+ * POST /user-lessons/:id/streetview-tour/stops/:stopId/voiceover — generate narration audio
+ * for a stop via OpenAI TTS (same service the curriculum pipeline already uses).
+ */
+router.post(
+  ['/:id/streetview-tour/stops/:stopId/voiceover', '/:id/streetview-tour/stops/:stopId/voiceover/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    const isStaff = req.userProfile!.role === 'admin' || req.userProfile!.role === 'superadmin';
+    const script = String(req.body?.script || '').trim().slice(0, 2000);
+    if (!script) {
+      res.status(400).json({ success: false, message: 'script is required' });
+      return;
+    }
+    try {
+      const db = admin.firestore();
+      const draft = await getOwnedDraft(db, req.params.id, uid, isStaff);
+      if (!draft) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const tour = getTour(draft.data);
+      const idx = tour.stops.findIndex((s) => s.id === req.params.stopId);
+      if (idx === -1) {
+        res.status(404).json({ success: false, message: 'Stop not found' });
+        return;
+      }
+
+      const tts = new TextToSpeechService(process.env.OPENAI_AVATAR_API_KEY || process.env.OPENAI_API_KEY);
+      const filename = `streetview_tours/${req.params.id}/${req.params.stopId}_${Date.now()}.mp3`;
+      const audioUrl = await tts.generateSpeechFile(script, filename);
+
+      const stop = { ...tour.stops[idx], voiceover: { script, audioUrl, language: 'en' } };
+      const stops = [...tour.stops];
+      stops[idx] = stop;
+      await draft.ref.update({ 'streetViewTour.stops': stops, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      res.json({ success: true, voiceover: stop.voiceover });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to generate voiceover' });
+    }
+  }
+);
+
 /**
  * POST /user-lessons/:id/attach-asset — link an existing meshy_assets doc onto the draft.
  */
@@ -286,8 +736,10 @@ router.post(
         res.status(404).json({ success: false, message: 'Draft lesson not found' });
         return;
       }
-      if (!snap.data()?.skybox_url) {
-        res.status(400).json({ success: false, message: 'Generate a skybox before submitting for review.' });
+      const lessonData = snap.data() || {};
+      const tour = lessonData.streetViewTour as StreetViewTour | undefined;
+      if (!lessonData.skybox_url && !tour?.stops?.length) {
+        res.status(400).json({ success: false, message: 'Add at least one stop before submitting for review.' });
         return;
       }
       await ref.update({

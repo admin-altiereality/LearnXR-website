@@ -188,24 +188,43 @@ const UserGeneratedLessons = () => {
             {lessons.map((lesson) => {
               const isProcessing = processingId === lesson.id;
               const status = lesson.moderation?.status || 'draft';
+              const tourStops = lesson.streetViewTour?.stops || [];
+              const isTour = tourStops.length > 0;
               return (
                 <Card key={lesson.id} className="border-border overflow-hidden">
                   <CardContent className="p-4 flex flex-col sm:flex-row gap-4">
-                    <div className="w-full sm:w-40 h-28 rounded-lg bg-muted overflow-hidden shrink-0">
-                      {lesson.skybox_url ? (
-                        <img src={lesson.skybox_url} alt={lesson.title} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
-                          No preview
+                    {isTour ? (
+                      <div className="w-full sm:w-56 shrink-0">
+                        <div className="flex gap-1 overflow-x-auto">
+                          {tourStops.map((stop, i) => (
+                            <div key={stop.id} className="relative w-16 h-16 rounded-md bg-muted overflow-hidden shrink-0">
+                              <img src={stop.skyboxUrl} alt={stop.label || `Stop ${i + 1}`} className="w-full h-full object-cover" />
+                              <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[10px] px-1 rounded-tl">
+                                {i + 1}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                    </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">{tourStops.length} stop(s)</p>
+                      </div>
+                    ) : (
+                      <div className="w-full sm:w-40 h-28 rounded-lg bg-muted overflow-hidden shrink-0">
+                        {lesson.skybox_url ? (
+                          <img src={lesson.skybox_url} alt={lesson.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                            No preview
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div className="flex-1 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline" className={statusBadgeStyles[status]}>
                           {status}
                         </Badge>
                         <Badge variant="outline">{sourceLabels[lesson.source] || lesson.source}</Badge>
+                        {isTour && <Badge variant="outline">Tour</Badge>}
                         <span className="text-sm font-medium text-foreground">{lesson.title}</span>
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -213,7 +232,11 @@ const UserGeneratedLessons = () => {
                           <Clock className="w-3 h-3" /> Submitted {formatDate(lesson.moderation?.submittedAt)}
                         </span>
                         <span>Owner role: {lesson.ownerRole}</span>
-                        <span>{(lesson.asset_ids || []).length} asset(s) attached</span>
+                        <span>
+                          {isTour
+                            ? `${tourStops.reduce((n, s) => n + (s.assets?.length || 0), 0)} asset(s) across ${tourStops.length} stop(s)`
+                            : `${(lesson.asset_ids || []).length} asset(s) attached`}
+                        </span>
                       </div>
                       {status === 'rejected' && lesson.moderation?.rejectionReason && (
                         <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">

@@ -915,6 +915,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Street View Tile API session token + stitched-panorama cache, keyed by real-world
+    // panoId. Admin-SDK-only (Cloud Functions); never read or written by clients directly.
+    match /_config/streetview_tile_session {
+      allow read, write: if false;
+    }
+    match /streetview_panorama_cache/{panoId} {
+      allow read, write: if false;
+    }
+
     // Immutable privileged partner lifecycle and entitlement audit records.
     match /partner_audit_log/{auditId} {
       allow read: if isSuperadmin();
