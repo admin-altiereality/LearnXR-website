@@ -406,6 +406,15 @@
       "density": "SPARSE_ALL"
     },
     {
+      "collectionGroup": "meshy_assets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "DESCENDING" }
+      ],
+      "density": "SPARSE_ALL"
+    },
+    {
       "collectionGroup": "user_generated_lessons",
       "queryScope": "COLLECTION",
       "fields": [

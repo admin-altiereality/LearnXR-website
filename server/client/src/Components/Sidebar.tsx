@@ -30,7 +30,8 @@ import {
   FaClipboardList,
   FaStar,
   FaHandshake,
-  FaChartLine
+  FaChartLine,
+  FaMapMarkerAlt
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -167,6 +168,7 @@ const Sidebar = () => {
       items.push({ path: '/lessons', label: 'Lessons', icon: FaBookOpen });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/main', label: 'Create', icon: FaFlask });
+      items.push({ path: '/create/street-view', label: 'Street View Lesson', icon: FaMapMarkerAlt });
       items.push({ path: '/question-paper/library', label: 'Question Papers', icon: FaClipboardList });
       return items;
     }
@@ -198,6 +200,7 @@ const Sidebar = () => {
     // Creator tools - teachers, schools, admin, superadmin (includes AI Teacher Support panel in top-right)
     if (canCreate) {
       items.push({ path: '/main', label: 'Create', icon: FaFlask });
+      items.push({ path: '/create/street-view', label: 'Street View Lesson', icon: FaMapMarkerAlt });
     }
     // Spiral (Kids) - voice-first minimal creator for LKG / Class 1 students.
     // Kept alongside the existing Create entry so both old and new pages coexist

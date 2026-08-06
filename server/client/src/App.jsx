@@ -54,6 +54,7 @@ import ApprovalPending from './screens/ApprovalPending';
 import AssetGenerator from './screens/AssetGenerator';
 import HelpChat from './screens/HelpChat';
 import ThreeDGenerate from './screens/MeshyGenerate';
+import StreetViewLessonCreator from './screens/create/StreetViewLessonCreator';
 import Onboarding from './screens/Onboarding';
 import { PreviewScene } from './screens/PreviewScene';
 import PrivacyPolicy from './screens/PrivacyPolicy';
@@ -554,6 +555,14 @@ function App() {
                         </ProtectedRoute>
                       } />
 
+                      <Route path="/create/street-view" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                            <StreetViewLessonCreator />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
@@ -968,6 +977,14 @@ function App() {
                           <TeacherGuard>
                             <ThreeDGenerate />
                           </TeacherGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      <Route path="/create/street-view" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                            <StreetViewLessonCreator />
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
 
