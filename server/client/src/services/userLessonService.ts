@@ -61,6 +61,29 @@ export async function createDraftLesson(
   return data;
 }
 
+export async function updateDraftLesson(
+  lessonId: string,
+  fields: Partial<{
+    title: string;
+    skybox_url: string;
+    skybox_glb_url: string;
+    asset_urls: string[];
+    asset_ids: string[];
+    curriculum: string;
+    class_name: string;
+    subject: string;
+  }>
+): Promise<{ success: boolean }> {
+  const response = await fetch(`${getApiBaseUrl()}/user-lessons/${lessonId}`, {
+    method: 'PATCH',
+    headers: await authHeaders(),
+    body: JSON.stringify(fields),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to update draft lesson');
+  return data;
+}
+
 export async function listMyLessons(): Promise<{ success: boolean; lessons: UserGeneratedLesson[] }> {
   const response = await fetch(`${getApiBaseUrl()}/user-lessons/mine`, {
     headers: await authHeaders(),

@@ -74,6 +74,53 @@ router.post(['/', ''], requireLessonAuthor, async (req: Request, res: Response):
   }
 });
 
+const PATCHABLE_FIELDS = [
+  'title',
+  'skybox_url',
+  'skybox_glb_url',
+  'asset_urls',
+  'asset_ids',
+  'curriculum',
+  'class_name',
+  'subject',
+] as const;
+
+/**
+ * PATCH /user-lessons/:id — owner updates safe scalar/array fields on their own draft
+ * (used by the Create page and Spiral scene "Submit for review" flows, which already
+ * have a skybox/assets in memory and don't need to re-generate via Street View).
+ */
+router.patch(
+  ['/:id', '/:id/'],
+  requireLessonAuthor,
+  async (req: Request, res: Response): Promise<void> => {
+    const uid = req.user!.uid;
+    try {
+      const db = admin.firestore();
+      const ref = db.collection(USER_LESSONS_COLLECTION).doc(req.params.id);
+      const snap = await ref.get();
+      if (!snap.exists || snap.data()?.ownerUid !== uid) {
+        res.status(404).json({ success: false, message: 'Draft lesson not found' });
+        return;
+      }
+      const update: Record<string, unknown> = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      for (const field of PATCHABLE_FIELDS) {
+        if (req.body?.[field] === undefined) continue;
+        if (field === 'title') update[field] = String(req.body[field]).trim().slice(0, 200);
+        else if (field === 'asset_urls' || field === 'asset_ids') {
+          update[field] = Array.isArray(req.body[field]) ? req.body[field].map((v: unknown) => String(v)).slice(0, 50) : [];
+        } else {
+          update[field] = String(req.body[field]).slice(0, 300);
+        }
+      }
+      await ref.update(update);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error?.message || 'Failed to update draft lesson' });
+    }
+  }
+);
+
 /**
  * GET /user-lessons/mine — list the caller's own drafts/submissions.
  */
