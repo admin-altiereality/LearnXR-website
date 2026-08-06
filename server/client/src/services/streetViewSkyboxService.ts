@@ -4,6 +4,7 @@
  */
 
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { auth } from '../config/firebase';
 
 export interface StreetViewSkyboxParams {
   location?: { lat: number; lng: number };
@@ -36,9 +37,10 @@ export async function generateStreetViewSkybox(
 ): Promise<StreetViewSkyboxResult> {
   const base = getApiBaseUrl().replace(/\/$/, '');
   const url = `${base}/streetview/generate-skybox`;
+  const token = await auth.currentUser?.getIdToken();
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({
       location: params.location,
       placeId: params.placeId,
