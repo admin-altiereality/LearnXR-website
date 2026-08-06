@@ -54,7 +54,12 @@ import { getLessonBundle } from '../../services/firestore/getLessonBundle';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClassSession } from '../../contexts/ClassSessionContext';
 import { useLesson } from '../../contexts/LessonContext';
-import { launchPartnerDemoLesson } from '../../services/partnerService';
+import {
+  launchPartnerDemoLesson,
+  fetchPartnerMe,
+  provisionPartnerDemoClass,
+  startPartnerDemoSession,
+} from '../../services/partnerService';
 
 const ZOOM_OPTIONS: { value: TourTileZoom; label: string }[] = [
   { value: 2, label: 'Low' },
@@ -375,10 +380,25 @@ export default function StreetViewLessonCreator() {
 
       if (isPartner) {
         const rawSession = sessionStorage.getItem('learnxr_partner_demo_session');
-        const partnerSession = rawSession ? JSON.parse(rawSession) : null;
+        let partnerSession = rawSession ? JSON.parse(rawSession) : null;
         if (!partnerSession?.id) {
-          toast.error('Start a Channel Partner demo session from your Partner Dashboard first.');
-          return;
+          // Auto-start a demo session (provision the partner's demo school/class if needed)
+          // so launching never requires a separate manual step on the Partner Dashboard.
+          const me = await fetchPartnerMe();
+          if (!me.trialActive) {
+            toast.error(me.trialBlockReason || 'Your Channel Partner trial is inactive.');
+            return;
+          }
+          const provisioned = await provisionPartnerDemoClass(me.partner.id);
+          const started = await startPartnerDemoSession(provisioned.demoSchoolId, provisioned.demoClassId);
+          partnerSession = {
+            id: started.sessionId,
+            code: started.sessionCode,
+            schoolId: provisioned.demoSchoolId,
+            classId: provisioned.demoClassId,
+          };
+          sessionStorage.setItem('learnxr_partner_demo_session', JSON.stringify(partnerSession));
+          toast.success(`Demo session started. Code: ${started.sessionCode}`);
         }
         await launchPartnerDemoLesson(partnerSession.id, {
           chapterId: lessonId,

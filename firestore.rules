@@ -908,10 +908,12 @@ service cloud.firestore {
     }
 
     // Teacher/partner-authored lessons (Street View, Create-page scenes, Spiral scenes).
-    // Owner-launchable immediately without review; all writes go through Cloud Functions.
+    // Owner-launchable immediately to their class without review — students in that class
+    // read this doc directly via getLessonBundle(source: 'user_generated'), the same way
+    // they already read broadly-readable `curriculum_chapters` content. All writes go
+    // through Cloud Functions (Admin SDK).
     match /user_generated_lessons/{lessonId} {
-      allow read: if isAuthenticated() &&
-        (isAdminOrSuperadmin() || resource.data.ownerUid == request.auth.uid);
+      allow read: if isAuthenticated();
       allow write: if false;
     }
 
