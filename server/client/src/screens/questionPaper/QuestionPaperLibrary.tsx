@@ -22,6 +22,7 @@ import {
 } from '../../services/questionPaperService';
 import type { QuestionPaperDoc } from '../../types/questionPaper';
 import { useAuth } from '../../contexts/AuthContext';
+import { listPartnerSchools } from '../../services/partnerService';
 
 const formatDate = (value: unknown): string => {
   if (!value) return '';
@@ -49,12 +50,20 @@ const QuestionPaperLibrary = () => {
   const role = (profile?.role ?? '').toString().toLowerCase().replace(/\s+/g, '');
   const isAdminView = role === 'admin' || role === 'superadmin';
   const isSchoolLead = role === 'principal' || role === 'school';
+  const isPartner = role === 'partner';
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       // Admins/superadmins see every paper; school leads see all papers in their school;
-      // teachers see only their own.
+      // partners see papers across their own school portfolio; teachers see only their own.
+      if (isPartner) {
+        const schoolsRes = await listPartnerSchools();
+        const schoolIds = (schoolsRes.schools || []).map((s) => s.id);
+        const res = schoolIds.length > 0 ? await listQuestionPapers({ all: true, schoolIds }) : [];
+        setPapers(res);
+        return;
+      }
       const opts = isAdminView
         ? { all: true as const }
         : isSchoolLead && (profile?.school_id || profile?.managed_school_id)
@@ -67,7 +76,7 @@ const QuestionPaperLibrary = () => {
     } finally {
       setLoading(false);
     }
-  }, [isAdminView, isSchoolLead, profile?.school_id, profile?.managed_school_id]);
+  }, [isAdminView, isSchoolLead, isPartner, profile?.school_id, profile?.managed_school_id]);
 
   useEffect(() => {
     void refresh();

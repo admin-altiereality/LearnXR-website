@@ -37,6 +37,8 @@ import { AssetViewerWithSkybox } from './AssetViewerWithSkybox';
 import { db } from '../config/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { incrementStyleUsage } from '../services/styleUsageService';
+import { createDraftLesson, updateDraftLesson, submitLessonForReview } from '../services/userLessonService';
+import { toast } from 'react-toastify';
 import { SeparateGenerationProgress } from './SeparateGenerationProgress';
 import { TeacherAvatar } from './TeacherAvatar';
 import { FloatingMessageBox } from './FloatingMessageBox';
@@ -112,6 +114,7 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox, disableTeacherAvat
   const assetGenerationProgress = generationState?.assetGenerationProgress || null;
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [showSendToClassModal, setShowSendToClassModal] = useState(false);
+  const [submittingSceneForReview, setSubmittingSceneForReview] = useState(false);
   const [generatedImageId, setGeneratedImageId] = useState(null);
   const [generatedVariations, setGeneratedVariations] = useState([]);
   const [currentVariationIndex, setCurrentVariationIndex] = useState(0);
@@ -4742,6 +4745,32 @@ const MainSection = ({ setBackgroundSkybox, backgroundSkybox, disableTeacherAvat
             {activeSessionId ? (
               <>
                 <Button variant="outline" onClick={() => setShowSendToClassModal(false)}>Cancel</Button>
+                <Button
+                  variant="outline"
+                  disabled={submittingSceneForReview || !currentImageForDownload}
+                  onClick={async () => {
+                    if (!currentImageForDownload) return;
+                    const imageUrl = currentImageForDownload.image || currentImageForDownload.image_jpg;
+                    if (!imageUrl) return;
+                    setSubmittingSceneForReview(true);
+                    try {
+                      const title = selectedSkybox?.name || prompt || "Teacher's scene";
+                      const { lessonId } = await createDraftLesson(title, 'create_scene');
+                      await updateDraftLesson(lessonId, {
+                        skybox_url: imageUrl,
+                        skybox_glb_url: currentImageForDownload.file_url || imageUrl,
+                      });
+                      await submitLessonForReview(lessonId);
+                      toast.success('Scene submitted for Super Admin review.');
+                    } catch (err) {
+                      toast.error(err?.message || 'Failed to submit scene for review.');
+                    } finally {
+                      setSubmittingSceneForReview(false);
+                    }
+                  }}
+                >
+                  Submit for review
+                </Button>
                 <Button
                   onClick={async () => {
                     if (!activeSessionId || !user?.uid || !currentImageForDownload) return;

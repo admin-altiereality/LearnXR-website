@@ -54,6 +54,7 @@ import ApprovalPending from './screens/ApprovalPending';
 import AssetGenerator from './screens/AssetGenerator';
 import HelpChat from './screens/HelpChat';
 import ThreeDGenerate from './screens/MeshyGenerate';
+import StreetViewLessonCreator from './screens/create/StreetViewLessonCreator';
 import Onboarding from './screens/Onboarding';
 import { PreviewScene } from './screens/PreviewScene';
 import PrivacyPolicy from './screens/PrivacyPolicy';
@@ -64,6 +65,7 @@ import TermsConditions from './screens/TermsConditions';
 import SmoothScroll from './Components/SmoothScroll';
 import ClassManagement from './screens/admin/ClassManagement';
 import LessonEditRequests from './screens/admin/LessonEditRequests';
+import UserGeneratedLessons from './screens/admin/UserGeneratedLessons';
 import ProductionLogs from './screens/admin/ProductionLogs';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import SchoolManagement from './screens/admin/SchoolManagement';
@@ -554,10 +556,18 @@ function App() {
                         </ProtectedRoute>
                       } />
 
+                      <Route path="/create/street-view" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                            <StreetViewLessonCreator />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'partner', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
@@ -971,10 +981,18 @@ function App() {
                         </ProtectedRoute>
                       } />
 
+                      <Route path="/create/street-view" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'partner', 'admin', 'superadmin']}>
+                            <StreetViewLessonCreator />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
                       {/* Protected routes - require authentication and role-based access */}
                       <Route path="/main" element={
                         <ProtectedRoute>
-                          <RoleGuard allowedRoles={['teacher', 'student', 'admin', 'superadmin']}>
+                          <RoleGuard allowedRoles={['teacher', 'student', 'partner', 'admin', 'superadmin']}>
                             <MainSection 
                               setBackgroundSkybox={setBackgroundSkybox}
                               backgroundSkybox={backgroundSkybox}
@@ -1190,6 +1208,13 @@ function App() {
                           <AdminGuard>
                             <LessonEditRequests />
                           </AdminGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/user-lessons" element={
+                        <ProtectedRoute>
+                          <SuperAdminGuard>
+                            <UserGeneratedLessons />
+                          </SuperAdminGuard>
                         </ProtectedRoute>
                       } />
                       <Route path="/admin/partners" element={

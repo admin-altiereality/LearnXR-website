@@ -94,6 +94,45 @@ function chunkArray<T>(array: T[], size: number = 30): T[][] {
   return chunks;
 }
 
+/**
+ * Wraps each Street View Tour stop as a synthetic curriculum-shaped topic (topic_id
+ * `${lessonId}__stop_${stop.id}`) so the rest of this pipeline (and VRLessonPlayerKrpano)
+ * needs no tour-specific logic — a tour is just a chapter with one topic per stop.
+ * Mirrors `buildTourTopics` in functions/src/services/userGeneratedLessons.ts.
+ */
+function buildTourStopTopics(lessonId: string, fallbackName: string, stops: any[]): any[] {
+  return stops.map((stop: any, index: number) => ({
+    topic_id: `${lessonId}__stop_${stop.id}`,
+    topic_name: stop.label || fallbackName || `Stop ${index + 1}`,
+    topic_priority: stop.order ?? index + 1,
+    learning_objective: '',
+    skybox_url: stop.skyboxUrl || '',
+    skybox_glb_url: stop.skyboxUrl || '',
+    asset_urls: Array.isArray(stop.assets) ? stop.assets.map((a: any) => a.glbUrl).filter(Boolean) : [],
+    asset_ids: Array.isArray(stop.assets) ? stop.assets.map((a: any) => a.assetId).filter(Boolean) : [],
+    assetPlacements: Array.isArray(stop.assets)
+      ? stop.assets.map((a: any) => ({ assetId: a.assetId, url: a.glbUrl, ath: a.ath, atv: a.atv, depth: a.depth, scale: a.scale, rotationY: a.rotationY }))
+      : [],
+    ttsAudio: stop.voiceover?.audioUrl
+      ? [{ id: `${stop.id}_voiceover`, script_type: 'intro', audio_url: stop.voiceover.audioUrl, language: stop.voiceover.language || 'en' }]
+      : [],
+    avatar_intro: stop.voiceover?.script || '',
+    streetViewStop: {
+      stopId: stop.id,
+      panoId: stop.panoId,
+      lat: stop.lat,
+      lng: stop.lng,
+      heading: stop.heading,
+      pitch: stop.pitch,
+      links: stop.links || [],
+      copyright: stop.copyright || null,
+    },
+    isTourStop: true,
+    isTourStopIndex: index,
+    tourStopCount: stops.length,
+  }));
+}
+
 function isRetiredMeshyAsset(asset: any): boolean {
   return Boolean(
     asset?.active === false ||
@@ -576,8 +615,10 @@ export async function getLessonBundle(params: {
   topicId?: string; // Optional: specific topic to extract data from
   userId?: string; // Optional: when Associate, fetch and overlay their draft
   userRole?: string; // Optional: must be 'associate' to overlay draft
+  /** 'user_generated' fetches from user_generated_lessons instead of curriculum_chapters (Street View / Create-scene / Spiral-scene drafts). */
+  source?: 'curriculum' | 'user_generated';
 }): Promise<LessonBundle> {
-  const { chapterId, lang, topicId, userId, userRole } = params;
+  const { chapterId, lang, topicId, userId, userRole, source = 'curriculum' } = params;
 
   const cacheKey = CacheManager.getBundleKey(chapterId, topicId, lang);
   const cached = cacheManager.get<LessonBundle>(cacheKey);
@@ -607,18 +648,59 @@ export async function getLessonBundle(params: {
   console.log(`[getLessonBundle] Fetching bundle for chapter ${chapterId}, language ${lang}`);
 
   try {
-    // Step 1: Fetch chapter document
-    const chapterRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId);
-    const chapterSnap = await getDoc(chapterRef);
+    // Step 1: Fetch chapter document (or, for a user-generated lesson, wrap its
+    // draft in the same { id, topics: [...] } shape the rest of this pipeline expects).
+    let chapterData: any;
+    if (source === 'user_generated') {
+      const lessonRef = doc(db, 'user_generated_lessons', chapterId);
+      const lessonSnap = await getDoc(lessonRef);
+      if (!lessonSnap.exists()) {
+        throw new Error(`Lesson ${chapterId} not found`);
+      }
+      const lessonData = lessonSnap.data() as Record<string, any>;
+      const tourStops = Array.isArray(lessonData.streetViewTour?.stops) ? lessonData.streetViewTour.stops : [];
 
-    if (!chapterSnap.exists()) {
-      throw new Error(`Chapter ${chapterId} not found`);
+      chapterData = {
+        id: lessonSnap.id,
+        chapter_name: lessonData.title || 'My Lesson',
+        chapter_number: 1,
+        curriculum: lessonData.curriculum || '',
+        class_name: lessonData.class_name || '',
+        subject: lessonData.subject || '',
+        isStreetViewTour: tourStops.length > 0,
+        topics:
+          tourStops.length > 0
+            ? buildTourStopTopics(chapterId, lessonData.title || 'My Lesson', tourStops)
+            : [
+                {
+                  topic_id: chapterId,
+                  topic_name: lessonData.title || 'My Lesson',
+                  topic_priority: 1,
+                  learning_objective: '',
+                  skybox_url: lessonData.skybox_url || '',
+                  skybox_glb_url: lessonData.skybox_glb_url || lessonData.skybox_url || '',
+                  asset_urls: Array.isArray(lessonData.asset_urls) ? lessonData.asset_urls : [],
+                  asset_ids: Array.isArray(lessonData.asset_ids) ? lessonData.asset_ids : [],
+                  sharedAssets: {
+                    meshy_asset_ids: Array.isArray(lessonData.meshy_asset_ids) ? lessonData.meshy_asset_ids : [],
+                    asset_ids: Array.isArray(lessonData.asset_ids) ? lessonData.asset_ids : [],
+                  },
+                },
+              ],
+      };
+    } else {
+      const chapterRef = doc(db, COLLECTION_CURRICULUM_CHAPTERS, chapterId);
+      const chapterSnap = await getDoc(chapterRef);
+
+      if (!chapterSnap.exists()) {
+        throw new Error(`Chapter ${chapterId} not found`);
+      }
+
+      chapterData = {
+        id: chapterSnap.id,
+        ...chapterSnap.data(),
+      };
     }
-
-    const chapterData = {
-      id: chapterSnap.id,
-      ...chapterSnap.data(),
-    };
 
     console.log(`[getLessonBundle] Chapter loaded:`, {
       id: chapterData.id,
@@ -1023,10 +1105,15 @@ export async function getLessonBundle(params: {
     });
 
     // Filter TTS by language and ensure language field is set
-    const tts = filterByLanguage(ttsRaw, lang).map(t => ({
+    let tts = filterByLanguage(ttsRaw, lang).map(t => ({
       ...t,
       language: t.language || t.lang || lang, // Ensure language field is explicitly set
     }));
+    // Street View Tour stops embed their voiceover audio inline on the topic (no chapter_tts
+    // doc/tts_ids) — surface it the same way so the player's existing TTS pipeline just works.
+    if (Array.isArray(topic?.ttsAudio) && topic.ttsAudio.length > 0) {
+      tts = topic.ttsAudio.map((t: any) => ({ ...t, language: t.language || lang }));
+    }
     
     // Enhanced logging for TTS debugging
     console.log(`[getLessonBundle] TTS processing for language ${lang}:`, {

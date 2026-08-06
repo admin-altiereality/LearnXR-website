@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-toastify';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -21,7 +22,7 @@ import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krp
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
-import { reportSessionProgress, updateTeacherView, reportStudentView } from '../services/classSessionService';
+import { reportSessionProgress, updateTeacherView, reportStudentView, launchLesson as launchLessonToSession } from '../services/classSessionService';
 import type { SessionLessonPhase, SessionQuizAnswer } from '../types/lms';
 import { auth, db } from '../config/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
@@ -944,6 +945,7 @@ const VRLessonPlayerInner = () => {
           let chapterId = params.get('chapterId');
           let topicId = params.get('topicId');
           const lang = params.get('lang') || 'en';
+          let lessonSource = 'curriculum';
           if (sessionId) sessionStorage.setItem('learnxr_class_session_id', sessionId);
           if (sessionId && (!chapterId || !topicId)) {
             try {
@@ -953,6 +955,7 @@ const VRLessonPlayerInner = () => {
               if (launched) {
                 chapterId = chapterId || launched.chapter_id;
                 topicId = topicId || launched.topic_id;
+                if (launched.lesson_type === 'user_generated') lessonSource = 'user_generated';
               }
             } catch (e) {
               console.warn('Could not load session for URL sessionId:', e);
@@ -960,7 +963,7 @@ const VRLessonPlayerInner = () => {
           }
           if (chapterId && topicId) {
             try {
-              const bundle = await getLessonBundle({ chapterId, topicId, lang });
+              const bundle = await getLessonBundle({ chapterId, topicId, lang, source: lessonSource });
               const fullData = bundle.chapter;
               const topic = fullData.topics?.find((t: any) => t.topic_id === topicId) || fullData.topics?.[0];
               if (!topic) { setInitPhase('ready'); setDataInitialized(true); return; }
@@ -1660,48 +1663,62 @@ const VRLessonPlayerInner = () => {
       ? skyboxUrl
       : getProxyAssetUrl(skyboxUrl);
 
-    // Collect GLB/GLTF URLs for threejs plugin (proxy non-Firebase for CORS). Include all sources so student view gets same 3D assets as teacher.
-    const rawGlbUrls: string[] = [];
-    if (assetUrl && isSafeLessonGlbUrl(assetUrl)) rawGlbUrls.push(assetUrl);
+    // Street View Tour: author-specified floating-asset placements (ath/atv/depth), keyed by
+    // meshy_assets doc id — set on the active stop's synthetic topic (see getLessonBundle.ts).
+    const stopAssetPlacements: Array<{ assetId?: string; url?: string; ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number }> =
+      Array.isArray(extraLessonData?.topic?.assetPlacements) ? extraLessonData.topic.assetPlacements : [];
+    const placementByAssetId = new Map(stopAssetPlacements.filter((p) => p.assetId).map((p) => [p.assetId, p]));
+    const placementByUrl = new Map(stopAssetPlacements.filter((p) => p.url).map((p) => [p.url, p]));
+
+    // Collect GLB/GLTF URLs for threejs plugin (proxy non-Firebase for CORS), paired with any
+    // author-specified placement. Include all sources so student view gets same 3D assets as teacher.
+    const rawAssetEntries: Array<{ url: string; placement?: { ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } }> = [];
+    if (assetUrl && isSafeLessonGlbUrl(assetUrl)) rawAssetEntries.push({ url: assetUrl });
     const hasBundle3dAssets = extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d) && extraLessonData.assets3d.length > 0;
     if (hasBundle3dAssets) {
       for (const a of extraLessonData.assets3d) {
         const glb = pickBestGlbUrl(a);
-        if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
+        if (glb && isGlbOrGltfUrl(glb) && !rawAssetEntries.some((e) => e.url === glb)) {
+          rawAssetEntries.push({ url: glb, placement: placementByAssetId.get(a.id) || placementByUrl.get(glb) });
+        }
       }
     }
     if (meshyAssets.length > 0) {
       for (const a of meshyAssets) {
         const glb = pickBestGlbUrl(a);
-        if (glb && isGlbOrGltfUrl(glb) && !rawGlbUrls.includes(glb)) rawGlbUrls.push(glb);
+        if (glb && isGlbOrGltfUrl(glb) && !rawAssetEntries.some((e) => e.url === glb)) {
+          rawAssetEntries.push({ url: glb, placement: placementByAssetId.get(a.id) || placementByUrl.get(glb) });
+        }
       }
     }
-    if (rawGlbUrls.length > 0) {
+    if (rawAssetEntries.length > 0) {
       setKrpano3dAssetsReady(false);
     }
 
     loadKrpanoScript()
       .then(async () => {
         if (cancelled) return;
-        const hasRenderAssetUrls = rawGlbUrls.some((url) => isRenderAssetUrl(url));
+        const hasRenderAssetUrls = rawAssetEntries.some((e) => isRenderAssetUrl(e.url));
         const renderAssetBridgeReady = hasRenderAssetUrls ? await ensureRenderAssetBridgeReady() : false;
         if (cancelled) return;
 
-        const preparedAssetUrls: string[] = [];
+        const preparedEntries: Array<{ url: string; placement?: { ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } }> = [];
 
-        for (const rawUrl of rawGlbUrls) {
-          if (isRenderAssetUrl(rawUrl)) {
+        for (const entry of rawAssetEntries) {
+          if (isRenderAssetUrl(entry.url)) {
             if (renderAssetBridgeReady) {
-              preparedAssetUrls.push(toRenderAssetBridgeUrl(rawUrl));
+              preparedEntries.push({ url: toRenderAssetBridgeUrl(entry.url), placement: entry.placement });
             } else {
-              console.warn('[VRPlayer] Skipping Firebase render asset because the render bridge is not ready:', rawUrl);
+              console.warn('[VRPlayer] Skipping Firebase render asset because the render bridge is not ready:', entry.url);
             }
           } else {
-            preparedAssetUrls.push(toKrpanoThreeJsAssetUrl(rawUrl));
+            preparedEntries.push({ url: toKrpanoThreeJsAssetUrl(entry.url), placement: entry.placement });
           }
         }
 
-        const threeJsAssetUrls = preparedAssetUrls.filter(Boolean);
+        const validEntries = preparedEntries.filter((e) => !!e.url);
+        const threeJsAssetUrls = validEntries.map((e) => e.url);
+        const assetPlacements = validEntries.map((e) => e.placement);
         console.log('[VRPlayer] Prepared krpano 3D asset URLs:', threeJsAssetUrls);
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         const avatarModelUrl = origin + '/models/avatar3.glb';
@@ -1714,6 +1731,7 @@ const VRLessonPlayerInner = () => {
           lookatByPhase,
           hotspots,
           threeJsAssetUrls: threeJsAssetUrls.length > 0 ? threeJsAssetUrls : undefined,
+          assetPlacements: threeJsAssetUrls.length > 0 ? assetPlacements : undefined,
           avatarModelUrl,
         });
         // #region agent log
@@ -2149,6 +2167,116 @@ const VRLessonPlayerInner = () => {
       (window as unknown as { __krpanoOnViewChange?: unknown }).__krpanoOnViewChange = undefined;
     };
   }, [isStudentInSession, joinedSessionId, user?.uid, useKrpanoView, sceneReady]);
+
+  // ============================================================================
+  // Street View Tour: teacher-controlled Next/Previous Stop navigation.
+  // A tour is a chapter with one synthetic topic per stop (see getLessonBundle.ts /
+  // userGeneratedLessons.ts). Advancing the stop reuses the existing `launched_lesson`
+  // broadcast (teacher writes a new topic_id, students already listen for it via
+  // ClassSessionContext) — no new Firestore fields/rules needed.
+  // ============================================================================
+  const isTourStop = extraLessonData?.topic?.isTourStop === true;
+  const tourLessonSource: 'user_generated' | 'curriculum' =
+    activeSession?.launched_lesson?.lesson_type === 'user_generated' || joinedSession?.launched_lesson?.lesson_type === 'user_generated'
+      ? 'user_generated'
+      : 'curriculum';
+  const [tourStopTopics, setTourStopTopics] = useState<Array<{ topicId: string; label: string }>>([]);
+  const tourChapterIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const chapterId = extraLessonData?.chapter?.chapter_id;
+    if (!isTourStop || !chapterId || tourChapterIdRef.current === chapterId) return;
+    tourChapterIdRef.current = chapterId;
+
+    (async () => {
+      try {
+        if (tourLessonSource === 'user_generated') {
+          const snap = await getDoc(doc(db, 'user_generated_lessons', chapterId));
+          const stops = Array.isArray(snap.data()?.streetViewTour?.stops) ? snap.data()!.streetViewTour.stops : [];
+          const ordered = [...stops].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+          setTourStopTopics(ordered.map((s: any) => ({ topicId: `${chapterId}__stop_${s.id}`, label: s.label || 'Stop' })));
+        } else {
+          const snap = await getDoc(doc(db, 'curriculum_chapters', chapterId));
+          const topics = Array.isArray(snap.data()?.topics) ? snap.data()!.topics : [];
+          const ordered = [...topics]
+            .filter((t: any) => t.isTourStop)
+            .sort((a: any, b: any) => (a.isTourStopIndex ?? 0) - (b.isTourStopIndex ?? 0));
+          setTourStopTopics(ordered.map((t: any) => ({ topicId: t.topic_id, label: t.topic_name || 'Stop' })));
+        }
+      } catch (err) {
+        console.warn('[StreetViewTour] Failed to load sibling stops:', err);
+      }
+    })();
+  }, [isTourStop, tourLessonSource, extraLessonData?.chapter?.chapter_id]);
+
+  const currentStopIndex = tourStopTopics.findIndex((t) => t.topicId === extraLessonData?.topic?.topic_id);
+
+  /** Fetches the given stop's topic and swaps the active lesson data in place (skybox/assets/voiceover). */
+  const loadTourStop = useCallback(
+    async (topicId: string) => {
+      const chapterId = extraLessonData?.chapter?.chapter_id;
+      if (!chapterId) return;
+      try {
+        const lang = extraLessonData?.topic?.language || 'en';
+        const bundle = await getLessonBundle({ chapterId, topicId, lang, source: tourLessonSource });
+        const topic = bundle.chapter.topics?.find((t: any) => t.topic_id === topicId) || bundle.chapter.topics?.[0];
+        if (!topic) return;
+        const nextData = {
+          ...extraLessonData,
+          topic: {
+            ...extraLessonData?.topic,
+            topic_id: topicId,
+            topic_name: topic.topic_name,
+            skybox_url: bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '',
+            skybox_glb_url: bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '',
+            asset_urls: Array.isArray(topic.asset_urls) ? topic.asset_urls : [],
+            asset_ids: Array.isArray(topic.asset_ids) ? topic.asset_ids : [],
+            assetPlacements: Array.isArray(topic.assetPlacements) ? topic.assetPlacements : [],
+            avatar_intro: topic.avatar_intro || '',
+            ttsAudio: Array.isArray(bundle.tts) && bundle.tts.length > 0
+              ? bundle.tts.map((t: any) => ({ id: t.id, script_type: t.script_type || 'intro', audio_url: t.audio_url, language: t.language || lang }))
+              : [],
+            isTourStop: true,
+          },
+          assets3d: Array.isArray(bundle.assets3d) ? bundle.assets3d : [],
+        };
+        setExtraLessonData(nextData);
+        sessionStorage.setItem('activeLesson', JSON.stringify(nextData));
+        setPhase('intro');
+      } catch (err) {
+        console.warn('[StreetViewTour] Failed to load stop:', err);
+        toast.error('Failed to load the next stop.');
+      }
+    },
+    [extraLessonData, tourLessonSource, setPhase]
+  );
+
+  const goToTourStop = useCallback(
+    async (targetIndex: number) => {
+      const target = tourStopTopics[targetIndex];
+      if (!target) return;
+      await loadTourStop(target.topicId);
+      if (isTeacherInSession && activeSessionId && user?.uid && activeSession?.launched_lesson) {
+        launchLessonToSession(activeSessionId, user.uid, { ...activeSession.launched_lesson, topic_id: target.topicId }).catch((err) => {
+          console.warn('[StreetViewTour] Failed to broadcast stop change:', err);
+        });
+      }
+    },
+    [tourStopTopics, loadTourStop, isTeacherInSession, activeSessionId, user?.uid, activeSession?.launched_lesson]
+  );
+
+  // Student: follow the teacher's active stop while already inside the player
+  // (StudentDashboard's launched_lesson listener only fires before entering the player).
+  const lastFollowedTopicIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isStudentInSession || !isTourStop) return;
+    const targetTopicId = joinedSession?.launched_lesson?.topic_id;
+    const currentTopicId = extraLessonData?.topic?.topic_id;
+    if (!targetTopicId || targetTopicId === currentTopicId) return;
+    if (lastFollowedTopicIdRef.current === targetTopicId) return;
+    lastFollowedTopicIdRef.current = targetTopicId;
+    loadTourStop(targetTopicId);
+  }, [isStudentInSession, isTourStop, joinedSession?.launched_lesson?.topic_id, extraLessonData?.topic?.topic_id, loadTourStop]);
 
   // ============================================================================
   // Fetch 3D Asset (Platform-aware: FBX for Android, USDZ for iOS, GLB for Web)
@@ -3690,6 +3818,35 @@ const VRLessonPlayerInner = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Street View Tour: teacher-controlled Next/Previous Stop navigation */}
+      {isTourStop && tourStopTopics.length > 1 && sceneReady && !showWelcomeScreen && (
+        <div className="absolute top-4 right-4 z-30 flex items-center gap-2 px-3 py-2 bg-black/50 border border-white/10 rounded-xl text-white text-sm">
+          <span className="opacity-80">
+            Stop {currentStopIndex >= 0 ? currentStopIndex + 1 : '?'} of {tourStopTopics.length}
+          </span>
+          {isTeacherInSession && (
+            <div className="flex items-center gap-1 ml-1">
+              <button
+                type="button"
+                onClick={() => goToTourStop(currentStopIndex - 1)}
+                disabled={currentStopIndex <= 0}
+                className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10"
+              >
+                ← Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => goToTourStop(currentStopIndex + 1)}
+                disabled={currentStopIndex < 0 || currentStopIndex >= tourStopTopics.length - 1}
+                className="px-2 py-1 rounded-lg bg-primary/70 hover:bg-primary disabled:opacity-30 disabled:hover:bg-primary/70"
+              >
+                Next →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Drag Hint (student or when not in class session) */}
       <AnimatePresence>

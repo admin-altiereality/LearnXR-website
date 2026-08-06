@@ -51,6 +51,10 @@ export interface KrpanoXmlOptions {
   hotspots?: KrpanoHotspotOption[];
   /** Optional GLB/GLTF URLs to render as threejs 3D hotspots (requires Three.js plugin) */
   threeJsAssetUrls?: string[];
+  /** Optional per-asset spherical placement, parallel to `threeJsAssetUrls` (same index, same length).
+   * When an entry is present, it overrides the default grid layout for that asset — used for
+   * Street View Tour "floating" assets placed by the author (ath/atv in degrees, depth in cm). */
+  assetPlacements?: Array<{ ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } | undefined>;
   /** Optional teacher avatar GLB URL; when set, adds teacher_avatar threejs hotspot and soundinterface for directional TTS */
   avatarModelUrl?: string;
 }
@@ -139,13 +143,16 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     lookatByPhase,
     hotspots = [],
     threeJsAssetUrls = [],
+    assetPlacements = [],
     avatarModelUrl,
   } = options;
 
-  // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...)
-  const safe3dUrls = threeJsAssetUrls.filter(
-    (url) => isGlbOrGltfUrl(url) || isProxyToGlb(url) || isBlobModelUrl(url)
-  );
+  // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...).
+  // `assetPlacements` (when provided) is kept aligned index-for-index with `threeJsAssetUrls`.
+  const safe3dEntries = threeJsAssetUrls
+    .map((url, i) => ({ url, placement: assetPlacements[i] }))
+    .filter((e) => isGlbOrGltfUrl(e.url) || isProxyToGlb(e.url) || isBlobModelUrl(e.url));
+  const safe3dUrls = safe3dEntries.map((e) => e.url);
   const has3dAssets = safe3dUrls.length > 0;
   const hasAvatar = !!(avatarModelUrl && (isGlbOrGltfUrl(avatarModelUrl) || avatarModelUrl.endsWith('.glb') || avatarModelUrl.endsWith('.gltf')));
   // Include threejs block when we have 3D assets and/or teacher avatar, or WebVR (for immersive UI panel)
@@ -195,17 +202,27 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
-  // 3D model hotspots (type="threejs") - spaced apart so they do not overlap or touch (Quest + Web).
-  const threeJsHotspotBlocks = safe3dUrls
-    .map((url, i) => {
+  // 3D model hotspots (type="threejs"). When an author-specified placement (ath/atv/depth)
+  // is provided (Street View Tour floating assets), position on the sphere directly;
+  // otherwise fall back to the default spaced-out grid so assets don't overlap (Quest + Web).
+  const threeJsHotspotBlocks = safe3dEntries
+    .map(({ url, placement }, i) => {
       const safeUrl = escapeXml(url);
       const name = `asset_${i}`;
+      const scale = placement?.scale ?? 1;
+      const roty = placement?.rotationY !== undefined ? ` ry="${placement.rotationY}"` : '';
+      if (placement && (placement.ath !== undefined || placement.atv !== undefined)) {
+        const ath = placement.ath ?? 0;
+        const atv = placement.atv ?? 0;
+        const depth = placement.depth ?? 500;
+        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty} hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+      }
       const col = i % 3;
       const row = Math.floor(i / 3);
       const tx = 40 + (col - 1) * 90;
       const ty = -20 - row * 25;
       const tz = 180 + row * 90;
-      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="1" tx="${tx}" ty="${ty}" tz="${tz}" hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty} hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
     })
     .join('\n');
   // Teacher avatar: center, standing (feet near floor, head near eye level).

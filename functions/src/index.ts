@@ -141,6 +141,15 @@ const getApp = (): express.Application => {
       legacyHeaders: false,
     });
 
+    // Cost control for Street View + user-generated-lesson content creation.
+    const contentGenerationLimiter = rateLimit({
+      windowMs: 60 * 60 * 1000,
+      max: 30,
+      message: { success: false, error: 'Too many generation requests. Please try again later.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
     // Mount public routes FIRST (before authentication)
     const leadRoutes = require('./routes/leads').default;
     const partnerRoutes = require('./routes/partners').default;
@@ -191,6 +200,7 @@ const getApp = (): express.Application => {
     const n8nRoutes = require('./routes/n8n').default;
     const n8nBuilderRoutes = require('./routes/n8nBuilder').default;
     const partnerAdminRoutes = require('./routes/partnerAdmin').default;
+    const userLessonsRoutes = require('./routes/userLessons').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -211,7 +221,23 @@ const getApp = (): express.Application => {
     app.use('/lms', lmsRoutes);
     app.use('/ai-education', aiEducationRoutes);
     app.use('/assessment', assessmentRoutes);
+    // Rate-limit only the costly Street View tile-fetch + stitch operation; autocomplete/place-details stay unthrottled.
+    app.use('/streetview', (req: Request, res: Response, next: NextFunction) => {
+      const isGenerate = req.method === 'POST' && /^\/generate-skybox\/?$/.test(req.path);
+      if (isGenerate) return contentGenerationLimiter(req, res, next);
+      return next();
+    });
     app.use('/streetview', streetviewRoutes);
+    app.use('/user-lessons', (req: Request, res: Response, next: NextFunction) => {
+      const isGenerate =
+        req.method === 'POST' &&
+        (/^\/[^/]+\/street-view\/?$/.test(req.path) ||
+          /^\/[^/]+\/streetview-tour\/(explore|walk|stops)\/?$/.test(req.path) ||
+          /^\/[^/]+\/streetview-tour\/stops\/[^/]+\/voiceover\/?$/.test(req.path));
+      if (isGenerate) return contentGenerationLimiter(req, res, next);
+      return next();
+    });
+    app.use('/user-lessons', userLessonsRoutes);
     app.use('/pdf', pdfRoutes);
     app.use('/api/pdf', pdfRoutes);
     app.use('/lesson-bundle', lessonBundleRoutes);

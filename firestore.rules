@@ -907,6 +907,25 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Teacher/partner-authored lessons (Street View, Create-page scenes, Spiral scenes).
+    // Owner-launchable immediately to their class without review — students in that class
+    // read this doc directly via getLessonBundle(source: 'user_generated'), the same way
+    // they already read broadly-readable `curriculum_chapters` content. All writes go
+    // through Cloud Functions (Admin SDK).
+    match /user_generated_lessons/{lessonId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // Street View Tile API session token + stitched-panorama cache, keyed by real-world
+    // panoId. Admin-SDK-only (Cloud Functions); never read or written by clients directly.
+    match /_config/streetview_tile_session {
+      allow read, write: if false;
+    }
+    match /streetview_panorama_cache/{panoId} {
+      allow read, write: if false;
+    }
+
     // Immutable privileged partner lifecycle and entitlement audit records.
     match /partner_audit_log/{auditId} {
       allow read: if isSuperadmin();
@@ -946,7 +965,8 @@ service cloud.firestore {
             (getUserRole() == 'principal' &&
               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
-            (getUserRole() == 'teacher' && getUserSchoolId() == resource.data.school_id)
+            (getUserRole() == 'teacher' && getUserSchoolId() == resource.data.school_id) ||
+            partnerOwnsSchool(resource.data.school_id)
           );
       }
 
@@ -956,7 +976,7 @@ service cloud.firestore {
 
       allow create: if isAuthenticated() &&
         request.resource.data.created_by_uid == request.auth.uid &&
-        getUserRole() in ['teacher', 'school', 'principal', 'admin', 'superadmin'];
+        getUserRole() in ['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin'];
 
       allow update: if isAuthenticated() && (
         isAdminOrSuperadmin() ||

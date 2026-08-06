@@ -144,8 +144,9 @@ export interface Principal {
 // Class Launch – Sessions and live progress
 // =============================================================================
 
-/** Default / curriculum path uses Firestore topics; 360 video tours use sentinel IDs + lesson_type. */
-export type LaunchedLessonType = 'curriculum' | 'vr360_video';
+/** Default / curriculum path uses Firestore topics; 360 video tours use sentinel IDs + lesson_type;
+ * `user_generated` reads from `user_generated_lessons/{chapter_id}` (chapter_id === topic_id === lessonId). */
+export type LaunchedLessonType = 'curriculum' | 'vr360_video' | 'user_generated';
 
 /** Payload when teacher launches a curriculum lesson to the class */
 export interface LaunchedLesson {
