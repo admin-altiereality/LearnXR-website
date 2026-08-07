@@ -186,7 +186,7 @@ export const ROUTE_CATEGORIES: Record<string, RouteCategory> = {
   // Admin routes
   '/admin': 'admin',
   '/admin/partners': 'admin',
-  '/admin/partner-oversight': 'superadmin',
+  '/admin/partner-oversight': 'admin',
   '/system-status': 'admin',
   
   // Superadmin routes
@@ -567,7 +567,7 @@ export function checkAccess(
     };
   }
   
-  const role = profile.role;
+  const role = normalizeUserRole(profile.role);
   
   // Special case: approval-pending page - only for users who completed onboarding and are pending approval
   if (path === '/approval-pending') {
@@ -787,11 +787,36 @@ export function canDeleteLesson(profile: UserProfile | null): boolean {
 }
 
 /**
+ * Normalize Firestore / claim role strings to a known UserRole.
+ * Handles variants like "Super Admin", "super_admin", casing differences.
+ */
+export function normalizeUserRole(role: string | undefined | null): UserRole {
+  if (!role) return 'student';
+  const raw = String(role).toLowerCase().trim();
+  if (raw === 'super admin' || raw === 'super_admin' || raw === 'super-admin') {
+    return 'superadmin';
+  }
+  if (
+    raw === 'student' ||
+    raw === 'teacher' ||
+    raw === 'school' ||
+    raw === 'admin' ||
+    raw === 'superadmin' ||
+    raw === 'principal' ||
+    raw === 'associate' ||
+    raw === 'partner'
+  ) {
+    return raw;
+  }
+  return 'student';
+}
+
+/**
  * Check if user is superadmin
  */
 export function isSuperadmin(profile: UserProfile | null): boolean {
   if (!profile) return false;
-  return profile.role === 'superadmin';
+  return normalizeUserRole(profile.role) === 'superadmin';
 }
 
 /**

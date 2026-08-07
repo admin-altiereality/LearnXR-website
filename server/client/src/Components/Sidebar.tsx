@@ -228,9 +228,7 @@ const Sidebar = () => {
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });
       items.push({ path: '/admin/logs', label: 'Production Logs', icon: FaFileAlt });
       items.push({ path: '/admin/partners', label: 'Partner Registrations', icon: FaHandshake });
-      if (isSuperadmin) {
-        items.push({ path: '/admin/partner-oversight', label: 'Partner Oversight', icon: FaChartLine });
-      }
+      items.push({ path: '/admin/partner-oversight', label: 'Partner Oversight', icon: FaChartLine });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       items.push({ path: '/system-status', label: 'System', icon: FaServer });
     }

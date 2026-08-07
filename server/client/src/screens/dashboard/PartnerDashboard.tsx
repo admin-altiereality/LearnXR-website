@@ -24,6 +24,7 @@ import {
   fetchPartnerMe,
   launchPartnerDemoLesson,
   listPartnerSchools,
+  recordPartnerHeartbeat,
   recordPartnerLaunchTelemetry,
   startPartnerDemoSession,
 } from '../../services/partnerService';
@@ -212,6 +213,11 @@ const PartnerDashboard = () => {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (profile?.role !== 'partner') return;
+    recordPartnerHeartbeat('dashboard').catch(() => {});
+  }, [profile?.role]);
 
   useEffect(() => {
     const session = activeSession ?? liveSession;

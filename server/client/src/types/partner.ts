@@ -14,6 +14,8 @@ export type PartnerEventType =
   | 'partner_approved'
   | 'partner_rejected'
   | 'partner_suspended'
+  | 'partner_login'
+  | 'partner_activity'
   | 'school_created'
   | 'school_invite_sent'
   | 'teacher_approved'
@@ -58,6 +60,9 @@ export interface Partner {
   createdAt?: unknown;
   approvedAt?: string;
   approvedBy?: string;
+  lastActiveAt?: string | null;
+  lastLoginAt?: string | null;
+  loginCount?: number;
 }
 
 export interface PartnerEvent {

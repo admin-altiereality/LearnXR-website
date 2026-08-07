@@ -19,7 +19,23 @@ const TRIAL_LAUNCH_LIMIT = 50;
 /** Curriculum demo lesson launches (separate from Street View class launches). */
 const TRIAL_LESSON_LAUNCH_LIMIT = 200;
 const DEFAULT_DEMO_SCHOOL_CODE = 'HV647R';
-const APP_ORIGIN = process.env.APP_ORIGIN || process.env.CLIENT_ORIGIN || 'https://learnxr.ai';
+/** Continue URL origin for password-setup emails (must be in Firebase Auth authorized domains). */
+const APP_ORIGIN = (
+  process.env.APP_ORIGIN ||
+  process.env.CLIENT_ORIGIN ||
+  'https://learnxr.altiereality.com'
+).replace(/\/$/, '');
+
+const PASSWORD_SETUP_CONTINUE_ORIGINS = Array.from(
+  new Set(
+    [
+      APP_ORIGIN,
+      'https://learnxr.altiereality.com',
+      'https://altiereality.web.app',
+      'https://learnxr-evoneuralai.firebaseapp.com',
+    ].map((origin) => origin.replace(/\/$/, '')),
+  ),
+);
 
 const requirePartnerAdmin = requireRole(['admin', 'superadmin']);
 const requireSuperadmin = requireRole(['superadmin']);
@@ -51,13 +67,30 @@ function addMonthsIso(date: Date, months: number): string {
 }
 
 async function generatePartnerPasswordSetupLink(email: string): Promise<string | null> {
+  const auth = admin.auth();
+  let lastError: unknown = null;
+
+  for (const origin of PASSWORD_SETUP_CONTINUE_ORIGINS) {
+    try {
+      return await auth.generatePasswordResetLink(email, {
+        url: `${origin}/partner-login`,
+        handleCodeInApp: false,
+      });
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `Partner password setup link failed for continue origin ${origin}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  // Last resort: Firebase default hosted handler (no custom continue URI).
   try {
-    return await admin.auth().generatePasswordResetLink(email, {
-      url: `${APP_ORIGIN}/partner-login`,
-      handleCodeInApp: false,
-    });
+    return await auth.generatePasswordResetLink(email);
   } catch (error) {
-    console.error('Failed to generate partner password setup link:', error);
+    lastError = error;
+    console.error('Failed to generate partner password setup link:', lastError);
     return null;
   }
 }
@@ -73,6 +106,13 @@ async function sendPartnerApprovalNotification(params: {
 }): Promise<void> {
   const webhookUrl = process.env.N8N_PARTNER_APPROVE_WEBHOOK_URL;
   if (!webhookUrl) return;
+
+  if (!params.inviteLink) {
+    console.error(
+      `[${params.requestId}] Skipping partner approval webhook — inviteLink is missing for ${params.email}`,
+    );
+    return;
+  }
 
   try {
     await fetch(webhookUrl, {
@@ -99,12 +139,29 @@ async function sendPartnerApprovalNotification(params: {
   }
 }
 
+async function touchPartnerPresence(
+  partnerId: string,
+  options?: { login?: boolean },
+): Promise<void> {
+  const updates: Record<string, unknown> = {
+    lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (options?.login) {
+    updates.lastLoginAt = admin.firestore.FieldValue.serverTimestamp();
+    updates.loginCount = admin.firestore.FieldValue.increment(1);
+  }
+  await admin.firestore().collection('partners').doc(partnerId).update(updates);
+}
+
 async function writePartnerEvent(params: {
   partnerId: string;
   type: string;
   actorUid: string;
   schoolId?: string;
   meta?: Record<string, unknown>;
+  /** When true, bumps partners.lastActiveAt (partner-driven activity). */
+  touchActive?: boolean;
 }): Promise<void> {
   const db = admin.firestore();
   await db.collection('partner_events').add({
@@ -115,6 +172,29 @@ async function writePartnerEvent(params: {
     meta: params.meta || {},
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+  if (params.touchActive) {
+    await touchPartnerPresence(params.partnerId).catch((error) => {
+      console.error('Failed to touch partner presence:', error);
+    });
+  }
+}
+
+function toIsoTimestamp(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (
+    typeof value === 'object' &&
+    value !== null &&
+    'toDate' in value &&
+    typeof (value as { toDate?: () => Date }).toDate === 'function'
+  ) {
+    try {
+      return (value as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 async function writePartnerAudit(params: {
@@ -469,6 +549,34 @@ router.post(
 /**
  * GET /partners/me
  */
+/**
+ * POST /partners/me/heartbeat
+ * Records partner login / dashboard presence for Oversight trackers.
+ */
+router.post(['/me/heartbeat', '/me/heartbeat/'], requirePartner, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const partner = await getPartnerByUserId(req.user!.uid);
+    if (!partner) {
+      res.status(404).json({ success: false, message: 'Partner profile not found' });
+      return;
+    }
+    const source = String(req.body?.source || 'dashboard').trim().toLowerCase();
+    const isLogin = source === 'login';
+    await touchPartnerPresence(partner.id, { login: isLogin });
+    if (isLogin) {
+      await writePartnerEvent({
+        partnerId: partner.id,
+        type: 'partner_login',
+        actorUid: req.user!.uid,
+        meta: { source: 'partner_login' },
+      });
+    }
+    res.json({ success: true, source: isLogin ? 'login' : 'presence' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error?.message || 'Failed to record partner activity' });
+  }
+});
+
 router.get(['/me', '/me/'], requirePartner, async (req: Request, res: Response): Promise<void> => {
   try {
     const partner = await getPartnerByUserId(req.user!.uid);
@@ -591,6 +699,7 @@ router.post(['/schools', '/schools/'], requirePartner, async (req: Request, res:
       actorUid: uid,
       schoolId: schoolRef.id,
       meta: { name, schoolCode },
+      touchActive: true,
     });
 
     res.json({
@@ -671,6 +780,7 @@ router.post(
         actorUid: uid,
         schoolId,
         meta: { email: email || null },
+        touchActive: true,
       });
 
       res.json({ success: true, token, inviteUrl, expiresAt });
@@ -864,6 +974,7 @@ router.post(['/sessions', '/sessions/'], requirePartner, async (req: Request, re
         sessionCode: result.sessionCode,
         launchesRemaining: result.remaining,
       },
+      touchActive: true,
     });
 
     if (result.remaining <= 0) {
@@ -872,6 +983,7 @@ router.post(['/sessions', '/sessions/'], requirePartner, async (req: Request, re
         type: 'quota_exhausted',
         actorUid: uid,
         schoolId,
+        touchActive: true,
       });
     }
 
@@ -1009,6 +1121,7 @@ router.post(
           lessonLaunchesRemaining: result.remaining,
           classLaunchesRemaining: result.classLaunchesRemaining,
         },
+        touchActive: true,
       });
       res.json({
         success: true,
@@ -1130,6 +1243,7 @@ router.post(
         actorUid: uid,
         schoolId,
         meta: { teacherUid },
+        touchActive: true,
       });
 
       res.json({ success: true, approvalStatus: approve ? 'approved' : 'rejected' });
@@ -1139,7 +1253,7 @@ router.post(
   }
 );
 
-router.get(['/admin/list', '/admin/list/'], requireSuperadmin, async (_req: Request, res: Response): Promise<void> => {
+router.get(['/admin/list', '/admin/list/'], requirePartnerAdmin, async (_req: Request, res: Response): Promise<void> => {
   try {
     const db = admin.firestore();
     const [partnersSnap, sessionsSnap] = await Promise.all([
@@ -1151,14 +1265,32 @@ router.get(['/admin/list', '/admin/list/'], requireSuperadmin, async (_req: Requ
       const partnerId = doc.data().partner_id;
       if (partnerId) sessionCounts.set(partnerId, (sessionCounts.get(partnerId) || 0) + 1);
     });
-    const partners = await Promise.all(partnersSnap.docs.map(async (doc) => {
+    const partners = partnersSnap.docs.map((doc) => {
       const data = doc.data();
       const schools = data.schoolIds?.length || 0;
       const daysRemaining = data.trial?.endsAt
         ? Math.max(0, Math.ceil((new Date(data.trial.endsAt).getTime() - Date.now()) / 86_400_000))
         : 0;
-      return { id: doc.id, ...data, schoolCount: schools, sessionCount: sessionCounts.get(doc.id) || 0, daysRemaining };
-    }));
+      const lastActiveAt = toIsoTimestamp(data.lastActiveAt) || toIsoTimestamp(data.lastLoginAt) || data.approvedAt || null;
+      const lastLoginAt = toIsoTimestamp(data.lastLoginAt);
+      return {
+        id: doc.id,
+        ...data,
+        schoolCount: schools,
+        sessionCount: sessionCounts.get(doc.id) || 0,
+        daysRemaining,
+        loginCount: Number(data.loginCount || 0),
+        lastActiveAt,
+        lastLoginAt,
+        classLaunchesUsed: Number(data.trial?.classLaunchesUsed || 0),
+        lessonLaunchesUsed: Number(data.trial?.lessonLaunchesUsed || 0),
+      };
+    });
+    partners.sort((a, b) => {
+      const at = a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0;
+      const bt = b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : 0;
+      return bt - at;
+    });
     res.json({ success: true, partners });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error?.message || 'Failed to list partners' });
@@ -1220,7 +1352,7 @@ router.post(
   }
 });
 
-router.get(['/admin/:partnerId/telemetry', '/admin/:partnerId/telemetry/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+router.get(['/admin/:partnerId/telemetry', '/admin/:partnerId/telemetry/'], requirePartnerAdmin, async (req: Request, res: Response): Promise<void> => {
   try {
     const snap = await admin.firestore()
       .collection('partner_telemetry_events')
@@ -1239,7 +1371,7 @@ router.get(['/admin/:partnerId/telemetry', '/admin/:partnerId/telemetry/'], requ
   }
 });
 
-router.post(['/:partnerId/trial/quota', '/:partnerId/trial/quota/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+router.post(['/:partnerId/trial/quota', '/:partnerId/trial/quota/'], requirePartnerAdmin, async (req: Request, res: Response): Promise<void> => {
   const classLimit = Number(req.body?.classLaunchesLimit);
   const lessonLimit = Number(req.body?.lessonLaunchesLimit);
   if (!Number.isInteger(classLimit) || !Number.isInteger(lessonLimit) || classLimit < 0 || lessonLimit < 0) {
@@ -1280,7 +1412,7 @@ router.post(['/:partnerId/trial/quota', '/:partnerId/trial/quota/'], requireSupe
   }
 });
 
-router.post(['/:partnerId/trial/extend', '/:partnerId/trial/extend/'], requireSuperadmin, async (req: Request, res: Response): Promise<void> => {
+router.post(['/:partnerId/trial/extend', '/:partnerId/trial/extend/'], requirePartnerAdmin, async (req: Request, res: Response): Promise<void> => {
   const months = Number(req.body?.months);
   if (!Number.isInteger(months) || months < 1 || months > 24) {
     res.status(400).json({ success: false, message: 'months must be between 1 and 24' });

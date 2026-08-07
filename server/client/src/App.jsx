@@ -544,9 +544,9 @@ function App() {
                       } />
                       <Route path="/admin/partner-oversight" element={
                         <ProtectedRoute>
-                          <SuperAdminGuard>
+                          <RoleGuard allowedRoles={['admin', 'superadmin']}>
                             <PartnerOversight />
-                          </SuperAdminGuard>
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
                       
@@ -1259,6 +1259,13 @@ function App() {
                         <ProtectedRoute>
                           <RoleGuard allowedRoles={['admin', 'superadmin']}>
                             <PartnerRegistrations />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/admin/partner-oversight" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['admin', 'superadmin']}>
+                            <PartnerOversight />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />

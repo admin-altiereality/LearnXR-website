@@ -3,6 +3,7 @@ import { FaArrowLeft, FaEnvelope, FaEye, FaEyeSlash, FaHandshake, FaLock } from 
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { getDefaultPage } from '../../utils/rbac';
+import { recordPartnerHeartbeat } from '../../services/partnerService';
 import FuturisticBackground from '../FuturisticBackground';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -22,6 +23,10 @@ export const PartnerLogin = () => {
     if (loading || profileLoading || !user || !profile) return;
 
     if (profile.role === 'partner') {
+      if (sessionStorage.getItem('partner_login_pulse') === '1') {
+        sessionStorage.removeItem('partner_login_pulse');
+        recordPartnerHeartbeat('login').catch(() => {});
+      }
       navigate(getDefaultPage(profile.role), { replace: true });
       return;
     }
@@ -42,6 +47,7 @@ export const PartnerLogin = () => {
     setIsLoading(true);
     try {
       await login(email.trim(), password);
+      sessionStorage.setItem('partner_login_pulse', '1');
     } catch {
       setError('We could not sign you in. Check your email and password, or use the password setup link from your approval email.');
     } finally {

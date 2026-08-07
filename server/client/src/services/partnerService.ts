@@ -146,6 +146,21 @@ export async function fetchPartnerMe(): Promise<{
   return data;
 }
 
+/** Record partner login or dashboard presence for Oversight trackers. */
+export async function recordPartnerHeartbeat(
+  source: 'login' | 'dashboard' = 'dashboard',
+): Promise<{ success: boolean }> {
+  const apiBaseUrl = getApiBaseUrl();
+  const response = await fetch(`${apiBaseUrl}/partners/me/heartbeat`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({ source }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || 'Failed to record partner activity');
+  return data;
+}
+
 export async function fetchPartnerActivity(partnerId: string): Promise<{
   success: boolean;
   events: PartnerEvent[];
@@ -292,6 +307,11 @@ export interface PartnerOversightSummary extends Partner {
   schoolCount: number;
   sessionCount: number;
   daysRemaining: number;
+  loginCount: number;
+  lastActiveAt?: string | null;
+  lastLoginAt?: string | null;
+  classLaunchesUsed?: number;
+  lessonLaunchesUsed?: number;
 }
 
 export async function listPartnerOversight(): Promise<{ success: boolean; partners: PartnerOversightSummary[] }> {

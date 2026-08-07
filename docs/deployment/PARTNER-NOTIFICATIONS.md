@@ -21,3 +21,10 @@ Both payloads include `notification.recipient` with the partner email address. T
 In n8n, the email HTML field must be an **expression** (leading `=`), e.g. `={{ $json.body.contactName }}` inside an `=<p>...</p>` body. Plain-text `{{ ... }}` is sent literally.
 
 Set `APP_ORIGIN` or `CLIENT_ORIGIN` to the hosted LearnXR URL so the password-setup link continues to `/partner-login`.
+
+The continue URL domain **must** be listed under Firebase Console → Authentication → Settings → Authorized domains for project **`learnxr-evoneuralai`**. Add:
+
+- `learnxr.altiereality.com`
+- `altiereality.web.app`
+
+If the continue domain is not allowlisted, Auth returns `auth/unauthorized-continue-uri`, the API previously sent `inviteLink: null`, and n8n failed with “Missing password setup link…”. The API now retries alternate origins and falls back to Firebase’s default action URL (no custom continue URI).

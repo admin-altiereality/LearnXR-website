@@ -32,6 +32,28 @@ declare global {
  */
 export type UserRole = 'student' | 'teacher' | 'principal' | 'admin' | 'superadmin' | 'school' | 'associate' | 'partner';
 
+/** Normalize Firestore role strings (e.g. "Super Admin") to a known UserRole. */
+export function normalizeUserRole(role: string | undefined | null): UserRole {
+  if (!role) return 'student';
+  const raw = String(role).toLowerCase().trim();
+  if (raw === 'super admin' || raw === 'super_admin' || raw === 'super-admin') {
+    return 'superadmin';
+  }
+  if (
+    raw === 'student' ||
+    raw === 'teacher' ||
+    raw === 'school' ||
+    raw === 'admin' ||
+    raw === 'superadmin' ||
+    raw === 'principal' ||
+    raw === 'associate' ||
+    raw === 'partner'
+  ) {
+    return raw;
+  }
+  return 'student';
+}
+
 /**
  * Interface for user profile
  */
@@ -61,13 +83,13 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     const data = userDoc.data();
     return {
       uid,
-      role: data?.role || 'student',
+      ...data,
+      role: normalizeUserRole(data?.role),
       school_id: data?.school_id,
       class_ids: data?.class_ids,
       teacher_id: data?.teacher_id,
       managed_class_ids: data?.managed_class_ids,
       managed_school_id: data?.managed_school_id,
-      ...data,
     } as UserProfile;
   } catch (error) {
     console.error('Error fetching user profile:', error);

@@ -19,6 +19,7 @@ import { createDefaultSubscription } from '../services/subscriptionService';
 import {
     ApprovalStatus,
     isGuestUser,
+    normalizeUserRole,
     UserProfile,
     UserRole
 } from '../utils/rbac';
@@ -140,7 +141,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           email: data.email || '',
           displayName: data.displayName || data.name || '',
           name: data.name || data.displayName || '',
-          role: data.role || 'student',
+          role: normalizeUserRole(data.role),
           approvalStatus: data.approvalStatus || null,
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: data.updatedAt,
@@ -237,7 +238,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
                 email: data.email || firebaseUser.email || '',
                 displayName: data.displayName || data.name || firebaseUser.displayName || '',
                 name: data.name || data.displayName || firebaseUser.displayName || '',
-                role: data.role || 'student',
+                role: normalizeUserRole(data.role),
                 approvalStatus: data.approvalStatus || null,
                 createdAt: data.createdAt || new Date().toISOString(),
                 updatedAt: data.updatedAt,
@@ -304,7 +305,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           email: data.email || user.email || '',
           displayName: data.displayName || data.name || user.displayName || '',
           name: data.name || data.displayName || user.displayName || '',
-          role: data.role || 'student',
+          role: normalizeUserRole(data.role),
           approvalStatus: data.approvalStatus || null,
           createdAt: data.createdAt || new Date().toISOString(),
           updatedAt: data.updatedAt,

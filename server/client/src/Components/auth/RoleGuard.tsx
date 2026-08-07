@@ -8,6 +8,7 @@ import {
   requiresApproval,
   isApproved,
   getDefaultPage,
+  normalizeUserRole,
   UserRole
 } from '../../utils/rbac';
 
@@ -61,6 +62,7 @@ export const RoleGuard = ({
     
     // Additional role checks if specified
     if (result.allowed && profile) {
+      const normalizedRole = normalizeUserRole(profile.role);
       // Check minRole
       if (minRole) {
         const roleHierarchy: Record<UserRole, number> = {
@@ -74,10 +76,10 @@ export const RoleGuard = ({
           superadmin: 4,
         };
         
-        if (roleHierarchy[profile.role] < roleHierarchy[minRole]) {
+        if (roleHierarchy[normalizedRole] < roleHierarchy[minRole]) {
           setAccessResult({
             allowed: false,
-            redirectTo: redirectTo || getDefaultPage(profile.role),
+            redirectTo: redirectTo || getDefaultPage(normalizedRole),
             reason: `Minimum role '${minRole}' required`
           });
           return;
@@ -85,11 +87,11 @@ export const RoleGuard = ({
       }
       
       // Check allowedRoles
-      if (allowedRoles && !allowedRoles.includes(profile.role)) {
+      if (allowedRoles && !allowedRoles.includes(normalizedRole)) {
         setAccessResult({
           allowed: false,
-          redirectTo: redirectTo || getDefaultPage(profile.role),
-          reason: `Role '${profile.role}' not in allowed roles`
+          redirectTo: redirectTo || getDefaultPage(normalizedRole),
+          reason: `Role '${normalizedRole}' not in allowed roles`
         });
         return;
       }
