@@ -1785,7 +1785,7 @@ const VRLessonPlayerInner = () => {
           avatarModelUrl,
         });
         // #region agent log
-        console.warn('[DBG-5a606f] XML built, immersiveUI hotspots present:', xml.includes('iu_panel_3d'), 'threejs plugin present:', xml.includes('threejs_krpanoplugin'), 'webvr include:', xml.includes('webvr.xml'), 'immersive_ui include:', xml.includes('immersive_ui.xml'));
+        console.warn('[DBG-5a606f] XML built, immersiveUI hotspots present:', xml.includes('iu_panel_3d'), 'threejs plugin present:', xml.includes('threejs_krpanoplugin'), 'webvr include:', xml.includes('webvr.xml'), 'native UI include:', xml.includes('native_vr_lesson_ui.xml'));
         // #endregion
         embedKrpano({
           xml,
@@ -1936,7 +1936,12 @@ const VRLessonPlayerInner = () => {
                 try {
                   viewer.call('immersive_ui_update()');
                 } catch (err) {
-                  console.warn('[KrpanoUI] Failed to push immersive UI state:', err);
+                  console.warn('[KrpanoUI] Failed to update canvas UI fallback:', err);
+                }
+                try {
+                  viewer.call('native_vr_lesson_ui_update()');
+                } catch (err) {
+                  console.warn('[KrpanoUI] Failed to update native VR lesson UI:', err);
                 }
               };
               setSceneReady(true);
@@ -1983,8 +1988,21 @@ const VRLessonPlayerInner = () => {
         clearTimeout(krpanoFallbackTimerRef.current);
         krpanoFallbackTimerRef.current = null;
       }
+      const viewer = krpanoViewerRef.current;
+      try {
+        viewer?.call('native_vr_lesson_ui_cleanup()');
+      } catch (err) {
+        console.warn('[KrpanoUI] Failed to clean up native VR lesson UI:', err);
+      }
+      krpanoViewerRef.current = null;
       (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
       (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
+      (window as unknown as { __krpanoUIAction?: unknown }).__krpanoUIAction = undefined;
+      (window as unknown as { __krpanoUIUpdate?: unknown }).__krpanoUIUpdate = undefined;
+      (window as unknown as { __krpanoUIState?: unknown }).__krpanoUIState = undefined;
+      (window as unknown as { __krpanoNativeVrUiControllerButton?: unknown }).__krpanoNativeVrUiControllerButton = undefined;
+      (window as unknown as { native_vr_lesson_ui_click?: unknown }).native_vr_lesson_ui_click = undefined;
+      (window as unknown as { native_vr_lesson_ui_hover?: unknown }).native_vr_lesson_ui_hover = undefined;
       removeKrpano(KRPANO_CONTAINER_ID);
     };
   }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetDiscoveryComplete, assetUrl, meshyAssets, extraLessonData, effectiveLesson]);

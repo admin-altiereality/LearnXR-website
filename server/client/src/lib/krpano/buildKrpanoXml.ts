@@ -76,7 +76,7 @@ const DEFAULT_HOTSPOT_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%23f97316" stroke="%23fff" stroke-width="3" opacity="0.95"/><circle cx="24" cy="24" r="8" fill="%23fff"/></svg>'
   );
 
-const KRPANO_ASSET_VERSION = '1.23.3-r3';
+const KRPANO_ASSET_VERSION = '1.23.3-r4';
 
 /**
  * Build hotspot XML for one hotspot. Uses image url or a default pin icon.
@@ -169,11 +169,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
+  const nativeVrLessonUiIncludeUrl = pluginUrl(origin, basePath, 'native_vr_lesson_ui.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
   const gyro2PluginUrl = pluginUrl(origin, basePath, 'gyro2.js');
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(nativeVrLessonUiIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n`
     : '';
   const gyroBlock = `  <plugin name="gyro" url="${escapeXml(gyro2PluginUrl)}" keep="true" keepaliveduration="60" />\n`;

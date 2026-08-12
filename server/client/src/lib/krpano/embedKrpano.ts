@@ -22,6 +22,7 @@ export interface KrpanoEmbedOptions {
   width?: string;
   height?: string;
   bgcolor?: string;
+  webxr?: 'auto' | 'prefer' | 'preferwebvr' | 'no' | boolean;
   initvars?: Record<string, string>;
 }
 
@@ -121,6 +122,7 @@ export function embedKrpano(options: KrpanoEmbedOptions): void {
     height: '100%',
     bgcolor: '#050810',
     basepath: '/krpano/',
+    webxr: 'prefer',
     ...options,
     xml: xmlUrl,
     onready: userOnready

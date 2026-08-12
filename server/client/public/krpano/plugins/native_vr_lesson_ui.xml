@@ -14,6 +14,9 @@
     var OPTION_COUNT = 4;
     var hotspots = [];
     var lastClick = { name: "", at: 0 };
+    var hookedXrSession = null;
+    var handSelectHandler = null;
+    var xrEndHandler = null;
 
     /* Ultra-compact panel (2D card-like proportions) */
     var P = { tx: 0, ty: 0, tz: 220, scale: 0.12, w: 520, h: 460 };
@@ -53,13 +56,14 @@
       addName(n);
       var s=function(k,v){krpano.set("hotspot["+n+"]."+k,v);};
       s("keep",true); s("type","text"); s("distorted",true); s("torigin","world");
-      s("depth",0); s("renderer","webgl"); s("oversampling",3); s("scale",P.scale);
-      s("capture",true); s("handcursor",true); s("hittest",true); s("alpha",1);
+      var hovering=krpano.get("hotspot["+n+"].hovering")===true;
+      s("depth",0); s("renderer","webgl"); s("oversampling",3); s("scale",hovering?P.scale*1.06:P.scale);
+      s("depthbuffer",false); s("depthwrite",false);
+      s("capture",true); s("bgcapture",true); s("handcursor",true); s("hittest",true); s("alpha",1);
       s("edge","center"); s("zorder",90000); s("padding","4 12 4 12");
       s("onover","js(window.native_vr_lesson_ui_hover && window.native_vr_lesson_ui_hover(caller.name, true));");
       s("onout","js(window.native_vr_lesson_ui_hover && window.native_vr_lesson_ui_hover(caller.name, false));");
       s("onclick","js(window.native_vr_lesson_ui_click && window.native_vr_lesson_ui_click(caller.name, 'onclick'));");
-      s("onvrcontrollerbutton","js(window.native_vr_lesson_ui_hotspot_button && window.native_vr_lesson_ui_hotspot_button(caller.name, caller.vrbuttonindex, caller.vrbuttonstate));");
     }
 
     function xOff(l,w){return -P.w/2+l+w/2;}
@@ -90,6 +94,7 @@
       krpano.set("hotspot["+n+"].dataaction",action||"");
       krpano.set("hotspot["+n+"].enabled",!!en);
       krpano.set("hotspot["+n+"].capture",!!en);
+      krpano.set("hotspot["+n+"].bgcapture",!!en);
       krpano.set("hotspot["+n+"].handcursor",!!en);
       krpano.set("hotspot["+n+"].hittest",!!en);
       krpano.set("hotspot["+n+"].alpha",en?1:0.35);
@@ -104,6 +109,7 @@
       box(n,l,t,w,h,html,c,bg,bga,bdr,"",false,rad);
       krpano.set("hotspot["+n+"].alpha",1);
       krpano.set("hotspot["+n+"].capture",false);
+      krpano.set("hotspot["+n+"].bgcapture",false);
       krpano.set("hotspot["+n+"].handcursor",false);
       krpano.set("hotspot["+n+"].hittest",false);
     }
@@ -295,34 +301,118 @@
 
     window.native_vr_lesson_ui_click=function(n,src){dispatch(n,src||"onclick",{});};
     window.native_vr_lesson_ui_hover=function(n,ovr){
-      var a=actionOf(n); if(!a||ovr!==true)return;
-      try{krpano.call("callwith(hotspot[vr_controller_r], pulse(0.15,0.02));");}catch(e){}
+      var a=actionOf(n); if(!a)return;
+      try{krpano.set("hotspot["+n+"].scale",ovr===true?P.scale*1.06:P.scale);}catch(e){}
+      if(ovr!==true)return;
+      try{
+        var active=krpano.webvr&&krpano.webvr.activevrcontroller;
+        var hs=active&&active.hs?active.hs:null;
+        if(hs&&hs.pulse)hs.pulse(0.15,0.02);
+      }catch(e){}
     };
-    window.native_vr_lesson_ui_hotspot_button=function(n,btn,bs){
-      if(String(bs)==="down")dispatch(n,"hotspot-button",{button:btn,state:bs});
-    };
-    window.__krpanoNativeVrUiControllerButton=function(ch){
-      var t=null,n="",b="",sv="";
-      try{b=ch?ch.vrbuttonindex:"";sv=ch?ch.vrbuttonstate:"";t=ch&&ch.target?ch.target:null;n=t&&t.name?t.name:"";}catch(e){}
-      if(String(sv)==="down"&&n.indexOf(UI_PREFIX)===0)dispatch(n,"controller-button",{button:b,state:sv});
-    };
+    function targetName(target){
+      var n=typeof target==="string"?target:(target&&target.name?target.name:"");
+      return String(n||"").replace(/^hotspot\[/,"").replace(/\]$/,"");
+    }
+
+    function controllerUiTarget(suffix){
+      var hs=null,t=null,n="";
+      try{hs=krpano.get("hotspot[vr_controller_"+suffix+"]");t=hs&&hs.target?hs.target:null;}catch(e){}
+      n=targetName(t);
+      return n.indexOf(UI_PREFIX)===0?n:"";
+    }
+
+    function controllerTargetName(handedness){
+      var hand=String(handedness||"").toLowerCase();
+      if(hand==="left")return controllerUiTarget("l");
+      if(hand==="right")return controllerUiTarget("r");
+      var active=null,activeName="";
+      try{active=krpano.webvr&&krpano.webvr.activevrcontroller;activeName=targetName(active&&active.hs?active.hs.target:null);}catch(e){}
+      if(activeName.indexOf(UI_PREFIX)===0)return activeName;
+      var left=controllerUiTarget("l"),right=controllerUiTarget("r");
+      if(left===right)return left;
+      return left&&!right?left:(!left&&right?right:"");
+    }
+
+    function findXrSession(){
+      var session=null;
+      try{session=krpano.webvr&&(krpano.webvr.session||krpano.webvr.xrSession);}catch(e){}
+      try{
+        if(!session&&krpano.threejs&&krpano.threejs.renderer&&krpano.threejs.renderer.xr){
+          session=krpano.threejs.renderer.xr.getSession();
+        }
+      }catch(e){}
+      return session;
+    }
+
+    function detachHandSelect(){
+      if(hookedXrSession&&hookedXrSession.removeEventListener){
+        try{if(handSelectHandler)hookedXrSession.removeEventListener("select",handSelectHandler);}catch(e){}
+        try{if(xrEndHandler)hookedXrSession.removeEventListener("end",xrEndHandler);}catch(e){}
+      }
+      hookedXrSession=null;
+      handSelectHandler=null;
+      xrEndHandler=null;
+    }
+
+    function hookHandSelect(){
+      var session=findXrSession();
+      if(!session||session===hookedXrSession||!session.addEventListener)return;
+      detachHandSelect();
+      hookedXrSession=session;
+      handSelectHandler=function(event){
+        var source=event&&event.inputSource?event.inputSource:null;
+        if(!source||!source.hand)return;
+        var n=controllerTargetName(source.handedness);
+        if(n.indexOf(UI_PREFIX)===0)dispatch(n,"webxr-hand-pinch",{hand:source.handedness||"unknown"});
+      };
+      xrEndHandler=function(){detachHandSelect();};
+      session.addEventListener("select",handSelectHandler);
+      session.addEventListener("end",xrEndHandler);
+      log("native-vr-ui-hand-select-ready",{});
+    }
+
+    function configureControllers(){
+      try{
+        if(krpano.webvr){
+          krpano.webvr.vr_controller_support=true;
+          krpano.webvr.vr_controller_clickbuttons="0,1";
+          krpano.webvr.vr_controller_activationbuttons="0,1";
+        }
+      }catch(e){}
+      hookHandSelect();
+    }
+
+    function cleanup(){
+      if(krpano.native_vr_lesson_ui_timer){
+        try{clearInterval(krpano.native_vr_lesson_ui_timer);}catch(e){}
+        krpano.native_vr_lesson_ui_timer=null;
+      }
+      detachHandSelect();
+      window.native_vr_lesson_ui_click=undefined;
+      window.native_vr_lesson_ui_hover=undefined;
+      krpano.native_vr_lesson_ui_initialized=false;
+      krpano.native_vr_lesson_ui_update=null;
+      krpano.native_vr_lesson_ui_cleanup=null;
+    }
 
     krpano.native_vr_lesson_ui_update=update;
-    try{if(krpano.webvr){krpano.webvr.vr_controller_clickbuttons="0,1";krpano.webvr.vr_controller_activationbuttons="0,1";}}catch(e){}
+    krpano.native_vr_lesson_ui_cleanup=cleanup;
+    configureControllers();
     update();
-    try{krpano.native_vr_lesson_ui_timer=setInterval(update,350);}catch(e){}
+    try{krpano.native_vr_lesson_ui_timer=setInterval(function(){configureControllers();update();},350);}catch(e){}
   ]]></action>
 
   <action name="native_vr_lesson_ui_update" type="js"><![CDATA[
     if (krpano.native_vr_lesson_ui_update) krpano.native_vr_lesson_ui_update();
   ]]></action>
 
-  <action name="native_vr_lesson_ui_click" type="js" args="hotspotName,source"><![CDATA[
-    if (window.native_vr_lesson_ui_click) window.native_vr_lesson_ui_click(hotspotName || (caller ? caller.name : ""), source || "action");
+  <action name="native_vr_lesson_ui_cleanup" type="js"><![CDATA[
+    if (krpano.native_vr_lesson_ui_cleanup) krpano.native_vr_lesson_ui_cleanup();
   ]]></action>
 
-  <action name="native_vr_lesson_ui_controller_button" type="js"><![CDATA[
-    if (window.__krpanoNativeVrUiControllerButton) window.__krpanoNativeVrUiControllerButton(caller || null);
+  <action name="native_vr_lesson_ui_click" type="js" args="hotspotName,source"><![CDATA[
+    if (window.native_vr_lesson_ui_click) window.native_vr_lesson_ui_click(hotspotName || (caller ? caller.name : ""), source || "action");
   ]]></action>
 
 </krpano>
