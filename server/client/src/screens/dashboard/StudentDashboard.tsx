@@ -390,30 +390,33 @@ const StudentDashboard = () => {
       return;
     }
 
-    const allowedClassIds = new Set(Array.isArray(profile.class_ids) ? profile.class_ids : []);
-    if (allowedClassIds.size === 0) {
-      setActiveSessions([]);
-      setActiveSessionsLoading(false);
-      return;
-    }
+    const profileClassIds = Array.isArray(profile.class_ids) ? profile.class_ids.filter(Boolean) : [];
+    const allowedClassIds = new Set(profileClassIds);
 
     let cancelled = false;
     const loadSessions = async () => {
       setActiveSessionsLoading(true);
       try {
         const list = await getActiveSessionsForSchool(profile.school_id!);
-        const filtered = list.filter((session) => allowedClassIds.has(session.class_id));
-        const classIds = [...new Set(filtered.map((session) => session.class_id))];
-        const teacherUids = [...new Set(filtered.map((session) => session.teacher_uid))];
+        const classIds = [...new Set(list.map((session) => session.class_id).filter(Boolean))];
+        const teacherUids = [...new Set(list.map((session) => session.teacher_uid).filter(Boolean))];
         const [classSnaps, teacherSnaps] = await Promise.all([
           Promise.all(classIds.map((id) => getDoc(doc(db, 'classes', id)))),
           Promise.all(teacherUids.map((uid) => getDoc(doc(db, 'users', uid)))),
         ]);
         const classNames: Record<string, string> = {};
+        const classStudentIds: Record<string, string[]> = {};
         classSnaps.forEach((snap, index) => {
           if (!snap.exists()) return;
           const data = snap.data();
           classNames[classIds[index]] = data?.class_name || data?.name || classIds[index];
+          classStudentIds[classIds[index]] = Array.isArray(data?.student_ids)
+            ? data.student_ids.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+            : [];
+        });
+        const filtered = list.filter((session) => {
+          if (allowedClassIds.has(session.class_id)) return true;
+          return classStudentIds[session.class_id]?.includes(user.uid) === true;
         });
         const teacherNames: Record<string, string> = {};
         teacherSnaps.forEach((snap, index) => {

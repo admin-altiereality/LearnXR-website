@@ -3128,14 +3128,82 @@ const VRLessonPlayerInner = () => {
     // Mark that we're starting playback
     setIsPlayingAudio(true);
     setTtsStatus('loading');
-    
+
+    const startHtmlAudio = (fallbackReason?: unknown) => {
+      if (fallbackReason) {
+        console.warn('Using HTML audio fallback for TTS:', fallbackReason);
+      }
+
+      // HTML Audio fallback (no krpano or no avatar/soundinterface)
+      const audio = new Audio();
+      audioRef.current = audio;
+
+      // IMPORTANT: Prevent looping
+      audio.loop = false;
+
+      audio.onloadedmetadata = () => {
+        setAudioDuration(audio.duration);
+        log('📊', `Audio duration: ${audio.duration}s`);
+      };
+
+      audio.ontimeupdate = () => {
+        setAudioCurrentTime(audio.currentTime);
+      };
+
+      audio.oncanplay = () => {
+        setTtsStatus('ready');
+      };
+
+      audio.onplay = () => {
+        log('▶️', 'Audio started playing');
+        setTtsStatus('playing');
+        setCurrentAudioUrl(ttsEntry.audioUrl || null);
+        setUserPaused(false);
+      };
+
+      audio.onpause = () => {
+        if (!audio.ended) {
+          setTtsStatus('paused');
+        }
+      };
+
+      // CRITICAL: Handle audio end - trigger lesson progression
+      audio.onended = () => {
+        log('✅', `TTS ${lessonPhase} completed`);
+        setTtsStatus('ready');
+        setAudioCurrentTime(0);
+        setCurrentAudioUrl(null);
+        setCurrentVisemes([]);
+        setIsPlayingAudio(false);
+
+        // Wait for user to click "Continue" before progressing
+        setWaitingForUser(true);
+      };
+
+      audio.onerror = (e) => {
+        console.error('Audio playback error:', e);
+        log('❌', 'Audio error, allowing progression');
+        setTtsStatus('error');
+        setCurrentAudioUrl(null);
+        setIsPlayingAudio(false);
+        // Still allow user to continue even on error
+        setWaitingForUser(true);
+      };
+
+      // Set source and play
+      audio.src = ttsEntry.audioUrl;
+      audio.play().catch(err => {
+        console.error('Failed to play audio:', err);
+        setTtsStatus('error');
+        setIsPlayingAudio(false);
+        setWaitingForUser(true);
+      });
+    };
+
     const krpano = krpanoViewerRef.current;
-    const useKrpanoTTS = useKrpanoTTSRef.current && krpano?.playsound_at_hotspot;
-    
-    if (useKrpanoTTS) {
-      // Directional 3D TTS from teacher_avatar hotspot
+    const startKrpanoAudio = () => {
       try {
-        krpano.playsound_at_hotspot!(
+        krpano?.playsound_at_hotspot?.(
           'tts',
           ttsEntry.audioUrl,
           'teacher_avatar',
@@ -3150,78 +3218,34 @@ const VRLessonPlayerInner = () => {
         setCurrentAudioUrl(ttsEntry.audioUrl || null);
         setUserPaused(false);
       } catch (err) {
-        console.error('Krpano TTS playback error:', err);
-        setTtsStatus('error');
-        setIsPlayingAudio(false);
-        setWaitingForUser(true);
+        startHtmlAudio(err);
       }
+    };
+
+    const useKrpanoTTS = useKrpanoTTSRef.current && krpano?.playsound_at_hotspot;
+    if (useKrpanoTTS) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 2500);
+      void fetch(ttsEntry.audioUrl, { method: 'HEAD', signal: controller.signal })
+        .then((response) => {
+          window.clearTimeout(timeout);
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok) {
+            throw new Error(`TTS HEAD ${response.status}`);
+          }
+          if (contentType && !contentType.toLowerCase().includes('audio')) {
+            throw new Error(`TTS URL returned non-audio content-type: ${contentType}`);
+          }
+          startKrpanoAudio();
+        })
+        .catch((err) => {
+          window.clearTimeout(timeout);
+          startHtmlAudio(err);
+        });
       return;
     }
-    
-    // HTML Audio fallback (no krpano or no avatar/soundinterface)
-    const audio = new Audio();
-    audioRef.current = audio;
-    
-    // IMPORTANT: Prevent looping
-    audio.loop = false;
-    
-    audio.onloadedmetadata = () => {
-      setAudioDuration(audio.duration);
-      log('📊', `Audio duration: ${audio.duration}s`);
-    };
-    
-    audio.ontimeupdate = () => {
-      setAudioCurrentTime(audio.currentTime);
-    };
-    
-    audio.oncanplay = () => {
-      setTtsStatus('ready');
-    };
-    
-    audio.onplay = () => {
-      log('▶️', 'Audio started playing');
-      setTtsStatus('playing');
-      setCurrentAudioUrl(ttsEntry.audioUrl || null);
-      setUserPaused(false);
-    };
-    
-    audio.onpause = () => {
-      if (!audio.ended) {
-        setTtsStatus('paused');
-      }
-    };
-    
-    // CRITICAL: Handle audio end - trigger lesson progression
-    audio.onended = () => {
-      log('✅', `TTS ${lessonPhase} completed`);
-      setTtsStatus('ready');
-      setAudioCurrentTime(0);
-      setCurrentAudioUrl(null);
-      setCurrentVisemes([]);
-      setIsPlayingAudio(false);
-      
-      // Wait for user to click "Continue" before progressing
-      setWaitingForUser(true);
-    };
-    
-    audio.onerror = (e) => {
-      console.error('Audio playback error:', e);
-      log('❌', 'Audio error, allowing progression');
-      setTtsStatus('error');
-      setCurrentAudioUrl(null);
-      setIsPlayingAudio(false);
-      // Still allow user to continue even on error
-      setWaitingForUser(true);
-    };
-    
-    // Set source and play
-    audio.src = ttsEntry.audioUrl;
-    audio.play().catch(err => {
-      console.error('Failed to play audio:', err);
-      setTtsStatus('error');
-      setIsPlayingAudio(false);
-      setWaitingForUser(true);
-    });
+
+    startHtmlAudio();
   }, [isMuted, getTTSForCurrentPhase, isPlayingAudio, lessonPhase, cleanupAudio]);
 
   const pauseTTS = useCallback(() => {

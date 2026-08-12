@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, Copy, Eye, Loader2, PanelLeftClose, PanelLeftOpen, Target, UserMinus, Users, X, Radio, ChevronRight, SkipForward, RotateCcw } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
 import type { ClassSession, SessionStudentProgress, TeacherSessionView } from '../../types/lms';
 import { approveJoinRequest, removeStudentFromSession, updateTeacherView } from '../../services/classSessionService';
 import { StudentScreen360Preview } from '../StudentScreen360Preview';
@@ -85,6 +85,7 @@ export function LiveClassHostOverlay({
   const [removingUid, setRemovingUid] = useState<string | null>(null);
   const [approvingUid, setApprovingUid] = useState<string | null>(null);
   const [studentSkyboxUrl, setStudentSkyboxUrl] = useState<string | null>(null);
+  const [classRosterCount, setClassRosterCount] = useState<number | null>(null);
   const [requestDisplayNames, setRequestDisplayNames] = useState<Record<string, string>>({});
   const [directing, setDirecting] = useState(false);
 
@@ -132,6 +133,34 @@ export function LiveClassHostOverlay({
     setStudentViewOn(false);
     setActiveDrawer(null);
   }, [sessionId]);
+
+  useEffect(() => {
+    const classId = session?.class_id;
+    if (!classId) {
+      setClassRosterCount(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'classes', classId));
+        if (cancelled) return;
+        if (!snap.exists()) {
+          setClassRosterCount(null);
+          return;
+        }
+        const data = snap.data();
+        setClassRosterCount(Array.isArray(data?.student_ids) ? data.student_ids.length : null);
+      } catch {
+        if (!cancelled) setClassRosterCount(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.class_id]);
 
   useEffect(() => {
     if (!pendingJoinKey) {
@@ -337,7 +366,7 @@ export function LiveClassHostOverlay({
 
   return (
     <div className={`pointer-events-none absolute inset-0 z-50 text-white ${className}`}>
-      <div className="pointer-events-auto absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex max-w-[calc(100vw-9rem)] items-center gap-2 rounded-2xl border border-white/12 bg-zinc-950/80 px-2 py-2 shadow-[0_14px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:left-[13.5rem] sm:max-w-none sm:px-3">
+      <div className="pointer-events-auto absolute left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex items-center gap-1.5 rounded-2xl border border-white/12 bg-zinc-950/80 px-2 py-2 shadow-[0_14px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:left-[13.5rem] sm:gap-2 sm:px-3">
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
@@ -367,11 +396,14 @@ export function LiveClassHostOverlay({
             </div>
           )}
         </div>
-        <div className="hidden items-center gap-1.5 sm:flex">
-          <span className="rounded-full bg-teal-400/15 px-2.5 py-1 text-[11px] font-semibold text-teal-100">
-            Students: {studentCount}
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="rounded-full bg-teal-400/15 px-2 py-1 text-[10px] font-semibold text-teal-100 sm:px-2.5 sm:text-[11px]">
+            Live: {studentCount}
           </span>
-          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${pendingCount ? 'bg-amber-400/20 text-amber-100' : 'bg-white/8 text-white/55'}`}>
+          <span className="rounded-full bg-cyan-400/15 px-2 py-1 text-[10px] font-semibold text-cyan-100 sm:px-2.5 sm:text-[11px]">
+            Class: {classRosterCount ?? '-'}
+          </span>
+          <span className={`hidden rounded-full px-2.5 py-1 text-[11px] font-semibold min-[430px]:inline-flex ${pendingCount ? 'bg-amber-400/20 text-amber-100' : 'bg-white/8 text-white/55'}`}>
             Pending: {pendingCount}
           </span>
         </div>
@@ -409,12 +441,12 @@ export function LiveClassHostOverlay({
         <div className="pointer-events-auto absolute bottom-[max(0.85rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] flex gap-2 rounded-2xl border border-white/12 bg-zinc-950/82 p-2 shadow-[0_16px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:bottom-auto sm:right-auto sm:top-[max(5.25rem,calc(env(safe-area-inset-top)+5.25rem))] sm:w-72 sm:flex-col sm:p-2.5">
           <div className="hidden grid-cols-2 gap-2 sm:grid">
             <div className="rounded-xl bg-white/8 px-3 py-2">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">Students</p>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">Live</p>
               <p className="mt-0.5 text-lg font-bold tabular-nums text-teal-100">{studentCount}</p>
             </div>
             <div className="rounded-xl bg-white/8 px-3 py-2">
-              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">Pending</p>
-              <p className={`mt-0.5 text-lg font-bold tabular-nums ${pendingCount ? 'text-amber-100' : 'text-white/55'}`}>{pendingCount}</p>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">Class</p>
+              <p className="mt-0.5 text-lg font-bold tabular-nums text-cyan-100">{classRosterCount ?? '-'}</p>
             </div>
           </div>
 
