@@ -14,9 +14,10 @@ import { useClassSession } from '../../contexts/ClassSessionContext';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDocs, getDoc, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
-import { removeStudentFromSession } from '../../services/classSessionService';
+import { removeStudentFromSession, approveJoinRequest } from '../../services/classSessionService';
 import { VR360_TOUR_CHAPTER_ID, getVr360TourById, topicIdForVr360TourId, VR360_TOURS } from '../../config/vr360Tours';
 import { getApiBaseUrl } from '../../utils/apiConfig';
+import { resolveStudentDisplayName } from '../../utils/displayName';
 import { StudentScreen360Preview } from '../../Components/StudentScreen360Preview';
 import type { Class, StudentScore, LessonLaunch } from '../../types/lms';
 import { Link, useNavigate } from 'react-router-dom';
@@ -561,10 +562,11 @@ const TeacherDashboard = () => {
   }, [sessionContextError, clearSessionError]);
 
   // Subscribe to student profiles so we show current name (e.g. after they change it in profile)
-  const progressStudentUids = useMemo(
-    () => [...new Set(progressList.map((p) => p.student_uid))].sort().join(','),
-    [progressList]
-  );
+  const progressStudentUids = useMemo(() => {
+    const listUids = progressList.map((p) => p.student_uid);
+    const reqUids = Array.isArray(activeSession?.join_requests) ? activeSession.join_requests : [];
+    return [...new Set([...listUids, ...reqUids])].sort().join(',');
+  }, [progressList, activeSession?.join_requests]);
   useEffect(() => {
     if (!activeSessionId || !progressStudentUids) {
       setStudentDisplayNames({});
@@ -575,7 +577,16 @@ const TeacherDashboard = () => {
       onSnapshot(doc(db, 'users', uid), (snap) => {
         if (snap.exists()) {
           const d = snap.data();
-          const name = ((d.displayName ?? d.name) ?? '').toString().trim();
+          const name = resolveStudentDisplayName(
+            {
+              uid,
+              name: typeof d?.name === 'string' ? d.name : null,
+              displayName: typeof d?.displayName === 'string' ? d.displayName : null,
+              email: typeof d?.email === 'string' ? d.email : null,
+            },
+            null,
+            null
+          );
           if (name) setStudentDisplayNames((prev) => ({ ...prev, [uid]: name }));
         }
       })
@@ -641,7 +652,22 @@ const TeacherDashboard = () => {
     },
     [activeSessionId, user?.uid]
   );
+  const [approvingStudentUid, setApprovingStudentUid] = useState<string | null>(null);
 
+  const handleApproveJoin = useCallback(
+    async (studentUid: string) => {
+      if (!activeSessionId) return;
+      setApprovingStudentUid(studentUid);
+      try {
+        const ok = await approveJoinRequest(activeSessionId, studentUid);
+        if (ok) toast.success('Student join request approved');
+        else toast.error('Failed to approve request');
+      } finally {
+        setApprovingStudentUid(null);
+      }
+    },
+    [activeSessionId]
+  );
   const handleLaunchVr360ToClass = useCallback(
     async (tour: (typeof VR360_TOURS)[number]) => {
       if (!launchLessonToClass) return;
@@ -1129,6 +1155,44 @@ const TeacherDashboard = () => {
                         </div>
                       </div>
 
+                      {/* Join Requests */}
+                      {activeSession?.join_requests && activeSession.join_requests.length > 0 && (
+                        <div className="pt-2 border-t border-border">
+                          <h3 className="text-sm sm:text-base font-semibold text-amber-500 mb-2 flex items-center gap-2">
+                            <FaBell className="w-4 h-4" />
+                            Pending Join Requests
+                          </h3>
+                          <div className="space-y-2">
+                            {activeSession.join_requests.map((uid) => {
+                              const displayLabel = studentDisplayNames[uid] ?? resolveStudentDisplayName(null, null, { uid });
+                              return (
+                                <Card key={`req-${uid}`} className="border-amber-500/30 bg-amber-500/5">
+                                  <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                      <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+                                        <FaUserCheck className="text-amber-600 text-lg" />
+                                      </div>
+                                      <div>
+                                        <p className="font-medium text-foreground truncate">{displayLabel}</p>
+                                        <p className="text-xs text-muted-foreground">Wants to rejoin</p>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      className="shrink-0 gap-2 w-full sm:w-auto"
+                                      onClick={() => handleApproveJoin(uid)}
+                                      disabled={approvingStudentUid === uid}
+                                    >
+                                      {approvingStudentUid === uid ? 'Approving…' : 'Approve'}
+                                    </Button>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Student list + chips (only when we have students) */}
                       {progressList.length > 0 && (
                         <div className="pt-2 border-t border-border">
@@ -1136,7 +1200,11 @@ const TeacherDashboard = () => {
                           <p className="text-xs text-muted-foreground mb-3">Click “View screen” or a chip to see their 360° view in the panel on the right.</p>
                           <div className="flex flex-wrap gap-2 mb-4">
                             {progressList.map((p) => {
-                              const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                              const displayLabel = studentDisplayNames[p.student_uid] ?? resolveStudentDisplayName(null, null, {
+                                uid: p.student_uid,
+                                displayName: p.display_name,
+                                email: p.email,
+                              });
                               const phaseLabel = (() => {
                                 const pn = String(p.phase || 'idle');
                                 if (pn === 'intro') return 'Intro';
@@ -1187,7 +1255,11 @@ const TeacherDashboard = () => {
                               })();
                               const isComplete = p.phase === 'completed';
                               const isQuiz = p.phase === 'quiz';
-                              const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                              const displayLabel = studentDisplayNames[p.student_uid] ?? resolveStudentDisplayName(null, null, {
+                                uid: p.student_uid,
+                                displayName: p.display_name,
+                                email: p.email,
+                              });
                               const lastUpdated = p.last_updated ? (typeof p.last_updated === 'string' ? new Date(p.last_updated) : (p.last_updated as { toDate?: () => Date })?.toDate?.() ?? null) : null;
                               const hasQuizData = p.quiz_score != null && p.quiz_total != null && (p.quiz_total as number) > 0;
                               const quizAnswers = (p.quiz_answers as Array<{ question_index: number; correct: boolean; selected_option_index: number }> | undefined) ?? [];
@@ -1289,7 +1361,14 @@ const TeacherDashboard = () => {
                               <h3 className="text-sm font-semibold text-foreground truncate">Student screen</h3>
                               <p className="text-xs text-muted-foreground truncate mt-0.5">
                                 {selectedStudentForScreen
-                                  ? (studentDisplayNames[selectedStudentForScreen] ?? progressList.find((x) => x.student_uid === selectedStudentForScreen)?.display_name ?? selectedStudentForScreen.slice(0, 8))
+                                  ? (studentDisplayNames[selectedStudentForScreen] ?? (() => {
+                                      const progress = progressList.find((x) => x.student_uid === selectedStudentForScreen);
+                                      return resolveStudentDisplayName(null, null, {
+                                        uid: selectedStudentForScreen,
+                                        displayName: progress?.display_name,
+                                        email: progress?.email,
+                                      });
+                                    })())
                                   : 'Live 360° preview'}
                               </p>
                             </div>
@@ -1326,7 +1405,11 @@ const TeacherDashboard = () => {
                                 </div>
                               );
                             }
-                            const displayLabel = studentDisplayNames[p.student_uid] ?? [p.display_name?.trim(), p.email?.trim()].find(Boolean) ?? `Student ${p.student_uid.slice(0, 6)}`;
+                            const displayLabel = studentDisplayNames[p.student_uid] ?? resolveStudentDisplayName(null, null, {
+                              uid: p.student_uid,
+                              displayName: p.display_name,
+                              email: p.email,
+                            });
                             const phaseLabel = (() => {
                               const pn = String(p.phase || 'idle');
                               if (pn === 'intro') return 'Intro';

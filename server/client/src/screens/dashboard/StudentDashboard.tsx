@@ -12,9 +12,9 @@ import { useLesson } from '../../contexts/LessonContext';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
-import type { LessonLaunch, StudentScore, Class, UserProfile, LaunchedScene } from '../../types/lms';
+import type { LessonLaunch, StudentScore, Class, UserProfile, LaunchedScene, ClassSession } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
-import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher, FaUsers, FaKey } from 'react-icons/fa';
+import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher, FaUsers, FaKey, FaVideo, FaArrowRight } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../Components/ui/card';
 import { Badge } from '../../Components/ui/badge';
@@ -27,6 +27,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
 import { buildCreateSceneActiveLesson } from '../../utils/buildCreateSceneActiveLesson';
+import { getActiveSessionsForSchool } from '../../services/classSessionService';
+
+interface SessionWithDetails extends ClassSession {
+  className?: string;
+  teacherName?: string;
+}
 
 const GUEST_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=LearnXRGuest';
 
@@ -42,6 +48,7 @@ const StudentDashboard = () => {
     sessionLoading: sessionJoinLoading,
     sessionError: sessionJoinError,
     clearSessionError,
+    isWaitingForApproval,
   } = useClassSession();
   const isGuest = profile?.isGuest === true && profile?.role === 'student';
   const [lessonLaunches, setLessonLaunches] = useState<LessonLaunch[]>([]);
@@ -49,6 +56,9 @@ const StudentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<Class[]>([]);
   const [classTeachers, setClassTeachers] = useState<Map<string, UserProfile>>(new Map());
+  const [activeSessions, setActiveSessions] = useState<SessionWithDetails[]>([]);
+  const [activeSessionsLoading, setActiveSessionsLoading] = useState(false);
+  const [joiningSessionCode, setJoiningSessionCode] = useState<string | null>(null);
   const [sessionCodeInput, setSessionCodeInput] = useState('');
   const launchedLessonHandledRef = useRef<string | null>(null);
   const launchedSceneHandledRef = useRef<string | null>(null);
@@ -60,6 +70,11 @@ const StudentDashboard = () => {
   });
   const [evaluation, setEvaluation] = useState<StudentEvaluation | null>(null);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isWaitingForApproval || !joinedSessionId) return;
+    navigate('/vrlessonplayer-krpano', { replace: true });
+  }, [isWaitingForApproval, joinedSessionId, navigate]);
 
   useEffect(() => {
     if (!user?.uid || !profile) return;
@@ -368,6 +383,69 @@ const StudentDashboard = () => {
     };
   }, [profile?.uid, profile?.class_ids]);
 
+  useEffect(() => {
+    if (!user?.uid || profile?.role !== 'student' || !profile?.school_id || profile?.isGuest) {
+      setActiveSessions([]);
+      setActiveSessionsLoading(false);
+      return;
+    }
+
+    const allowedClassIds = new Set(Array.isArray(profile.class_ids) ? profile.class_ids : []);
+    if (allowedClassIds.size === 0) {
+      setActiveSessions([]);
+      setActiveSessionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadSessions = async () => {
+      setActiveSessionsLoading(true);
+      try {
+        const list = await getActiveSessionsForSchool(profile.school_id!);
+        const filtered = list.filter((session) => allowedClassIds.has(session.class_id));
+        const classIds = [...new Set(filtered.map((session) => session.class_id))];
+        const teacherUids = [...new Set(filtered.map((session) => session.teacher_uid))];
+        const [classSnaps, teacherSnaps] = await Promise.all([
+          Promise.all(classIds.map((id) => getDoc(doc(db, 'classes', id)))),
+          Promise.all(teacherUids.map((uid) => getDoc(doc(db, 'users', uid)))),
+        ]);
+        const classNames: Record<string, string> = {};
+        classSnaps.forEach((snap, index) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          classNames[classIds[index]] = data?.class_name || data?.name || classIds[index];
+        });
+        const teacherNames: Record<string, string> = {};
+        teacherSnaps.forEach((snap, index) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          teacherNames[teacherUids[index]] = data?.name || data?.displayName || data?.email || teacherUids[index];
+        });
+        if (!cancelled) {
+          setActiveSessions(
+            filtered.map((session) => ({
+              ...session,
+              className: classNames[session.class_id] || session.class_id,
+              teacherName: teacherNames[session.teacher_uid] || 'Teacher',
+            }))
+          );
+        }
+      } catch (error) {
+        console.error('StudentDashboard active sessions:', error);
+        if (!cancelled) setActiveSessions([]);
+      } finally {
+        if (!cancelled) setActiveSessionsLoading(false);
+      }
+    };
+
+    void loadSessions();
+    const interval = setInterval(() => void loadSessions(), 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user?.uid, profile?.role, profile?.school_id, profile?.isGuest, profile?.class_ids]);
+
   const updateStats = (launches: LessonLaunch[], scoresData: StudentScore[]) => {
     const totalLessons = launches.length;
     const completedLessons = launches.filter(l => l.completion_status === 'completed').length;
@@ -467,7 +545,7 @@ const StudentDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Guests must use anonymous sign-in before they can join by session code. */}
+        {/* Active class sessions + code fallback */}
           <Card className="mb-8 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
             <CardHeader className="pb-2 pt-4 px-4 sm:px-6">
               <div className="flex items-center gap-2">
@@ -483,6 +561,77 @@ const StudentDashboard = () => {
               </div>
             </CardHeader>
             <CardContent className="px-4 pb-4 sm:px-6">
+              {!isGuest && (
+                <div className="mb-4 rounded-lg border border-border bg-background/60 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Active class sessions</p>
+                      <p className="text-xs text-muted-foreground">Join sessions for your enrolled classes without typing a code.</p>
+                    </div>
+                    {activeSessionsLoading && <span className="text-xs text-muted-foreground">Refreshing...</span>}
+                  </div>
+                  {activeSessions.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                      No active class session for your classes right now.
+                    </p>
+                  ) : (
+                    <div className="grid gap-2">
+                      {activeSessions.map((session) => {
+                        const isJoined = joinedSessionId === session.id;
+                        const isJoining = sessionJoinLoading && joiningSessionCode === session.session_code;
+                        return (
+                          <div
+                            key={session.id}
+                            className="flex flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-foreground">{session.className || session.class_id}</p>
+                              <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <FaChalkboardTeacher className="h-3 w-3 shrink-0" />
+                                {session.teacherName || 'Teacher'}
+                              </p>
+                              {(session.launched_lesson || session.launched_scene) && (
+                                <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-primary">
+                                  <FaVideo className="h-3 w-3 shrink-0" />
+                                  Lesson is live
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant={isJoined ? 'secondary' : 'default'}
+                              className="shrink-0 gap-1.5"
+                              onClick={async () => {
+                                if (isJoined) {
+                                  navigate('/vrlessonplayer-krpano');
+                                  return;
+                                }
+                                setJoiningSessionCode(session.session_code);
+                                try {
+                                  const ok = await joinSession(session.session_code);
+                                  if (ok) {
+                                    toast.success('Joined the class session.');
+                                    if (session.launched_lesson || session.launched_scene) {
+                                      navigate('/vrlessonplayer-krpano');
+                                    }
+                                  }
+                                } finally {
+                                  setJoiningSessionCode(null);
+                                }
+                              }}
+                              disabled={isJoining}
+                            >
+                              {isJoined ? 'Open class' : isJoining ? 'Joining...' : 'Join'}
+                              <FaArrowRight className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {!joinedSessionId ? (
                 <div className="space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3">

@@ -710,9 +710,10 @@ service cloud.firestore {
       );
     }
     function classSessionLaunchKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teacher_view', 'updated_at']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'updated_at']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'launched_lesson', 'launched_scene', 'teacher_view', 'updated_at']);
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'status', 'launched_lesson', 'launched_scene', 'teacher_view',
+        'teacher_controlled_phase', 'control_students_enabled', 'updated_at'
+      ]);
     }
     match /class_sessions/{sessionId} {
       // Teachers (same school), school admins, superadmin, and principals (managed school) may host.

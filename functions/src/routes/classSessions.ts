@@ -148,60 +148,72 @@ router.post('/join', async (req, res) => {
     const userClassIds: string[] = Array.isArray(userData.class_ids) ? userData.class_ids : [];
     const classStudentIds: string[] = Array.isArray(classData.student_ids) ? classData.student_ids : [];
 
-    // If user is not yet linked to the class, link them now (session code is the shared secret).
-    // Firestore batches allow only one write per document — merge user fields into a single update.
+    const removedUids: string[] = Array.isArray(sessionData.removed_student_uids) ? sessionData.removed_student_uids : [];
+    const isRemoved = removedUids.includes(uid);
+    let requiresApproval = false;
+
     const batch = db.batch();
-    let needsUserUpdate = false;
-    let needsClassUpdate = false;
-    const userUpdates: Record<string, unknown> = {
-      updatedAt: new Date().toISOString(),
-    };
 
-    // Relink guests onto the current partner demo school/class when they switch demos.
-    if (isGuestPartnerJoin) {
-      if (userData.school_id !== sessionSchoolId) {
-        userUpdates.school_id = sessionSchoolId;
-        needsUserUpdate = true;
-      }
-      if (!userClassIds.includes(sessionClassId) || userClassIds.length !== 1) {
-        userUpdates.class_ids = [sessionClassId];
-        needsUserUpdate = true;
-      }
-      userUpdates.last_partner_demo_session_id = sessionId;
-      userUpdates.last_partner_demo_joined_at = new Date().toISOString();
-      needsUserUpdate = true;
-    } else {
-      if (!userData.school_id) {
-        userUpdates.school_id = sessionSchoolId;
-        needsUserUpdate = true;
-      }
-
-      if (!userClassIds.includes(sessionClassId)) {
-        userUpdates.class_ids = admin.firestore.FieldValue.arrayUnion(sessionClassId);
-        needsUserUpdate = true;
-      }
-    }
-
-    if (!classStudentIds.includes(uid)) {
-      batch.update(classRef, {
-        student_ids: admin.firestore.FieldValue.arrayUnion(uid),
-        updatedAt: new Date().toISOString(),
+    if (isRemoved) {
+      batch.update(db.collection('class_sessions').doc(sessionId), {
+        join_requests: admin.firestore.FieldValue.arrayUnion(uid),
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
       });
-      needsClassUpdate = true;
-    }
-
-    if (needsUserUpdate) {
-      batch.update(userRef, userUpdates);
-    }
-
-    if (needsUserUpdate || needsClassUpdate) {
+      requiresApproval = true;
       await batch.commit();
+    } else {
+      let needsUserUpdate = false;
+      let needsClassUpdate = false;
+      const userUpdates: Record<string, unknown> = {
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (isGuestPartnerJoin) {
+        if (userData.school_id !== sessionSchoolId) {
+          userUpdates.school_id = sessionSchoolId;
+          needsUserUpdate = true;
+        }
+        if (!userClassIds.includes(sessionClassId) || userClassIds.length !== 1) {
+          userUpdates.class_ids = [sessionClassId];
+          needsUserUpdate = true;
+        }
+        userUpdates.last_partner_demo_session_id = sessionId;
+        userUpdates.last_partner_demo_joined_at = new Date().toISOString();
+        needsUserUpdate = true;
+      } else {
+        if (!userData.school_id) {
+          userUpdates.school_id = sessionSchoolId;
+          needsUserUpdate = true;
+        }
+
+        if (!userClassIds.includes(sessionClassId)) {
+          userUpdates.class_ids = admin.firestore.FieldValue.arrayUnion(sessionClassId);
+          needsUserUpdate = true;
+        }
+      }
+
+      if (!classStudentIds.includes(uid)) {
+        batch.update(classRef, {
+          student_ids: admin.firestore.FieldValue.arrayUnion(uid),
+          updatedAt: new Date().toISOString(),
+        });
+        needsClassUpdate = true;
+      }
+
+      if (needsUserUpdate) {
+        batch.update(userRef, userUpdates);
+      }
+
+      if (needsUserUpdate || needsClassUpdate) {
+        await batch.commit();
+      }
     }
 
     return res.json({
       success: true,
       data: {
         sessionId,
+        requiresApproval,
       },
     });
   } catch (error: any) {
@@ -303,6 +315,47 @@ router.post('/:sessionId/remove-student', async (req, res) => {
       error: 'Internal Server Error',
       message: error?.message || 'Failed to remove student',
     });
+  }
+});
+
+/**
+ * POST /class-sessions/:sessionId/approve-join
+ * Body: { studentUid: string }
+ * Requires authenticated teacher who owns the session.
+ */
+router.post('/:sessionId/approve-join', async (req, res) => {
+  try {
+    const uid = (req as any).user?.uid as string | undefined;
+    if (!uid) {
+      return res.status(401).json({ success: false, error: 'Unauthorized', message: 'Authentication required' });
+    }
+
+    const sessionId = req.params?.sessionId;
+    const studentUid = typeof req.body?.studentUid === 'string' ? req.body.studentUid.trim() : '';
+    if (!sessionId || !studentUid) {
+      return res.status(400).json({ success: false, error: 'Bad Request', message: 'sessionId and studentUid are required' });
+    }
+
+    const db = admin.firestore();
+    const sessionRef = db.collection('class_sessions').doc(sessionId);
+    const sessionSnap = await sessionRef.get();
+    if (!sessionSnap.exists) return res.status(404).json({ success: false, error: 'Not Found', message: 'Session not found' });
+
+    const sessionData = sessionSnap.data() || {};
+    if (sessionData.teacher_uid !== uid) {
+      return res.status(403).json({ success: false, error: 'Forbidden', message: 'Only the session owner can approve join requests' });
+    }
+
+    await sessionRef.update({
+      removed_student_uids: admin.firestore.FieldValue.arrayRemove(studentUid),
+      join_requests: admin.firestore.FieldValue.arrayRemove(studentUid),
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return res.json({ success: true, message: 'Student join request approved' });
+  } catch (error: any) {
+    console.error('Class session approve-join error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error', message: error?.message || 'Failed to approve join request' });
   }
 });
 

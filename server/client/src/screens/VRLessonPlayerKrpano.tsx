@@ -36,6 +36,7 @@ import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
 import { getLessonBundle } from '../services/firestore/getLessonBundle';
 import { getVRCapabilities, isMetaQuestBrowser } from '../utils/vrDetection';
+import { resolveStudentDisplayName } from '../utils/displayName';
 import type { ChapterTTS, MeshyAsset, ChapterMCQ } from '../types/curriculum';
 import {
   Play,
@@ -880,6 +881,8 @@ const VRLessonPlayerInner = () => {
   const activeSession = classSession?.activeSession ?? null;
   const joinedSession = classSession?.joinedSession ?? null;
   const bindActiveSession = classSession?.bindActiveSession;
+  const endSession = classSession?.endSession;
+  const broadcastTeacherPhase = classSession?.broadcastTeacherPhase;
   const progressList = classSession?.progressList ?? [];
 
   // Extract from context with safety - use stable defaults
@@ -1801,12 +1804,54 @@ const VRLessonPlayerInner = () => {
               // Immersive UI bridge: krpano world-space UI buttons -> React actions
               (window as unknown as { __krpanoUIAction?: (action: string) => void }).__krpanoUIAction = (action: string) => {
                 try {
+                  // Bridge live class state via window globals (stale closure safe)
+                  const isHost = (window as unknown as Record<string, unknown>).__krpanoIsClassHost === true;
+                  const ctrlOn = (window as unknown as Record<string, unknown>).__krpanoControlEnabled === true;
+                  const isStudent = (window as unknown as Record<string, unknown>).__krpanoIsStudent === true;
+                  const broadcastFn = (window as unknown as Record<string, unknown>).__krpanoBroadcastPhase as ((p: string, e: boolean) => void) | undefined;
+
+                  // Phases ordered for Continue progression
+                  const PHASES = ['intro', 'explanation', 'outro', 'quiz'];
+
+                  // Helper: broadcast phase from teacher (also advances locally)
+                  const teacherPhaseGo = (phaseKey: string) => {
+                    setPhase(phaseKey as Parameters<typeof setPhase>[0]);
+                    if (ctrlOn && broadcastFn) {
+                      void broadcastFn(phaseKey, true);
+                    }
+                  };
+
+                  // STUDENT LOCK: when teacher is controlling, block self-navigation actions
+                  if (isStudent && ctrlOn) {
+                    const blocked = ['continue', 'replay', 'skipToQuiz'].includes(action) || action.startsWith('phaseGo:');
+                    if (blocked) {
+                      log('🔒', '[VR] Student phase action blocked — teacher is controlling', action);
+                      return;
+                    }
+                    // Allow MCQ interactions through
+                  }
+
                   // Normalize and route high-level actions into existing handlers
                   if (action === 'continue') {
-                    handleContinue();
+                    if (isHost) {
+                      // Teacher in VR: advance phase and broadcast
+                      const curr = (window as unknown as Record<string, unknown>).__krpanoCurrentPhase as string || 'intro';
+                      const idx = PHASES.indexOf(curr);
+                      const next = PHASES[Math.min(idx + 1, PHASES.length - 1)];
+                      teacherPhaseGo(next);
+                    } else {
+                      handleContinue();
+                    }
                   } else if (action === 'replay') {
+                    if (isHost && ctrlOn && broadcastFn) {
+                      const curr = (window as unknown as Record<string, unknown>).__krpanoCurrentPhase as string || 'intro';
+                      void broadcastFn(curr, true);
+                    }
                     handleReplay();
                   } else if (action === 'skipToQuiz') {
+                    if (isHost && ctrlOn && broadcastFn) {
+                      void broadcastFn('quiz', true);
+                    }
                     handleSkipToQuiz();
                   } else if (action === 'mcqSubmit') {
                     handleMcqSubmit();
@@ -1835,8 +1880,12 @@ const VRLessonPlayerInner = () => {
                     setShowChat(true);
                   } else if (action.startsWith('phaseGo:')) {
                     const phaseKey = action.split(':')[1];
-                    if (phaseKey && ['intro', 'explanation', 'outro', 'quiz'].includes(phaseKey)) {
-                      setPhase(phaseKey);
+                    if (phaseKey && PHASES.includes(phaseKey)) {
+                      if (isHost) {
+                        teacherPhaseGo(phaseKey);
+                      } else {
+                        setPhase(phaseKey as Parameters<typeof setPhase>[0]);
+                      }
                     }
                   }
                 } catch (err) {
@@ -1860,6 +1909,8 @@ const VRLessonPlayerInner = () => {
                 totalMcqs: number;
                 correctAnswer: number;
                 explanation: string;
+                controlStudentsEnabled?: boolean;
+                isStudent?: boolean;
               }) => void }).__krpanoUIUpdate = (state) => {
                 const viewer = krpanoViewerRef.current;
                 if (!viewer?.call) return;
@@ -1879,6 +1930,8 @@ const VRLessonPlayerInner = () => {
                   totalMcqs: state.totalMcqs ?? 0,
                   correctAnswer: state.correctAnswer ?? -1,
                   explanation: state.explanation ?? '',
+                  controlStudentsEnabled: state.controlStudentsEnabled === true,
+                  isStudent: state.isStudent === true,
                 };
                 try {
                   viewer.call('immersive_ui_update()');
@@ -1954,6 +2007,70 @@ const VRLessonPlayerInner = () => {
     return () => clearTimeout(t);
   }, [lastHotspotClicked]);
 
+  const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
+  const partnerSessionMeta = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = sessionStorage.getItem('learnxr_partner_demo_session');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { code?: string; id?: string };
+      if (!parsed?.id && !parsed?.code) return null;
+      return {
+        id: typeof parsed.id === 'string' ? parsed.id : null,
+        code: typeof parsed.code === 'string' ? parsed.code : null,
+      };
+    } catch {
+      return null;
+    }
+  }, [activeSessionId, activeSession?.session_code, profile?.role]);
+
+  const hostSessionCode = useMemo(() => {
+    if (activeSession?.session_code) return activeSession.session_code;
+    return partnerSessionMeta?.code || null;
+  }, [activeSession?.session_code, partnerSessionMeta?.code]);
+
+  const isClassHost = Boolean(
+    isTeacherInSession ||
+      (profile?.role === 'partner' && (partnerSessionMeta?.id || partnerSessionMeta?.code || activeSession?.hosted_by_partner)) ||
+      (activeSessionId &&
+        activeSession &&
+        user?.uid &&
+        (activeSession.teacher_uid === user.uid ||
+          (profile?.role === 'partner' && activeSession.hosted_by_partner === true)))
+  );
+
+  const teacherView = joinedSession?.teacher_view;
+  const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
+  const isStudentRemoved = useMemo(() => {
+    if (!isStudentInSession || !user?.uid || !joinedSession) return false;
+    const removedList = Array.isArray(joinedSession.removed_student_uids) ? joinedSession.removed_student_uids : [];
+    return removedList.includes(user.uid);
+  }, [isStudentInSession, user?.uid, joinedSession?.removed_student_uids]);
+
+  // Derive control state from whichever session is active (teacher reads activeSession, student reads joinedSession)
+  const sessionForControl = isStudentInSession ? joinedSession : activeSession;
+  const controlStudentsEnabled = sessionForControl?.control_students_enabled ?? false;
+  const teacherControlledPhase = sessionForControl?.teacher_controlled_phase ?? null;
+  const currentStudentDisplayName = resolveStudentDisplayName(profile as any, {
+    uid: user?.uid,
+    displayName: user?.displayName,
+    email: user?.email,
+  });
+  const blockStudentPhaseControl = useCallback((actionLabel: string): boolean => {
+    if (!isStudentInSession || !controlStudentsEnabled) return false;
+    toast.info(`Teacher is controlling the lesson. ${actionLabel} is locked for now.`);
+    return true;
+  }, [isStudentInSession, controlStudentsEnabled]);
+
+  // Expose to window globals to avoid stale closures in Krpano callbacks
+  if (typeof window !== 'undefined') {
+    (window as any).__krpanoIsClassHost = isClassHost;
+    (window as any).__krpanoControlEnabled = controlStudentsEnabled;
+    (window as any).__krpanoIsStudent = isStudentInSession;
+    (window as any).__krpanoBroadcastPhase = broadcastTeacherPhase;
+    (window as any).__krpanoCurrentPhase = lessonPhase;
+  }
+
   // Report phase to class session for teacher dashboard (when student joined from class)
   // Only students write progress documents. Hosts may have an active session ID
   // for view broadcast, but Firestore correctly reserves progress writes for students.
@@ -1964,13 +2081,13 @@ const VRLessonPlayerInner = () => {
     reportSessionProgress(
       sessionIdForReport,
       user.uid,
-      profile?.displayName ?? (profile as any)?.name ?? undefined,
+      currentStudentDisplayName,
       'loading',
       undefined,
       undefined,
       (profile as any)?.email ?? user?.email ?? undefined
     ).catch(() => {});
-  }, [sessionIdForReport, user?.uid]);
+  }, [sessionIdForReport, user?.uid, currentStudentDisplayName, user?.email, profile]);
   useEffect(() => {
     if (!sessionIdForReport || !user?.uid) return;
     const phaseMap: Record<string, SessionLessonPhase> = {
@@ -1989,7 +2106,7 @@ const VRLessonPlayerInner = () => {
       reportSessionProgress(
         sessionIdForReport,
         user.uid,
-        profile?.displayName ?? (profile as any)?.name ?? undefined,
+        currentStudentDisplayName,
         'completed',
         undefined,
         { score: quiz.score, total: quiz.total, answers: quiz.answers },
@@ -1999,14 +2116,14 @@ const VRLessonPlayerInner = () => {
       reportSessionProgress(
         sessionIdForReport,
         user.uid,
-        profile?.displayName ?? (profile as any)?.name ?? undefined,
+        currentStudentDisplayName,
         phase,
         undefined,
         undefined,
         (profile as any)?.email ?? user?.email ?? undefined
       ).catch(() => {});
     }
-  }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile]);
+  }, [lessonPhase, sessionIdForReport, user?.uid, user?.email, profile, currentStudentDisplayName]);
 
   // Guided lookto: smooth view transition when lesson phase changes (intro / explanation / outro)
   // Krpano is the active view whenever we have a skybox (skybox-only or skybox+GLB); sync uses this.
@@ -2122,8 +2239,10 @@ const VRLessonPlayerInner = () => {
       totalMcqs: mcqs.length,
       correctAnswer: currentMcq?.correctAnswer ?? -1,
       explanation: currentMcq?.explanation || '',
+      controlStudentsEnabled,
+      isStudent: isStudentInSession,
     });
-  }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio]);
+  }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio, controlStudentsEnabled, isStudentInSession]);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
     // Never fight live class Direct / teacher follow with phase lookto on students.
@@ -2140,7 +2259,7 @@ const VRLessonPlayerInner = () => {
     const fov = target?.fov ?? 90;
     const time = 1.5;
 
-    const action = `tween(view.hlookat,${h},view.vlookat,${v},view.fov,${fov},time=${time})`;
+    const action = `lookto(${h},${v},${fov},tween(easeInOutQuad,${time}));`;
     krpanoViewerRef.current.call(action);
     log('👁️', `Guided lookto [${phase}]`, { h, v, fov });
   }, [
@@ -2153,37 +2272,7 @@ const VRLessonPlayerInner = () => {
     user?.uid,
   ]);
 
-  const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
-  const partnerSessionMeta = useMemo(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const raw = sessionStorage.getItem('learnxr_partner_demo_session');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { code?: string; id?: string };
-      if (!parsed?.id && !parsed?.code) return null;
-      return {
-        id: typeof parsed.id === 'string' ? parsed.id : null,
-        code: typeof parsed.code === 'string' ? parsed.code : null,
-      };
-    } catch {
-      return null;
-    }
-  }, [activeSessionId, activeSession?.session_code, profile?.role]);
 
-  const hostSessionCode = useMemo(() => {
-    if (activeSession?.session_code) return activeSession.session_code;
-    return partnerSessionMeta?.code || null;
-  }, [activeSession?.session_code, partnerSessionMeta?.code]);
-
-  const isClassHost = Boolean(
-    isTeacherInSession ||
-      (profile?.role === 'partner' && (partnerSessionMeta?.id || partnerSessionMeta?.code || activeSession?.hosted_by_partner)) ||
-      (activeSessionId &&
-        activeSession &&
-        user?.uid &&
-        (activeSession.teacher_uid === user.uid ||
-          (profile?.role === 'partner' && activeSession.hosted_by_partner === true)))
-  );
 
   // Restore host session from storage (partner demo or generic class session id).
   useEffect(() => {
@@ -2196,7 +2285,8 @@ const VRLessonPlayerInner = () => {
     }
   }, [bindActiveSession, activeSessionId, partnerSessionMeta?.id, profile?.role]);
 
-  const showLiveClassHostOverlay = Boolean(!isInKrpanoVR && isClassHost);
+  // Show the host overlay: always show if class host. When in immersive VR, overlay still needed for Control Students / phase controls.
+  const showLiveClassHostOverlay = Boolean(isClassHost);
 
   const useIntegratedSceneEarly = !!((skyboxData?.imageUrl ?? skyboxData?.file_url) && assetUrl && isGlbOrGltfUrl(assetUrl));
   const useModelOnlySceneEarly = !!(assetUrl && isGlbOrGltfUrl(assetUrl) && !(skyboxData?.imageUrl ?? skyboxData?.file_url));
@@ -2239,9 +2329,28 @@ const VRLessonPlayerInner = () => {
     return () => { viewSyncSendRef.current = () => {}; };
   }, [isClassHost, useKrpanoView, useThreeScene, hostSessionIdForSync, user?.uid]);
 
-  // Student: follow teacher view (krpano view.hlookat / view.vlookat / view.fov per docs)
-  const teacherView = joinedSession?.teacher_view;
-  const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
+
+
+  // Teacher: broadcast phase to Firebase whenever lessonPhase changes (only when Control Students is ON)
+  const lastBroadcastPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isClassHost || !controlStudentsEnabled || !broadcastTeacherPhase) return;
+    if (lessonPhase === lastBroadcastPhaseRef.current) return;
+    if (!lessonPhase || lessonPhase === 'idle' || lessonPhase === 'loading') return;
+    lastBroadcastPhaseRef.current = lessonPhase;
+    void broadcastTeacherPhase(lessonPhase, true);
+  }, [isClassHost, controlStudentsEnabled, lessonPhase, broadcastTeacherPhase]);
+
+  // Student: lock lesson phase to what teacher broadcasts (overrides local auto-progression)
+  const lastAppliedTeacherPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isStudentInSession || !controlStudentsEnabled || !teacherControlledPhase) return;
+    if (teacherControlledPhase === lastAppliedTeacherPhaseRef.current) return;
+    lastAppliedTeacherPhaseRef.current = teacherControlledPhase;
+    log('🎓', 'Teacher controlled phase override:', teacherControlledPhase);
+    setPhase(teacherControlledPhase as Parameters<typeof setPhase>[0]);
+  }, [isStudentInSession, controlStudentsEnabled, teacherControlledPhase, setPhase]);
+
   const lastTeacherViewRef = useRef<{ h: number; v: number; fov: number; syncId: number | null } | null>(null);
   useEffect(() => {
     if (!isStudentInSession || !useKrpanoView || !teacherView || !krpanoViewerRef.current?.call) return;
@@ -2255,17 +2364,57 @@ const VRLessonPlayerInner = () => {
     if (Number.isNaN(h) || Number.isNaN(v)) return;
     const prev = lastTeacherViewRef.current;
     const isNewDirect = syncId != null && syncId !== prev?.syncId;
+
+    // In VR or on Quest with gyroscope: only apply EXPLICIT Direct commands, never continuous drag.
+    // This prevents the camera fighting the user's physical head movements.
+    if ((isInKrpanoVR || isQuestDevice) && !isNewDirect) {
+      return;
+    }
+
     if (prev && prev.h === h && prev.v === v && prev.fov === fov && !isNewDirect) {
       return;
     }
     lastTeacherViewRef.current = { h, v, fov, syncId };
+
+    // When in active WebVR mode, view.hlookat/vlookat are controlled by the headset IMU
+    // and cannot be overridden by krpano JS. Instead call webvr.recenter() and set the
+    // webvr.hlookatoffset and webvr.vlookatoffset variables to rotate the coordinate system.
+    if (isInKrpanoVR && isNewDirect) {
+      const viewer = krpanoViewerRef.current;
+      try {
+        // Set offsets to rotate the VR world to the teacher's lookat orientation
+        viewer.set('webvr.hlookatoffset', h);
+        viewer.set('webvr.vlookatoffset', v);
+        try {
+          viewer.call(`webvr.hlookat(${h})`);
+        } catch {}
+        viewer.call('webvr.recenter()');
+        setTimeout(() => {
+          try {
+            krpanoViewerRef.current?.call?.('webvr.recenter()');
+          } catch {}
+        }, 150);
+      } catch (e) {
+        log('⚠️', 'webvr orientation sync failed', e);
+      }
+      log('👁️', 'Direct view in VR — offset and recentered horizontal & vertical orientation', { h, v, syncId });
+      return;
+    }
+
+    if (isNewDirect) {
+      try {
+        krpanoViewerRef.current?.call?.(`resetsensor(${h}, ${v})`);
+      } catch {}
+    }
+
     const ok = applyTeacherViewToKrpano(
       krpanoViewerRef.current,
       { hlookat: h, vlookat: v, fov, sync_id: syncId ?? undefined },
       { force: isNewDirect }
     );
-    log('👁️', 'Following teacher view', { h, v, fov, syncId, isNewDirect, ok });
-  }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov, teacherView?.sync_id, sceneReady]);
+    log('👁️', 'Following teacher view', { h, v, fov, syncId, isNewDirect, ok, isInKrpanoVR });
+  }, [isStudentInSession, useKrpanoView, teacherView?.hlookat, teacherView?.vlookat, teacherView?.fov, teacherView?.sync_id, sceneReady, isInKrpanoVR, isQuestDevice]);
+
 
   // Student: report view on onviewchange (throttled) so teacher preview matches student drag; was: report to session so teacher can see “what they see” (throttled)
   useEffect(() => {
@@ -2668,9 +2817,13 @@ const VRLessonPlayerInner = () => {
   // Live class students: skip the welcome gate and enter the lesson as soon as content is ready
   useEffect(() => {
     if (!isStudentInSession || !showWelcomeScreen || !allReady || classAutoStartRef.current) return;
+    if (controlStudentsEnabled && !teacherControlledPhase) {
+      // Wait for the teacher to broadcast the first phase
+      return;
+    }
     classAutoStartRef.current = true;
     void handleStartLesson();
-  }, [isStudentInSession, showWelcomeScreen, allReady, handleStartLesson]);
+  }, [isStudentInSession, showWelcomeScreen, allReady, controlStudentsEnabled, teacherControlledPhase, handleStartLesson]);
 
   // Stop lesson and return to welcome screen
   const handleStopLesson = useCallback(() => {
@@ -3110,6 +3263,12 @@ const VRLessonPlayerInner = () => {
     }
   }, [ttsStatus, playTTS]);
 
+  // Stop current audio and prepare for new phase when lessonPhase changes
+  useEffect(() => {
+    stopTTS();
+    setWaitingForUser(false);
+  }, [lessonPhase, stopTTS]);
+
   // ============================================================================
   // Lesson Flow Control - Auto-play on phase change (only once per phase)
   // ============================================================================
@@ -3156,11 +3315,12 @@ const VRLessonPlayerInner = () => {
   }, [activeLesson]);
 
   const handleReplay = useCallback(() => {
+    if (blockStudentPhaseControl('Replay')) return;
     lastPlayedPhaseRef.current = null; // Allow replay
     stopTTS();
     setWaitingForUser(false);
     setTimeout(() => playTTS(), 200);
-  }, [stopTTS, playTTS]);
+  }, [blockStudentPhaseControl, stopTTS, playTTS]);
 
   // Save lesson completion without quiz (when lesson ends without MCQs)
   // IMPORTANT: This must be defined BEFORE handleContinue which uses it
@@ -3211,6 +3371,7 @@ const VRLessonPlayerInner = () => {
   // ============================================================================
 
   const handleContinue = useCallback(() => {
+    if (blockStudentPhaseControl('Continue')) return;
     // Stop current audio and clean up
     cleanupAudio();
     setTtsStatus('ready');
@@ -3241,13 +3402,14 @@ const VRLessonPlayerInner = () => {
     } else if (lessonPhase === 'quiz') {
       // This is handled by MCQ navigation
     }
-  }, [lessonPhase, mcqs, setPhase, advanceScript, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
+  }, [blockStudentPhaseControl, lessonPhase, mcqs, setPhase, advanceScript, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
 
   // Legacy handler for backward compatibility
   const handleNext = handleContinue;
 
   // Skip to Quiz - allows user to skip intro/explanation/outro and go directly to quiz
   const handleSkipToQuiz = useCallback(() => {
+    if (blockStudentPhaseControl('Skip to Quiz')) return;
     cleanupAudio();
     setTtsStatus('ready');
     setWaitingForUser(false);
@@ -3260,7 +3422,7 @@ const VRLessonPlayerInner = () => {
       saveProgress(lessonId, { completedAt: new Date().toISOString() });
       saveLessonCompletionToFirestore();
     }
-  }, [mcqs, setPhase, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
+  }, [blockStudentPhaseControl, mcqs, setPhase, lessonId, cleanupAudio, saveLessonCompletionToFirestore]);
 
   // ============================================================================
   // Chat Functions with TTS
@@ -3925,6 +4087,30 @@ const VRLessonPlayerInner = () => {
   // Render
   // ============================================================================
 
+  if (isStudentRemoved) {
+    return (
+      <div className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-slate-950/95 text-white p-6 font-sans">
+        <div className="max-w-md w-full text-center space-y-6 bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 ring-4 ring-amber-500/5 animate-pulse">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Waiting for Teacher Approval</h2>
+          <p className="text-sm leading-relaxed text-slate-300">
+            You have been removed from the class session. A request to rejoin has been sent to the teacher. Please wait in this lobby.
+          </p>
+          <div className="pt-2">
+            <button
+              onClick={handleExit}
+              className="px-6 py-2.5 rounded-xl border border-white/10 bg-white/[0.04] text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              Exit Class
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black text-white overflow-hidden">
       {/* Main 3D view: integrated (skybox+model), or model-only when GLB but no skybox, else krpano */}
@@ -4023,8 +4209,25 @@ const VRLessonPlayerInner = () => {
             return hostLookat || activeSession?.teacher_view || null;
           }}
           skyboxUrlOverride={skyboxImageUrl || null}
+          controlStudentsEnabled={controlStudentsEnabled}
+          currentLessonPhase={lessonPhase}
+          onBroadcastPhase={(phase, enabled) => {
+            void broadcastTeacherPhase?.(phase, enabled);
+            if (enabled && phase !== lessonPhase) {
+              setPhase(phase as Parameters<typeof setPhase>[0]);
+            }
+          }}
+          onEndSession={async () => {
+            if (endSession) {
+              const ok = await endSession();
+              if (ok) {
+                handleExit();
+              }
+            }
+          }}
         />
       )}
+
 
       {/* Drag Hint (student or when not in class session) */}
       <AnimatePresence>
@@ -4059,7 +4262,7 @@ const VRLessonPlayerInner = () => {
       </button>
 
       {/* Top Bar — compact / hidden on phone when HUD collapsed */}
-      {!(isPhoneViewport && isStudentInSession) && !(isPhoneViewport && !mobileHudExpanded) && (
+      {!isPhoneViewport && (
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-40 max-w-[min(100vw-8rem,20rem)] pointer-events-none">
         <div className="flex items-center gap-4 px-4 sm:px-6 py-2 sm:py-3 bg-card/90 backdrop-blur-xl rounded-2xl border border-border">
           <div className="flex items-center gap-3 min-w-0">
@@ -4104,10 +4307,10 @@ const VRLessonPlayerInner = () => {
       {/* Top Right Controls — tour stop + Stop/mute/chat in one row (avoids absolute overlap) */}
       {(!isPhoneViewport || mobileHudExpanded) && (
       <div
-        className={`absolute z-40 flex max-w-[min(100vw-4.5rem,36rem)] flex-wrap items-center justify-end gap-2 ${
+        className={`absolute z-40 flex flex-wrap items-center justify-end gap-2 ${
           isPhoneViewport
-            ? 'top-[max(0.75rem,env(safe-area-inset-top))] right-[max(0.75rem,env(safe-area-inset-right))]'
-            : 'top-4 right-4'
+            ? 'left-[max(4.5rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] max-w-none'
+            : 'top-4 right-4 max-w-[min(100vw-4.5rem,36rem)]'
         }`}
       >
         {isPhoneViewport && mobileHudExpanded && (
@@ -4150,7 +4353,7 @@ const VRLessonPlayerInner = () => {
         )}
 
         {/* Stop Lesson Button - hosts / solo; hide for live-class students on phone */}
-        {lessonReady && !showWelcomeScreen && !(isPhoneViewport && isStudentInSession) && (
+        {lessonReady && !showWelcomeScreen && !(isPhoneViewport && isStudentInSession && !isQuestDevice) && (
           <button
             onClick={handleStopLesson}
             className="flex shrink-0 items-center gap-2 px-3 py-2.5 rounded-xl transition-colors 
@@ -4162,6 +4365,26 @@ const VRLessonPlayerInner = () => {
           </button>
         )}
         
+        {isQuestDevice && useKrpanoView && !isInKrpanoVR && (
+          <button
+            onClick={() => {
+              const k = krpanoViewerRef.current;
+              if (k?.call) {
+                try {
+                  k.call('webvr.enterVR');
+                } catch (e) {
+                  console.warn('[Krpano] webvr.enterVR failed:', e);
+                }
+              }
+            }}
+            className="flex shrink-0 items-center gap-2 px-3 py-2.5 rounded-xl transition-colors bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/30"
+            title="Enter VR Mode"
+          >
+            <Glasses className="w-5 h-5" />
+            <span className="text-sm font-medium hidden sm:inline">Enter VR</span>
+          </button>
+        )}
+
         <button
           onClick={() => setIsMuted(!isMuted)}
           className={`shrink-0 p-2.5 rounded-xl transition-colors ${
@@ -4172,7 +4395,7 @@ const VRLessonPlayerInner = () => {
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </button>
         
-        {!(isPhoneViewport && isStudentInSession) && (
+        {!(isPhoneViewport && isStudentInSession && !isQuestDevice) && (
         <button
           onClick={() => setShowChat(!showChat)}
           className={`shrink-0 p-2.5 rounded-xl transition-colors ${
@@ -4351,16 +4574,21 @@ const VRLessonPlayerInner = () => {
               ) : (
                 <motion.button
                   onClick={handleStartLesson}
-                  disabled={!allReady}
-                  whileHover={allReady ? { scale: 1.02 } : undefined}
-                  whileTap={allReady ? { scale: 0.98 } : undefined}
+                  disabled={!allReady || (isStudentInSession && controlStudentsEnabled && !teacherControlledPhase)}
+                  whileHover={allReady && !(isStudentInSession && controlStudentsEnabled && !teacherControlledPhase) ? { scale: 1.02 } : undefined}
+                  whileTap={allReady && !(isStudentInSession && controlStudentsEnabled && !teacherControlledPhase) ? { scale: 0.98 } : undefined}
                   className={`w-full flex items-center justify-center gap-3 px-8 py-4 
                            text-lg font-bold rounded-xl transition-all duration-300
-                           ${allReady
+                           ${allReady && !(isStudentInSession && controlStudentsEnabled && !teacherControlledPhase)
                     ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/30 hover:shadow-cyan-500/50 cursor-pointer'
                     : 'bg-slate-700 text-slate-400 cursor-not-allowed'}`}
                 >
-                  {allReady ? (
+                  {isStudentInSession && controlStudentsEnabled && !teacherControlledPhase ? (
+                    <>
+                      <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                      Waiting for teacher to start...
+                    </>
+                  ) : allReady ? (
                     <>
                       <Play className="w-6 h-6" />
                       Start Lesson
@@ -4387,11 +4615,11 @@ const VRLessonPlayerInner = () => {
       </AnimatePresence>
 
       {/* Main Content Panel — bottom-left stack (clears krpano controllers + avatar on the right) */}
-      {!isInKrpanoVR && hasLessonNarrationOrQuiz && !(isPhoneViewport && isStudentInSession) && (!isPhoneViewport || mobileHudExpanded) && (
+      {!isInKrpanoVR && hasLessonNarrationOrQuiz && !(isPhoneViewport && isStudentInSession && !isQuestDevice) && (!isPhoneViewport || mobileHudExpanded) && (
       <div
         className={`absolute z-20 max-w-md w-[min(28rem,calc(100vw-2rem))] ${
           isPhoneViewport
-            ? 'bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))]'
+            ? 'bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] max-h-[min(58vh,28rem)] overflow-y-auto overscroll-contain pr-1'
             : 'bottom-4 left-4'
         }`}
       >

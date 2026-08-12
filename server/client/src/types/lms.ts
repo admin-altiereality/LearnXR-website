@@ -205,6 +205,12 @@ export interface ClassSession {
   teacher_view?: TeacherSessionView | null;
   /** Student UIDs removed by teacher from this session (kicked out) */
   removed_student_uids?: string[];
+  /** Student UIDs that requested to rejoin after being removed */
+  join_requests?: string[];
+  /** Teacher-controlled lesson phase – students lock to this when control_students_enabled is true. */
+  teacher_controlled_phase?: string | null;
+  /** Whether the teacher has "Control Students" mode active (students follow teacher phase). */
+  control_students_enabled?: boolean;
   /** Partner tenancy metadata for quota-governed demo sessions. */
   partner_id?: string;
   hosted_by_partner?: boolean;

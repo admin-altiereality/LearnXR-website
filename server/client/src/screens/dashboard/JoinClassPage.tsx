@@ -25,7 +25,7 @@ interface SessionWithDetails extends ClassSession {
 const JoinClassPage = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
-  const { joinSession, sessionLoading, joinedSessionId } = useClassSession();
+  const { joinSession, sessionLoading, joinedSessionId, isWaitingForApproval } = useClassSession();
   const [sessions, setSessions] = useState<SessionWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
@@ -108,6 +108,29 @@ const JoinClassPage = () => {
     if (!code) return;
     await handleJoin(code);
   };
+
+  if (isWaitingForApproval) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4 py-24">
+        <Card className="max-w-md w-full rounded-xl border border-border bg-card shadow-sm">
+          <CardContent className="p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
+                <FaChalkboardTeacher className="h-6 w-6 text-primary" />
+              </div>
+            </div>
+            <p className="text-foreground font-medium mb-1">Waiting for teacher approval</p>
+            <p className="text-sm text-muted-foreground mb-6">
+              You were previously removed from this class. The teacher has been notified of your request to rejoin and must approve it before you can enter.
+            </p>
+            <Button asChild variant="outline">
+              <Link to="/dashboard/student">Go back to dashboard</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!user) {
     return (

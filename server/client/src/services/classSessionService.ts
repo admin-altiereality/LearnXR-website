@@ -261,6 +261,7 @@ export async function endSession(sessionId: string, _teacherUid: string): Promis
 export interface JoinSessionResult {
   sessionId: string | null;
   errorMessage?: string;
+  requiresApproval?: boolean;
 }
 
 /**
@@ -295,9 +296,10 @@ export async function joinSession(sessionCode: string): Promise<JoinSessionResul
       return { sessionId: null, errorMessage: message ?? 'Could not join session. Try again.' };
     }
 
-    const data = json && typeof json === 'object' && json !== null && 'data' in json ? (json as { data?: { sessionId?: string } }).data : undefined;
+    const data = json && typeof json === 'object' && json !== null && 'data' in json ? (json as { data?: { sessionId?: string; requiresApproval?: boolean } }).data : undefined;
     const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : null;
-    return { sessionId, errorMessage: sessionId ? undefined : (message ?? 'Invalid response from server.') };
+    const requiresApproval = data?.requiresApproval === true;
+    return { sessionId, requiresApproval, errorMessage: sessionId ? undefined : (message ?? 'Invalid response from server.') };
   } catch (err) {
     console.error('classSessionService.joinSession:', err);
     const isFirebasePermission = err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'permission-denied';
@@ -340,6 +342,35 @@ export async function removeStudentFromSession(
     return true;
   } catch (err) {
     console.error('classSessionService.removeStudentFromSession:', err);
+    return false;
+  }
+}
+
+/**
+ * Approve a student's request to rejoin the session after being removed.
+ */
+export async function approveJoinRequest(sessionId: string, studentUid: string): Promise<boolean> {
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) return false;
+
+    const apiBaseUrl = getApiBaseUrl().replace(/\/$/, '');
+    const response = await fetch(`${apiBaseUrl}/class-sessions/${sessionId}/approve-join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ studentUid }),
+    });
+    
+    if (!response.ok) {
+      console.error('classSessionService.approveJoinRequest API error:', response.status);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('classSessionService.approveJoinRequest:', err);
     return false;
   }
 }
@@ -494,5 +525,30 @@ export async function getSession(sessionId: string): Promise<ClassSession | null
   } catch (err) {
     console.error('classSessionService.getSession:', err);
     return null;
+  }
+}
+
+/**
+ * Broadcast the teacher's current lesson phase to all students.
+ * Students subscribe to `teacher_controlled_phase` and lock their local phase.
+ * `control_students_enabled` must be true for students to follow.
+ */
+export async function broadcastTeacherPhase(
+  sessionId: string,
+  teacherUid: string,
+  phase: string,
+  controlEnabled: boolean
+): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    await updateDoc(sessionRef, {
+      'teacher_controlled_phase': controlEnabled ? phase : null,
+      'control_students_enabled': controlEnabled,
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.broadcastTeacherPhase:', err);
+    return false;
   }
 }

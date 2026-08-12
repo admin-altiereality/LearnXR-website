@@ -13,7 +13,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
@@ -27,6 +27,7 @@ import {
   subscribeSession,
   subscribeSessionProgress,
   getSession,
+  broadcastTeacherPhase as apiBroadcastTeacherPhase,
 } from '../services/classSessionService';
 import type {
   ClassSession,
@@ -46,6 +47,8 @@ interface ClassSessionContextValue {
   endSession: () => Promise<boolean>;
   leaveSessionAsTeacher: () => void;
   bindActiveSession: (sessionId: string) => void;
+  /** Broadcast the teacher's current lesson phase so students follow it. */
+  broadcastTeacherPhase: (phase: string, controlEnabled: boolean) => Promise<boolean>;
 
   // Student
   joinedSessionId: string | null;
@@ -54,6 +57,7 @@ interface ClassSessionContextValue {
   leaveSessionAsStudent: () => void;
 
   // Shared
+  isWaitingForApproval: boolean;
   sessionLoading: boolean;
   sessionError: string | null;
   clearSessionError: () => void;
@@ -106,6 +110,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
   const [joinedSession, setJoinedSession] = useState<ClassSession | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isWaitingForApproval, setIsWaitingForApproval] = useState(false);
 
   const clearSessionError = useCallback(() => setSessionError(null), []);
 
@@ -121,6 +126,16 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     setSessionError(null);
     if (typeof window !== 'undefined') sessionStorage.setItem(STORAGE_KEY_ACTIVE_SESSION, sessionId);
   }, []);
+
+  const broadcastTeacherPhase = useCallback(
+    async (phase: string, controlEnabled: boolean): Promise<boolean> => {
+      const sid = activeSessionId;
+      const uid = user?.uid;
+      if (!sid || !uid) return false;
+      return apiBroadcastTeacherPhase(sid, uid, phase, controlEnabled);
+    },
+    [activeSessionId, user?.uid]
+  );
 
   const leaveSessionAsStudent = useCallback(() => {
     setJoinedSessionId(null);
@@ -222,6 +237,13 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
         if (result.sessionId) {
           setJoinedSessionId(result.sessionId);
           if (typeof window !== 'undefined') sessionStorage.setItem(STORAGE_KEY_JOINED_SESSION, result.sessionId);
+          
+          if (result.requiresApproval) {
+            setIsWaitingForApproval(true);
+          } else {
+            setIsWaitingForApproval(false);
+          }
+          
           // Refresh so guest/school class links from the join API are visible immediately
           try {
             await refreshProfile();
@@ -277,6 +299,32 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     });
     return () => unsubProgress();
   }, [activeSessionId, activeSession, activeSession?.removed_student_uids, user?.uid, profile?.role]);
+
+  // Backup poll: query Firestore every 5 seconds to ensure we catch any missed updates or slow syncs
+  useEffect(() => {
+    if (!activeSessionId || profile?.role === 'student') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const sessionRef = doc(db, 'class_sessions', activeSessionId);
+        const sessionSnap = await getDoc(sessionRef);
+        if (sessionSnap.exists()) {
+          const data = { id: sessionSnap.id, ...sessionSnap.data() } as any;
+          setActiveSession(data);
+
+          const progressRef = collection(db, 'class_sessions', activeSessionId, 'progress');
+          const progressSnap = await getDocs(progressRef);
+          const list = progressSnap.docs.map((d) => ({ ...d.data() } as any));
+          const removed = new Set(Array.isArray(data.removed_student_uids) ? data.removed_student_uids : []);
+          setProgressList(list.filter((s) => s?.student_uid && !removed.has(s.student_uid)));
+        }
+      } catch (err) {
+        console.error('Backup poll failed:', err);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [activeSessionId, profile?.role]);
 
   // Student: subscribe to joined session; retry briefly after join (guest school link can lag)
   useEffect(() => {
@@ -338,15 +386,25 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     navigate('/dashboard/student', { replace: true });
   }, [joinedSession?.status, leaveSessionAsStudent, navigate]);
 
-  // When teacher removes this student, leave session and redirect
+  // When teacher removes this student, leave session and redirect (unless requesting join)
   useEffect(() => {
     if (!joinedSession || !user?.uid) return;
     const removed = joinedSession.removed_student_uids?.includes(user.uid);
-    if (!removed) return;
-    setSessionError('You were removed from the class by the teacher.');
-    leaveSessionAsStudent();
-    navigate('/dashboard/student', { replace: true });
-  }, [joinedSession?.removed_student_uids, user?.uid, leaveSessionAsStudent, navigate]);
+    const requesting = joinedSession.join_requests?.includes(user.uid);
+    
+    if (removed) {
+      if (requesting) {
+        setIsWaitingForApproval(true);
+      } else {
+        setIsWaitingForApproval(false);
+        setSessionError('You were removed from the class by the teacher.');
+        leaveSessionAsStudent();
+        navigate('/dashboard/student', { replace: true });
+      }
+    } else {
+      setIsWaitingForApproval(false);
+    }
+  }, [joinedSession?.removed_student_uids, joinedSession?.join_requests, user?.uid, leaveSessionAsStudent, navigate]);
 
   // Restore session from storage only after auth is ready, and only if this user owns it
   useEffect(() => {
@@ -424,11 +482,13 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     launchScene,
     endSession,
     leaveSessionAsTeacher,
-        bindActiveSession,
+    bindActiveSession,
+    broadcastTeacherPhase,
     joinedSessionId,
     joinedSession,
     joinSession,
     leaveSessionAsStudent,
+    isWaitingForApproval,
     sessionLoading,
     sessionError,
     clearSessionError,

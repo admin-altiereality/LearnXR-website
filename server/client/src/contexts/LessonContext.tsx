@@ -144,11 +144,13 @@ export const LessonProvider = ({ children }: { children: ReactNode }) => {
   // Get scripts array from topic
   const getScripts = useCallback(() => {
     if (!activeLesson?.topic) return [];
-    const scripts: string[] = [];
-    if (activeLesson.topic.avatar_intro) scripts.push(activeLesson.topic.avatar_intro);
-    if (activeLesson.topic.avatar_explanation) scripts.push(activeLesson.topic.avatar_explanation);
-    if (activeLesson.topic.avatar_outro) scripts.push(activeLesson.topic.avatar_outro);
-    return scripts;
+    // Always return exactly 3 scripts (even if empty strings) so that the phase 
+    // progression correctly steps through Intro (0) -> Explanation (1) -> Outro (2) -> Quiz.
+    return [
+      activeLesson.topic.avatar_intro || '',
+      activeLesson.topic.avatar_explanation || '',
+      activeLesson.topic.avatar_outro || ''
+    ];
   }, [activeLesson]);
   
   // Start a new lesson

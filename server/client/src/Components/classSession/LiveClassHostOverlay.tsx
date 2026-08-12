@@ -5,13 +5,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Copy, Eye, Loader2, Target, UserMinus, Users, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Bell, Copy, Eye, Loader2, PanelLeftClose, PanelLeftOpen, Target, UserMinus, Users, X, Radio, ChevronRight, SkipForward, RotateCcw } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { doc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
 import type { ClassSession, SessionStudentProgress, TeacherSessionView } from '../../types/lms';
-import { removeStudentFromSession, updateTeacherView } from '../../services/classSessionService';
+import { approveJoinRequest, removeStudentFromSession, updateTeacherView } from '../../services/classSessionService';
 import { StudentScreen360Preview } from '../StudentScreen360Preview';
 import { getApiBaseUrl } from '../../utils/apiConfig';
 import { getLessonBundle } from '../../services/firestore/getLessonBundle';
+import { resolveStudentDisplayName } from '../../utils/displayName';
+import { db } from '../../config/firebase';
 
 export type HostLookat = Pick<TeacherSessionView, 'hlookat' | 'vlookat' | 'fov' | 'video_time' | 'playing'>;
 
@@ -30,6 +33,14 @@ export interface LiveClassHostOverlayProps {
   getLiveHostView?: () => HostLookat | null;
   /** Optional skybox override (e.g. current tour stop). Falls back to launched lesson bundle. */
   skyboxUrlOverride?: string | null;
+  /** Whether Control Students mode is active (teacher controls lesson phase). */
+  controlStudentsEnabled?: boolean;
+  /** Current lesson phase to display when control is on. */
+  currentLessonPhase?: string | null;
+  /** Called when teacher toggles control students or advances the phase. */
+  onBroadcastPhase?: (phase: string, controlEnabled: boolean) => void;
+  /** Called when teacher ends the class session. */
+  onEndSession?: () => Promise<boolean> | void;
   className?: string;
 }
 
@@ -57,17 +68,24 @@ export function LiveClassHostOverlay({
   hostView,
   getLiveHostView,
   skyboxUrlOverride,
+  controlStudentsEnabled = false,
+  currentLessonPhase,
+  onBroadcastPhase,
+  onEndSession,
   className = '',
 }: LiveClassHostOverlayProps) {
   const isMobile = useIsMobileViewport();
   const [expanded, setExpanded] = useState(() =>
     typeof window !== 'undefined' ? !window.matchMedia('(max-width: 767px)').matches : true
   );
+  const [activeDrawer, setActiveDrawer] = useState<null | 'roster' | 'approvals' | 'preview'>(null);
   const [selectedStudentUid, setSelectedStudentUid] = useState<string | null>(null);
   /** Student 360° preview is opt-in — off until the host explicitly enables it. */
   const [studentViewOn, setStudentViewOn] = useState(false);
   const [removingUid, setRemovingUid] = useState<string | null>(null);
+  const [approvingUid, setApprovingUid] = useState<string | null>(null);
   const [studentSkyboxUrl, setStudentSkyboxUrl] = useState<string | null>(null);
+  const [requestDisplayNames, setRequestDisplayNames] = useState<Record<string, string>>({});
   const [directing, setDirecting] = useState(false);
 
   // Keep expand default aligned with viewport changes (collapse when crossing to mobile).
@@ -85,6 +103,11 @@ export function LiveClassHostOverlay({
     () => progressList.filter((s) => s?.student_uid && !removedSet.has(s.student_uid)),
     [progressList, removedSet]
   );
+  const pendingJoinUids = useMemo(
+    () => (Array.isArray(session?.join_requests) ? session.join_requests.filter(Boolean) : []),
+    [session?.join_requests]
+  );
+  const pendingJoinKey = useMemo(() => [...new Set(pendingJoinUids)].sort().join(','), [pendingJoinUids]);
   const selected =
     visibleProgress.find((s) => s.student_uid === selectedStudentUid) || null;
 
@@ -107,7 +130,43 @@ export function LiveClassHostOverlay({
   useEffect(() => {
     setSelectedStudentUid(null);
     setStudentViewOn(false);
+    setActiveDrawer(null);
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!pendingJoinKey) {
+      setRequestDisplayNames({});
+      return;
+    }
+
+    const unsubscribers: Unsubscribe[] = [...new Set(pendingJoinUids)].map((uid) =>
+      onSnapshot(doc(db, 'users', uid), (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        setRequestDisplayNames((prev) => ({
+          ...prev,
+          [uid]: resolveStudentDisplayName(
+            {
+              uid,
+              name: typeof data?.name === 'string' ? data.name : null,
+              displayName: typeof data?.displayName === 'string' ? data.displayName : null,
+              email: typeof data?.email === 'string' ? data.email : null,
+            },
+            null,
+            null
+          ),
+        }));
+      })
+    );
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [pendingJoinKey, pendingJoinUids]);
+
+  useEffect(() => {
+    if (!studentViewOn && activeDrawer === 'preview') {
+      setActiveDrawer(null);
+    }
+  }, [activeDrawer, studentViewOn]);
 
   useEffect(() => {
     if (skyboxUrlOverride) {
@@ -175,6 +234,21 @@ export function LiveClassHostOverlay({
     [sessionId, hostUid, selectedStudentUid]
   );
 
+  const handleApprove = useCallback(
+    async (studentUid: string) => {
+      if (!sessionId) return;
+      setApprovingUid(studentUid);
+      try {
+        const ok = await approveJoinRequest(sessionId, studentUid);
+        if (ok) toast.success('Student approved to rejoin');
+        else toast.error('Could not approve student');
+      } finally {
+        setApprovingUid(null);
+      }
+    },
+    [sessionId]
+  );
+
   const redirectClassToHostView = useCallback(async () => {
     if (!sessionId || !hostUid) {
       toast.info('No active class session.');
@@ -223,7 +297,12 @@ export function LiveClassHostOverlay({
         force: true,
         sync_id: Date.now(),
       });
-      if (ok) toast.success(`Class redirected to ${selected.display_name || 'student'}'s view`);
+      const name = resolveStudentDisplayName(null, null, {
+        uid: selected.student_uid,
+        displayName: selected.display_name,
+        email: selected.email,
+      });
+      if (ok) toast.success(`Class redirected to ${name}'s view`);
       else toast.error('Could not update class view');
     } catch {
       toast.error('Could not update class view');
@@ -234,127 +313,306 @@ export function LiveClassHostOverlay({
 
   const studentName = useMemo(() => {
     if (!selected) return 'Student';
-    return selected.display_name || selected.email || `Student ${selected.student_uid.slice(0, 6)}`;
+    return resolveStudentDisplayName(null, null, {
+      uid: selected.student_uid,
+      displayName: selected.display_name,
+      email: selected.email,
+    });
   }, [selected]);
 
   if ((!sessionId && !code) || session?.status === 'ended') return null;
 
   const canDirect = Boolean(resolveHostView());
-
-  // Mobile minimized: left-bottom FAB — stays clear of right-bottom player controls / host tip
-  if (isMobile && !expanded) {
-    return (
-      <div
-        className={`pointer-events-auto absolute z-50 ${
-          className || 'left-[max(0.75rem,env(safe-area-inset-left))] bottom-[max(5.5rem,env(safe-area-inset-bottom))]'
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="flex items-center gap-2.5 rounded-2xl border border-white/15 bg-zinc-950/80 px-3 py-2.5 text-white shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur-xl transition hover:bg-zinc-950/90 active:scale-[0.98]"
-          aria-label="Open live class controls"
-        >
-          <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/20 text-teal-200 ring-1 ring-teal-400/30">
-            <Users className="h-4 w-4" />
-            {visibleProgress.length > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-400 px-1 text-[9px] font-bold text-zinc-950">
-                {visibleProgress.length}
-              </span>
-            )}
-          </span>
-          <span className="pr-0.5 text-left leading-tight">
-            <span className="block text-[9px] font-semibold uppercase tracking-[0.14em] text-white/45">
-              Live class
-            </span>
-            <span className="block font-mono text-[13px] font-bold tracking-[0.16em]">{code || '—'}</span>
-          </span>
-          <ChevronUp className="h-4 w-4 text-white/40" />
-        </button>
-      </div>
-    );
-  }
+  const studentCount = visibleProgress.length;
+  const pendingCount = pendingJoinUids.length;
+  const selectedCanPreview = Boolean(selected?.student_view && studentSkyboxUrl);
+  const drawerTitle =
+    activeDrawer === 'roster' ? 'Students' : activeDrawer === 'approvals' ? 'Pending approvals' : 'Student preview';
+  const phaseButtons = [
+    { phase: 'intro', label: 'Intro' },
+    { phase: 'explanation', label: 'Learn' },
+    { phase: 'outro', label: 'Summary' },
+    { phase: 'quiz', label: 'Quiz' },
+  ];
 
   return (
-    <div
-      className={`pointer-events-auto absolute z-50 ${
-        isMobile
-          ? 'inset-x-3 bottom-[max(4.5rem,env(safe-area-inset-bottom))] top-auto max-h-[min(72vh,34rem)]'
-          : 'left-4 top-16 w-[min(22rem,calc(100vw-2rem))] sm:top-[4.75rem]'
-      } ${className}`}
-    >
-      <div className="flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/90 text-white shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl">
-        <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2.5">
+    <div className={`pointer-events-none absolute inset-0 z-50 text-white ${className}`}>
+      <div className="pointer-events-auto absolute right-[max(0.75rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] flex max-w-[calc(100vw-9rem)] items-center gap-2 rounded-2xl border border-white/12 bg-zinc-950/80 px-2 py-2 shadow-[0_14px_45px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:left-[13.5rem] sm:max-w-none sm:px-3">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/8 text-white/70 transition hover:bg-white/12 hover:text-white"
+          aria-label={expanded ? 'Hide teacher controls' : 'Show teacher controls'}
+        >
+          {expanded ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+        </button>
+        <div className="min-w-0 flex-1">
           {code ? (
             <button
               type="button"
               onClick={() => void copyCode()}
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5"
+              className="flex min-w-0 items-center gap-2 rounded-lg px-1 py-0.5 text-left transition hover:bg-white/5"
               aria-label="Copy class code"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-400/15 text-teal-300">
-                <Users className="h-4 w-4" />
-              </span>
               <span className="min-w-0">
-                <span className="block text-[9px] font-semibold uppercase tracking-[0.16em] text-white/50">
-                  Class code
-                </span>
-                <span className="block truncate font-mono text-sm font-bold tracking-[0.18em]">{code}</span>
+                <span className="hidden text-[9px] font-semibold uppercase tracking-[0.16em] text-white/45 sm:block">Class code</span>
+                <span className="block truncate font-mono text-xs font-bold tracking-[0.18em] sm:text-sm">{code}</span>
               </span>
-              <Copy className="h-3.5 w-3.5 shrink-0 text-white/50" />
+              <Copy className="h-3.5 w-3.5 shrink-0 text-white/45" />
             </button>
           ) : (
-            <div className="flex flex-1 items-center gap-2 text-sm font-medium">
+            <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
               <Users className="h-4 w-4 text-teal-300" />
               Live class
             </div>
           )}
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] tabular-nums text-white/75">
-            {visibleProgress.length}
+        </div>
+        <div className="hidden items-center gap-1.5 sm:flex">
+          <span className="rounded-full bg-teal-400/15 px-2.5 py-1 text-[11px] font-semibold text-teal-100">
+            Students: {studentCount}
           </span>
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${pendingCount ? 'bg-amber-400/20 text-amber-100' : 'bg-white/8 text-white/55'}`}>
+            Pending: {pendingCount}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setActiveDrawer((v) => (v === 'approvals' ? null : 'approvals'))}
+          className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition ${activeDrawer === 'approvals' ? 'bg-amber-400/20 text-amber-100' : 'bg-white/8 text-white/70 hover:bg-white/12 hover:text-white'}`}
+          aria-label="Open pending approvals"
+        >
+          <Bell className="h-4 w-4" />
+          {pendingCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-300 px-1 text-[9px] font-bold text-zinc-950">
+              {pendingCount}
+            </span>
+          )}
+        </button>
+        {onEndSession && (
           <button
             type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="rounded-md p-1.5 text-white/65 transition hover:bg-white/10 hover:text-white"
-            aria-label={expanded ? 'Collapse class controls' : 'Expand class controls'}
+            onClick={() => {
+              if (window.confirm('Are you sure you want to end this class session? All students will be exited.')) {
+                void onEndSession();
+              }
+            }}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-red-400/35 bg-red-500/15 px-2.5 text-xs font-semibold text-red-100 transition hover:bg-red-500/25 sm:px-3"
+            aria-label="End class session"
           >
-            {isMobile ? <X className="h-4 w-4" /> : expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            <X className="h-3.5 w-3.5 text-red-300" />
+            <span className="hidden sm:inline">End Session</span>
+          </button>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="pointer-events-auto absolute bottom-[max(0.85rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] flex gap-2 rounded-2xl border border-white/12 bg-zinc-950/82 p-2 shadow-[0_16px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:bottom-auto sm:right-auto sm:top-[max(5.25rem,calc(env(safe-area-inset-top)+5.25rem))] sm:w-72 sm:flex-col sm:p-2.5">
+          <div className="hidden grid-cols-2 gap-2 sm:grid">
+            <div className="rounded-xl bg-white/8 px-3 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">Students</p>
+              <p className="mt-0.5 text-lg font-bold tabular-nums text-teal-100">{studentCount}</p>
+            </div>
+            <div className="rounded-xl bg-white/8 px-3 py-2">
+              <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-white/40">Pending</p>
+              <p className={`mt-0.5 text-lg font-bold tabular-nums ${pendingCount ? 'text-amber-100' : 'text-white/55'}`}>{pendingCount}</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = !controlStudentsEnabled;
+              onBroadcastPhase?.(currentLessonPhase || 'intro', next);
+            }}
+            className={`inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border px-2 text-[11px] font-semibold transition sm:h-auto sm:flex-none sm:px-3 sm:py-3 sm:text-xs ${
+              controlStudentsEnabled
+                ? 'border-rose-400/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30'
+                : 'border-violet-500/35 bg-violet-500/20 text-violet-50 hover:bg-violet-500/30'
+            }`}
+            title={controlStudentsEnabled ? 'Control Students is on' : 'Control Students is off'}
+          >
+            <Radio className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+            <span className="hidden sm:inline">{controlStudentsEnabled ? 'Control Students: ON' : 'Control Students: OFF'}</span>
+            <span className="sm:hidden">Control</span>
+          </button>
+
+          {controlStudentsEnabled && (
+            <div className="hidden rounded-xl border border-white/10 bg-white/[0.04] p-2 sm:block">
+              <div className="mb-2 grid grid-cols-4 gap-1">
+                {phaseButtons.map((item) => {
+                  const active = currentLessonPhase === item.phase;
+                  return (
+                    <button
+                      key={item.phase}
+                      type="button"
+                      title={`Send students to ${item.label}`}
+                      onClick={() => onBroadcastPhase?.(item.phase, true)}
+                      className={`rounded-lg border px-1.5 py-1.5 text-[10px] font-semibold transition ${
+                        active
+                          ? 'border-teal-300/50 bg-teal-400/20 text-teal-100'
+                          : 'border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  type="button"
+                  title="Replay current phase"
+                  onClick={() => onBroadcastPhase?.(currentLessonPhase || 'intro', true)}
+                  className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-1.5 py-1.5 text-[10px] font-semibold text-violet-300 transition hover:bg-violet-500/20"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Replay
+                </button>
+                <button
+                  type="button"
+                  title="Advance to next phase"
+                  onClick={() => {
+                    const phases = ['intro', 'explanation', 'outro', 'quiz'];
+                    const idx = phases.indexOf(currentLessonPhase || 'intro');
+                    const next = phases[Math.min(idx + 1, phases.length - 1)];
+                    onBroadcastPhase?.(next, true);
+                  }}
+                  className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-1.5 py-1.5 text-[10px] font-semibold text-teal-300 transition hover:bg-teal-500/20"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                  Next
+                </button>
+                <button
+                  type="button"
+                  title="Skip all students to quiz"
+                  onClick={() => onBroadcastPhase?.('quiz', true)}
+                  className="flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.06] px-1.5 py-1.5 text-[10px] font-semibold text-amber-300 transition hover:bg-amber-500/20"
+                >
+                  <SkipForward className="h-3 w-3" />
+                  Quiz
+                </button>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            disabled={directing || !canDirect}
+            onClick={() => void redirectClassToHostView()}
+            className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.06] px-2 text-[11px] font-semibold text-white/85 transition hover:bg-white/10 hover:text-white disabled:opacity-40 sm:h-auto sm:flex-none sm:px-3 sm:py-3 sm:text-xs"
+          >
+            {directing ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-teal-400" /> : <Target className="h-3.5 w-3.5 shrink-0 text-teal-400" />}
+            <span className="hidden sm:inline">Direct class to my view</span>
+            <span className="sm:hidden">Direct</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveDrawer((v) => (v === 'roster' ? null : 'roster'))}
+            className={`relative inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border px-2 text-[11px] font-semibold transition sm:h-auto sm:flex-none sm:px-3 sm:py-3 sm:text-xs ${
+              activeDrawer === 'roster' ? 'border-teal-300/45 bg-teal-400/18 text-teal-100' : 'border-white/12 bg-white/[0.06] text-white/85 hover:bg-white/10'
+            }`}
+          >
+            <Users className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">Roster</span>
+            <span className="sm:hidden">Students</span>
+            {studentCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-300 px-1 text-[9px] font-bold text-zinc-950">
+                {studentCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveDrawer((v) => (v === 'approvals' ? null : 'approvals'))}
+            className={`relative inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border px-2 text-[11px] font-semibold transition sm:h-auto sm:flex-none sm:px-3 sm:py-3 sm:text-xs ${
+              activeDrawer === 'approvals' ? 'border-amber-300/45 bg-amber-400/18 text-amber-100' : 'border-white/12 bg-white/[0.06] text-white/85 hover:bg-white/10'
+            }`}
+          >
+            <Bell className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">Approvals</span>
+            <span className="sm:hidden">Approve</span>
+            {pendingCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-300 px-1 text-[9px] font-bold text-zinc-950">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            disabled={!selectedCanPreview}
+            onClick={() => {
+              if (!selectedCanPreview) return;
+              setStudentViewOn((on) => {
+                const next = !on;
+                setActiveDrawer(next ? 'preview' : null);
+                return next;
+              });
+            }}
+            className={`inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl border px-2 text-[11px] font-semibold transition disabled:opacity-40 sm:h-auto sm:flex-none sm:px-3 sm:py-3 sm:text-xs ${
+              studentViewOn && activeDrawer === 'preview' ? 'border-cyan-300/45 bg-cyan-400/18 text-cyan-100' : 'border-white/12 bg-white/[0.06] text-white/85 hover:bg-white/10'
+            }`}
+            title={selectedCanPreview ? 'Toggle selected student preview' : 'Select a student with an active view first'}
+          >
+            <Eye className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">{studentViewOn ? 'Preview on' : 'Preview off'}</span>
+            <span className="sm:hidden">Preview</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={directing || !selected?.student_view || !studentViewOn}
+            onClick={() => void redirectClassToStudentView()}
+            className="hidden items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-[11px] font-semibold text-white/85 transition hover:bg-white/10 disabled:opacity-40 sm:inline-flex"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Match selected student
           </button>
         </div>
+      )}
 
-        {expanded && (
-          <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-3">
-            <div className="grid gap-2">
-              <button
-                type="button"
-                disabled={directing || !canDirect}
-                onClick={() => void redirectClassToHostView()}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/35 bg-teal-500/20 px-3 py-3 text-xs font-semibold text-teal-50 transition hover:bg-teal-500/30 disabled:opacity-40"
-              >
-                {directing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Target className="h-3.5 w-3.5" />}
-                Direct class to my view
-              </button>
-              <button
-                type="button"
-                disabled={directing || !selected?.student_view || !studentViewOn}
-                onClick={() => void redirectClassToStudentView()}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2 text-[11px] font-semibold text-white/85 transition hover:bg-white/10 disabled:opacity-40"
-              >
-                <Eye className="h-3.5 w-3.5" />
-                Match selected student
-              </button>
-            </div>
-
-            {visibleProgress.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-white/15 px-3 py-5 text-center text-[11px] leading-relaxed text-white/55">
-                No students yet. Share the class code to let them join.
+      {activeDrawer && (
+        <div className="pointer-events-auto absolute bottom-[max(4.95rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] max-h-[min(62vh,34rem)] overflow-hidden rounded-2xl border border-white/12 bg-zinc-950/90 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-2xl sm:bottom-auto sm:left-auto sm:right-4 sm:top-[max(5.25rem,calc(env(safe-area-inset-top)+5.25rem))] sm:w-[min(25rem,calc(100vw-22rem))] sm:max-h-[calc(100vh-7rem)]">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-white">{drawerTitle}</p>
+              <p className="text-[10px] text-white/45">
+                {activeDrawer === 'roster'
+                  ? `${studentCount} active student${studentCount === 1 ? '' : 's'}`
+                  : activeDrawer === 'approvals'
+                    ? `${pendingCount} pending request${pendingCount === 1 ? '' : 's'}`
+                    : studentName}
               </p>
-            ) : (
-              <div className="grid gap-2.5">
-                <div className="max-h-40 space-y-1 overflow-y-auto pr-0.5">
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (activeDrawer === 'preview') setStudentViewOn(false);
+                setActiveDrawer(null);
+              }}
+              className="rounded-lg p-1.5 text-white/65 transition hover:bg-white/10 hover:text-white"
+              aria-label="Close drawer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {activeDrawer === 'roster' && (
+            <div className="max-h-[calc(min(62vh,34rem)-3.5rem)] overflow-y-auto p-3 sm:max-h-[calc(100vh-10.5rem)]">
+              {visibleProgress.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/15 px-3 py-5 text-center text-[11px] leading-relaxed text-white/55">
+                  No students yet. Share the class code to let them join.
+                </p>
+              ) : (
+                <div className="grid gap-2">
                   {visibleProgress.map((student) => {
-                    const name =
-                      student.display_name || student.email || `Student ${student.student_uid.slice(0, 6)}`;
+                    const name = resolveStudentDisplayName(null, null, {
+                      uid: student.student_uid,
+                      displayName: student.display_name,
+                      email: student.email,
+                    });
                     const active = selected?.student_uid === student.student_uid;
                     return (
                       <div
@@ -366,21 +624,26 @@ export function LiveClassHostOverlay({
                         <button
                           type="button"
                           className="min-w-0 flex-1 text-left"
-                          onClick={() => setSelectedStudentUid(student.student_uid)}
+                          onClick={() => {
+                            setSelectedStudentUid(student.student_uid);
+                            if (studentViewOn && student.student_view) setActiveDrawer('preview');
+                          }}
                         >
                           <p className="truncate text-xs font-medium">{name}</p>
                           <p className="text-[10px] capitalize text-white/45">{student.phase || 'connected'}</p>
                         </button>
                         <button
                           type="button"
-                          title={studentViewOn && active ? 'Hide student view' : 'Preview student view'}
+                          title="Preview student view"
+                          disabled={!student.student_view}
                           onClick={() => {
                             setSelectedStudentUid(student.student_uid);
-                            setStudentViewOn((on) => (active && on ? false : true));
+                            if (student.student_view) {
+                              setStudentViewOn(true);
+                              setActiveDrawer('preview');
+                            }
                           }}
-                          className={`rounded-lg p-1.5 hover:bg-white/10 ${
-                            studentViewOn && active ? 'text-teal-300' : 'text-white/65 hover:text-white'
-                          }`}
+                          className="rounded-lg p-1.5 text-white/65 hover:bg-white/10 hover:text-white disabled:opacity-35"
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
@@ -401,51 +664,75 @@ export function LiveClassHostOverlay({
                     );
                   })}
                 </div>
+              )}
+            </div>
+          )}
 
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
-                      Student view
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setStudentViewOn((v) => !v)}
-                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold transition ${
-                        studentViewOn
-                          ? 'bg-teal-400/20 text-teal-200'
-                          : 'bg-white/10 text-white/55 hover:bg-white/15'
-                      }`}
-                      aria-pressed={studentViewOn}
-                    >
-                      {studentViewOn ? 'On' : 'Off'}
-                    </button>
-                  </div>
-                  {!studentViewOn ? (
-                    <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-white/15 px-3 text-center text-[11px] text-white/50">
-                      Student view is off. Select a student and turn it on to inspect their 360° view.
-                    </div>
-                  ) : selected?.student_view && studentSkyboxUrl ? (
-                    <StudentScreen360Preview
-                      skyboxUrl={studentSkyboxUrl}
-                      view={selected.student_view}
-                      studentName={studentName}
-                      phaseLabel={String(selected.phase || 'Connected')}
-                      getApiBaseUrl={getApiBaseUrl}
-                      className="aspect-video w-full overflow-hidden rounded-xl border border-white/10"
-                    />
-                  ) : (
-                    <div className="flex aspect-video items-center justify-center rounded-xl border border-dashed border-white/15 px-3 text-center text-[11px] text-white/50">
-                      {selected
-                        ? `${studentName}'s 360° view appears once they look around.`
-                        : 'Select a student to inspect their live view.'}
-                    </div>
-                  )}
+          {activeDrawer === 'approvals' && (
+            <div className="max-h-[calc(min(62vh,34rem)-3.5rem)] overflow-y-auto p-3 sm:max-h-[calc(100vh-10.5rem)]">
+              {pendingJoinUids.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/15 px-3 py-5 text-center text-[11px] leading-relaxed text-white/55">
+                  No pending lobby approvals.
+                </p>
+              ) : (
+                <div className="grid gap-2">
+                  {pendingJoinUids.map((uid) => {
+                    const progress = progressList.find((item) => item.student_uid === uid);
+                    const name =
+                      requestDisplayNames[uid] ??
+                      resolveStudentDisplayName(null, null, {
+                        uid,
+                        displayName: progress?.display_name,
+                        email: progress?.email,
+                      });
+                    return (
+                      <div key={uid} className="flex items-center gap-3 rounded-xl border border-amber-300/20 bg-amber-400/8 px-3 py-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/15 text-amber-200">
+                          <Bell className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold text-white">{name}</p>
+                          <p className="text-[10px] text-white/45">Waiting in lobby</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={approvingUid === uid}
+                          onClick={() => void handleApprove(uid)}
+                          className="inline-flex items-center justify-center rounded-lg bg-amber-300 px-3 py-1.5 text-[11px] font-bold text-zinc-950 transition hover:bg-amber-200 disabled:opacity-55"
+                        >
+                          {approvingUid === uid ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Approve'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              )}
+            </div>
+          )}
+
+          {activeDrawer === 'preview' && studentViewOn && selected?.student_view && studentSkyboxUrl && (
+            <div className="p-3">
+              <StudentScreen360Preview
+                skyboxUrl={studentSkyboxUrl}
+                view={selected.student_view}
+                studentName={studentName}
+                phaseLabel={String(selected.phase || 'Connected')}
+                getApiBaseUrl={getApiBaseUrl}
+                className="aspect-video w-full overflow-hidden rounded-xl border border-white/10"
+              />
+              <button
+                type="button"
+                disabled={directing}
+                onClick={() => void redirectClassToStudentView()}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-xs font-semibold text-white/85 transition hover:bg-white/10 disabled:opacity-40"
+              >
+                {directing ? <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-400" /> : <Eye className="h-3.5 w-3.5" />}
+                Match selected student
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

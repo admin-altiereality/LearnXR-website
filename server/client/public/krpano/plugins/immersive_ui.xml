@@ -14,12 +14,12 @@
     if (enabled === false || enabled === "false" || enabled === "0" || krpano.immersive_ui_initialized) return;
     krpano.immersive_ui_initialized = true;
     if (!krpano.immersive_ui_refs) {
-      krpano.immersive_ui_refs = { panel: null, buttonRegions: [], state: {}, gazeHotspotNames: [] };
+      krpano.immersive_ui_refs = { panel: null, buttonRegions: [], state: {}, gazeHotspotNames: [], gazeSignature: "", hoverAction: null };
     }
   ]]></action>
 
   <!--
-    Gaze interactor: fixed button regions in canvas space (CW=2048, CH=1280).
+    Gaze interactor: button regions in canvas space (CW=2048, CH=1280).
     Convert to world (tx,ty,tz) using panel position and size 4.8 x 3.
   -->
   <action name="immersive_ui_create_gaze_hotspots" type="js"><![CDATA[
@@ -37,22 +37,51 @@
       return { tx: p.tx + dx, ty: p.ty + dy, tz: p.tz };
     }
 
-    var regions = [
-      { name: "iu_gaze_phase_intro",    x: 570,  y: 50,  w: 200, h: 48, action: "phaseGo:intro" },
-      { name: "iu_gaze_phase_learn",    x: 806,  y: 50,  w: 200, h: 48, action: "phaseGo:explanation" },
-      { name: "iu_gaze_phase_summary",  x: 942,  y: 50,  w: 200, h: 48, action: "phaseGo:outro" },
-      { name: "iu_gaze_phase_quiz",     x: 1078, y: 50,  w: 200, h: 48, action: "phaseGo:quiz" },
-      { name: "iu_gaze_layout_lecture", x: 1590, y: 56,  w: 130, h: 34, action: "layoutToggle:lecture" },
-      { name: "iu_gaze_layout_podium",  x: 1738, y: 56,  w: 130, h: 34, action: "layoutToggle:podium" },
-      { name: "iu_gaze_layout_museum",  x: 1886, y: 56,  w: 130, h: 34, action: "layoutToggle:museum" },
-      { name: "iu_gaze_replay",         x: 60,   y: 1090, w: 220, h: 72, action: "replay" },
-      { name: "iu_gaze_tts",            x: 304, y: 1090, w: 160, h: 72, action: "ttsToggle" },
-      { name: "iu_gaze_skip_quiz",      x: 884, y: 1090, w: 280, h: 72, action: "skipToQuiz" },
-      { name: "iu_gaze_next_stage",     x: 1384, y: 1090, w: 200, h: 72, action: "continue" },
-      { name: "iu_gaze_continue",       x: 1608, y: 1090, w: 380, h: 72, action: "continue" },
-      { name: "iu_gaze_done",           x: 864,  y: 1100, w: 320, h: 72, action: "continue" },
-      { name: "iu_gaze_mcq_btn",        x: 844,  y: 1050, w: 360, h: 72, action: "mcqSubmitOrNext" }
+    var fallbackRegions = [
+      { x: 570,  y: 50,   w: 200, h: 48, action: "phaseGo:intro" },
+      { x: 806,  y: 50,   w: 200, h: 48, action: "phaseGo:explanation" },
+      { x: 1042, y: 50,   w: 200, h: 48, action: "phaseGo:outro" },
+      { x: 1278, y: 50,   w: 200, h: 48, action: "phaseGo:quiz" },
+      { x: 1590, y: 56,   w: 130, h: 34, action: "layoutToggle:lecture" },
+      { x: 1728, y: 56,   w: 130, h: 34, action: "layoutToggle:podium" },
+      { x: 1866, y: 56,   w: 130, h: 34, action: "layoutToggle:museum" },
+      { x: 60,   y: 1090, w: 220, h: 72, action: "replay" },
+      { x: 304,  y: 1090, w: 160, h: 72, action: "ttsPlay" },
+      { x: 884,  y: 1090, w: 280, h: 72, action: "skipToQuiz" },
+      { x: 1384, y: 1090, w: 200, h: 72, action: "continue" },
+      { x: 1608, y: 1090, w: 380, h: 72, action: "continue" }
     ];
+    var liveRegions = (refs.buttonRegions && refs.buttonRegions.length) ? refs.buttonRegions : fallbackRegions;
+    var regions = [];
+    for (var ri = 0; ri < liveRegions.length; ri++) {
+      var lr = liveRegions[ri];
+      if (!lr || !lr.action) continue;
+      regions.push({
+        name: "iu_gaze_btn_" + ri,
+        x: Number(lr.x) || 0,
+        y: Number(lr.y) || 0,
+        w: Number(lr.w) || 1,
+        h: Number(lr.h) || 1,
+        action: String(lr.action)
+      });
+    }
+
+    var signatureParts = [layout];
+    for (var si = 0; si < regions.length; si++) {
+      var sr = regions[si];
+      signatureParts.push(sr.action + ":" + Math.round(sr.x) + "," + Math.round(sr.y) + "," + Math.round(sr.w) + "," + Math.round(sr.h));
+    }
+    var signature = signatureParts.join("|");
+    if (refs.gazeSignature === signature && refs.gazeHotspotNames && refs.gazeHotspotNames.length === regions.length) {
+      krpano.call("immersive_ui_gaze_update_visibility()");
+      return;
+    }
+
+    if (refs.gazeHotspotNames && refs.gazeHotspotNames.length) {
+      for (var hi = 0; hi < refs.gazeHotspotNames.length; hi++) {
+        try { krpano.set("hotspot[" + refs.gazeHotspotNames[hi] + "].visible", false); } catch(e) {}
+      }
+    }
 
     var transparentUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     refs.gazeHotspotNames = [];
@@ -67,22 +96,37 @@
         }
         krpano.set("hotspot[" + r.name + "].url", transparentUrl);
         krpano.set("hotspot[" + r.name + "].alpha", 0.01);
-        krpano.set("hotspot[" + r.name + "].width", Math.max(40, r.w / 4));
-        krpano.set("hotspot[" + r.name + "].height", Math.max(24, r.h / 4));
+        krpano.set("hotspot[" + r.name + "].width", Math.max(90, (r.w + 48) / 3.2));
+        krpano.set("hotspot[" + r.name + "].height", Math.max(48, (r.h + 44) / 3.2));
         krpano.set("hotspot[" + r.name + "].torigin", "world");
         krpano.set("hotspot[" + r.name + "].tx", c.tx);
         krpano.set("hotspot[" + r.name + "].ty", c.ty);
         krpano.set("hotspot[" + r.name + "].tz", c.tz);
         krpano.set("hotspot[" + r.name + "].dataaction", r.action);
         krpano.set("hotspot[" + r.name + "].onclick", "js(immersive_ui_gaze_click('" + r.name.replace(/'/g, "\\'") + "'));");
+        krpano.set("hotspot[" + r.name + "].onover", "js(immersive_ui_gaze_hover('" + r.name.replace(/'/g, "\\'") + "', true));");
+        krpano.set("hotspot[" + r.name + "].onout", "js(immersive_ui_gaze_hover('" + r.name.replace(/'/g, "\\'") + "', false));");
+        krpano.set("hotspot[" + r.name + "].handcursor", true);
+        krpano.set("hotspot[" + r.name + "].capture", true);
+        krpano.set("hotspot[" + r.name + "].enabled", true);
         krpano.set("hotspot[" + r.name + "].keep", true);
         krpano.set("hotspot[" + r.name + "].zorder", "1");
         refs.gazeHotspotNames.push(r.name);
       } catch (e) { console.warn("[ImmersiveUI] Gaze hotspot " + r.name + ":", e); }
     }
 
+    refs.gazeSignature = signature;
     krpano.call("immersive_ui_gaze_update_visibility()");
     console.log("[ImmersiveUI] Gaze hotspots created:", refs.gazeHotspotNames.length);
+  ]]></action>
+
+  <action name="immersive_ui_gaze_hover" type="js" args="hotspotName,active"><![CDATA[
+    var refs = krpano.immersive_ui_refs;
+    if (!refs) return;
+    var action = null;
+    try { action = krpano.get("hotspot[" + hotspotName + "].dataaction"); } catch(e) {}
+    refs.hoverAction = active && action ? action : null;
+    if (refs.panel && refs.panel.draw) refs.panel.draw();
   ]]></action>
 
   <action name="immersive_ui_gaze_click" type="js" args="hotspotName"><![CDATA[
@@ -95,6 +139,7 @@
       window.__krpanoLayoutToSet = action.split(":")[1];
       krpano.call("immersive_ui_set_layout()");
     }
+    if (window.__xrHaptic) window.__xrHaptic(action.indexOf("mcqSubmit") === 0 ? "confirm" : "select");
     if (window.__krpanoUIAction) window.__krpanoUIAction(action);
   ]]></action>
 
@@ -168,7 +213,8 @@
       phase: "intro", script: "", ttsStatus: "idle",
       question: "", options: [], showQuiz: false, showResult: false, scoreLabel: "",
       selectedAnswer: -1, waitingForUser: false, isPlayingAudio: false,
-      currentMcqIndex: 0, totalMcqs: 0, correctAnswer: -1, explanation: ""
+      currentMcqIndex: 0, totalMcqs: 0, correctAnswer: -1, explanation: "",
+      controlStudentsEnabled: false, isStudent: false
     };
 
     refs.state = S;
@@ -263,6 +309,29 @@
       ctx.fillStyle = grad;
       ctx.fill();
       ctx.restore();
+    }
+
+    function drawHoverRing() {
+      var hoverAction = refs.hoverAction;
+      if (!hoverAction) return;
+      var regions = refs.buttonRegions || [];
+      for (var i = regions.length - 1; i >= 0; i--) {
+        var r = regions[i];
+        if (!r || r.action !== hoverAction) continue;
+        ctx.save();
+        ctx.shadowColor = "rgba(45, 212, 191, 0.65)";
+        ctx.shadowBlur = 18;
+        roundRect(r.x - 8, r.y - 8, r.w + 16, r.h + 16, 18);
+        ctx.strokeStyle = "rgba(94, 234, 212, 0.95)";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.restore();
+        break;
+      }
+    }
+
+    function syncGazeHotspots() {
+      try { krpano.call("immersive_ui_create_gaze_hotspots()"); } catch(e) {}
     }
 
     // ===== DRAW ROUTINES =====
@@ -545,6 +614,25 @@
       var btnH = 72;
       var btnR = 16;
       var gap = 24;
+
+      if (S.isStudent && S.controlStudentsEnabled) {
+        // Draw locked banner
+        roundRect(60, btnY, CW - 120, btnH, btnR);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.6)";
+        ctx.fill();
+        roundRect(60, btnY, CW - 120, btnH, btnR);
+        ctx.strokeStyle = "rgba(244, 63, 94, 0.4)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        var pulse = 0.8 + 0.2 * Math.sin(animTime * 4);
+        ctx.fillStyle = "rgba(251, 113, 133, " + pulse + ")";
+        ctx.font = "600 24px " + FONT;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("🔒 Teacher is controlling class progression. Please pay attention.", CW / 2, btnY + btnH / 2);
+        return;
+      }
 
       // Replay button (left)
       var replayW = 220;
@@ -987,7 +1075,9 @@
         refs.buttonRegions.push({ x: sx, y: Y, w: stepW, h: stepH, action: "phaseGo:" + STEPS[i].key });
       }
 
+      drawHoverRing();
       texture.needsUpdate = true;
+      syncGazeHotspots();
     }
 
     // ===== THREE.JS SETUP =====
@@ -1100,6 +1190,8 @@
     S.correctAnswer = parseInt(d.correctAnswer, 10);
     if (isNaN(S.correctAnswer)) S.correctAnswer = -1;
     S.explanation = d.explanation || "";
+    S.controlStudentsEnabled = d.controlStudentsEnabled === true;
+    S.isStudent = d.isStudent === true;
 
     if (refs.panel.draw) refs.panel.draw();
 
@@ -1169,6 +1261,8 @@
     var layout = refs.layouts[layoutName];
     if (!layout) return;
     refs.currentLayout = layoutName;
+    refs.gazeSignature = "";
+    refs.hoverAction = null;
 
     var TWEEN_SPEED = 0.6;
     var TWEEN_TYPE = "easeInOutQuad";
