@@ -70,8 +70,16 @@ test('lesson hotspot data cannot escape into executable KRPano actions', () => {
 });
 
 test('canvas controls use non-overlapping centimeter-based KRPano hit proxies', () => {
-  assert.match(immersiveUiSource, /PANEL_WIDTH_CM\s*=\s*120/);
-  assert.match(immersiveUiSource, /PANEL_HEIGHT_CM\s*=\s*75/);
+  const configuredScale = Number(immersiveUiSource.match(/iu_scale="([^"]+)"/)?.[1]);
+  assert.equal(configuredScale, 0.2);
+  assert.equal(120 * configuredScale, 24);
+  assert.equal(75 * configuredScale, 15);
+  assert.match(immersiveUiSource, /iu_scale="0\.2"/);
+  assert.match(immersiveUiSource, /PANEL_WIDTH_CM\s*=\s*120 \* UI_SCALE/);
+  assert.match(immersiveUiSource, /PANEL_HEIGHT_CM\s*=\s*75 \* UI_SCALE/);
+  assert.match(immersiveUiSource, /HIT_PADDING_CM\s*=\s*3 \* UI_SCALE/);
+  assert.match(immersiveUiSource, /Math\.max\(8 \* UI_SCALE/);
+  assert.match(immersiveUiSource, /Math\.max\(5 \* UI_SCALE/);
   assert.match(immersiveUiSource, /renderer",\s*"webgl"/);
   assert.match(immersiveUiSource, /distorted",\s*true/);
   assert.match(immersiveUiSource, /bgcapture",\s*true/);
@@ -162,6 +170,9 @@ test('every lesson and quiz command is represented by an immersive hit asset and
 });
 
 test('native lesson controls are real KRPano WebGL hotspots', () => {
+  assert.match(nativeUiSource, /scale: 0\.12 \* UI_SCALE/);
+  assert.match(nativeUiSource, /xOff\(l,w\)\*P\.layoutScale/);
+  assert.match(nativeUiSource, /yOff\(t,h\)\*P\.layoutScale/);
   assert.match(nativeUiSource, /function yOff\(t,h\)\{return -P\.h\/2\+t\+h\/2;\}/);
   for (const requiredSetting of [
     's("type","text")',

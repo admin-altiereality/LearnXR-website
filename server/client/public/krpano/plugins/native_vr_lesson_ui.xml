@@ -18,8 +18,10 @@
     var handSelectHandler = null;
     var xrEndHandler = null;
 
-    /* Ultra-compact panel (2D card-like proportions) */
-    var P = { tx: 0, ty: 0, tz: 220, scale: 0.12, w: 520, h: 460 };
+    /* Keep the native fallback aligned with the configured immersive UI scale. */
+    var UI_SCALE = Number(krpano.iu_scale);
+    if (!isFinite(UI_SCALE) || UI_SCALE <= 0) UI_SCALE = 0.2;
+    var P = { tx: 0, ty: 0, tz: 220, scale: 0.12 * UI_SCALE, layoutScale: UI_SCALE, w: 520, h: 460 };
 
     var C = {
       bg:      "0x080C14", card:    "0x101826", card2:   "0x182232",
@@ -80,8 +82,8 @@
     function yOff(t,h){return -P.h/2+t+h/2;}
 
     function pos(n,l,t,w,h){
-      krpano.set("hotspot["+n+"].tx", P.tx+xOff(l,w));
-      krpano.set("hotspot["+n+"].ty", P.ty+yOff(t,h));
+      krpano.set("hotspot["+n+"].tx", P.tx+xOff(l,w)*P.layoutScale);
+      krpano.set("hotspot["+n+"].ty", P.ty+yOff(t,h)*P.layoutScale);
       krpano.set("hotspot["+n+"].tz", P.tz);
       krpano.set("hotspot["+n+"].width",w);
       krpano.set("hotspot["+n+"].height",h);

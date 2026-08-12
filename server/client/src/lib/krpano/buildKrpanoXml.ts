@@ -76,7 +76,7 @@ const DEFAULT_HOTSPOT_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%23f97316" stroke="%23fff" stroke-width="3" opacity="0.95"/><circle cx="24" cy="24" r="8" fill="%23fff"/></svg>'
   );
 
-const KRPANO_ASSET_VERSION = '1.23.3-r5';
+const KRPANO_ASSET_VERSION = '1.23.3-r6';
 
 /**
  * Build hotspot XML for one hotspot. Uses image url or a default pin icon.

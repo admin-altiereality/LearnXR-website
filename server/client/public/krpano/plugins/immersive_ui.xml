@@ -6,7 +6,7 @@
     All UI (phase stepper, script, buttons, quiz, completed) drawn on one surface.
   -->
 
-  <krpano name="immersive_ui_config" iu_enabled="true" />
+  <krpano name="immersive_ui_config" iu_enabled="true" iu_scale="0.2" />
 
   <!-- ===== INIT ===== -->
   <action name="immersive_ui_init" autorun="onstart" type="js"><![CDATA[
@@ -22,10 +22,13 @@
         gazeSignature: "",
         hoverAction: null,
         controllerHooks: {},
-        controllerHookObjects: {}
+        controllerHookObjects: {},
+        uiScale: 0.2
       };
     }
     var refs = krpano.immersive_ui_refs;
+    var configuredScale = Number(krpano.iu_scale);
+    refs.uiScale = isFinite(configuredScale) && configuredScale > 0 ? configuredScale : 0.2;
 
     function hotspotAction(name) {
       try { return String(krpano.get("hotspot[" + name + "].dataaction") || ""); } catch(e) { return ""; }
@@ -179,7 +182,7 @@
   <!--
     Gaze interactor: button regions in canvas space (CW=2048, CH=1280).
     Convert to KRPano world centimeters so the hit proxies exactly cover the
-    120 x 75 cm Three.js lesson screen.
+    scaled Three.js lesson screen.
   -->
   <action name="immersive_ui_create_gaze_hotspots" type="js"><![CDATA[
     var refs = krpano.immersive_ui_refs;
@@ -188,7 +191,9 @@
     var p = refs.layouts[layout] && refs.layouts[layout].panel;
     if (!p) return;
     var CW = 2048, CH = 1280;
-    var PANEL_WIDTH_CM = 120, PANEL_HEIGHT_CM = 75;
+    var UI_SCALE = Number(refs.uiScale) || 0.2;
+    var PANEL_WIDTH_CM = 120 * UI_SCALE, PANEL_HEIGHT_CM = 75 * UI_SCALE;
+    var HIT_PADDING_CM = 3 * UI_SCALE;
 
     function canvasToWorld(cx, cy) {
       var dx = ((cx / CW) - 0.5) * PANEL_WIDTH_CM;
@@ -255,8 +260,8 @@
         }
         krpano.set("hotspot[" + r.name + "].url", transparentUrl);
         krpano.set("hotspot[" + r.name + "].alpha", 0.01);
-        krpano.set("hotspot[" + r.name + "].width", Math.max(8, (r.w / CW) * PANEL_WIDTH_CM + 3));
-        krpano.set("hotspot[" + r.name + "].height", Math.max(5, (r.h / CH) * PANEL_HEIGHT_CM + 3));
+        krpano.set("hotspot[" + r.name + "].width", Math.max(8 * UI_SCALE, (r.w / CW) * PANEL_WIDTH_CM + HIT_PADDING_CM));
+        krpano.set("hotspot[" + r.name + "].height", Math.max(5 * UI_SCALE, (r.h / CH) * PANEL_HEIGHT_CM + HIT_PADDING_CM));
         krpano.set("hotspot[" + r.name + "].scale", 1);
         krpano.set("hotspot[" + r.name + "].distorted", true);
         krpano.set("hotspot[" + r.name + "].renderer", "webgl");
@@ -1236,7 +1241,8 @@
     } catch(e) {}
 
     var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
-    var PANEL_WIDTH_CM = 120, PANEL_HEIGHT_CM = 75;
+    var UI_SCALE = Number(refs.uiScale) || 0.2;
+    var PANEL_WIDTH_CM = 120 * UI_SCALE, PANEL_HEIGHT_CM = 75 * UI_SCALE;
     var panelW = PANEL_WIDTH_CM / ws, panelH = PANEL_HEIGHT_CM / ws;
     var geo = new THREE.PlaneGeometry(panelW, panelH);
     var mesh = new THREE.Mesh(geo, mat);
