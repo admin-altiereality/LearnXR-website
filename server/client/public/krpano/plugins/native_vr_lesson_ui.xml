@@ -20,7 +20,7 @@
 
     /* Keep the native fallback aligned with the configured immersive UI scale. */
     var UI_SCALE = Number(krpano.iu_scale);
-    if (!isFinite(UI_SCALE) || UI_SCALE <= 0) UI_SCALE = 0.2;
+    if (!isFinite(UI_SCALE) || UI_SCALE <= 0) UI_SCALE = 0.1;
     var P = { tx: 0, ty: 0, tz: 220, scale: 0.12 * UI_SCALE, layoutScale: UI_SCALE, w: 520, h: 460 };
 
     var C = {
@@ -165,7 +165,7 @@
     function hideL(){hide("vrui_hdr");hide("vrui_scr");hide("vrui_rep");hide("vrui_tts");hide("vrui_skq");hide("vrui_cnt");}
     function hideQ(){for(var i=0;i<OPTION_COUNT;i++)hide("vrui_o"+i);hide("vrui_qh");hide("vrui_sub");hide("vrui_nxt");hide("vrui_exp");}
     function hideC(){hide("vrui_done");}
-    function hideN(){hide("vrui_nav_intro");hide("vrui_nav_explanation");hide("vrui_nav_outro");hide("vrui_nav_quiz");}
+    function hideN(){hide("vrui_nav_intro");hide("vrui_nav_explanation");hide("vrui_nav_outro");hide("vrui_nav_quiz");hide("vrui_dir");}
 
     /* ══ BACKGROUND ══ */
     function drawBg(){
@@ -185,9 +185,12 @@
       ];
       if(hasQ) tabs.push({ id:"quiz", lbl:"Quiz" });
 
-      var tw=116, th=34, gap=6;
+      var th=34, gap=6, directW=82;
+      var tw=S.isHost===true
+        ? Math.floor((P.w-12-directW-gap-(tabs.length-1)*gap)/tabs.length)
+        : 116;
       var totW = tabs.length * tw + (tabs.length-1)*gap;
-      var startX = (P.w - totW)/2;
+      var startX = S.isHost===true ? 6 : (P.w - totW)/2;
       var y = -42; // Above the main panel
       
       for(var i=0;i<tabs.length;i++){
@@ -203,6 +206,11 @@
         box("vrui_nav_"+t.id, startX + i*(tw+gap), y, tw, th, html, css(14, txtCol, "center", "130%", isAct?"bold":"normal"), bg, bga, bdr, "phaseGo:"+t.id, !isAct, 6);
       }
       if(!hasQ) hide("vrui_nav_quiz");
+      if(S.isHost===true){
+        btn("vrui_dir",P.w-6-directW,y,directW,th,"Direct","primary","directClassView",true);
+      }else{
+        hide("vrui_dir");
+      }
     }
 
     /* ══ LESSON ══ */

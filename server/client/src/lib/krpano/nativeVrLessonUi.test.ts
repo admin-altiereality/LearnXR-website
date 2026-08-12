@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { buildKrpanoXml } from './buildKrpanoXml';
+import { applyTeacherViewToImmersiveKrpano } from './applyTeacherView';
 
 const nativeUiSource = readFileSync(
   new URL('../../../public/krpano/plugins/native_vr_lesson_ui.xml', import.meta.url),
@@ -71,10 +72,10 @@ test('lesson hotspot data cannot escape into executable KRPano actions', () => {
 
 test('canvas controls use non-overlapping centimeter-based KRPano hit proxies', () => {
   const configuredScale = Number(immersiveUiSource.match(/iu_scale="([^"]+)"/)?.[1]);
-  assert.equal(configuredScale, 0.2);
-  assert.equal(120 * configuredScale, 24);
-  assert.equal(75 * configuredScale, 15);
-  assert.match(immersiveUiSource, /iu_scale="0\.2"/);
+  assert.equal(configuredScale, 0.1);
+  assert.equal(120 * configuredScale, 12);
+  assert.equal(75 * configuredScale, 7.5);
+  assert.match(immersiveUiSource, /iu_scale="0\.1"/);
   assert.match(immersiveUiSource, /PANEL_WIDTH_CM\s*=\s*120 \* UI_SCALE/);
   assert.match(immersiveUiSource, /PANEL_HEIGHT_CM\s*=\s*75 \* UI_SCALE/);
   assert.match(immersiveUiSource, /HIT_PADDING_CM\s*=\s*3 \* UI_SCALE/);
@@ -151,6 +152,7 @@ test('every lesson and quiz command is represented by an immersive hit asset and
     'mcqNext',
     'phaseGo:',
     'layoutToggle:',
+    'directClassView',
   ]) {
     assert.ok(immersiveUiSource.includes(action), `missing immersive hit action ${action}`);
   }
@@ -164,9 +166,31 @@ test('every lesson and quiz command is represented by an immersive hit asset and
     "action === 'mcqNext'",
     "action.startsWith('mcqSelect:')",
     "action.startsWith('phaseGo:')",
+    "action === 'directClassView'",
   ]) {
     assert.ok(playerSource.includes(routedAction), `missing React route ${routedAction}`);
   }
+});
+
+test('Direct class view uses the documented KRPano WebVR orientation action', () => {
+  const calls: string[] = [];
+  const viewer = {
+    call(action: string) {
+      calls.push(action);
+    },
+  };
+
+  assert.equal(
+    applyTeacherViewToImmersiveKrpano(viewer, { hlookat: 42, vlookat: -8, fov: 85 }),
+    true,
+  );
+  assert.deepEqual(calls, [
+    'stopmovements();',
+    'webvr.lookat(42);',
+  ]);
+  assert.doesNotMatch(playerSource, /webvr\.hlookat\(/);
+  assert.doesNotMatch(playerSource, /webvr\.recenter\(/);
+  assert.doesNotMatch(playerSource, /webvr\.vlookatoffset/);
 });
 
 test('native lesson controls are real KRPano WebGL hotspots', () => {

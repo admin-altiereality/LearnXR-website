@@ -6,7 +6,7 @@
     All UI (phase stepper, script, buttons, quiz, completed) drawn on one surface.
   -->
 
-  <krpano name="immersive_ui_config" iu_enabled="true" iu_scale="0.2" />
+  <krpano name="immersive_ui_config" iu_enabled="true" iu_scale="0.1" />
 
   <!-- ===== INIT ===== -->
   <action name="immersive_ui_init" autorun="onstart" type="js"><![CDATA[
@@ -23,12 +23,12 @@
         hoverAction: null,
         controllerHooks: {},
         controllerHookObjects: {},
-        uiScale: 0.2
+        uiScale: 0.1
       };
     }
     var refs = krpano.immersive_ui_refs;
     var configuredScale = Number(krpano.iu_scale);
-    refs.uiScale = isFinite(configuredScale) && configuredScale > 0 ? configuredScale : 0.2;
+    refs.uiScale = isFinite(configuredScale) && configuredScale > 0 ? configuredScale : 0.1;
 
     function hotspotAction(name) {
       try { return String(krpano.get("hotspot[" + name + "].dataaction") || ""); } catch(e) { return ""; }
@@ -191,7 +191,7 @@
     var p = refs.layouts[layout] && refs.layouts[layout].panel;
     if (!p) return;
     var CW = 2048, CH = 1280;
-    var UI_SCALE = Number(refs.uiScale) || 0.2;
+    var UI_SCALE = Number(refs.uiScale) || 0.1;
     var PANEL_WIDTH_CM = 120 * UI_SCALE, PANEL_HEIGHT_CM = 75 * UI_SCALE;
     var HIT_PADDING_CM = 3 * UI_SCALE;
 
@@ -361,7 +361,7 @@
       question: "", options: [], showQuiz: false, showResult: false, scoreLabel: "",
       selectedAnswer: -1, waitingForUser: false, isPlayingAudio: false,
       currentMcqIndex: 0, totalMcqs: 0, correctAnswer: -1, explanation: "",
-      controlStudentsEnabled: false, isStudent: false
+      controlStudentsEnabled: false, isStudent: false, isHost: false
     };
 
     refs.state = S;
@@ -1152,6 +1152,18 @@
       refs.buttonRegions.push({ x: doneX, y: doneY, w: doneW, h: doneH, action: "continue" });
     }
 
+    function drawHostDirectButton() {
+      if (!S.isHost) return;
+      var x = 520, y = CH - 190, w = 300, h = 72, r = 16;
+      drawGradientButton(x, y, w, h, r, "#0f766e", "#0891b2", 0.95);
+      ctx.fillStyle = "#ecfeff";
+      ctx.font = "700 22px " + FONT;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Direct class view", x + w / 2, y + h / 2);
+      refs.buttonRegions.push({ x: x, y: y, w: w, h: h, action: "directClassView" });
+    }
+
     function drawLayoutToggle() {
       var tabW = 130, tabH = 34, gap = 8, tabR = 17;
       var keys = ["lecture", "podium", "museum"];
@@ -1211,6 +1223,7 @@
         }
       }
 
+      drawHostDirectButton();
       drawLayoutToggle();
 
       // Phase stepper pills: add click regions (after other regions so they are not cleared)
@@ -1241,7 +1254,7 @@
     } catch(e) {}
 
     var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
-    var UI_SCALE = Number(refs.uiScale) || 0.2;
+    var UI_SCALE = Number(refs.uiScale) || 0.1;
     var PANEL_WIDTH_CM = 120 * UI_SCALE, PANEL_HEIGHT_CM = 75 * UI_SCALE;
     var panelW = PANEL_WIDTH_CM / ws, panelH = PANEL_HEIGHT_CM / ws;
     var geo = new THREE.PlaneGeometry(panelW, panelH);
@@ -1340,6 +1353,7 @@
     S.explanation = d.explanation || "";
     S.controlStudentsEnabled = d.controlStudentsEnabled === true;
     S.isStudent = d.isStudent === true;
+    S.isHost = d.isHost === true;
 
     if (refs.panel.draw) refs.panel.draw();
 

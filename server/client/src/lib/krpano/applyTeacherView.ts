@@ -81,3 +81,24 @@ export function applyTeacherViewToKrpano(
     return false;
   }
 }
+
+/**
+ * Direct an active WebVR headset horizontally toward the teacher's view.
+ * KRPano intentionally leaves pitch under physical head control in VR.
+ */
+export function applyTeacherViewToImmersiveKrpano(
+  viewer: KrpanoViewCaller | null | undefined,
+  view: TeacherViewLike
+): boolean {
+  if (!viewer?.call) return false;
+  const h = Number(view.hlookat);
+  if (!Number.isFinite(h)) return false;
+
+  try {
+    viewer.call('stopmovements();');
+    viewer.call(`webvr.lookat(${h});`);
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -31,6 +31,8 @@ export interface LiveClassHostOverlayProps {
    * at click time so Direct uses the current camera, not a stale React snapshot.
    */
   getLiveHostView?: () => HostLookat | null;
+  /** Direct the class using the player's current live view. */
+  onDirectClassView?: () => Promise<boolean> | boolean;
   /** Optional skybox override (e.g. current tour stop). Falls back to launched lesson bundle. */
   skyboxUrlOverride?: string | null;
   /** Whether Control Students mode is active (teacher controls lesson phase). */
@@ -67,6 +69,7 @@ export function LiveClassHostOverlay({
   sessionCode,
   hostView,
   getLiveHostView,
+  onDirectClassView,
   skyboxUrlOverride,
   controlStudentsEnabled = false,
   currentLessonPhase,
@@ -283,6 +286,20 @@ export function LiveClassHostOverlay({
       toast.info('No active class session.');
       return;
     }
+    if (onDirectClassView) {
+      setDirecting(true);
+      try {
+        const ok = await onDirectClassView();
+        if (ok) toast.success('Class view updated to match yours');
+        else toast.error('Could not update class view');
+      } catch {
+        toast.error('Could not update class view');
+      } finally {
+        setDirecting(false);
+      }
+      return;
+    }
+
     // Prefer a fresh live read at click time (not a stale React snapshot).
     const view = resolveHostView();
     if (!view) {
@@ -310,7 +327,7 @@ export function LiveClassHostOverlay({
     } finally {
       setDirecting(false);
     }
-  }, [sessionId, hostUid, resolveHostView]);
+  }, [sessionId, hostUid, onDirectClassView, resolveHostView]);
 
   const redirectClassToStudentView = useCallback(async () => {
     if (!sessionId || !hostUid || !selected?.student_view) {
@@ -351,7 +368,7 @@ export function LiveClassHostOverlay({
 
   if ((!sessionId && !code) || session?.status === 'ended') return null;
 
-  const canDirect = Boolean(resolveHostView());
+  const canDirect = Boolean(onDirectClassView || resolveHostView());
   const studentCount = visibleProgress.length;
   const pendingCount = pendingJoinUids.length;
   const selectedCanPreview = Boolean(selected?.student_view && studentSkyboxUrl);

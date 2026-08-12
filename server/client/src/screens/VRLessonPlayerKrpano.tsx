@@ -19,7 +19,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano, removeKrpano } from '../lib/krpano/embedKrpano';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
-import { applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
+import { applyTeacherViewToImmersiveKrpano, applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
@@ -190,6 +190,7 @@ interface KrpanoUiStatePayload {
   explanation: string;
   controlStudentsEnabled?: boolean;
   isStudent?: boolean;
+  isHost?: boolean;
 }
 
 interface SkyboxData {
@@ -1273,7 +1274,7 @@ const VRLessonPlayerInner = () => {
   const krpanoContainerRef = useRef<HTMLDivElement>(null);
   type KrpanoViewer = {
     call?: (action: string) => void;
-    get?: (name: string) => string;
+    get?: (name: string) => unknown;
     playsound_at_hotspot?: (name: string, url: string, hotspot: string, loop: boolean, volume: number, oncomplete?: () => void) => unknown;
     destroysound?: (name: string) => void;
   };
@@ -1305,6 +1306,7 @@ const VRLessonPlayerInner = () => {
     totalMcqs: 0,
     correctAnswer: -1,
     explanation: '',
+    isHost: false,
   });
   const classControlRef = useRef<{
     isHost: boolean;
@@ -1759,6 +1761,7 @@ const VRLessonPlayerInner = () => {
         explanation: state.explanation ?? '',
         controlStudentsEnabled: state.controlStudentsEnabled === true,
         isStudent: state.isStudent === true,
+        isHost: state.isHost === true,
       };
       const viewer = krpanoViewerRef.current;
       if (!viewer?.call) return;
@@ -2079,6 +2082,7 @@ const VRLessonPlayerInner = () => {
     explanation: showMcqResult ? currentImmersiveMcq?.explanation || '' : '',
     controlStudentsEnabled,
     isStudent: isStudentInSession,
+    isHost: isClassHost,
   };
 
   // Report phase to class session for teacher dashboard (when student joined from class)
@@ -2204,7 +2208,7 @@ const VRLessonPlayerInner = () => {
     if (!uiUpdate) return;
 
     uiUpdate(immersiveUiStateRef.current);
-  }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio, controlStudentsEnabled, isStudentInSession]);
+  }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio, controlStudentsEnabled, isStudentInSession, isClassHost]);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
     // Never fight live class Direct / teacher follow with phase lookto on students.
@@ -2291,6 +2295,26 @@ const VRLessonPlayerInner = () => {
     return () => { viewSyncSendRef.current = () => {}; };
   }, [isClassHost, useKrpanoView, useThreeScene, hostSessionIdForSync, user?.uid]);
 
+  const directClassToCurrentView = useCallback(async (): Promise<boolean> => {
+    if (!isClassHost || !hostSessionIdForSync || !user?.uid) return false;
+    const view = readKrpanoLookat(krpanoViewerRef.current) || hostLookat || activeSession?.teacher_view || null;
+    if (!view || !Number.isFinite(Number(view.hlookat)) || !Number.isFinite(Number(view.vlookat))) {
+      return false;
+    }
+
+    const normalizedView = {
+      hlookat: Number(view.hlookat),
+      vlookat: Number(view.vlookat),
+      fov: Number(view.fov) || 90,
+    };
+    setHostLookat(normalizedView);
+    return updateTeacherView(hostSessionIdForSync, user.uid, {
+      ...normalizedView,
+      force: true,
+      sync_id: Date.now(),
+    });
+  }, [activeSession?.teacher_view, hostLookat, hostSessionIdForSync, isClassHost, user?.uid]);
+
 
 
   // Teacher: broadcast phase to Firebase whenever lessonPhase changes (only when Control Students is ON)
@@ -2338,28 +2362,16 @@ const VRLessonPlayerInner = () => {
     }
     lastTeacherViewRef.current = { h, v, fov, syncId };
 
-    // When in active WebVR mode, view.hlookat/vlookat are controlled by the headset IMU
-    // and cannot be overridden by krpano JS. Instead call webvr.recenter() and set the
-    // webvr.hlookatoffset and webvr.vlookatoffset variables to rotate the coordinate system.
-    if (isInKrpanoVR && isNewDirect) {
-      const viewer = krpanoViewerRef.current;
-      try {
-        // Set offsets to rotate the VR world to the teacher's lookat orientation
-        viewer.set('webvr.hlookatoffset', h);
-        viewer.set('webvr.vlookatoffset', v);
-        try {
-          viewer.call(`webvr.hlookat(${h})`);
-        } catch {}
-        viewer.call('webvr.recenter()');
-        setTimeout(() => {
-          try {
-            krpanoViewerRef.current?.call?.('webvr.recenter()');
-          } catch {}
-        }, 150);
-      } catch (e) {
-        log('⚠️', 'webvr orientation sync failed', e);
-      }
-      log('👁️', 'Direct view in VR — offset and recentered horizontal & vertical orientation', { h, v, syncId });
+    const viewerVrFlag = krpanoViewerRef.current.get?.('webvr.isenabled');
+    const immersiveVrActive = isInKrpanoVR || viewerVrFlag === true || viewerVrFlag === 'true' || viewerVrFlag === '1';
+    if (immersiveVrActive && isNewDirect) {
+      const ok = applyTeacherViewToImmersiveKrpano(krpanoViewerRef.current, {
+        hlookat: h,
+        vlookat: v,
+        fov,
+        sync_id: syncId ?? undefined,
+      });
+      log('👁️', 'Direct view aligned in WebVR', { h, v, syncId, ok });
       return;
     }
 
@@ -3710,6 +3722,12 @@ const VRLessonPlayerInner = () => {
         else playTTS();
       } else if (action === 'toggleMute') {
         setIsMuted((previous) => !previous);
+      } else if (action === 'directClassView') {
+        if (!classControl.isHost) return;
+        void directClassToCurrentView().then((ok) => {
+          if (ok) toast.success('Class view updated to match yours');
+          else toast.error('Could not update class view');
+        });
       } else if (action === 'openChat') {
         setShowChat(true);
       } else if (action.startsWith('phaseGo:')) {
@@ -4267,6 +4285,7 @@ const VRLessonPlayerInner = () => {
             if (live) return live;
             return hostLookat || activeSession?.teacher_view || null;
           }}
+          onDirectClassView={directClassToCurrentView}
           skyboxUrlOverride={skyboxImageUrl || null}
           controlStudentsEnabled={controlStudentsEnabled}
           currentLessonPhase={lessonPhase}
