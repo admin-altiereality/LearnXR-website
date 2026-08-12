@@ -46,7 +46,17 @@
 
     /* VR-ONLY visibility: Only show when actually inside an XR session */
     function showNativeUi(){
-      return !!(krpano.webvr && (krpano.webvr.isenabled===true || krpano.webvr.isenabled==="true" || krpano.webvr.isenabled==="1"));
+      var inVr=!!(krpano.webvr && (krpano.webvr.isenabled===true || krpano.webvr.isenabled==="true" || krpano.webvr.isenabled==="1"));
+      var refs=krpano.immersive_ui_refs;
+      var canvasReady=!!(
+        window.__showImmersiveUI===true &&
+        refs&&refs.panel&&refs.panel.mesh&&
+        typeof window.__krpanoImmersiveUiClick==="function"&&
+        typeof window.__krpanoUIAction==="function"&&
+        typeof window.__krpanoUIUpdate==="function"&&
+        window.__krpanoUIState&&window.__krpanoUIState.initialized===true
+      );
+      return inVr&&!canvasReady;
     }
 
     function addName(n){if(hotspots.indexOf(n)<0)hotspots.push(n);}
@@ -61,13 +71,13 @@
       s("depthbuffer",false); s("depthwrite",false);
       s("capture",true); s("bgcapture",true); s("handcursor",true); s("hittest",true); s("alpha",1);
       s("edge","center"); s("zorder",90000); s("padding","4 12 4 12");
-      s("onover","js(window.native_vr_lesson_ui_hover && window.native_vr_lesson_ui_hover(caller.name, true));");
-      s("onout","js(window.native_vr_lesson_ui_hover && window.native_vr_lesson_ui_hover(caller.name, false));");
-      s("onclick","js(window.native_vr_lesson_ui_click && window.native_vr_lesson_ui_click(caller.name, 'onclick'));");
+      s("onover","jscall('window.native_vr_lesson_ui_hover(caller.name, true)');");
+      s("onout","jscall('window.native_vr_lesson_ui_hover(caller.name, false)');");
+      s("onclick","jscall('window.native_vr_lesson_ui_click(caller.name, \"onclick\")');");
     }
 
     function xOff(l,w){return -P.w/2+l+w/2;}
-    function yOff(t,h){return P.h/2-t-h/2;}
+    function yOff(t,h){return -P.h/2+t+h/2;}
 
     function pos(n,l,t,w,h){
       krpano.set("hotspot["+n+"].tx", P.tx+xOff(l,w));

@@ -76,21 +76,23 @@ const DEFAULT_HOTSPOT_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%23f97316" stroke="%23fff" stroke-width="3" opacity="0.95"/><circle cx="24" cy="24" r="8" fill="%23fff"/></svg>'
   );
 
-const KRPANO_ASSET_VERSION = '1.23.3-r4';
+const KRPANO_ASSET_VERSION = '1.23.3-r5';
 
 /**
  * Build hotspot XML for one hotspot. Uses image url or a default pin icon.
  * onclick calls window.__krpanoOnHotspotClick(name) for React.
  */
-function buildHotspotXml(spot: KrpanoHotspotOption): string {
-  const name = escapeXml(spot.name);
-  const ath = spot.ath;
-  const atv = spot.atv;
-  const depth = spot.depth ?? 1000;
-  const onclick = `js( window.__krpanoOnHotspotClick && window.__krpanoOnHotspotClick('${name.replace(/'/g, "\\'")}') );`;
+function buildHotspotXml(spot: KrpanoHotspotOption, index: number): string {
+  const name = `lesson_hotspot_${index}`;
+  const ath = Number.isFinite(Number(spot.ath)) ? Number(spot.ath) : 0;
+  const atv = Number.isFinite(Number(spot.atv)) ? Number(spot.atv) : 0;
+  const depthValue = spot.depth ?? 1000;
+  const depth = Number.isFinite(Number(depthValue)) ? Number(depthValue) : 1000;
+  const hotspotId = escapeXml(String(spot.name || name));
+  const onclick = "jscall('window.__krpanoOnHotspotClick(caller.datahotspotid)');";
   const url = spot.url ? escapeXml(spot.url) : DEFAULT_HOTSPOT_ICON;
   const title = escapeXml(spot.label);
-  return `<hotspot name="${name}" ath="${ath}" atv="${atv}" depth="${depth}" url="${url}" tooltip="${title}" scale="0.4" distorted="false" zoom="false" onover="tween(scale,0.5)" onout="tween(scale,0.4)" onclick="${onclick}" />`;
+  return `<hotspot name="${name}" datahotspotid="${hotspotId}" ath="${ath}" atv="${atv}" depth="${depth}" url="${url}" tooltip="${title}" scale="0.4" distorted="false" zoom="false" onover="tween(scale,0.5)" onout="tween(scale,0.4)" onclick="${onclick}" />`;
 }
 
 /** Resolve plugin URL for blob-loaded XML (origin + basePath + plugins/name) */
@@ -169,12 +171,14 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   const webvrIncludeUrl = pluginUrl(origin, basePath, 'webvr.xml');
   const immersiveUiIncludeUrl = pluginUrl(origin, basePath, 'immersive_ui.xml');
+  const xrInputIncludeUrl = pluginUrl(origin, basePath, 'xr_input.xml');
   const nativeVrLessonUiIncludeUrl = pluginUrl(origin, basePath, 'native_vr_lesson_ui.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
   const gyro2PluginUrl = pluginUrl(origin, basePath, 'gyro2.js');
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(xrInputIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(nativeVrLessonUiIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n`
     : '';
@@ -201,7 +205,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     ? `    <depthmap url="${escapeXml(depthmapUrl)}" enabled="true" />\n`
     : '';
 
-  const hotspotBlocks = hotspots.map((spot) => '  ' + buildHotspotXml(spot)).join('\n');
+  const hotspotBlocks = hotspots.map((spot, index) => '  ' + buildHotspotXml(spot, index)).join('\n');
   const hotspotsSection = hotspotBlocks ? '\n' + hotspotBlocks + '\n' : '';
 
   // 3D model hotspots (type="threejs"). When an author-specified placement (ath/atv/depth)
@@ -236,7 +240,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     : '';
   const threeJsHotspotsSection = threeJsHotspotBlocks || teacherAvatarHotspot ? '\n' + (teacherAvatarHotspot + threeJsHotspotBlocks) + '\n' : '';
 
-  // Immersive UI: display-only panel (no interaction in VR; ray/click disabled)
+  // The Three.js canvas is visual-only; aligned KRPano hotspots provide XR hit targets.
   const iuPanel =
     '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="10" tz="250" hittest="false" keep="true" onloaded="immersive_ui_build_hotspot();" />';
   const immersiveUiThreeJsHotspotsSection =

@@ -172,6 +172,26 @@ interface ChatMessage {
   timestamp: Date;
 }
 
+interface KrpanoUiStatePayload {
+  phase: string;
+  script: string;
+  ttsStatus: string;
+  question: string;
+  options: string[];
+  showQuiz: boolean;
+  showResult: boolean;
+  scoreLabel: string;
+  selectedAnswer: number;
+  waitingForUser: boolean;
+  isPlayingAudio: boolean;
+  currentMcqIndex: number;
+  totalMcqs: number;
+  correctAnswer: number;
+  explanation: string;
+  controlStudentsEnabled?: boolean;
+  isStudent?: boolean;
+}
+
 interface SkyboxData {
   id: string;
   imageUrl: string;
@@ -1268,6 +1288,36 @@ const VRLessonPlayerInner = () => {
   const ttsStatusRef = useRef<string>('idle');
   const showMcqResultRef = useRef(false);
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
+  const immersiveUiActionRef = useRef<(action: string) => void>(() => {});
+  const immersiveUiStateRef = useRef<KrpanoUiStatePayload>({
+    phase: 'intro',
+    script: '',
+    ttsStatus: 'idle',
+    question: '',
+    options: [],
+    showQuiz: false,
+    showResult: false,
+    scoreLabel: '',
+    selectedAnswer: -1,
+    waitingForUser: false,
+    isPlayingAudio: false,
+    currentMcqIndex: 0,
+    totalMcqs: 0,
+    correctAnswer: -1,
+    explanation: '',
+  });
+  const classControlRef = useRef<{
+    isHost: boolean;
+    controlEnabled: boolean;
+    isStudent: boolean;
+    currentPhase: string;
+    broadcastPhase?: (phase: string, controlEnabled: boolean) => Promise<boolean>;
+  }>({
+    isHost: false,
+    controlEnabled: false,
+    isStudent: false,
+    currentPhase: 'intro',
+  });
   const viewSyncSendRef = useRef<(h: number, v: number, fov: number) => void>(() => {});
   const [hostLookat, setHostLookat] = useState<{ hlookat: number; vlookat: number; fov: number } | null>(null);
   const [krpanoContainerMounted, setKrpanoContainerMounted] = useState(false);
@@ -1686,7 +1736,49 @@ const VRLessonPlayerInner = () => {
     }
 
     let cancelled = false;
+    const immersiveUiBridge = (action: string) => immersiveUiActionRef.current(action);
+    const hotspotBridge = (name: string) => hotspotClickRef.current?.(name);
+    const ttsCompleteBridge = () => ttsCompleteRef.current?.();
+    const immersiveUiUpdateBridge = (state: KrpanoUiStatePayload) => {
+      (window as unknown as Record<string, unknown>).__krpanoUIState = {
+        initialized: true,
+        phase: state.phase ?? 'intro',
+        script: state.script ?? '',
+        ttsStatus: state.ttsStatus ?? 'idle',
+        question: state.question ?? '',
+        options: state.options.join('||'),
+        showQuiz: state.showQuiz === true,
+        showResult: state.showResult === true,
+        scoreLabel: state.scoreLabel ?? '',
+        selectedAnswer: state.selectedAnswer ?? -1,
+        waitingForUser: state.waitingForUser === true,
+        isPlayingAudio: state.isPlayingAudio === true,
+        currentMcqIndex: state.currentMcqIndex ?? 0,
+        totalMcqs: state.totalMcqs ?? 0,
+        correctAnswer: state.correctAnswer ?? -1,
+        explanation: state.explanation ?? '',
+        controlStudentsEnabled: state.controlStudentsEnabled === true,
+        isStudent: state.isStudent === true,
+      };
+      const viewer = krpanoViewerRef.current;
+      if (!viewer?.call) return;
+      try {
+        viewer.call('immersive_ui_update()');
+      } catch (err) {
+        console.warn('[KrpanoUI] Failed to update canvas UI fallback:', err);
+      }
+      try {
+        viewer.call('native_vr_lesson_ui_update()');
+      } catch (err) {
+        console.warn('[KrpanoUI] Failed to update native VR lesson UI:', err);
+      }
+    };
     krpanoViewerRef.current = null;
+    (window as unknown as { __krpanoUIAction?: (action: string) => void }).__krpanoUIAction = immersiveUiBridge;
+    (window as unknown as { __krpanoUIUpdate?: (state: KrpanoUiStatePayload) => void }).__krpanoUIUpdate = immersiveUiUpdateBridge;
+    (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = hotspotBridge;
+    (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete = ttsCompleteBridge;
+    immersiveUiUpdateBridge(immersiveUiStateRef.current);
     if (krpanoFallbackTimerRef.current) {
       clearTimeout(krpanoFallbackTimerRef.current);
       krpanoFallbackTimerRef.current = null;
@@ -1790,160 +1882,12 @@ const VRLessonPlayerInner = () => {
         embedKrpano({
           xml,
           target: KRPANO_CONTAINER_ID,
+          id: 'krpanoLessonViewer',
           basepath: '/krpano/',
           onready: (krpano: unknown) => {
             if (!cancelled) {
               krpanoViewerRef.current = krpano as KrpanoViewer;
-              // Bridge: krpano hotspot onclick calls this so React can react
-              (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = (name: string) => {
-                hotspotClickRef.current?.(name);
-              };
-              (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete = () => {
-                ttsCompleteRef.current?.();
-              };
-              // Immersive UI bridge: krpano world-space UI buttons -> React actions
-              (window as unknown as { __krpanoUIAction?: (action: string) => void }).__krpanoUIAction = (action: string) => {
-                try {
-                  // Bridge live class state via window globals (stale closure safe)
-                  const isHost = (window as unknown as Record<string, unknown>).__krpanoIsClassHost === true;
-                  const ctrlOn = (window as unknown as Record<string, unknown>).__krpanoControlEnabled === true;
-                  const isStudent = (window as unknown as Record<string, unknown>).__krpanoIsStudent === true;
-                  const broadcastFn = (window as unknown as Record<string, unknown>).__krpanoBroadcastPhase as ((p: string, e: boolean) => void) | undefined;
-
-                  // Phases ordered for Continue progression
-                  const PHASES = ['intro', 'explanation', 'outro', 'quiz'];
-
-                  // Helper: broadcast phase from teacher (also advances locally)
-                  const teacherPhaseGo = (phaseKey: string) => {
-                    setPhase(phaseKey as Parameters<typeof setPhase>[0]);
-                    if (ctrlOn && broadcastFn) {
-                      void broadcastFn(phaseKey, true);
-                    }
-                  };
-
-                  // STUDENT LOCK: when teacher is controlling, block self-navigation actions
-                  if (isStudent && ctrlOn) {
-                    const blocked = ['continue', 'replay', 'skipToQuiz'].includes(action) || action.startsWith('phaseGo:');
-                    if (blocked) {
-                      log('🔒', '[VR] Student phase action blocked — teacher is controlling', action);
-                      return;
-                    }
-                    // Allow MCQ interactions through
-                  }
-
-                  // Normalize and route high-level actions into existing handlers
-                  if (action === 'continue') {
-                    if (isHost) {
-                      // Teacher in VR: advance phase and broadcast
-                      const curr = (window as unknown as Record<string, unknown>).__krpanoCurrentPhase as string || 'intro';
-                      const idx = PHASES.indexOf(curr);
-                      const next = PHASES[Math.min(idx + 1, PHASES.length - 1)];
-                      teacherPhaseGo(next);
-                    } else {
-                      handleContinue();
-                    }
-                  } else if (action === 'replay') {
-                    if (isHost && ctrlOn && broadcastFn) {
-                      const curr = (window as unknown as Record<string, unknown>).__krpanoCurrentPhase as string || 'intro';
-                      void broadcastFn(curr, true);
-                    }
-                    handleReplay();
-                  } else if (action === 'skipToQuiz') {
-                    if (isHost && ctrlOn && broadcastFn) {
-                      void broadcastFn('quiz', true);
-                    }
-                    handleSkipToQuiz();
-                  } else if (action === 'mcqSubmit') {
-                    handleMcqSubmit();
-                  } else if (action === 'mcqNext') {
-                    handleMcqNext();
-                  } else if (action === 'mcqSubmitOrNext') {
-                    if (showMcqResultRef.current) handleMcqNext();
-                    else handleMcqSubmit();
-                  } else if (action.startsWith('mcqSelect:')) {
-                    const idx = Number(action.split(':')[1] ?? '-1');
-                    if (!Number.isNaN(idx) && idx >= 0) {
-                      handleMcqSelect(idx);
-                    }
-                  } else if (action === 'ttsPlay') {
-                    if (ttsStatusRef.current === 'paused') resumeTTS();
-                    else playTTS();
-                  } else if (action === 'ttsPause') {
-                    pauseTTS();
-                  } else if (action === 'ttsToggle') {
-                    if (ttsStatusRef.current === 'playing') pauseTTS();
-                    else if (ttsStatusRef.current === 'paused') resumeTTS();
-                    else playTTS();
-                  } else if (action === 'toggleMute') {
-                    setIsMuted((prev) => !prev);
-                  } else if (action === 'openChat') {
-                    setShowChat(true);
-                  } else if (action.startsWith('phaseGo:')) {
-                    const phaseKey = action.split(':')[1];
-                    if (phaseKey && PHASES.includes(phaseKey)) {
-                      if (isHost) {
-                        teacherPhaseGo(phaseKey);
-                      } else {
-                        setPhase(phaseKey as Parameters<typeof setPhase>[0]);
-                      }
-                    }
-                  }
-                } catch (err) {
-                  console.warn('[KrpanoUI] Failed to handle action from immersive UI:', action, err);
-                }
-              };
-              // React -> krpano state updates for immersive UI
-              (window as unknown as { __krpanoUIUpdate?: (state: {
-                phase: string;
-                script: string;
-                ttsStatus: string;
-                question: string;
-                options: string[];
-                showQuiz: boolean;
-                showResult: boolean;
-                scoreLabel: string;
-                selectedAnswer: number;
-                waitingForUser: boolean;
-                isPlayingAudio: boolean;
-                currentMcqIndex: number;
-                totalMcqs: number;
-                correctAnswer: number;
-                explanation: string;
-                controlStudentsEnabled?: boolean;
-                isStudent?: boolean;
-              }) => void }).__krpanoUIUpdate = (state) => {
-                const viewer = krpanoViewerRef.current;
-                if (!viewer?.call) return;
-                (window as unknown as Record<string, unknown>).__krpanoUIState = {
-                  phase: state.phase ?? 'intro',
-                  script: state.script ?? '',
-                  ttsStatus: state.ttsStatus ?? 'idle',
-                  question: state.question ?? '',
-                  options: state.options.join('||'),
-                  showQuiz: state.showQuiz === true,
-                  showResult: state.showResult === true,
-                  scoreLabel: state.scoreLabel ?? '',
-                  selectedAnswer: state.selectedAnswer ?? -1,
-                  waitingForUser: state.waitingForUser === true,
-                  isPlayingAudio: state.isPlayingAudio === true,
-                  currentMcqIndex: state.currentMcqIndex ?? 0,
-                  totalMcqs: state.totalMcqs ?? 0,
-                  correctAnswer: state.correctAnswer ?? -1,
-                  explanation: state.explanation ?? '',
-                  controlStudentsEnabled: state.controlStudentsEnabled === true,
-                  isStudent: state.isStudent === true,
-                };
-                try {
-                  viewer.call('immersive_ui_update()');
-                } catch (err) {
-                  console.warn('[KrpanoUI] Failed to update canvas UI fallback:', err);
-                }
-                try {
-                  viewer.call('native_vr_lesson_ui_update()');
-                } catch (err) {
-                  console.warn('[KrpanoUI] Failed to update native VR lesson UI:', err);
-                }
-              };
+              (window as unknown as { __krpanoLessonViewer?: KrpanoViewer }).__krpanoLessonViewer = krpano as KrpanoViewer;
               setSceneReady(true);
               if (threeJsAssetUrls.length > 0) {
                 setTimeout(() => {
@@ -1988,18 +1932,37 @@ const VRLessonPlayerInner = () => {
         clearTimeout(krpanoFallbackTimerRef.current);
         krpanoFallbackTimerRef.current = null;
       }
-      const viewer = krpanoViewerRef.current;
+      const viewer = krpanoViewerRef.current ?? (document.getElementById('krpanoLessonViewer') as unknown as KrpanoViewer | null);
+      try {
+        viewer?.call('xr_input_cleanup()');
+      } catch (err) {
+        console.warn('[KrpanoUI] Failed to clean up XR input:', err);
+      }
+      try {
+        viewer?.call('immersive_ui_cleanup()');
+      } catch (err) {
+        console.warn('[KrpanoUI] Failed to clean up immersive lesson UI:', err);
+      }
       try {
         viewer?.call('native_vr_lesson_ui_cleanup()');
       } catch (err) {
         console.warn('[KrpanoUI] Failed to clean up native VR lesson UI:', err);
       }
       krpanoViewerRef.current = null;
-      (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
-      (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
-      (window as unknown as { __krpanoUIAction?: unknown }).__krpanoUIAction = undefined;
-      (window as unknown as { __krpanoUIUpdate?: unknown }).__krpanoUIUpdate = undefined;
-      (window as unknown as { __krpanoUIState?: unknown }).__krpanoUIState = undefined;
+      (window as unknown as { __krpanoLessonViewer?: unknown }).__krpanoLessonViewer = undefined;
+      if ((window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick === hotspotBridge) {
+        (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
+      }
+      if ((window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete === ttsCompleteBridge) {
+        (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
+      }
+      if ((window as unknown as { __krpanoUIAction?: unknown }).__krpanoUIAction === immersiveUiBridge) {
+        (window as unknown as { __krpanoUIAction?: unknown }).__krpanoUIAction = undefined;
+      }
+      if ((window as unknown as { __krpanoUIUpdate?: unknown }).__krpanoUIUpdate === immersiveUiUpdateBridge) {
+        (window as unknown as { __krpanoUIUpdate?: unknown }).__krpanoUIUpdate = undefined;
+        (window as unknown as { __krpanoUIState?: unknown }).__krpanoUIState = undefined;
+      }
       (window as unknown as { __krpanoNativeVrUiControllerButton?: unknown }).__krpanoNativeVrUiControllerButton = undefined;
       (window as unknown as { native_vr_lesson_ui_click?: unknown }).native_vr_lesson_ui_click = undefined;
       (window as unknown as { native_vr_lesson_ui_hover?: unknown }).native_vr_lesson_ui_hover = undefined;
@@ -2080,14 +2043,43 @@ const VRLessonPlayerInner = () => {
     return true;
   }, [isStudentInSession, controlStudentsEnabled]);
 
-  // Expose to window globals to avoid stale closures in Krpano callbacks
-  if (typeof window !== 'undefined') {
-    (window as any).__krpanoIsClassHost = isClassHost;
-    (window as any).__krpanoControlEnabled = controlStudentsEnabled;
-    (window as any).__krpanoIsStudent = isStudentInSession;
-    (window as any).__krpanoBroadcastPhase = broadcastTeacherPhase;
-    (window as any).__krpanoCurrentPhase = lessonPhase;
-  }
+  classControlRef.current = {
+    isHost: isClassHost,
+    controlEnabled: controlStudentsEnabled,
+    isStudent: isStudentInSession,
+    currentPhase: String(lessonPhase || 'intro'),
+    broadcastPhase: broadcastTeacherPhase,
+  };
+
+  const currentImmersiveMcq =
+    lessonPhase === 'quiz' && mcqs.length > 0 && currentMcqIndex >= 0 && currentMcqIndex < mcqs.length
+      ? mcqs[currentMcqIndex]
+      : null;
+  const immersiveScoreCorrect =
+    lessonPhase === 'completed' && mcqs.length > 0
+      ? mcqs.filter((mcq) => mcqAnswers[mcq.id] === mcq.correctAnswer).length
+      : 0;
+  immersiveUiStateRef.current = {
+    phase: lessonPhase as string,
+    script: currentScript || '',
+    ttsStatus,
+    question: currentImmersiveMcq?.question || '',
+    options: currentImmersiveMcq?.options || [],
+    showQuiz: lessonPhase === 'quiz' && !!currentImmersiveMcq,
+    showResult: showMcqResult,
+    scoreLabel: lessonPhase === 'completed' && mcqs.length > 0
+      ? `${immersiveScoreCorrect} / ${mcqs.length} correct`
+      : '',
+    selectedAnswer: selectedAnswer ?? -1,
+    waitingForUser,
+    isPlayingAudio,
+    currentMcqIndex,
+    totalMcqs: mcqs.length,
+    correctAnswer: showMcqResult ? currentImmersiveMcq?.correctAnswer ?? -1 : -1,
+    explanation: showMcqResult ? currentImmersiveMcq?.explanation || '' : '',
+    controlStudentsEnabled,
+    isStudent: isStudentInSession,
+  };
 
   // Report phase to class session for teacher dashboard (when student joined from class)
   // Only students write progress documents. Hosts may have an active session ID
@@ -2208,58 +2200,10 @@ const VRLessonPlayerInner = () => {
   // Push lesson UI state into krpano immersive UI whenever key state changes
   useEffect(() => {
     if (!useKrpanoView || typeof window === 'undefined') return;
-    const uiUpdate = (window as unknown as { __krpanoUIUpdate?: (state: {
-      phase: string;
-      script: string;
-      ttsStatus: string;
-      question: string;
-      options: string[];
-      showQuiz: boolean;
-      showResult: boolean;
-      scoreLabel: string;
-      selectedAnswer: number;
-      waitingForUser: boolean;
-      isPlayingAudio: boolean;
-      currentMcqIndex: number;
-      totalMcqs: number;
-      correctAnswer: number;
-      explanation: string;
-    }) => void }).__krpanoUIUpdate;
+    const uiUpdate = (window as unknown as { __krpanoUIUpdate?: (state: KrpanoUiStatePayload) => void }).__krpanoUIUpdate;
     if (!uiUpdate) return;
 
-    const currentMcq =
-      lessonPhase === 'quiz' && mcqs.length > 0 && currentMcqIndex >= 0 && currentMcqIndex < mcqs.length
-        ? mcqs[currentMcqIndex]
-        : null;
-
-    const scoreCorrect =
-      lessonPhase === 'completed' && mcqs.length > 0
-        ? mcqs.filter((mcq) => mcqAnswers[mcq.id] === mcq.correctAnswer).length
-        : 0;
-    const scoreLabel =
-      lessonPhase === 'completed' && mcqs.length > 0
-        ? `${scoreCorrect} / ${mcqs.length} correct`
-        : '';
-
-    uiUpdate({
-      phase: lessonPhase as string,
-      script: currentScript || '',
-      ttsStatus,
-      question: currentMcq?.question || '',
-      options: currentMcq?.options || [],
-      showQuiz: lessonPhase === 'quiz' && !!currentMcq,
-      showResult: showMcqResult,
-      scoreLabel,
-      selectedAnswer: selectedAnswer ?? -1,
-      waitingForUser,
-      isPlayingAudio,
-      currentMcqIndex,
-      totalMcqs: mcqs.length,
-      correctAnswer: currentMcq?.correctAnswer ?? -1,
-      explanation: currentMcq?.explanation || '',
-      controlStudentsEnabled,
-      isStudent: isStudentInSession,
-    });
+    uiUpdate(immersiveUiStateRef.current);
   }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio, controlStudentsEnabled, isStudentInSession]);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
@@ -3704,6 +3648,79 @@ const VRLessonPlayerInner = () => {
       saveQuizResultsToFirestore(correct, mcqs.length, finalAnswers);
 
       setPhase('completed');
+    }
+  };
+
+  immersiveUiActionRef.current = (action: string) => {
+    try {
+      const classControl = classControlRef.current;
+      const phases = ['intro', 'explanation', 'outro', 'quiz'];
+      const teacherPhaseGo = (phaseKey: string) => {
+        setPhase(phaseKey as Parameters<typeof setPhase>[0]);
+        if (classControl.controlEnabled && classControl.broadcastPhase) {
+          void classControl.broadcastPhase(phaseKey, true);
+        }
+      };
+
+      if (classControl.isStudent && classControl.controlEnabled) {
+        const phaseAction = ['continue', 'replay', 'skipToQuiz'].includes(action) || action.startsWith('phaseGo:');
+        if (phaseAction) {
+          toast.info('Teacher is controlling the lesson. Phase controls are locked for now.');
+          return;
+        }
+      }
+
+      if (action === 'continue') {
+        if (classControl.isHost) {
+          const currentIndex = phases.indexOf(classControl.currentPhase || 'intro');
+          teacherPhaseGo(phases[Math.min(Math.max(currentIndex, 0) + 1, phases.length - 1)]);
+        } else {
+          handleContinue();
+        }
+      } else if (action === 'replay') {
+        if (classControl.isHost && classControl.controlEnabled && classControl.broadcastPhase) {
+          void classControl.broadcastPhase(classControl.currentPhase || 'intro', true);
+        }
+        handleReplay();
+      } else if (action === 'skipToQuiz') {
+        if (classControl.isHost && classControl.controlEnabled && classControl.broadcastPhase) {
+          void classControl.broadcastPhase('quiz', true);
+        }
+        handleSkipToQuiz();
+      } else if (action === 'mcqSubmit') {
+        handleMcqSubmit();
+      } else if (action === 'mcqNext') {
+        handleMcqNext();
+      } else if (action === 'mcqSubmitOrNext') {
+        if (showMcqResultRef.current) handleMcqNext();
+        else handleMcqSubmit();
+      } else if (action.startsWith('mcqSelect:')) {
+        const optionIndex = Number(action.split(':')[1] ?? '-1');
+        if (Number.isInteger(optionIndex) && optionIndex >= 0 && optionIndex < 4) {
+          handleMcqSelect(optionIndex);
+        }
+      } else if (action === 'ttsPlay') {
+        if (ttsStatusRef.current === 'paused') resumeTTS();
+        else playTTS();
+      } else if (action === 'ttsPause') {
+        pauseTTS();
+      } else if (action === 'ttsToggle') {
+        if (ttsStatusRef.current === 'playing') pauseTTS();
+        else if (ttsStatusRef.current === 'paused') resumeTTS();
+        else playTTS();
+      } else if (action === 'toggleMute') {
+        setIsMuted((previous) => !previous);
+      } else if (action === 'openChat') {
+        setShowChat(true);
+      } else if (action.startsWith('phaseGo:')) {
+        const phaseKey = action.split(':')[1];
+        if (phaseKey && phases.includes(phaseKey)) {
+          if (classControl.isHost) teacherPhaseGo(phaseKey);
+          else setPhase(phaseKey as Parameters<typeof setPhase>[0]);
+        }
+      }
+    } catch (error) {
+      console.warn('[KrpanoUI] Failed to handle action from immersive UI:', action, error);
     }
   };
 

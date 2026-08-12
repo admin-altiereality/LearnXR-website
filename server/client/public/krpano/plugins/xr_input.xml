@@ -1,531 +1,281 @@
 <krpano>
 
   <!--
-    xr_input.xml – XR Input Abstraction Layer for krpano 1.23
-    Bridges WebXR session to unified input handling:
-      - Controller raycasting with visual reticle
-      - Tiered haptic feedback engine
-      - Hand tracking with pinch/point gestures
-      - Gaze cursor with dwell timer
-    All input modes produce the same event structure for immersive_ui.xml.
+    XR input adapter for the immersive lesson screen.
+
+    Controllers and gaze use KRPano's native hotspot targeting. Transparent
+    WebGL hotspots in immersive_ui.xml cover each canvas button, so KRPano
+    provides hover, hit position, trigger click, and haptics. Meta Quest hand
+    pinch emits WebXR select; this adapter forwards that select to the same
+    hovered KRPano hotspot when the browser exposes the XRSession.
   -->
 
-  <!-- ===== INIT ===== -->
   <action name="xr_input_init" autorun="onstart" type="js"><![CDATA[
     if (krpano.xr_input_initialized) return;
     krpano.xr_input_initialized = true;
 
-    krpano.xr_input = {
-      mode: "none",
-      hoverTarget: null,
-      selectTarget: null,
-      isHovering: false,
-      isSelecting: false,
-      gazeTimer: 0,
-      gazeDwellMs: 2000,
-      lastHapticTime: 0,
-      hapticMinGap: 50,
-      frameCount: 0,
-      reticle: null,
-      active: false
+    var state = krpano.xr_input = {
+      session: null,
+      referenceSpace: null,
+      sessionOwner: "none",
+      referenceSpaceRequest: null,
+      selectHandler: null,
+      endHandler: null,
+      timer: null,
+      lastTarget: "",
+      lastInput: "none"
     };
 
-    console.log("[XRInput] Initialized");
-  ]]></action>
-
-  <!-- ===== XR INPUT FRAME LOOP (starts when VR enters) ===== -->
-  <action name="xr_input_start" type="js"><![CDATA[
-    var xi = krpano.xr_input;
-    if (!xi || xi.active) return;
-    xi.active = true;
-
-    var THREE = krpano.threejs ? krpano.threejs.THREE : null;
-    if (!THREE) { xi.active = false; return; }
-    var renderer = krpano.threejs.renderer;
-    if (!renderer || !renderer.xr) { xi.active = false; return; }
-
-    var raycaster = new THREE.Raycaster();
-    var tempMatrix = new THREE.Matrix4();
-    var direction = new THREE.Vector3();
-    var origin = new THREE.Vector3();
-    var rayQuat = new THREE.Quaternion();
-
-    // Create reticle ring
-    var reticleGeo = new THREE.RingGeometry(0.008, 0.012, 24);
-    var reticleMat = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.8,
-      side: THREE.DoubleSide,
-      depthTest: false
-    });
-    var reticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
-    reticleMesh.visible = false;
-    reticleMesh.renderOrder = 9999;
-    var scene = krpano.threejs.scene;
-    if (scene) scene.add(reticleMesh);
-    xi.reticle = reticleMesh;
-
-    // Gaze reticle (radial fill ring for dwell progress)
-    var gazeRingGeo = new THREE.RingGeometry(0.014, 0.018, 32);
-    var gazeRingMat = new THREE.MeshBasicMaterial({
-      color: 0xfbbf24,
-      transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
-      depthTest: false
-    });
-    var gazeRingMesh = new THREE.Mesh(gazeRingGeo, gazeRingMat);
-    gazeRingMesh.visible = false;
-    gazeRingMesh.renderOrder = 10000;
-    if (scene) scene.add(gazeRingMesh);
-    xi.gazeRing = gazeRingMesh;
-
-    // Haptic feedback engine
-    function pulseHaptic(inputSource, intensity, durationMs) {
-      if (!inputSource || !inputSource.gamepad) return;
-      var now = performance.now();
-      if (now - xi.lastHapticTime < xi.hapticMinGap) return;
-      xi.lastHapticTime = now;
+    function log(event, data) {
       try {
-        var actuators = inputSource.gamepad.hapticActuators;
-        if (actuators && actuators.length > 0) {
-          actuators[0].pulse(Math.min(intensity, 1.0), Math.min(durationMs, 200));
+        if (window.__krpanoXRDebugLog) window.__krpanoXRDebugLog(event, data || {});
+        else console.log("[XRInput]", event, data || {});
+      } catch (e) {}
+    }
+
+    function normalizeTarget(target) {
+      var name = typeof target === "string" ? target : (target && target.name ? target.name : "");
+      return String(name || "").replace(/^hotspot\[/, "").replace(/\]$/, "");
+    }
+
+    function controllerForHand(handedness) {
+      var hand = String(handedness || "").toLowerCase();
+      var controllers = null;
+      try { controllers = krpano.webvr && krpano.webvr.vrcontrollers; } catch (e) {}
+      if (controllers && typeof controllers.length === "number") {
+        for (var i = 0; i < controllers.length; i++) {
+          if (String(controllers[i] && controllers[i].hand || "").toLowerCase() === hand) return controllers[i];
         }
-      } catch(e) {}
-    }
-
-    function hapticForEvent(inputSource, eventType) {
-      var map = {
-        hover:    { intensity: 0.15, duration: 20 },
-        select:   { intensity: 0.5,  duration: 50 },
-        confirm:  { intensity: 0.8,  duration: 80 },
-        grab:     { intensity: 0.4,  duration: 40 },
-        drag:     { intensity: 0.1,  duration: 10 },
-        layout:   { intensity: 0.3,  duration: 30 },
-        error:    { intensity: 0.9,  duration: 30 },
-        correct:  { intensity: 0.6,  duration: 60 }
-      };
-      var h = map[eventType] || map.select;
-      pulseHaptic(inputSource, h.intensity, h.duration);
-    }
-
-    xi.pulseHaptic = pulseHaptic;
-    xi.hapticForEvent = hapticForEvent;
-
-    // Classify input source
-    function classifyInput(source) {
-      if (source.hand) return "hand";
-      if (source.targetRayMode === "tracked-pointer") return "controller";
-      if (source.targetRayMode === "gaze") return "gaze";
-      return "unknown";
-    }
-
-    // Hand tracking: compute pinch state and ray from index finger
-    function getHandState(hand, frame, refSpace) {
-      if (!hand || !frame || !refSpace) return null;
+      }
       try {
-        var indexTip = hand.get("index-finger-tip");
-        var thumbTip = hand.get("thumb-tip");
-        var wrist = hand.get("wrist");
-        var indexMcp = hand.get("index-finger-metacarpal");
-        if (!indexTip || !thumbTip || !wrist) return null;
-
-        var indexPose = frame.getJointPose(indexTip, refSpace);
-        var thumbPose = frame.getJointPose(thumbTip, refSpace);
-        var wristPose = frame.getJointPose(wrist, refSpace);
-        if (!indexPose || !thumbPose || !wristPose) return null;
-
-        var ip = indexPose.transform.position;
-        var tp = thumbPose.transform.position;
-        var wp = wristPose.transform.position;
-
-        var dx = ip.x - tp.x, dy = ip.y - tp.y, dz = ip.z - tp.z;
-        var pinchDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        var isPinching = pinchDist < 0.02;
-
-        // Ray from wrist through index tip
-        var rdx = ip.x - wp.x, rdy = ip.y - wp.y, rdz = ip.z - wp.z;
-        var rlen = Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz);
-        if (rlen > 0) { rdx /= rlen; rdy /= rlen; rdz /= rlen; }
-
-        return {
-          isPinching: isPinching,
-          pinchDist: pinchDist,
-          origin: new THREE.Vector3(ip.x, ip.y, ip.z),
-          direction: new THREE.Vector3(rdx, rdy, rdz)
-        };
-      } catch(e) { return null; }
+        var suffix = hand === "left" ? "l" : (hand === "right" ? "r" : "");
+        if (suffix) return { hs: krpano.get("hotspot[vr_controller_" + suffix + "]") };
+      } catch (e) {}
+      return null;
     }
 
-    // Get interactable meshes (UI panel + 3D assets)
-    function getInteractables() {
-      var meshes = [];
-      var refs = krpano.immersive_ui_refs;
-      if (refs && refs.panel && refs.panel.mesh) {
-        meshes.push(refs.panel.mesh);
-      }
-      // 3D asset hotspots
-      for (var i = 0; i < 10; i++) {
-        try {
-          var hs = krpano.get("hotspot[asset_" + i + "]");
-          if (hs && hs.threejsobject) {
-            meshes.push(hs.threejsobject);
-          }
-        } catch(e) { break; }
-      }
-      return meshes;
+    function activeUiTarget(handedness) {
+      var hand = String(handedness || "").toLowerCase();
+      var controller = controllerForHand(hand);
+      var target = normalizeTarget(controller && controller.hs ? controller.hs.target : null);
+      if (target.indexOf("iu_gaze_btn_") === 0) return target;
+
+      if (hand === "left" || hand === "right") return "";
+      try {
+        var active = krpano.webvr && krpano.webvr.activevrcontroller;
+        target = normalizeTarget(active && active.hs ? active.hs.target : null);
+        if (target.indexOf("iu_gaze_btn_") === 0) return target;
+      } catch (e) {}
+      return "";
     }
 
-    // Process a raycast hit on the UI panel (with padding for forgiving button hits, esp. Meta Quest controller)
-    var HIT_PADDING = 10;
-    function processUIHit(hit, inputSource) {
+    function dispatchAction(action, source, target) {
+      if (!action) return;
+      state.lastTarget = target || "lesson-panel";
+      state.lastInput = source;
+      if (window.__krpanoImmersiveUiDispatch) window.__krpanoImmersiveUiDispatch(action);
+      try {
+        var active = krpano.webvr && krpano.webvr.activevrcontroller;
+        if (active && active.hs && active.hs.pulse) active.hs.pulse(action === "mcqSubmit" ? 0.8 : 0.45, 0.05);
+      } catch (e) {}
+      log("select", { input: source, target: state.lastTarget, action: action });
+    }
+
+    function dispatchTarget(name, source) {
+      var action = "";
+      try { action = krpano.get("hotspot[" + name + "].dataaction") || ""; } catch (e) {}
+      dispatchAction(action, source, name);
+    }
+
+    function dispatchHandRay(event, source) {
       var refs = krpano.immersive_ui_refs;
-      if (!refs || !refs.panel || !hit || !hit.uv) return null;
-      var CW = 2048, CH = 1280;
-      var u = hit.uv.x;
-      var v = 1 - hit.uv.y;
-      var cx = u * CW;
-      var cy = v * CH;
+      var three = krpano.threejs;
+      if (!refs || !refs.panel || !refs.panel.mesh || !three || !three.THREE || !source.targetRaySpace) return false;
+      var frame = event && event.frame;
+      var referenceSpace = state.referenceSpace;
+      if (!frame || !referenceSpace || !frame.getPose) return false;
+
+      var pose = null;
+      try { pose = frame.getPose(source.targetRaySpace, referenceSpace); } catch (e) {}
+      if (!pose || !pose.transform) return false;
+      var transform = pose.transform;
+      var position = transform.position;
+      var orientation = transform.orientation;
+      var THREE = three.THREE;
+      var origin = new THREE.Vector3(position.x, position.y, position.z);
+      var quaternion = new THREE.Quaternion(orientation.x, orientation.y, orientation.z, orientation.w);
+      var direction = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion).normalize();
+      var hits = new THREE.Raycaster(origin, direction, 0, 50).intersectObject(refs.panel.mesh, false);
+      if (!hits || !hits.length || !hits[0].uv) return false;
+
+      var cx = hits[0].uv.x * 2048;
+      var cy = (1 - hits[0].uv.y) * 1280;
       var regions = refs.buttonRegions || [];
-      for (var i = 0; i < regions.length; i++) {
-        var r = regions[i];
-        if (cx >= r.x - HIT_PADDING && cx <= r.x + r.w + HIT_PADDING && cy >= r.y - HIT_PADDING && cy <= r.y + r.h + HIT_PADDING) {
-          return r;
+      for (var i = regions.length - 1; i >= 0; i--) {
+        var region = regions[i];
+        if (!region || !region.action) continue;
+        if (cx >= region.x - 20 && cx <= region.x + region.w + 20 && cy >= region.y - 20 && cy <= region.y + region.h + 20) {
+          refs.hoverAction = region.action;
+          if (refs.panel.draw) refs.panel.draw();
+          dispatchAction(region.action, "hand-pinch-ray", "lesson-panel");
+          return true;
         }
       }
-      return null;
+      return false;
     }
 
-    // Dispatch action to UI or layout system
-    function dispatchAction(region, inputSource) {
-      if (!region) return;
-      var act = region.action;
-      if (act && act.indexOf("layoutToggle:") === 0) {
-        var lname = act.split(":")[1];
-        window.__krpanoLayoutToSet = lname;
-        krpano.call("immersive_ui_set_layout()");
-        hapticForEvent(inputSource, "layout");
-        setTimeout(function() { pulseHaptic(inputSource, 0.3, 30); }, 80);
-      } else if (act && act.indexOf("phaseGo:") === 0) {
-        if (window.__krpanoUIAction) window.__krpanoUIAction(act);
-        hapticForEvent(inputSource, "layout");
-      } else if (act && act.indexOf("mcqSelect:") === 0) {
-        if (window.__krpanoUIAction) window.__krpanoUIAction(act);
-        hapticForEvent(inputSource, "select");
-      } else if (act === "mcqSubmit") {
-        if (window.__krpanoUIAction) window.__krpanoUIAction(act);
-        hapticForEvent(inputSource, "confirm");
-      } else if (act === "mcqNext") {
-        if (window.__krpanoUIAction) window.__krpanoUIAction(act);
-        hapticForEvent(inputSource, "select");
-      } else {
-        if (window.__krpanoUIAction) window.__krpanoUIAction(act);
-        hapticForEvent(inputSource, "select");
-      }
-    }
-
-    var prevHoveredRegion = null;
-    var prevPinching = false;
-    var gazeStartTime = 0;
-    var gazeLockedRegion = null;
-    var prevTriggerPressed = false;
-    var lastSelectTime = 0;
-    var SELECT_COOLDOWN_MS = 350;
-
-    // One-time attempt to bind session from krpano webvr to Three.js renderer (when main canvas has session)
-    var sessionBindAttempted = false;
-    window.__xrInputResetSessionBind = function() { sessionBindAttempted = false; };
-    function tryBindWebVrSession() {
-      if (sessionBindAttempted) return null;
-      var w = (typeof krpano !== "undefined" && krpano.webvr) ? krpano.webvr : null;
-      if (!w || !w.isenabled) return null;
-      var s = null;
-      try { if (w.session) s = w.session; } catch(e) {}
-      try { if (!s && w.xrSession) s = w.xrSession; } catch(e) {}
-      try { if (!s && w.getSession && typeof w.getSession === "function") s = w.getSession(); } catch(e) {}
-      sessionBindAttempted = true;
-      if (s && renderer.xr && renderer.xr.setSession) {
-        try {
-          renderer.xr.setSession(s);
-          console.log("[XRInput] Bound WebXR session from krpano webvr to Three.js renderer");
-          return s;
-        } catch (err) {
-          console.warn("[XRInput] Could not set session on renderer:", err);
+    function findSessionBinding() {
+      var rendererSession = null;
+      var referenceSpace = null;
+      try {
+        var xr = krpano.threejs && krpano.threejs.renderer && krpano.threejs.renderer.xr;
+        if (xr) {
+          rendererSession = xr.getSession();
+          referenceSpace = xr.getReferenceSpace();
         }
-      }
-      return null;
+      } catch (e) {}
+      if (rendererSession) return { session: rendererSession, referenceSpace: referenceSpace, owner: "threejs" };
+
+      var webvrSession = null;
+      try { webvrSession = krpano.webvr && (krpano.webvr.session || krpano.webvr.xrSession); } catch (e) {}
+      return webvrSession ? { session: webvrSession, referenceSpace: null, owner: "krpano-webvr" } : null;
     }
 
-    // Main per-frame update
-    function xrInputFrame() {
-      if (!xi.active) return;
-      xi.frameCount++;
+    function ensureReferenceSpace(session) {
+      if (!session || !session.requestReferenceSpace || state.referenceSpace || state.referenceSpaceRequest) return;
+      var requestedSession = session;
+      state.referenceSpaceRequest = session.requestReferenceSpace("local-floor")
+        .catch(function() { return requestedSession.requestReferenceSpace("local"); })
+        .then(function(referenceSpace) {
+          if (state.session === requestedSession) {
+            state.referenceSpace = referenceSpace;
+            log("hand-ray-ready", { owner: state.sessionOwner });
+          }
+        })
+        .catch(function(error) {
+          log("hand-ray-unavailable", { owner: state.sessionOwner, message: String(error && error.message || error) });
+        })
+        .then(function() {
+          if (state.session === requestedSession) state.referenceSpaceRequest = null;
+        });
+    }
 
-      var session = null;
-      try { session = renderer.xr.getSession(); } catch(e) {}
-      // If no session on renderer but webvr is in VR, try once to bind krpano's session to this renderer
-      if (!session && krpano.webvr && krpano.webvr.isenabled) {
-        var bound = tryBindWebVrSession();
-        if (bound) {
-          // Session was just set on renderer; wait one frame for getController/getFrame to be ready
-          requestAnimationFrame(xrInputFrame);
-          return;
-        }
+    function detachSession() {
+      if (state.session && state.session.removeEventListener) {
+        try { if (state.selectHandler) state.session.removeEventListener("select", state.selectHandler); } catch (e) {}
+        try { if (state.endHandler) state.session.removeEventListener("end", state.endHandler); } catch (e) {}
       }
-      if (!session) {
-        reticleMesh.visible = false;
-        gazeRingMesh.visible = false;
-        requestAnimationFrame(xrInputFrame);
+      state.session = null;
+      state.referenceSpace = null;
+      state.sessionOwner = "none";
+      state.referenceSpaceRequest = null;
+      state.selectHandler = null;
+      state.endHandler = null;
+    }
+
+    function attachSession() {
+      var binding = findSessionBinding();
+      var session = binding && binding.session;
+      if (!session || !session.addEventListener) return;
+      if (session === state.session) {
+        if (binding.referenceSpace) state.referenceSpace = binding.referenceSpace;
+        state.sessionOwner = binding.owner;
+        ensureReferenceSpace(session);
         return;
       }
-
-      var frame = renderer.xr.getFrame ? renderer.xr.getFrame() : null;
-      var refSpace = renderer.xr.getReferenceSpace ? renderer.xr.getReferenceSpace() : null;
-      var camera = krpano.threejs.camera;
-      var inputSources = session.inputSources || [];
-      var interactables = getInteractables();
-
-      var bestHit = null;
-      var bestRegion = null;
-      var bestSource = null;
-      var bestInputType = "none";
-      var handState = null;
-
-      // Prefer controller over hand over gaze for hit stability
-      for (var si = 0; si < inputSources.length; si++) {
-        var source = inputSources[si];
-        var itype = classifyInput(source);
-
-        if (itype === "controller") {
-          var gotRayCtrl = false;
-          if (frame && refSpace && source.targetRaySpace) {
-            try {
-              var trPose = frame.getPose(source.targetRaySpace, refSpace);
-              if (trPose && trPose.transform) {
-                var ttr = trPose.transform;
-                var tpos = ttr.position;
-                origin.set(tpos.x, tpos.y, tpos.z);
-                var tori = ttr.orientation;
-                rayQuat.set(tori.x, tori.y, tori.z, tori.w);
-                direction.set(0, 0, -1).applyQuaternion(rayQuat).normalize();
-                gotRayCtrl = true;
-              }
-            } catch (eTr) {}
-          }
-          if (!gotRayCtrl) {
-            var controller = renderer.xr.getController(si);
-            if (!controller) continue;
-            tempMatrix.identity().extractRotation(controller.matrixWorld);
-            direction.set(0, 0, -1).applyMatrix4(tempMatrix).normalize();
-            controller.getWorldPosition(origin);
-          }
-          raycaster.set(origin, direction);
-
-          var refs = krpano.immersive_ui_refs;
-          if (refs && refs.panel && refs.panel.mesh) {
-            var hits = raycaster.intersectObject(refs.panel.mesh, true);
-            if (hits.length > 0) {
-              bestHit = hits[0];
-              bestRegion = processUIHit(hits[0], source);
-              bestSource = source;
-              bestInputType = "controller";
-            }
-          }
-        } else if (itype === "hand" && xi.frameCount % 2 === 0 && bestInputType !== "controller") {
-          handState = getHandState(source.hand, frame, refSpace);
-          if (handState) {
-            raycaster.set(handState.origin, handState.direction);
-            var refs2 = krpano.immersive_ui_refs;
-            if (refs2 && refs2.panel && refs2.panel.mesh) {
-              var hits2 = raycaster.intersectObject(refs2.panel.mesh, true);
-              if (hits2.length > 0) {
-                bestHit = hits2[0];
-                bestRegion = processUIHit(hits2[0], source);
-                bestSource = source;
-                bestInputType = "hand";
-              }
-            }
-          }
-        } else if (itype === "gaze" && bestInputType === "none") {
-          if (camera) {
-            camera.getWorldDirection(direction);
-            camera.getWorldPosition(origin);
-            raycaster.set(origin, direction);
-            var refs3 = krpano.immersive_ui_refs;
-            if (refs3 && refs3.panel && refs3.panel.mesh) {
-              var hits3 = raycaster.intersectObject(refs3.panel.mesh, true);
-              if (hits3.length > 0) {
-                bestHit = hits3[0];
-                bestRegion = processUIHit(hits3[0], source);
-                bestSource = source;
-                bestInputType = "gaze";
-              }
-            }
-          }
-        }
-      }
-
-      // If no controllers/hands found, use camera gaze as fallback
-      if (!bestHit && camera && inputSources.length === 0) {
-        camera.getWorldDirection(direction);
-        camera.getWorldPosition(origin);
-        raycaster.set(origin, direction);
-        var refsGaze = krpano.immersive_ui_refs;
-        if (refsGaze && refsGaze.panel && refsGaze.panel.mesh) {
-          var hitsGaze = raycaster.intersectObject(refsGaze.panel.mesh, true);
-          if (hitsGaze.length > 0) {
-            bestHit = hitsGaze[0];
-            bestRegion = processUIHit(hitsGaze[0], null);
-            bestInputType = "gaze";
-          }
-        }
-      }
-
-      // Update reticle
-      if (bestHit) {
-        reticleMesh.visible = true;
-        reticleMesh.position.copy(bestHit.point);
-        if (bestHit.face) {
-          reticleMesh.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 0, 1),
-            bestHit.face.normal
-          );
-        }
-        // Scale reticle by distance for consistent angular size
-        var dist = bestHit.distance || 1;
-        var s = Math.max(0.5, dist * 0.4);
-        reticleMesh.scale.setScalar(s);
-
-        // Color: green if hovering a button, cyan otherwise
-        reticleMat.color.setHex(bestRegion ? 0x34d399 : 0x00ffff);
-      } else {
-        reticleMesh.visible = false;
-      }
-
-      // Hover state change → haptic
-      if (bestRegion && bestRegion !== prevHoveredRegion && bestSource) {
-        hapticForEvent(bestSource, "hover");
-      }
-      prevHoveredRegion = bestRegion;
-
-      // Dispatch with cooldown to avoid double-firing on one press
-      function dispatchWithCooldown(region, inputSource) {
-        var now = performance.now();
-        if (now - lastSelectTime < SELECT_COOLDOWN_MS) return;
-        lastSelectTime = now;
-        dispatchAction(region, inputSource);
-      }
-
-      // Controller trigger → select
-      var triggerPressed = false;
-      if (bestInputType === "controller" && bestSource && bestSource.gamepad && bestSource.gamepad.buttons && bestSource.gamepad.buttons.length > 0) {
-        try {
-          triggerPressed = !!bestSource.gamepad.buttons[0].pressed;
-        } catch(e) {
-          triggerPressed = false;
-        }
-      }
-      if (triggerPressed && !prevTriggerPressed && bestRegion) {
-        dispatchWithCooldown(bestRegion, bestSource);
-      }
-      prevTriggerPressed = triggerPressed;
-
-      // Hand tracking: pinch to select
-      if (bestInputType === "hand" && handState) {
-        if (handState.isPinching && !prevPinching && bestRegion) {
-          dispatchWithCooldown(bestRegion, bestSource);
-        }
-        prevPinching = handState.isPinching;
-      }
-
-      // Gaze dwell timer
-      if (bestInputType === "gaze" && bestRegion) {
-        if (gazeLockedRegion !== bestRegion) {
-          gazeStartTime = performance.now();
-          gazeLockedRegion = bestRegion;
-        }
-        var elapsed = performance.now() - gazeStartTime;
-        var progress = Math.min(elapsed / xi.gazeDwellMs, 1.0);
-
-        gazeRingMesh.visible = true;
-        gazeRingMesh.position.copy(reticleMesh.position);
-        gazeRingMesh.quaternion.copy(reticleMesh.quaternion);
-        gazeRingMesh.scale.copy(reticleMesh.scale);
-        gazeRingMat.opacity = progress * 0.9;
-
-        if (progress >= 1.0) {
-          dispatchWithCooldown(bestRegion, null);
-          gazeStartTime = performance.now() + 500;
-          gazeLockedRegion = null;
-        }
-      } else {
-        gazeRingMesh.visible = false;
-        gazeLockedRegion = null;
-        gazeStartTime = 0;
-      }
-
-      // Controller select handled via krpano's existing onclick → immersive_ui_panel_click
-      // which already does raycasting. But we enhance it with haptics here.
-
-      requestAnimationFrame(xrInputFrame);
+      detachSession();
+      state.session = session;
+      state.referenceSpace = binding.referenceSpace;
+      state.sessionOwner = binding.owner;
+      state.selectHandler = function(event) {
+        var source = event && event.inputSource ? event.inputSource : null;
+        if (!source || !source.hand) return;
+        var target = activeUiTarget(source.handedness);
+        if (target) dispatchTarget(target, "hand-pinch");
+        else dispatchHandRay(event, source);
+      };
+      state.endHandler = function() { detachSession(); };
+      session.addEventListener("select", state.selectHandler);
+      session.addEventListener("end", state.endHandler);
+      ensureReferenceSpace(session);
+      log("hand-pinch-ready", {});
     }
 
-    // Listen for VR session start/end (when Three.js renderer receives the session)
-    try {
-      renderer.xr.addEventListener("sessionstart", function() {
-        xi.active = true;
-        xrInputFrame();
-        console.log("[XRInput] VR session started (sessionstart), input loop active");
-      });
-      renderer.xr.addEventListener("sessionend", function() {
-        xi.active = false;
-        if (reticleMesh) reticleMesh.visible = false;
-        if (gazeRingMesh) gazeRingMesh.visible = false;
-        console.log("[XRInput] VR session ended");
-      });
-    } catch(e) {
-      console.warn("[XRInput] Could not attach session listeners:", e);
+    function updateDiagnostics() {
+      var controllers = [];
+      try {
+        var list = krpano.webvr && krpano.webvr.vrcontrollers;
+        if (list && typeof list.length === "number") {
+          for (var i = 0; i < list.length; i++) {
+            var item = list[i] || {};
+            controllers.push({ hand: item.hand || "", target: normalizeTarget(item.hs && item.hs.target) });
+          }
+        }
+      } catch (e) {}
+      window.__krpanoXRDiagnostics = {
+        inVr: !!(krpano.webvr && krpano.webvr.isenabled),
+        isWebXr: !!(krpano.webvr && krpano.webvr.iswebxr),
+        controllers: controllers,
+        handSelectAttached: !!state.session,
+        handRayReady: !!state.referenceSpace,
+        sessionOwner: state.sessionOwner,
+        lastTarget: state.lastTarget,
+        lastInput: state.lastInput
+      };
     }
 
-    // Start the frame loop immediately so we don't rely on sessionstart (session may be
-    // bound to a different renderer; we poll for session every frame).
-    xi.active = true;
-    xrInputFrame();
-    console.log("[XRInput] Frame loop started (polling for session when in VR)");
+    function refresh() {
+      try {
+        if (krpano.webvr) {
+          krpano.webvr.vr_controller_support = true;
+          krpano.webvr.vr_controller_clickbuttons = "0,1";
+          krpano.webvr.vr_controller_activationbuttons = "0,1";
+        }
+      } catch (e) {}
+      attachSession();
+      updateDiagnostics();
+    }
 
-    // Also expose haptic function globally so immersive_ui can trigger haptics
+    function cleanup() {
+      if (state.timer) {
+        clearInterval(state.timer);
+        state.timer = null;
+      }
+      detachSession();
+      window.__xrHaptic = undefined;
+      window.__krpanoXRDiagnostics = undefined;
+      krpano.xr_input_refresh = null;
+      krpano.xr_input_cleanup = null;
+      krpano.xr_input_initialized = false;
+    }
+
     window.__xrHaptic = function(eventType) {
-      var session = null;
-      try { session = renderer.xr.getSession(); } catch(e) {}
-      if (!session) return;
-      var sources = session.inputSources || [];
-      for (var i = 0; i < sources.length; i++) {
-        if (classifyInput(sources[i]) === "controller") {
-          hapticForEvent(sources[i], eventType);
-          break;
-        }
-      }
+      try {
+        var active = krpano.webvr && krpano.webvr.activevrcontroller;
+        if (!active || !active.hs || !active.hs.pulse) return;
+        var intensity = eventType === "confirm" ? 0.8 : 0.45;
+        active.hs.pulse(intensity, eventType === "confirm" ? 0.08 : 0.04);
+      } catch (e) {}
     };
 
-    console.log("[XRInput] XR input layer ready");
+    krpano.xr_input_refresh = refresh;
+    krpano.xr_input_cleanup = cleanup;
+    refresh();
+    state.timer = setInterval(refresh, 400);
+    log("ready", {});
   ]]></action>
 
-  <!-- ===== WIRE UP: start input loop when threejs is ready ===== -->
-  <action name="xr_input_wire" autorun="onstart" type="js"><![CDATA[
-    function tryStart() {
-      if (!krpano.threejs || !krpano.threejs.renderer) {
-        setTimeout(tryStart, 500);
-        return;
-      }
-      krpano.call("xr_input_start()");
-    }
-    setTimeout(tryStart, 1000);
+  <events name="xr_input_events" keep="true"
+          webvr_onentervr="xr_input_refresh();"
+          webvr_onexitvr="xr_input_refresh();"
+          webvr_onvrcontrollers="xr_input_refresh();" />
+
+  <action name="xr_input_refresh" type="js"><![CDATA[
+    if (krpano.xr_input_refresh) krpano.xr_input_refresh();
   ]]></action>
 
-  <!-- Called by webvr when user enters VR so we retry binding session to Three.js renderer -->
-  <action name="xr_input_onentervr" type="js"><![CDATA[
-    if (window.__xrInputResetSessionBind) window.__xrInputResetSessionBind();
+  <action name="xr_input_cleanup" type="js"><![CDATA[
+    if (krpano.xr_input_cleanup) krpano.xr_input_cleanup();
   ]]></action>
 
 </krpano>

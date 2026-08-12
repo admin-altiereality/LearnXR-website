@@ -25,6 +25,119 @@
         controllerHookObjects: {}
       };
     }
+    var refs = krpano.immersive_ui_refs;
+
+    function hotspotAction(name) {
+      try { return String(krpano.get("hotspot[" + name + "].dataaction") || ""); } catch(e) { return ""; }
+    }
+
+    function dispatchAction(action) {
+      var act = String(action || "");
+      if (!act) return;
+      var now = Date.now();
+      if (String(refs.lastDispatchAction || "") === act && now - Number(refs.lastDispatchAt || 0) < 350) return;
+      refs.lastDispatchAction = act;
+      refs.lastDispatchAt = now;
+      if (act.indexOf("layoutToggle:") === 0) {
+        window.__krpanoLayoutToSet = act.split(":")[1];
+        try { krpano.call("immersive_ui_set_layout()"); } catch(e) {}
+      }
+      try { if (window.__xrHaptic) window.__xrHaptic(act.indexOf("mcqSubmit") === 0 ? "confirm" : "select"); } catch(e) {}
+      try { if (window.__krpanoUIAction) window.__krpanoUIAction(act); } catch(e) {
+        console.warn("[ImmersiveUI] Action bridge failed:", act, e);
+      }
+    }
+
+    window.__krpanoImmersiveUiDispatch = dispatchAction;
+    window.__krpanoImmersiveUiClick = function(name) {
+      dispatchAction(hotspotAction(String(name || "")));
+    };
+    window.__krpanoImmersiveUiHover = function(name, active) {
+      var action = hotspotAction(String(name || ""));
+      refs.hoverAction = active && action ? action : null;
+      if (refs.panel && refs.panel.draw) refs.panel.draw();
+    };
+    window.__krpanoImmersiveControllerButton = function(controllerName, buttonIndex, buttonState) {
+      var state = String(buttonState || "");
+      if (state && state !== "down" && state !== "pressed") return;
+      if (String(buttonIndex) !== "0" && String(buttonIndex) !== "1") return;
+      if (!refs.panel || !refs.panel.mesh || !krpano.threejs || !krpano.threejs.THREE) return;
+      var inVr = !!(window.__showImmersiveUI === true && krpano.webvr && (krpano.webvr.isenabled === true || krpano.webvr.isenabled === "true" || krpano.webvr.isenabled === "1"));
+      if (!inVr) return;
+
+      var name = String(controllerName || "vr_controller_r");
+      var hs = null;
+      try { hs = krpano.get("hotspot[" + name + "]"); } catch(e) {}
+      if (!hs) return;
+      var targetName = "";
+      try {
+        var target = hs.target;
+        targetName = typeof target === "string" ? target : (target && target.name ? target.name : "");
+        targetName = String(targetName || "").replace(/^hotspot\[/, "").replace(/\]$/, "");
+      } catch(e) {}
+      // KRPano will fire the target hotspot's onclick. The raycast below is only
+      // a fallback for runtimes that expose controller direction but no target.
+      if (targetName.indexOf("iu_gaze_btn_") === 0) return;
+
+      function num(value, fallback) {
+        var parsed = Number(value);
+        return isFinite(parsed) ? parsed : fallback;
+      }
+      var THREE = krpano.threejs.THREE;
+      var krpanoOrigin = {
+        x: num(hs.tx, 0),
+        y: num(hs.ty, 0),
+        z: num(hs.tz, 0)
+      };
+      var krpanoEnd = {
+        x: krpanoOrigin.x + num(hs.dx, 0) * 100,
+        y: krpanoOrigin.y + num(hs.dy, 0) * 100,
+        z: krpanoOrigin.z + num(hs.dz, 1) * 100
+      };
+      var originPoint = krpano.threejs.krpano_to_threejs_position(null, 0, 0, 0, krpanoOrigin.x, krpanoOrigin.y, krpanoOrigin.z);
+      var endPoint = krpano.threejs.krpano_to_threejs_position(null, 0, 0, 0, krpanoEnd.x, krpanoEnd.y, krpanoEnd.z);
+      var origin = new THREE.Vector3(originPoint.x, originPoint.y, originPoint.z);
+      var direction = new THREE.Vector3(endPoint.x - originPoint.x, endPoint.y - originPoint.y, endPoint.z - originPoint.z);
+      if (direction.lengthSq() < 0.0001) {
+        try {
+          var object = hs.threejsobject;
+          if (object) {
+            object.getWorldPosition(origin);
+            object.getWorldDirection(direction);
+          }
+        } catch(e) {}
+      }
+      if (direction.lengthSq() < 0.0001) return;
+      direction.normalize();
+      var hits = new THREE.Raycaster(origin, direction, 0, 50).intersectObject(refs.panel.mesh, false);
+      if (!hits || !hits.length || !hits[0].uv) return;
+      var cx = hits[0].uv.x * 2048;
+      var cy = (1 - hits[0].uv.y) * 1280;
+      var regions = refs.buttonRegions || [];
+      for (var i = regions.length - 1; i >= 0; i--) {
+        var region = regions[i];
+        if (!region || !region.action) continue;
+        if (cx >= region.x - 20 && cx <= region.x + region.w + 20 && cy >= region.y - 20 && cy <= region.y + region.h + 20) {
+          refs.hoverAction = region.action;
+          if (refs.panel.draw) refs.panel.draw();
+          dispatchAction(region.action);
+          break;
+        }
+      }
+    };
+    window.__krpanoImmersiveUiCleanup = function() {
+      if (refs.controllerHookTimer) clearInterval(refs.controllerHookTimer);
+      if (refs.visibilityTimer) clearInterval(refs.visibilityTimer);
+      refs.controllerHookTimer = null;
+      refs.visibilityTimer = null;
+      if (refs.stopAnim) refs.stopAnim();
+      window.__krpanoImmersiveUiDispatch = undefined;
+      window.__krpanoImmersiveUiClick = undefined;
+      window.__krpanoImmersiveUiHover = undefined;
+      window.__krpanoImmersiveControllerButton = undefined;
+      window.__krpanoImmersiveUiCleanup = undefined;
+      krpano.immersive_ui_initialized = false;
+    };
     try { krpano.call("immersive_ui_configure_controllers()"); } catch(e) {}
   ]]></action>
 
@@ -45,11 +158,9 @@
         var hs = krpano.get("hotspot[" + name + "]");
         if (!hs || (refs.controllerHooks[name] && refs.controllerHookObjects[name] === hs)) return;
         if (typeof hs.addevent === "function") {
-          hs.addevent("onvrcontrollerbutton", "js(immersive_ui_controller_button(caller.name, caller.vrbuttonindex, caller.vrbuttonstate));");
-          hs.addevent("onover", "js(immersive_ui_controller_hover(caller.name, true));");
-          hs.addevent("onout", "js(immersive_ui_controller_hover(caller.name, false));");
+          hs.addevent("onvrcontrollerbutton", "jscall('window.__krpanoImmersiveControllerButton(caller.name,caller.vrbuttonindex,caller.vrbuttonstate)');");
         } else {
-          krpano.set("hotspot[" + name + "].onvrcontrollerbutton", "js(immersive_ui_controller_button(caller.name, caller.vrbuttonindex, caller.vrbuttonstate));");
+          krpano.set("hotspot[" + name + "].onvrcontrollerbutton", "jscall('window.__krpanoImmersiveControllerButton(caller.name,caller.vrbuttonindex,caller.vrbuttonstate)');");
         }
         refs.controllerHooks[name] = true;
         refs.controllerHookObjects[name] = hs;
@@ -67,7 +178,8 @@
 
   <!--
     Gaze interactor: button regions in canvas space (CW=2048, CH=1280).
-    Convert to world (tx,ty,tz) using panel position and size 4.8 x 3.
+    Convert to KRPano world centimeters so the hit proxies exactly cover the
+    120 x 75 cm Three.js lesson screen.
   -->
   <action name="immersive_ui_create_gaze_hotspots" type="js"><![CDATA[
     var refs = krpano.immersive_ui_refs;
@@ -76,12 +188,12 @@
     var p = refs.layouts[layout] && refs.layouts[layout].panel;
     if (!p) return;
     var CW = 2048, CH = 1280;
-    var panelW = 4.8, panelH = 3;
+    var PANEL_WIDTH_CM = 120, PANEL_HEIGHT_CM = 75;
 
     function canvasToWorld(cx, cy) {
-      var dx = ((cx / CW) - 0.5) * panelW;
-      var dy = (0.5 - (cy / CH)) * panelH;
-      return { tx: p.tx + dx, ty: p.ty + dy, tz: p.tz };
+      var dx = ((cx / CW) - 0.5) * PANEL_WIDTH_CM;
+      var dy = ((cy / CH) - 0.5) * PANEL_HEIGHT_CM;
+      return { tx: p.tx + dx, ty: p.ty + dy, tz: p.tz - 0.5 };
     }
 
     var fallbackRegions = [
@@ -143,18 +255,24 @@
         }
         krpano.set("hotspot[" + r.name + "].url", transparentUrl);
         krpano.set("hotspot[" + r.name + "].alpha", 0.01);
-        krpano.set("hotspot[" + r.name + "].width", Math.max(90, (r.w + 48) / 3.2));
-        krpano.set("hotspot[" + r.name + "].height", Math.max(48, (r.h + 44) / 3.2));
+        krpano.set("hotspot[" + r.name + "].width", Math.max(8, (r.w / CW) * PANEL_WIDTH_CM + 3));
+        krpano.set("hotspot[" + r.name + "].height", Math.max(5, (r.h / CH) * PANEL_HEIGHT_CM + 3));
+        krpano.set("hotspot[" + r.name + "].scale", 1);
+        krpano.set("hotspot[" + r.name + "].distorted", true);
+        krpano.set("hotspot[" + r.name + "].renderer", "webgl");
+        krpano.set("hotspot[" + r.name + "].depthbuffer", false);
         krpano.set("hotspot[" + r.name + "].torigin", "world");
         krpano.set("hotspot[" + r.name + "].tx", c.tx);
         krpano.set("hotspot[" + r.name + "].ty", c.ty);
         krpano.set("hotspot[" + r.name + "].tz", c.tz);
         krpano.set("hotspot[" + r.name + "].dataaction", r.action);
-        krpano.set("hotspot[" + r.name + "].onclick", "js(immersive_ui_gaze_click('" + r.name.replace(/'/g, "\\'") + "'));");
-        krpano.set("hotspot[" + r.name + "].onover", "js(immersive_ui_gaze_hover('" + r.name.replace(/'/g, "\\'") + "', true));");
-        krpano.set("hotspot[" + r.name + "].onout", "js(immersive_ui_gaze_hover('" + r.name.replace(/'/g, "\\'") + "', false));");
+        krpano.set("hotspot[" + r.name + "].onclick", "jscall('window.__krpanoImmersiveUiClick(caller.name)');");
+        krpano.set("hotspot[" + r.name + "].onover", "jscall('window.__krpanoImmersiveUiHover(caller.name,true)');");
+        krpano.set("hotspot[" + r.name + "].onout", "jscall('window.__krpanoImmersiveUiHover(caller.name,false)');");
         krpano.set("hotspot[" + r.name + "].handcursor", true);
         krpano.set("hotspot[" + r.name + "].capture", true);
+        krpano.set("hotspot[" + r.name + "].bgcapture", true);
+        krpano.set("hotspot[" + r.name + "].hittest", true);
         krpano.set("hotspot[" + r.name + "].enabled", true);
         krpano.set("hotspot[" + r.name + "].keep", true);
         krpano.set("hotspot[" + r.name + "].zorder", "1");
@@ -165,101 +283,6 @@
     refs.gazeSignature = signature;
     krpano.call("immersive_ui_gaze_update_visibility()");
     console.log("[ImmersiveUI] Gaze hotspots created:", refs.gazeHotspotNames.length);
-  ]]></action>
-
-  <action name="immersive_ui_gaze_hover" type="js" args="hotspotName,active"><![CDATA[
-    var refs = krpano.immersive_ui_refs;
-    if (!refs) return;
-    var action = null;
-    try { action = krpano.get("hotspot[" + hotspotName + "].dataaction"); } catch(e) {}
-    refs.hoverAction = active && action ? action : null;
-    if (refs.panel && refs.panel.draw) refs.panel.draw();
-  ]]></action>
-
-  <action name="immersive_ui_gaze_click" type="js" args="hotspotName"><![CDATA[
-    var name = hotspotName;
-    if (!name) return;
-    var action = null;
-    try { action = krpano.get("hotspot[" + name + "].dataaction"); } catch(e) {}
-    if (!action) return;
-    krpano.call("immersive_ui_dispatch_action(" + action + ")");
-  ]]></action>
-
-  <action name="immersive_ui_dispatch_action" type="js" args="action"><![CDATA[
-    var act = String(action || "");
-    if (!act) return;
-    if (act.indexOf("layoutToggle:") === 0) {
-      window.__krpanoLayoutToSet = act.split(":")[1];
-      krpano.call("immersive_ui_set_layout()");
-    }
-    if (window.__xrHaptic) window.__xrHaptic(act.indexOf("mcqSubmit") === 0 ? "confirm" : "select");
-    if (window.__krpanoUIAction) window.__krpanoUIAction(act);
-  ]]></action>
-
-  <action name="immersive_ui_controller_hover" type="js" args="controllerName,active"><![CDATA[
-    if (!active) {
-      var refs = krpano.immersive_ui_refs;
-      if (refs) {
-        refs.hoverAction = null;
-        if (refs.panel && refs.panel.draw) refs.panel.draw();
-      }
-    }
-  ]]></action>
-
-  <action name="immersive_ui_controller_button" type="js" args="controllerName,buttonIndex,buttonState"><![CDATA[
-    var state = String(buttonState || "");
-    if (state && state !== "down" && state !== "pressed") return;
-    var refs = krpano.immersive_ui_refs;
-    if (!refs || !refs.panel || !refs.panel.mesh || !krpano.threejs || !krpano.threejs.THREE) return;
-    var show = !!(window.__showImmersiveUI === true && krpano.webvr && (krpano.webvr.isenabled === true || krpano.webvr.isenabled === "true" || krpano.webvr.isenabled === "1"));
-    if (!show) return;
-
-    var name = String(controllerName || "vr_controller_r");
-    var hs = null;
-    try { hs = krpano.get("hotspot[" + name + "]"); } catch(e) {}
-    if (!hs) return;
-
-    function num(v, fallback) {
-      var n = Number(v);
-      return isFinite(n) ? n : fallback;
-    }
-
-    var THREE = krpano.threejs.THREE;
-    var ws = (krpano.display && krpano.display.hotspotworldscale) || 100;
-    var origin = new THREE.Vector3(num(hs.tx, 0) / ws, num(hs.ty, 0) / ws, num(hs.tz, 0) / ws);
-    var direction = new THREE.Vector3(num(hs.dx, 0), num(hs.dy, 0), num(hs.dz, 1));
-    if (direction.lengthSq() < 0.0001) {
-      try {
-        var obj = hs.threejsobject;
-        if (obj) {
-          obj.getWorldPosition(origin);
-          obj.getWorldDirection(direction);
-        }
-      } catch(e) {}
-    }
-    if (direction.lengthSq() < 0.0001) return;
-    direction.normalize();
-
-    var raycaster = new THREE.Raycaster(origin, direction, 0, 50);
-    var hits = raycaster.intersectObject(refs.panel.mesh, false);
-    if (!hits || !hits.length || !hits[0].uv) return;
-
-    var CW = 2048, CH = 1280;
-    var cx = hits[0].uv.x * CW;
-    var cy = (1 - hits[0].uv.y) * CH;
-    var regions = refs.buttonRegions || [];
-    var pad = 20;
-    for (var i = regions.length - 1; i >= 0; i--) {
-      var r = regions[i];
-      if (!r || !r.action) continue;
-      if (cx >= r.x - pad && cx <= r.x + r.w + pad && cy >= r.y - pad && cy <= r.y + r.h + pad) {
-        refs.hoverAction = r.action;
-        if (refs.panel.draw) refs.panel.draw();
-        krpano.call("immersive_ui_dispatch_action(" + r.action + ")");
-        try { krpano.call("callwith(hotspot[" + name + "], pulse(0.45,0.05));"); } catch(e) {}
-        break;
-      }
-    }
   ]]></action>
 
   <action name="immersive_ui_gaze_update_visibility" type="js"><![CDATA[
@@ -1212,9 +1235,9 @@
       }
     } catch(e) {}
 
-    var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.88, side: THREE.DoubleSide });
-    // Panel size: half of previous (4.8x3 worldscale-aware) for less obtrusive VR UI
-    var panelW = 4.8 / ws, panelH = 3 / ws;
+    var mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.96, side: THREE.DoubleSide });
+    var PANEL_WIDTH_CM = 120, PANEL_HEIGHT_CM = 75;
+    var panelW = PANEL_WIDTH_CM / ws, panelH = PANEL_HEIGHT_CM / ws;
     var geo = new THREE.PlaneGeometry(panelW, panelH);
     var mesh = new THREE.Mesh(geo, mat);
     mesh.rotation.y = Math.PI;
@@ -1423,6 +1446,10 @@
     try {
       if (window.__krpanoAssetScaleAction) window.__krpanoAssetScaleAction("refresh");
     } catch(e) {}
+  ]]></action>
+
+  <action name="immersive_ui_cleanup" type="js"><![CDATA[
+    if (window.__krpanoImmersiveUiCleanup) window.__krpanoImmersiveUiCleanup();
   ]]></action>
 
 </krpano>
