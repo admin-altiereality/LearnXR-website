@@ -25,6 +25,18 @@
       {
         "source": "index.html",
         "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
+      },
+      {
+        "source": "/",
+        "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
+      },
+      {
+        "source": "/vrlessonplayer-krpano{,/**}",
+        "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
+      },
+      {
+        "source": "/krpano/**",
+        "headers": [{"key": "Cache-Control", "value": "no-cache, no-store, must-revalidate"}]
       }
     ]
   }
