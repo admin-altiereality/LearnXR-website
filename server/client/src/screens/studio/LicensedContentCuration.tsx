@@ -13,6 +13,8 @@ import {
 } from '../../services/licensedContentService';
 import type { LicensedContentSummary, LicensedManifestImport } from '../../types/licensedContent';
 import { ProviderLicensePanel } from '../../Components/studio/ProviderLicensePanel';
+import { Badge } from '../../Components/ui/badge';
+import { Button } from '../../Components/ui/button';
 
 const starterManifest = JSON.stringify({
   provider: 'corinth',
@@ -103,22 +105,24 @@ export default function LicensedContentCuration() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f6f7] p-4 text-[#172126] sm:p-6 lg:p-10">
+    <main className="min-h-screen bg-background p-4 text-foreground sm:p-6 lg:p-8">
       <div className="mx-auto max-w-[1500px]">
-        <header className="flex flex-col gap-4 border-b border-[#d7e0e2] pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-2 text-sm font-semibold text-[#087f73]">Licensed content operations</div>
-            <h1 className="text-3xl font-semibold">Immersive STEM Curation</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5d6c72]">
-              Import only vendor-approved manifests. Associates prepare revisions and mappings; administrators control publication and entitlements.
-            </p>
+        <header className="mb-6 flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-primary/10 text-primary">
+              <ShieldCheck className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Immersive STEM Curation</h1>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Manage licensed revisions, curriculum mappings, provider terms, and school access.</p>
+            </div>
           </div>
-          <button type="button" onClick={() => void refresh()} className="inline-flex h-10 items-center gap-2 border border-[#bac7ca] bg-white px-4 text-sm font-semibold hover:border-[#087f73]">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
+          <Button type="button" variant="secondary" onClick={() => void refresh()} disabled={loading} className="shrink-0">
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </Button>
         </header>
 
-        <section className="grid gap-px bg-[#d7e0e2] sm:grid-cols-3 lg:grid-cols-5">
+        <section className="mb-4 grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card [&>div:nth-child(5)]:col-span-2 sm:grid-cols-3 sm:[&>div:nth-child(5)]:col-span-1 lg:grid-cols-5">
           <Metric label="Total revisions" value={items.length} />
           <Metric label="Draft" value={counts.draft || 0} />
           <Metric label="In review" value={counts.review || 0} />
@@ -126,7 +130,7 @@ export default function LicensedContentCuration() {
           <Metric label="Suspended" value={counts.suspended || 0} />
         </section>
 
-        <nav className="flex gap-px overflow-x-auto border-b border-[#d7e0e2] bg-[#d7e0e2]">
+        <nav className="mb-4 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1" aria-label="Curation workspace">
           <TabButton active={tab === 'catalog'} onClick={() => setTab('catalog')} label="Catalog" />
           <TabButton active={tab === 'import'} onClick={() => setTab('import')} label="Import manifest" />
           <TabButton active={tab === 'mapping'} onClick={() => setTab('mapping')} label="Curriculum mapping" />
@@ -135,43 +139,43 @@ export default function LicensedContentCuration() {
         </nav>
 
         {tab === 'catalog' && (
-          <section className="bg-white">
+          <section className="overflow-hidden rounded-lg border border-border bg-card">
             {loading ? (
-              <div className="flex min-h-[320px] items-center justify-center text-sm text-[#617178]"><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading revisions</div>
+              <div className="flex min-h-[320px] items-center justify-center text-sm text-muted-foreground"><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading revisions</div>
             ) : items.length === 0 ? (
               <div className="grid min-h-[360px] gap-8 p-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:p-8">
                 <div>
-                  <div className="flex h-12 w-12 items-center justify-center bg-[#e5efed] text-[#087f73]"><UploadCloud className="h-6 w-6" /></div>
-                  <h2 className="mt-5 text-xl font-semibold text-[#172126]">No licensed revisions are staged</h2>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-[#617178]">The service is healthy. Content appears here only after an official provider manifest and its approved private artifact have been supplied.</p>
-                  <button type="button" onClick={() => setTab('import')} className="mt-5 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white hover:bg-[#066d63]"><FileJson className="h-4 w-4" /> Import approved manifest</button>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary"><UploadCloud className="h-6 w-6" /></div>
+                  <h2 className="mt-5 text-xl font-semibold">No licensed revisions are staged</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">The service is healthy. Content appears here only after an official provider manifest and its approved private artifact have been supplied.</p>
+                  <Button type="button" onClick={() => setTab('import')} className="mt-5"><FileJson className="h-4 w-4" /> Import approved manifest</Button>
                 </div>
-                <ol className="space-y-4 border-l border-[#d7e0e2] pl-6 text-sm leading-6 text-[#5d6d73]">
-                  <li><strong className="block text-[#172126]">1. Vendor delivery</strong>Receive the official API/feed or approved GLB bundle, revision IDs, metadata, and licensing reference.</li>
-                  <li><strong className="block text-[#172126]">2. Private staging</strong>Store approved artifacts under the protected licensed-content path and import the matching manifest.</li>
-                  <li><strong className="block text-[#172126]">3. Review and release</strong>Validate, publish, map curriculum topics, and enable the relevant school collections.</li>
+                <ol className="space-y-4 border-l border-border pl-6 text-sm leading-6 text-muted-foreground">
+                  <li><strong className="block text-foreground">1. Vendor delivery</strong>Receive the official API/feed or approved GLB bundle, revision IDs, metadata, and licensing reference.</li>
+                  <li><strong className="block text-foreground">2. Private staging</strong>Store approved artifacts under the protected licensed-content path and import the matching manifest.</li>
+                  <li><strong className="block text-foreground">3. Review and release</strong>Validate, publish, map curriculum topics, and enable the relevant school collections.</li>
                 </ol>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-left text-sm">
-                  <thead className="border-b border-[#d7e0e2] bg-[#eef2f3] text-xs uppercase text-[#64737a]">
+                  <thead className="border-b border-border bg-muted/50 text-xs uppercase text-muted-foreground">
                     <tr><th className="p-4">Content</th><th className="p-4">Provider revision</th><th className="p-4">Delivery</th><th className="p-4">Status</th><th className="p-4">Workflow</th></tr>
                   </thead>
                   <tbody>
                     {items.map((item) => (
-                      <tr key={item.id} className="border-b border-[#e2e8e9] align-top">
-                        <td className="p-4"><div className="font-semibold">{item.title}</div><div className="mt-1 text-xs text-[#69787e]">{item.subject} · {item.grade_bands.join(', ')}</div></td>
-                        <td className="p-4"><div>{item.provider_content_id}</div><div className="mt-1 text-xs text-[#69787e]">{item.provider} · {item.revision}</div></td>
+                      <tr key={item.id} className="border-b border-border align-top hover:bg-muted/30">
+                        <td className="p-4"><div className="font-semibold">{item.title}</div><div className="mt-1 text-xs text-muted-foreground">{item.subject} · {item.grade_bands.join(', ')}</div></td>
+                        <td className="p-4"><div>{item.provider_content_id}</div><div className="mt-1 text-xs text-muted-foreground">{item.provider} · {item.revision}</div></td>
                         <td className="p-4">{item.delivery_mode === 'krpano_native' ? 'Native KRPano' : item.delivery_mode === 'external_link' ? `External ${item.external_link?.link_type || 'link'}` : 'Hosted SSO'}</td>
-                        <td className="p-4"><span className="bg-[#edf3f2] px-2 py-1 text-xs font-semibold uppercase text-[#2d665f]">{item.status}</span></td>
+                        <td className="p-4"><Badge variant="secondary" className="uppercase">{item.status}</Badge></td>
                         <td className="p-4">
                           <select
                             aria-label={`Change status for ${item.title}`}
                             value=""
                             disabled={busy}
                             onChange={(event) => { if (event.target.value) void changeStatus(item.id, event.target.value); }}
-                            className="h-9 border border-[#bdc9cc] bg-white px-3 text-xs font-semibold"
+                            className="h-9 rounded-lg border border-input bg-background px-3 text-xs font-semibold text-foreground outline-none focus:ring-2 focus:ring-ring"
                           >
                             <option value="">Move to…</option>
                             <option value="draft">Draft</option>
@@ -191,9 +195,9 @@ export default function LicensedContentCuration() {
         )}
 
         {tab === 'import' && (
-          <section className="grid bg-white lg:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="border-b border-[#d7e0e2] p-5 lg:border-b-0 lg:border-r">
-              <label className="mb-3 flex items-center gap-2 text-sm font-semibold"><FileJson className="h-4 w-4 text-[#087f73]" /> Approved provider manifest</label>
+          <section className="grid overflow-hidden rounded-lg border border-border bg-card lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="border-b border-border p-5 lg:border-b-0 lg:border-r">
+              <label className="mb-3 flex items-center gap-2 text-sm font-semibold"><FileJson className="h-4 w-4 text-primary" /> Approved provider manifest</label>
               <input
                 type="file"
                 accept="application/json,.json"
@@ -203,16 +207,16 @@ export default function LicensedContentCuration() {
                   file.text().then(setManifestJson).catch(() => toast.error('Could not read the manifest file.'));
                   event.target.value = '';
                 }}
-                className="mb-3 block w-full text-xs text-[#5d6d73] file:mr-3 file:border-0 file:bg-[#e5efed] file:px-3 file:py-2 file:font-semibold file:text-[#087f73]"
+                className="mb-3 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border file:border-border file:bg-secondary file:px-3 file:py-2 file:font-semibold file:text-secondary-foreground"
               />
-              <textarea value={manifestJson} onChange={(event) => setManifestJson(event.target.value)} spellCheck={false} className="h-[560px] w-full resize-y border border-[#bdc9cc] bg-[#11191c] p-4 font-mono text-xs leading-5 text-[#dce8e6] outline-none focus:border-[#087f73]" />
-              <button type="button" onClick={() => void submitImport()} disabled={busy} className="mt-4 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white disabled:opacity-55">
+              <textarea value={manifestJson} onChange={(event) => setManifestJson(event.target.value)} spellCheck={false} className="h-[560px] w-full resize-y rounded-lg border border-input bg-background p-4 font-mono text-xs leading-5 text-foreground outline-none focus:ring-2 focus:ring-ring" />
+              <Button type="button" onClick={() => void submitImport()} disabled={busy} className="mt-4">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Validate and stage revision
-              </button>
+              </Button>
             </div>
-            <aside className="p-5 text-sm leading-6 text-[#5d6d73]">
-              <ShieldCheck className="h-7 w-7 text-[#087f73]" />
-              <h2 className="mt-4 font-semibold text-[#172126]">Import gate</h2>
+            <aside className="p-5 text-sm leading-6 text-muted-foreground">
+              <ShieldCheck className="h-7 w-7 text-primary" />
+              <h2 className="mt-4 font-semibold text-foreground">Import gate</h2>
               <p className="mt-2">The importer accepts approved Corinth content links or metadata with private Storage paths. Provider usernames, passwords, API keys, and tokenized URLs are rejected.</p>
               <p className="mt-3">A revision stays in draft until an administrator confirms provider licensing and the approved delivery mode.</p>
             </aside>
@@ -281,15 +285,15 @@ function MappingForm({ items, selectedContentId, setSelectedContentId, isAdmin }
   };
   const reviewedFieldsReady = reviewStatus === 'suggested' || Boolean(objectiveIds && sourceTitle && sourcePublisher && sourceUrl);
   return (
-    <section className="bg-white p-5 lg:p-7">
+    <section className="rounded-lg border border-border bg-card p-5 lg:p-7">
       <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2"><Link2 className="h-5 w-5 text-[#087f73]" /><h2 className="text-lg font-semibold">Map a revision to a lesson topic</h2></div>
-        <label className="inline-flex h-10 cursor-pointer items-center gap-2 border border-[#bac7ca] bg-white px-4 text-sm font-semibold hover:border-[#087f73]">
+        <div className="flex items-center gap-2"><Link2 className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">Map a revision to a lesson topic</h2></div>
+        <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-semibold hover:bg-accent">
           <FileJson className="h-4 w-4" /> Import mapping batch
           <input type="file" accept="application/json,.json" disabled={busy} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBatch(file); event.target.value = ''; }} />
         </label>
       </div>
-      <p className="mb-6 max-w-4xl text-sm leading-6 text-[#5d6d73]">Mappings remain outside student lessons until an administrator approves the class, curriculum objective, and scientific evidence.</p>
+      <p className="mb-6 max-w-4xl text-sm leading-6 text-muted-foreground">Mappings remain outside student lessons until an administrator approves the class, curriculum objective, and scientific evidence.</p>
       <div className="grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Licensed revision"><select value={selectedContentId} onChange={(event) => setSelectedContentId(event.target.value)} className="field"><option value="">Select content</option>{items.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.revision}</option>)}</select></Field>
         <Field label="Lesson phase"><select value={phase} onChange={(event) => setPhase(event.target.value)} className="field"><option value="intro">Intro</option><option value="learn">Learn</option><option value="summary">Summary</option><option value="quiz">Quiz</option></select></Field>
@@ -306,7 +310,7 @@ function MappingForm({ items, selectedContentId, setSelectedContentId, isAdmin }
         <Field label="Evidence URL"><input type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://..." className="field" /></Field>
         <Field label="Teaching notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="field min-h-28" /></Field>
       </div>
-      <button type="button" onClick={() => void submit()} disabled={busy || !selectedContentId || !chapterId || !topicId || !classId || !subjectId || !curriculum || !reviewedFieldsReady} className="mt-5 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save mapping</button>
+      <Button type="button" onClick={() => void submit()} disabled={busy || !selectedContentId || !chapterId || !topicId || !classId || !subjectId || !curriculum || !reviewedFieldsReady} className="mt-5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save mapping</Button>
     </section>
   );
 }
@@ -328,21 +332,21 @@ function EntitlementForm() {
     finally { setBusy(false); }
   };
   return (
-    <section className="bg-white p-5 lg:p-7">
-      <div className="mb-6 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#087f73]" /><h2 className="text-lg font-semibold">School and partner entitlements</h2></div>
+    <section className="rounded-lg border border-border bg-card p-5 lg:p-7">
+      <div className="mb-6 flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">School and partner entitlements</h2></div>
       <div className="grid max-w-4xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Target type"><select value={targetType} onChange={(event) => setTargetType(event.target.value as 'school' | 'partner')} className="field"><option value="school">School</option><option value="partner">Partner</option></select></Field>
         <Field label="Target document ID"><input value={targetId} onChange={(event) => setTargetId(event.target.value)} className="field" /></Field>
-        <Field label="Provider"><input value="corinth" readOnly className="field bg-[#eef2f3]" /></Field>
+        <Field label="Provider"><input value="corinth" readOnly className="field bg-muted" /></Field>
         <Field label="Collections (comma separated)"><input value={collections} onChange={(event) => setCollections(event.target.value)} className="field" /></Field>
         <Field label="Status"><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)} className="field"><option value="active">Active</option><option value="suspended">Suspended</option><option value="expired">Expired</option></select></Field>
         <div className="grid grid-cols-2 gap-2"><Field label="Starts"><input type="date" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} className="field" /></Field><Field label="Ends"><input type="date" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} className="field" /></Field></div>
       </div>
-      <button type="button" onClick={() => void submit()} disabled={busy || !targetId || !collections} className="mt-5 inline-flex h-10 items-center gap-2 bg-[#172126] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save entitlement</button>
+      <Button type="button" onClick={() => void submit()} disabled={busy || !targetId || !collections} className="mt-5">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save entitlement</Button>
     </section>
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) { return <div className="bg-white p-4"><div className="text-xs font-semibold uppercase text-[#68787e]">{label}</div><div className="mt-2 text-2xl font-semibold">{value}</div></div>; }
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button type="button" onClick={onClick} className={`h-12 shrink-0 px-5 text-sm font-semibold ${active ? 'bg-[#172126] text-white' : 'bg-white text-[#53646b] hover:text-[#087f73]'}`}>{label}</button>; }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="flex flex-col gap-2 text-xs font-semibold uppercase text-[#637279] [&_.field]:h-10 [&_.field]:border [&_.field]:border-[#bcc9cc] [&_.field]:bg-white [&_.field]:px-3 [&_.field]:text-sm [&_.field]:font-normal [&_.field]:normal-case [&_.field]:text-[#172126] [&_.field]:outline-none focus-within:[&_.field]:border-[#087f73]">{label}{children}</label>; }
+function Metric({ label, value }: { label: string; value: number }) { return <div className="border-b border-r border-border p-4 last:border-r-0 sm:border-b-0"><div className="text-xs font-semibold uppercase text-muted-foreground">{label}</div><div className="mt-2 text-2xl font-semibold">{value}</div></div>; }
+function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button type="button" onClick={onClick} aria-current={active ? 'page' : undefined} className={`h-10 shrink-0 rounded-md px-4 text-sm font-medium transition-colors ${active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}`}>{label}</button>; }
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="flex flex-col gap-2 text-xs font-semibold uppercase text-muted-foreground [&_.field]:h-10 [&_.field]:rounded-lg [&_.field]:border [&_.field]:border-input [&_.field]:bg-background [&_.field]:px-3 [&_.field]:text-sm [&_.field]:font-normal [&_.field]:normal-case [&_.field]:text-foreground [&_.field]:outline-none focus-within:[&_.field]:ring-2 focus-within:[&_.field]:ring-ring">{label}{children}</label>; }

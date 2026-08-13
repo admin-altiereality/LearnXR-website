@@ -14,6 +14,10 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { Badge } from '../Components/ui/badge';
+import { Button } from '../Components/ui/button';
+import { Card, CardContent } from '../Components/ui/card';
+import { Input } from '../Components/ui/input';
 import { useAuth } from '../contexts/AuthContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
 import { useLesson } from '../contexts/LessonContext';
@@ -146,48 +150,43 @@ export default function ImmersiveStemLibrary() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f5f7f8] px-4 py-6 text-[#172126] sm:px-6 lg:px-10">
+    <main className="min-h-screen bg-background px-4 py-6 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1500px]">
-        <header className="flex flex-col gap-5 border-b border-[#dce3e5] pb-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[#087f73]">
-              <FlaskConical className="h-4 w-4" />
-              Licensed learning content
+        <header className="mb-6 flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-primary/10 text-primary">
+              <FlaskConical className="h-5 w-5" />
             </div>
-            <h1 className="text-3xl font-semibold text-[#142126] sm:text-4xl">Immersive STEM Library</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5d6a70] sm:text-base">
-              Explore entitlement-approved interactive models and hosted STEM experiences.
-            </p>
+            <div className="min-w-0">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Immersive STEM Library</h1>
+              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Licensed interactive STEM content for your school.</p>
+            </div>
           </div>
           {canCurate && (
-            <button
-              type="button"
-              onClick={() => navigate('/studio/licensed-content')}
-              className="inline-flex h-10 items-center justify-center gap-2 bg-[#172126] px-4 text-sm font-semibold text-white hover:bg-black"
-            >
+            <Button type="button" variant="secondary" onClick={() => navigate('/studio/licensed-content')} className="shrink-0">
               Curate library <ChevronRight className="h-4 w-4" />
-            </button>
+            </Button>
           )}
         </header>
 
-        {items.length > 0 && <section className="grid gap-3 border-b border-[#dce3e5] py-5 md:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,220px))]">
+        {items.length > 0 && <section className="mb-4 grid gap-3 rounded-lg border border-border bg-card p-4 md:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,220px))]">
           <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#65757b]" />
-            <input
+            <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search models and topics"
-              className="h-11 w-full border border-[#ccd6d9] bg-white pl-10 pr-3 text-sm outline-none focus:border-[#087f73] focus:ring-2 focus:ring-[#087f73]/15"
+              className="pl-10"
             />
           </label>
           <FilterSelect value={subject} onChange={setSubject} label="All subjects" options={subjects} />
           <FilterSelect value={grade} onChange={setGrade} label="All grades" options={grades} />
           <label className="relative">
-            <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#65757b]" />
+            <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <select
               value={deliveryMode}
               onChange={(event) => setDeliveryMode(event.target.value)}
-              className="h-11 w-full appearance-none border border-[#ccd6d9] bg-white pl-10 pr-3 text-sm outline-none focus:border-[#087f73]"
+              className="h-10 w-full appearance-none rounded-lg border border-input bg-background pl-10 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
             >
               <option value="">All delivery types</option>
               <option value="krpano_native">Native XR</option>
@@ -198,8 +197,8 @@ export default function ImmersiveStemLibrary() {
         </section>}
 
         {items.length > 0 && !loading && (
-          <div className="flex min-h-12 items-center justify-between border-b border-[#dce3e5] text-sm text-[#5d6a70]" aria-live="polite">
-            <span className="font-semibold text-[#172126]">
+          <div className="mb-4 flex min-h-10 items-center justify-between text-sm text-muted-foreground" aria-live="polite">
+            <span className="font-semibold text-foreground">
               {filteredItems.length} {filteredItems.length === 1 ? 'lesson' : 'lessons'}
             </span>
             {filteredItems.length !== items.length && <span>of {items.length} licensed lessons</span>}
@@ -207,7 +206,7 @@ export default function ImmersiveStemLibrary() {
         )}
 
         {loading ? (
-          <div className="flex min-h-[360px] items-center justify-center text-[#526269]">
+          <div className="flex min-h-[360px] items-center justify-center text-muted-foreground">
             <Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading licensed catalog
           </div>
         ) : availability === 'catalog_empty' && items.length === 0 ? (
@@ -236,55 +235,57 @@ export default function ImmersiveStemLibrary() {
             detail={items.length === 0 ? 'The licensed pilot catalog has not been published yet.' : 'Clear or adjust the current search and filters.'}
           />
         ) : (
-          <section className="grid gap-px bg-[#dce3e5] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {filteredItems.map((item) => (
-              <article key={item.id} className="flex min-h-[360px] flex-col bg-white">
-                <div className="relative aspect-[16/9] overflow-hidden bg-[#e8edef]">
+              <Card key={item.id} className="flex min-h-[360px] flex-col overflow-hidden rounded-lg">
+                <div className="relative aspect-[16/9] overflow-hidden border-b border-border bg-muted/50">
                   {item.thumbnail_url ? (
                     <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <div className="flex h-full items-center justify-center"><Box className="h-12 w-12 text-[#8da0a7]" /></div>
+                    <div className="flex h-full items-center justify-center"><Box className="h-12 w-12 text-muted-foreground/60" /></div>
                   )}
-                  <span className="absolute left-3 top-3 bg-black/75 px-2 py-1 text-xs font-semibold text-white">
+                  <Badge variant="secondary" className="absolute left-3 top-3">
                     {deliveryLabels[item.delivery_mode]}
-                  </span>
+                  </Badge>
                 </div>
-                <div className="flex flex-1 flex-col p-5">
-                  <div className="mb-3 flex items-center justify-between text-xs font-semibold uppercase text-[#65757b]">
+                <CardContent className="flex flex-1 flex-col p-5">
+                  <div className="mb-3 flex items-center justify-between text-xs font-semibold uppercase text-muted-foreground">
                     <span>{item.subject}</span>
                     <span>{canCurate && item.status !== 'published' ? item.status : item.provider}</span>
                   </div>
-                  <h2 className="text-lg font-semibold text-[#172126]">{item.title}</h2>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#607078]">{item.description}</p>
+                  <h2 className="text-base font-semibold text-foreground">{item.title}</h2>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{item.description}</p>
                   <div className="mt-4 flex flex-wrap gap-2">
                     {item.grade_bands.slice(0, 3).map((value) => (
-                      <span key={value} className="bg-[#edf4f3] px-2 py-1 text-xs font-medium text-[#24675f]">Grade {value}</span>
+                      <Badge key={value} variant="outline" className="font-medium">Grade {value}</Badge>
                     ))}
                   </div>
                   <div className="mt-auto flex gap-2 pt-5">
-                    <button
+                    <Button
                       type="button"
                       onClick={() => void openContent(item)}
                       disabled={launchingId === item.id}
-                      className="inline-flex h-10 flex-1 items-center justify-center gap-2 bg-[#087f73] px-3 text-sm font-semibold text-white hover:bg-[#066d63] disabled:opacity-60"
+                      className="h-10 flex-1"
                     >
                       {launchingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : item.delivery_mode === 'krpano_native' ? <Play className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
                       {item.delivery_mode === 'external_link' ? 'Open in Corinth' : item.status !== 'published' && item.provider_preview_url ? 'Preview in Corinth' : 'Open'}
-                    </button>
+                    </Button>
                     {canLaunchToClass && item.status === 'published' && (
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="icon"
                         onClick={() => void launchToClass(item)}
                         aria-label="Launch to active class"
                         title={activeSessionId ? 'Launch to active class' : 'Start a class session first'}
-                        className="inline-flex h-10 w-10 items-center justify-center border border-[#b9c7ca] bg-white text-[#26383e] hover:border-[#087f73] hover:text-[#087f73] disabled:opacity-45"
+                        className="h-10 w-10"
                       >
                         <Users className="h-4 w-4" />
-                      </button>
+                      </Button>
                     )}
                   </div>
-                </div>
-              </article>
+                </CardContent>
+              </Card>
             ))}
           </section>
         )}
@@ -298,7 +299,7 @@ function FilterSelect({ value, onChange, label, options }: { value: string; onCh
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-11 w-full border border-[#ccd6d9] bg-white px-3 text-sm outline-none focus:border-[#087f73]"
+      className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
     >
       <option value="">{label}</option>
       {options.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -308,11 +309,13 @@ function FilterSelect({ value, onChange, label, options }: { value: string; onCh
 
 function EmptyState({ icon, title, detail, action }: { icon: React.ReactNode; title: string; detail: string; action?: { label: string; onClick: () => void } }) {
   return (
-    <div className="flex min-h-[380px] flex-col items-center justify-center border-b border-[#dce3e5] text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center bg-[#e5efed] text-[#087f73]">{icon}</div>
-      <h2 className="text-xl font-semibold text-[#172126]">{title}</h2>
-      <p className="mt-2 max-w-lg text-sm leading-6 text-[#64747a]">{detail}</p>
-      {action && <button type="button" onClick={action.onClick} className="mt-5 inline-flex h-10 items-center justify-center bg-[#172126] px-4 text-sm font-semibold text-white hover:bg-black">{action.label}</button>}
-    </div>
+    <Card className="rounded-lg">
+      <CardContent className="flex min-h-[380px] flex-col items-center justify-center p-6 text-center">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</div>
+        <h2 className="text-xl font-semibold text-foreground">{title}</h2>
+        <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">{detail}</p>
+        {action && <Button type="button" onClick={action.onClick} className="mt-5">{action.label}</Button>}
+      </CardContent>
+    </Card>
   );
 }

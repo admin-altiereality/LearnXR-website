@@ -10,6 +10,7 @@ import type {
   LicensedProviderConfigInput,
   LicensedProviderStatus,
 } from '../../types/licensedContent';
+import { Button } from '../ui/button';
 
 const LINK_TYPES: Array<{ value: LicensedLinkType; label: string }> = [
   { value: 'permanent', label: 'Permanent links' },
@@ -113,19 +114,19 @@ export function ProviderLicensePanel() {
   };
 
   if (loading) {
-    return <div className="flex min-h-[320px] items-center justify-center bg-white text-sm text-[#617178]"><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading provider license</div>;
+    return <div className="flex min-h-[320px] items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground"><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading provider license</div>;
   }
 
   return (
-    <section className="bg-white p-5 lg:p-7">
-      <div className="flex flex-col gap-4 border-b border-[#d7e0e2] pb-6 lg:flex-row lg:items-start lg:justify-between">
+    <section className="rounded-lg border border-border bg-card p-5 lg:p-7">
+      <div className="flex flex-col gap-4 border-b border-border pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#087f73]" /><h2 className="text-lg font-semibold">Corinth link license</h2></div>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5d6d73]">Controls launch eligibility for link-only content. Expiry suspends provider launches without deleting LearnXR lessons or curriculum mappings.</p>
+          <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" /><h2 className="text-lg font-semibold">Corinth link license</h2></div>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Controls launch eligibility for link-only content. Expiry suspends provider launches without deleting LearnXR lessons or curriculum mappings.</p>
         </div>
-        <div className="flex items-center gap-3 border border-[#d7e0e2] px-4 py-3">
-          <CalendarClock className="h-5 w-5 text-[#087f73]" />
-          <div><div className="text-xs font-semibold uppercase text-[#68787e]">Time remaining</div><div className="text-sm font-semibold">{daysRemaining === null ? 'Dates required' : `${daysRemaining} days`}</div></div>
+        <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-3">
+          <CalendarClock className="h-5 w-5 text-primary" />
+          <div><div className="text-xs font-semibold uppercase text-muted-foreground">Time remaining</div><div className="text-sm font-semibold">{daysRemaining === null ? 'Dates required' : `${daysRemaining} days`}</div></div>
         </div>
       </div>
 
@@ -137,11 +138,11 @@ export function ProviderLicensePanel() {
         <Field label="Agreement reference"><input value={form.agreement_reference || ''} onChange={(event) => setForm((current) => ({ ...current, agreement_reference: event.target.value }))} placeholder="Contract or invoice reference" className="field" /></Field>
       </div>
 
-      <div className="mt-6 max-w-5xl border-t border-[#d7e0e2] pt-6">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Link2 className="h-4 w-4 text-[#087f73]" /> Permitted provider links</div>
+      <div className="mt-6 max-w-5xl border-t border-border pt-6">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Link2 className="h-4 w-4 text-primary" /> Permitted provider links</div>
         <div className="flex flex-wrap gap-3">
           {LINK_TYPES.map((linkType) => (
-            <label key={linkType.value} className="flex items-center gap-2 border border-[#bdc9cc] px-3 py-2 text-sm">
+            <label key={linkType.value} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm">
               <input type="checkbox" checked={form.permitted_link_types.includes(linkType.value)} onChange={() => toggleLinkType(linkType.value)} />
               {linkType.label}
             </label>
@@ -155,22 +156,22 @@ export function ProviderLicensePanel() {
       </div>
 
       {(!form.licensing_approved || !form.external_link_approved) && (
-        <div className="mt-5 flex max-w-5xl items-start gap-3 border border-[#e3c77c] bg-[#fff9e9] p-4 text-sm leading-6 text-[#745b1d]">
+        <div className="mt-5 flex max-w-5xl items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm leading-6 text-amber-500">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /> Corinth items can remain staged, but users cannot launch them until both approvals are confirmed.
         </div>
       )}
 
-      <button type="button" onClick={() => void submit()} disabled={saving} className="mt-6 inline-flex h-10 items-center gap-2 bg-[#172126] px-4 text-sm font-semibold text-white disabled:opacity-55">
+      <Button type="button" onClick={() => void submit()} disabled={saving} className="mt-6">
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save provider license
-      </button>
+      </Button>
     </section>
   );
 }
 
 function ApprovalToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return <label className="flex items-center gap-3 border border-[#bdc9cc] p-4 text-sm font-semibold"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
+  return <label className="flex items-center gap-3 rounded-lg border border-border bg-background p-4 text-sm font-semibold"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />{label}</label>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="flex flex-col gap-2 text-xs font-semibold uppercase text-[#637279] [&_.field]:h-10 [&_.field]:border [&_.field]:border-[#bcc9cc] [&_.field]:bg-white [&_.field]:px-3 [&_.field]:text-sm [&_.field]:font-normal [&_.field]:normal-case [&_.field]:text-[#172126] [&_.field]:outline-none focus-within:[&_.field]:border-[#087f73]">{label}{children}</label>;
+  return <label className="flex flex-col gap-2 text-xs font-semibold uppercase text-muted-foreground [&_.field]:h-10 [&_.field]:rounded-lg [&_.field]:border [&_.field]:border-input [&_.field]:bg-background [&_.field]:px-3 [&_.field]:text-sm [&_.field]:font-normal [&_.field]:normal-case [&_.field]:text-foreground [&_.field]:outline-none focus-within:[&_.field]:ring-2 focus-within:[&_.field]:ring-ring">{label}{children}</label>;
 }
