@@ -37,9 +37,12 @@ export interface LicensedCatalogResponse {
   entitled: boolean;
   access_target: { type: 'school' | 'partner'; id: string } | null;
   catalog_state?: {
-    availability: 'ready' | 'catalog_empty' | 'not_entitled' | 'no_accessible_content';
+    availability: 'ready' | 'staging_only' | 'catalog_empty' | 'not_entitled' | 'no_accessible_content';
     published_count: number;
     accessible_count: number;
+    total_count?: number;
+    draft_count?: number;
+    review_count?: number;
   };
 }
 

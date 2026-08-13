@@ -76,6 +76,12 @@ test('allows hosted launches only when the exact origin is approved', () => {
 test('reports why a licensed catalog has no visible items', () => {
   assert.equal(resolveLicensedCatalogAvailability({
     publishedCount: 0,
+    accessibleCount: 2,
+    isContentStaff: true,
+    hasActiveEntitlement: false,
+  }), 'staging_only');
+  assert.equal(resolveLicensedCatalogAvailability({
+    publishedCount: 0,
     accessibleCount: 0,
     isContentStaff: false,
     hasActiveEntitlement: false,

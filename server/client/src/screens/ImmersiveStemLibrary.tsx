@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
 import { useLesson } from '../contexts/LessonContext';
 import { buildNativeLicensedLesson } from '../lib/licensedContent';
+import { normalizeUserRole } from '../utils/rbac';
 import {
   getLicensedContentManifest,
   listLicensedContent,
@@ -41,7 +42,7 @@ export default function ImmersiveStemLibrary() {
   const { activeSessionId, launchLesson } = useClassSession();
   const [items, setItems] = useState<LicensedContentSummary[]>([]);
   const [entitled, setEntitled] = useState(true);
-  const [availability, setAvailability] = useState<'ready' | 'catalog_empty' | 'not_entitled' | 'no_accessible_content'>('ready');
+  const [availability, setAvailability] = useState<'ready' | 'staging_only' | 'catalog_empty' | 'not_entitled' | 'no_accessible_content'>('ready');
   const [loading, setLoading] = useState(true);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -49,13 +50,14 @@ export default function ImmersiveStemLibrary() {
   const [grade, setGrade] = useState('');
   const [deliveryMode, setDeliveryMode] = useState('');
 
-  const canCurate = ['associate', 'admin', 'superadmin'].includes(String(profile?.role));
-  const canLaunchToClass = ['teacher', 'partner', 'admin', 'superadmin'].includes(String(profile?.role));
+  const normalizedRole = normalizeUserRole(profile?.role);
+  const canCurate = ['associate', 'admin', 'superadmin'].includes(normalizedRole);
+  const canLaunchToClass = ['teacher', 'partner', 'admin', 'superadmin'].includes(normalizedRole);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    listLicensedContent()
+    listLicensedContent({ includeDrafts: canCurate })
       .then((result) => {
         if (cancelled) return;
         setItems(result.items);
@@ -189,7 +191,7 @@ export default function ImmersiveStemLibrary() {
           <div className="flex min-h-[360px] items-center justify-center text-[#526269]">
             <Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading licensed catalog
           </div>
-        ) : availability === 'catalog_empty' ? (
+        ) : availability === 'catalog_empty' && items.length === 0 ? (
           <EmptyState
             icon={<CircleAlert className="h-7 w-7" />}
             title="Licensed catalog is not populated"
@@ -231,7 +233,7 @@ export default function ImmersiveStemLibrary() {
                 <div className="flex flex-1 flex-col p-5">
                   <div className="mb-3 flex items-center justify-between text-xs font-semibold uppercase text-[#65757b]">
                     <span>{item.subject}</span>
-                    <span>{item.provider}</span>
+                    <span>{canCurate && item.status !== 'published' ? item.status : item.provider}</span>
                   </div>
                   <h2 className="text-lg font-semibold text-[#172126]">{item.title}</h2>
                   <p className="mt-2 line-clamp-3 text-sm leading-6 text-[#607078]">{item.description}</p>
@@ -250,7 +252,7 @@ export default function ImmersiveStemLibrary() {
                       {launchingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : item.delivery_mode === 'krpano_native' ? <Play className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
                       Open
                     </button>
-                    {canLaunchToClass && (
+                    {canLaunchToClass && item.status === 'published' && (
                       <button
                         type="button"
                         onClick={() => void launchToClass(item)}

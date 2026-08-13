@@ -242,6 +242,12 @@ router.get('/catalog', async (req, res) => {
     const publishedCount = includeDrafts
       ? snapshot.docs.filter((document) => document.data().status === 'published').length
       : snapshot.size;
+    const draftCount = includeDrafts
+      ? snapshot.docs.filter((document) => document.data().status === 'draft').length
+      : 0;
+    const reviewCount = includeDrafts
+      ? snapshot.docs.filter((document) => document.data().status === 'review').length
+      : 0;
     const entitled = isContentStaff(profile) || activeEntitlements.length > 0;
     success(res, {
       items,
@@ -256,6 +262,9 @@ router.get('/catalog', async (req, res) => {
         }),
         published_count: publishedCount,
         accessible_count: items.length,
+        total_count: snapshot.size,
+        draft_count: draftCount,
+        review_count: reviewCount,
       },
     });
   } catch (error) {

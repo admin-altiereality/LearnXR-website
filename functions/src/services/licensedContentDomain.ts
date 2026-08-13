@@ -54,6 +54,7 @@ export interface ManifestValidationResult {
 
 export type LicensedCatalogAvailability =
   | 'ready'
+  | 'staging_only'
   | 'catalog_empty'
   | 'not_entitled'
   | 'no_accessible_content';
@@ -64,6 +65,9 @@ export function resolveLicensedCatalogAvailability(input: {
   isContentStaff: boolean;
   hasActiveEntitlement: boolean;
 }): LicensedCatalogAvailability {
+  if (input.isContentStaff && input.publishedCount === 0 && input.accessibleCount > 0) {
+    return 'staging_only';
+  }
   if (input.publishedCount === 0) return 'catalog_empty';
   if (!input.isContentStaff && !input.hasActiveEntitlement) return 'not_entitled';
   if (input.accessibleCount === 0) return 'no_accessible_content';

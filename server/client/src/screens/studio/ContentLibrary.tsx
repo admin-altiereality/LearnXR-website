@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { ChapterTable } from '../../Components/studio/ChapterTable';
+import { LicensedStemOverview } from '../../Components/studio/LicensedStemOverview';
 import { Button } from '../../Components/ui/button';
 import { Card, CardContent } from '../../Components/ui/card';
 import { Input } from '../../Components/ui/input';
@@ -479,6 +480,8 @@ const ContentLibrary = () => {
               </Button>
             </div>
           </div>
+
+          <LicensedStemOverview />
 
           {loading && chapters.length === 0 && (
             <Card className="border border-border">
