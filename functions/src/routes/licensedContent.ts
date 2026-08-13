@@ -7,6 +7,7 @@ import {
   isAllowedHostedOrigin,
   isEntitlementActive,
   LicensedContentImport,
+  resolveLicensedCatalogAvailability,
   validateImportedManifest,
 } from '../services/licensedContentDomain.js';
 
@@ -205,6 +206,12 @@ router.get('/catalog', async (req, res) => {
       ? await db().collection('licensed_content').limit(MAX_CATALOG_ITEMS).get()
       : await db().collection('licensed_content').where('status', '==', 'published').limit(MAX_CATALOG_ITEMS).get();
     const entitlements = await getEntitlements(profile);
+    const activeEntitlements = entitlements.filter((item) => {
+      const collections = Array.isArray(item.collection_ids)
+        ? item.collection_ids.filter((value): value is string => typeof value === 'string')
+        : [];
+      return isEntitlementActive(item, collections);
+    });
     const search = String(req.query.search || '').trim().toLowerCase();
     const subject = String(req.query.subject || '').trim().toLowerCase();
     const grade = String(req.query.grade || '').trim().toLowerCase();
@@ -232,15 +239,24 @@ router.get('/catalog', async (req, res) => {
       ...sanitizeSummary(id, content),
       thumbnail_url: await signStoragePath(content.thumbnail_storage_path),
     })));
+    const publishedCount = includeDrafts
+      ? snapshot.docs.filter((document) => document.data().status === 'published').length
+      : snapshot.size;
+    const entitled = isContentStaff(profile) || activeEntitlements.length > 0;
     success(res, {
       items,
-      entitled: isContentStaff(profile) || entitlements.some((item) => {
-        const collections = Array.isArray(item.collection_ids)
-          ? item.collection_ids.filter((value): value is string => typeof value === 'string')
-          : [];
-        return isEntitlementActive(item, collections);
-      }),
+      entitled,
       access_target: resolveAccessTarget(profile),
+      catalog_state: {
+        availability: resolveLicensedCatalogAvailability({
+          publishedCount,
+          accessibleCount: items.length,
+          isContentStaff: isContentStaff(profile),
+          hasActiveEntitlement: activeEntitlements.length > 0,
+        }),
+        published_count: publishedCount,
+        accessible_count: items.length,
+      },
     });
   } catch (error) {
     console.error('Licensed catalog error:', error);

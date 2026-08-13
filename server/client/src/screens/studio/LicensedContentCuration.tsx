@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, FileJson, Link2, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, FileJson, Link2, Loader2, RefreshCw, ShieldCheck, UploadCloud } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import {
@@ -129,7 +129,19 @@ export default function LicensedContentCuration() {
             {loading ? (
               <div className="flex min-h-[320px] items-center justify-center text-sm text-[#617178]"><Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading revisions</div>
             ) : items.length === 0 ? (
-              <div className="flex min-h-[320px] items-center justify-center text-sm text-[#617178]">No provider manifests have been imported.</div>
+              <div className="grid min-h-[360px] gap-8 p-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:p-8">
+                <div>
+                  <div className="flex h-12 w-12 items-center justify-center bg-[#e5efed] text-[#087f73]"><UploadCloud className="h-6 w-6" /></div>
+                  <h2 className="mt-5 text-xl font-semibold text-[#172126]">No licensed revisions are staged</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-[#617178]">The service is healthy. Content appears here only after an official provider manifest and its approved private artifact have been supplied.</p>
+                  <button type="button" onClick={() => setTab('import')} className="mt-5 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white hover:bg-[#066d63]"><FileJson className="h-4 w-4" /> Import approved manifest</button>
+                </div>
+                <ol className="space-y-4 border-l border-[#d7e0e2] pl-6 text-sm leading-6 text-[#5d6d73]">
+                  <li><strong className="block text-[#172126]">1. Vendor delivery</strong>Receive the official API/feed or approved GLB bundle, revision IDs, metadata, and licensing reference.</li>
+                  <li><strong className="block text-[#172126]">2. Private staging</strong>Store approved artifacts under the protected licensed-content path and import the matching manifest.</li>
+                  <li><strong className="block text-[#172126]">3. Review and release</strong>Validate, publish, map curriculum topics, and enable the relevant school collections.</li>
+                </ol>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-left text-sm">

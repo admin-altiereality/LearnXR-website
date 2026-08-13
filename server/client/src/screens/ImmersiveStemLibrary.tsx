@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
+  CircleAlert,
   ChevronRight,
   FlaskConical,
   Globe2,
@@ -40,6 +41,7 @@ export default function ImmersiveStemLibrary() {
   const { activeSessionId, launchLesson } = useClassSession();
   const [items, setItems] = useState<LicensedContentSummary[]>([]);
   const [entitled, setEntitled] = useState(true);
+  const [availability, setAvailability] = useState<'ready' | 'catalog_empty' | 'not_entitled' | 'no_accessible_content'>('ready');
   const [loading, setLoading] = useState(true);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -58,6 +60,7 @@ export default function ImmersiveStemLibrary() {
         if (cancelled) return;
         setItems(result.items);
         setEntitled(result.entitled || canCurate);
+        setAvailability(result.catalog_state?.availability || (result.items.length > 0 ? 'ready' : 'no_accessible_content'));
       })
       .catch((error) => {
         if (!cancelled) toast.error(error instanceof Error ? error.message : 'Could not load the STEM library.');
@@ -156,7 +159,7 @@ export default function ImmersiveStemLibrary() {
           )}
         </header>
 
-        <section className="grid gap-3 border-b border-[#dce3e5] py-5 md:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,220px))]">
+        {items.length > 0 && <section className="grid gap-3 border-b border-[#dce3e5] py-5 md:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,220px))]">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#65757b]" />
             <input
@@ -180,17 +183,30 @@ export default function ImmersiveStemLibrary() {
               <option value="hosted_embed">Hosted experience</option>
             </select>
           </label>
-        </section>
+        </section>}
 
         {loading ? (
           <div className="flex min-h-[360px] items-center justify-center text-[#526269]">
             <Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading licensed catalog
           </div>
-        ) : !entitled && items.length === 0 ? (
+        ) : availability === 'catalog_empty' ? (
+          <EmptyState
+            icon={<CircleAlert className="h-7 w-7" />}
+            title="Licensed catalog is not populated"
+            detail="The integration is online, but no approved provider revision has been published. Corinth account links are intentionally not imported because they require vendor authentication and do not grant hosting rights."
+            action={canCurate ? { label: 'Stage approved manifest', onClick: () => navigate('/studio/licensed-content') } : undefined}
+          />
+        ) : (!entitled || availability === 'not_entitled') && items.length === 0 ? (
           <EmptyState
             icon={<LockKeyhole className="h-7 w-7" />}
             title="Library access is not enabled"
             detail="Your school or partner account needs an active content entitlement before licensed items can be opened."
+          />
+        ) : availability === 'no_accessible_content' && items.length === 0 ? (
+          <EmptyState
+            icon={<LockKeyhole className="h-7 w-7" />}
+            title="No licensed collections are available"
+            detail="An entitlement exists for this account, but it does not cover any currently published provider collection. Ask an administrator to review the provider and collection IDs."
           />
         ) : filteredItems.length === 0 ? (
           <EmptyState
@@ -269,12 +285,13 @@ function FilterSelect({ value, onChange, label, options }: { value: string; onCh
   );
 }
 
-function EmptyState({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
+function EmptyState({ icon, title, detail, action }: { icon: React.ReactNode; title: string; detail: string; action?: { label: string; onClick: () => void } }) {
   return (
     <div className="flex min-h-[380px] flex-col items-center justify-center border-b border-[#dce3e5] text-center">
       <div className="mb-4 flex h-14 w-14 items-center justify-center bg-[#e5efed] text-[#087f73]">{icon}</div>
       <h2 className="text-xl font-semibold text-[#172126]">{title}</h2>
       <p className="mt-2 max-w-lg text-sm leading-6 text-[#64747a]">{detail}</p>
+      {action && <button type="button" onClick={action.onClick} className="mt-5 inline-flex h-10 items-center justify-center bg-[#172126] px-4 text-sm font-semibold text-white hover:bg-black">{action.label}</button>}
     </div>
   );
 }

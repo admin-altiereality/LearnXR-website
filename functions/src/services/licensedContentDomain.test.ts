@@ -4,6 +4,7 @@ import {
   buildLicensedContentDocument,
   isAllowedHostedOrigin,
   isEntitlementActive,
+  resolveLicensedCatalogAvailability,
   validateImportedManifest,
 } from './licensedContentDomain.js';
 
@@ -70,4 +71,31 @@ test('allows hosted launches only when the exact origin is approved', () => {
   assert.equal(isAllowedHostedOrigin('https://app.corinth3d.com/embed/heart', approved), true);
   assert.equal(isAllowedHostedOrigin('https://app.corinth3d.com.evil.example/embed/heart', approved), false);
   assert.equal(isAllowedHostedOrigin('javascript:alert(1)', approved), false);
+});
+
+test('reports why a licensed catalog has no visible items', () => {
+  assert.equal(resolveLicensedCatalogAvailability({
+    publishedCount: 0,
+    accessibleCount: 0,
+    isContentStaff: false,
+    hasActiveEntitlement: false,
+  }), 'catalog_empty');
+  assert.equal(resolveLicensedCatalogAvailability({
+    publishedCount: 12,
+    accessibleCount: 0,
+    isContentStaff: false,
+    hasActiveEntitlement: false,
+  }), 'not_entitled');
+  assert.equal(resolveLicensedCatalogAvailability({
+    publishedCount: 12,
+    accessibleCount: 0,
+    isContentStaff: false,
+    hasActiveEntitlement: true,
+  }), 'no_accessible_content');
+  assert.equal(resolveLicensedCatalogAvailability({
+    publishedCount: 12,
+    accessibleCount: 3,
+    isContentStaff: true,
+    hasActiveEntitlement: false,
+  }), 'ready');
 });

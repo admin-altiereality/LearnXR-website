@@ -52,6 +52,24 @@ export interface ManifestValidationResult {
   value?: LicensedContentImport;
 }
 
+export type LicensedCatalogAvailability =
+  | 'ready'
+  | 'catalog_empty'
+  | 'not_entitled'
+  | 'no_accessible_content';
+
+export function resolveLicensedCatalogAvailability(input: {
+  publishedCount: number;
+  accessibleCount: number;
+  isContentStaff: boolean;
+  hasActiveEntitlement: boolean;
+}): LicensedCatalogAvailability {
+  if (input.publishedCount === 0) return 'catalog_empty';
+  if (!input.isContentStaff && !input.hasActiveEntitlement) return 'not_entitled';
+  if (input.accessibleCount === 0) return 'no_accessible_content';
+  return 'ready';
+}
+
 const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 const SHA256 = /^[a-f0-9]{64}$/i;
 const PRIVATE_ARTIFACT_PREFIX = '_licensed_content/';

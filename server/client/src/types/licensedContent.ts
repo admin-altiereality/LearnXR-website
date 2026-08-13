@@ -36,6 +36,11 @@ export interface LicensedCatalogResponse {
   items: LicensedContentSummary[];
   entitled: boolean;
   access_target: { type: 'school' | 'partner'; id: string } | null;
+  catalog_state?: {
+    availability: 'ready' | 'catalog_empty' | 'not_entitled' | 'no_accessible_content';
+    published_count: number;
+    accessible_count: number;
+  };
 }
 
 export interface LicensedManifestImport {
