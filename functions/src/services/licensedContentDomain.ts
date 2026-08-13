@@ -1,5 +1,8 @@
-export const LICENSED_DELIVERY_MODES = ['krpano_native', 'hosted_embed'] as const;
+export const LICENSED_DELIVERY_MODES = ['krpano_native', 'hosted_embed', 'external_link'] as const;
 export type LicensedDeliveryMode = (typeof LICENSED_DELIVERY_MODES)[number];
+
+export const LICENSED_LINK_TYPES = ['permanent', 'student_access', 'temporary'] as const;
+export type LicensedLinkType = (typeof LICENSED_LINK_TYPES)[number];
 
 export const LICENSED_CONTENT_STATUSES = ['draft', 'review', 'published', 'suspended', 'retired'] as const;
 export type LicensedContentStatus = (typeof LICENSED_CONTENT_STATUSES)[number];
@@ -20,6 +23,14 @@ export interface LicensedHostedSource {
   sdk_post_message?: boolean;
 }
 
+export interface LicensedExternalLinkSource {
+  approved_origins: string[];
+  launch_url: string;
+  link_type: LicensedLinkType;
+  link_expires_at?: string;
+  last_verified_at?: string;
+}
+
 export interface LicensedContentImport {
   provider: string;
   provider_content_id: string;
@@ -38,6 +49,59 @@ export interface LicensedContentImport {
   attribution: string;
   native?: LicensedNativeSource;
   hosted?: LicensedHostedSource;
+  external_link?: LicensedExternalLinkSource;
+}
+
+export type ExternalLinkLaunchCode =
+  | 'ready'
+  | 'not_external_link'
+  | 'provider_not_approved'
+  | 'provider_inactive'
+  | 'license_not_started'
+  | 'license_expired'
+  | 'link_type_not_permitted'
+  | 'link_expired'
+  | 'invalid_link';
+
+export interface ExternalLinkLaunchResult {
+  allowed: boolean;
+  code: ExternalLinkLaunchCode;
+  launchUrl?: string;
+}
+
+export type ProviderLicenseStatus = 'active' | 'expiring' | 'expired';
+
+export const MAPPING_REVIEW_STATUSES = ['suggested', 'academic_review', 'scientific_review', 'approved', 'rejected'] as const;
+export type MappingReviewStatus = (typeof MAPPING_REVIEW_STATUSES)[number];
+
+export interface ScientificSource {
+  title: string;
+  publisher: string;
+  url: string;
+}
+
+export interface LessonContentMapping {
+  licensed_content_id: string;
+  chapter_id: string;
+  topic_id: string;
+  class_id: string;
+  subject_id: string;
+  curriculum: string;
+  phase: string;
+  priority: number;
+  curriculum_objective_ids: string[];
+  mapping_score: number;
+  score_breakdown: Record<string, number>;
+  scientific_sources: ScientificSource[];
+  review_status: MappingReviewStatus;
+  teaching_notes: string;
+  placement: Record<string, unknown> | null;
+}
+
+export interface LessonContentMappingValidation {
+  ok: boolean;
+  errors: string[];
+  value?: LessonContentMapping;
 }
 
 export interface ContentEntitlementLike {
@@ -215,6 +279,36 @@ export function validateImportedManifest(input: unknown): ManifestValidationResu
     };
   }
 
+  let externalLink: LicensedExternalLinkSource | undefined;
+  if (deliveryMode === 'external_link') {
+    const source = isRecord(input.external_link) ? input.external_link : {};
+    const approvedOrigins = stringList(source.approved_origins).filter((origin) => isAllowedHostedOrigin(origin, [origin]));
+    const launchUrl = stringValue(source.launch_url);
+    const linkType = stringValue(source.link_type) as LicensedLinkType;
+    const linkExpiresAt = stringValue(source.link_expires_at);
+    const lastVerifiedAt = stringValue(source.last_verified_at);
+    if (approvedOrigins.length === 0) errors.push('External links require at least one valid HTTPS approved origin.');
+    if (!LICENSED_LINK_TYPES.includes(linkType)) errors.push('External link_type is not supported.');
+    if (!launchUrl || !isAllowedHostedOrigin(launchUrl, approvedOrigins)) {
+      errors.push('External launch_url must use an approved HTTPS origin.');
+    } else {
+      const parsedLaunchUrl = new URL(launchUrl);
+      if (parsedLaunchUrl.search || parsedLaunchUrl.hash) {
+        errors.push('External launch_url cannot contain query parameters, access tokens, or fragments.');
+      }
+    }
+    if (linkType === 'temporary' && !linkExpiresAt) errors.push('Temporary external links require an expiry.');
+    if (linkExpiresAt && !parseDate(linkExpiresAt)) errors.push('External link expiry must be a valid date.');
+    if (lastVerifiedAt && !parseDate(lastVerifiedAt)) errors.push('External link verification date must be valid.');
+    externalLink = {
+      approved_origins: approvedOrigins,
+      launch_url: launchUrl,
+      link_type: linkType,
+      ...(linkExpiresAt ? { link_expires_at: new Date(linkExpiresAt).toISOString() } : {}),
+      ...(lastVerifiedAt ? { last_verified_at: new Date(lastVerifiedAt).toISOString() } : {}),
+    };
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   return {
@@ -240,6 +334,149 @@ export function validateImportedManifest(input: unknown): ManifestValidationResu
       attribution,
       ...(native ? { native } : {}),
       ...(hosted ? { hosted } : {}),
+      ...(externalLink ? { external_link: externalLink } : {}),
+    },
+  };
+}
+
+export function resolveExternalLinkLaunch(
+  content: Record<string, unknown>,
+  provider: Record<string, unknown>,
+  now = new Date(),
+): ExternalLinkLaunchResult {
+  if (content.delivery_mode !== 'external_link') return { allowed: false, code: 'not_external_link' };
+  if (provider.licensing_approved !== true || provider.external_link_approved !== true) {
+    return { allowed: false, code: 'provider_not_approved' };
+  }
+  if (!['active', 'expiring'].includes(String(provider.status))) {
+    return { allowed: false, code: 'provider_inactive' };
+  }
+  const licenseStartsAt = parseDate(provider.license_starts_at);
+  const licenseEndsAt = parseDate(provider.license_ends_at);
+  if (!licenseEndsAt) return { allowed: false, code: 'provider_not_approved' };
+  if (licenseStartsAt && licenseStartsAt.getTime() > now.getTime()) {
+    return { allowed: false, code: 'license_not_started' };
+  }
+  if (licenseEndsAt.getTime() <= now.getTime()) return { allowed: false, code: 'license_expired' };
+
+  const source = isRecord(content.external_link) ? content.external_link : {};
+  const approvedOrigins = stringList(source.approved_origins);
+  const launchUrl = stringValue(source.launch_url);
+  const linkType = stringValue(source.link_type);
+  const permittedLinkTypes = stringList(provider.permitted_link_types);
+  if (!permittedLinkTypes.includes(linkType)) return { allowed: false, code: 'link_type_not_permitted' };
+  const linkExpiresAt = parseDate(source.link_expires_at);
+  if (linkExpiresAt && linkExpiresAt.getTime() <= now.getTime()) return { allowed: false, code: 'link_expired' };
+  if (!launchUrl || !isAllowedHostedOrigin(launchUrl, approvedOrigins)) {
+    return { allowed: false, code: 'invalid_link' };
+  }
+  const parsedLaunchUrl = new URL(launchUrl);
+  if (parsedLaunchUrl.search || parsedLaunchUrl.hash) return { allowed: false, code: 'invalid_link' };
+  return { allowed: true, code: 'ready', launchUrl: parsedLaunchUrl.toString() };
+}
+
+export function resolveProviderLicenseStatus(
+  provider: Record<string, unknown>,
+  now = new Date(),
+): ProviderLicenseStatus {
+  if (provider.licensing_approved !== true) return 'expired';
+  const licenseEndsAt = parseDate(provider.license_ends_at);
+  if (!licenseEndsAt || licenseEndsAt.getTime() <= now.getTime()) return 'expired';
+  const warningWindowMs = 30 * 24 * 60 * 60 * 1000;
+  return licenseEndsAt.getTime() - now.getTime() <= warningWindowMs ? 'expiring' : 'active';
+}
+
+export function canSetMappingReviewStatus(role: unknown, status: unknown): boolean {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const normalizedStatus = String(status || '').trim() as MappingReviewStatus;
+  if (!MAPPING_REVIEW_STATUSES.includes(normalizedStatus)) return false;
+  if (['admin', 'superadmin'].includes(normalizedRole)) return true;
+  return normalizedRole === 'associate' && ['suggested', 'academic_review'].includes(normalizedStatus);
+}
+
+export function canUpdateExistingMapping(role: unknown, existingStatus: unknown): boolean {
+  if (String(existingStatus || '') !== 'approved') return true;
+  return ['admin', 'superadmin'].includes(String(role || '').trim().toLowerCase());
+}
+
+export function validateLessonContentMapping(input: unknown): LessonContentMappingValidation {
+  const source = isRecord(input) ? input : {};
+  const errors: string[] = [];
+  const licensedContentId = stringValue(source.licensed_content_id);
+  const chapterId = stringValue(source.chapter_id);
+  const topicId = stringValue(source.topic_id);
+  const classId = stringValue(source.class_id);
+  const subjectId = stringValue(source.subject_id);
+  const curriculum = stringValue(source.curriculum);
+  const phase = stringValue(source.phase) || 'learn';
+  const priority = Number(source.priority ?? 0);
+  const objectives = stringList(source.curriculum_objective_ids);
+  const mappingScore = Number(source.mapping_score ?? 0);
+  const reviewStatus = (stringValue(source.review_status) || 'suggested') as MappingReviewStatus;
+  const teachingNotes = stringValue(source.teaching_notes).slice(0, 2000);
+  const placement = isRecord(source.placement) ? source.placement : null;
+
+  if (!/^[a-f0-9]{40}$/.test(licensedContentId)) errors.push('A valid licensed_content_id is required.');
+  if (!chapterId || chapterId.length > 256) errors.push('A valid chapter_id is required.');
+  if (!topicId || topicId.length > 256) errors.push('A valid topic_id is required.');
+  if (!classId || classId.length > 128) errors.push('A valid class_id is required.');
+  if (!subjectId || subjectId.length > 128) errors.push('A valid subject_id is required.');
+  if (!curriculum || curriculum.length > 128) errors.push('A valid curriculum is required.');
+  if (!['intro', 'learn', 'summary', 'quiz', 'replay'].includes(phase)) errors.push('Lesson phase is not supported.');
+  if (!Number.isInteger(priority) || priority < 0 || priority > 100) errors.push('Priority must be an integer from 0 to 100.');
+  if (!Number.isFinite(mappingScore) || mappingScore < 0 || mappingScore > 100) errors.push('Mapping score must be from 0 to 100.');
+  if (!MAPPING_REVIEW_STATUSES.includes(reviewStatus)) errors.push('Mapping review status is not supported.');
+  if (objectives.length > 20 || objectives.some((value) => value.length > 160)) errors.push('Curriculum objective IDs are invalid.');
+
+  const scoreBreakdownSource = isRecord(source.score_breakdown) ? source.score_breakdown : {};
+  const scoreBreakdown = Object.fromEntries(Object.entries(scoreBreakdownSource).map(([key, value]) => [key, Number(value)]));
+  if (Object.keys(scoreBreakdown).length > 10 || Object.values(scoreBreakdown).some((value) => !Number.isFinite(value) || value < 0 || value > 100)) {
+    errors.push('Mapping score breakdown is invalid.');
+  }
+
+  const scientificSources = Array.isArray(source.scientific_sources)
+    ? source.scientific_sources.slice(0, 10).map((item) => {
+      const record = isRecord(item) ? item : {};
+      return {
+        title: stringValue(record.title).slice(0, 200),
+        publisher: stringValue(record.publisher).slice(0, 160),
+        url: stringValue(record.url).slice(0, 1000),
+      };
+    })
+    : [];
+  const invalidEvidence = scientificSources.some((item) => {
+    if (!item.title || !item.publisher || !item.url) return true;
+    try {
+      return new URL(item.url).protocol !== 'https:';
+    } catch {
+      return true;
+    }
+  });
+  if (invalidEvidence) errors.push('Scientific evidence sources must be complete HTTPS references.');
+  if (reviewStatus !== 'suggested' && (objectives.length === 0 || scientificSources.length === 0 || Object.keys(scoreBreakdown).length === 0)) {
+    errors.push('Reviewed mappings require curriculum objectives, scientific evidence, and a score breakdown.');
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return {
+    ok: true,
+    errors: [],
+    value: {
+      licensed_content_id: licensedContentId,
+      chapter_id: chapterId,
+      topic_id: topicId,
+      class_id: classId,
+      subject_id: subjectId,
+      curriculum,
+      phase,
+      priority,
+      curriculum_objective_ids: objectives,
+      mapping_score: mappingScore,
+      score_breakdown: scoreBreakdown,
+      scientific_sources: scientificSources,
+      review_status: reviewStatus,
+      teaching_notes: teachingNotes,
+      placement,
     },
   };
 }

@@ -29,6 +29,7 @@ import type { LaunchedLesson } from '../types/lms';
 const deliveryLabels = {
   krpano_native: 'Native XR',
   hosted_embed: 'Hosted experience',
+  external_link: 'Corinth 3D link',
 } as const;
 
 function unique(values: string[]): string[] {
@@ -96,7 +97,7 @@ export default function ImmersiveStemLibrary() {
         window.open(item.provider_preview_url, '_blank', 'noopener,noreferrer');
         return;
       }
-      if (item.delivery_mode === 'hosted_embed') {
+      if (item.delivery_mode === 'hosted_embed' || item.delivery_mode === 'external_link') {
         navigate(`/immersive-stem/${item.id}`);
         return;
       }
@@ -124,7 +125,11 @@ export default function ImmersiveStemLibrary() {
       topic_id: item.id,
       subject: item.subject,
       class_name: item.grade_bands.join(', '),
-      lesson_type: item.delivery_mode === 'krpano_native' ? 'licensed_3d' : 'licensed_embed',
+      lesson_type: item.delivery_mode === 'krpano_native'
+        ? 'licensed_3d'
+        : item.delivery_mode === 'external_link'
+          ? 'licensed_link'
+          : 'licensed_embed',
       licensed_content_id: item.id,
       title: item.title,
       launch_id: `${Date.now()}`,
@@ -187,6 +192,7 @@ export default function ImmersiveStemLibrary() {
               <option value="">All delivery types</option>
               <option value="krpano_native">Native XR</option>
               <option value="hosted_embed">Hosted experience</option>
+              <option value="external_link">Corinth 3D link</option>
             </select>
           </label>
         </section>}
@@ -254,7 +260,7 @@ export default function ImmersiveStemLibrary() {
                       className="inline-flex h-10 flex-1 items-center justify-center gap-2 bg-[#087f73] px-3 text-sm font-semibold text-white hover:bg-[#066d63] disabled:opacity-60"
                     >
                       {launchingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : item.delivery_mode === 'krpano_native' ? <Play className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
-                      {item.status !== 'published' && item.provider_preview_url ? 'Preview in Corinth' : 'Open'}
+                      {item.delivery_mode === 'external_link' ? 'Open in Corinth' : item.status !== 'published' && item.provider_preview_url ? 'Preview in Corinth' : 'Open'}
                     </button>
                     {canLaunchToClass && item.status === 'published' && (
                       <button

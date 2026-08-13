@@ -401,7 +401,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const launched = joinedSession?.launched_lesson;
     if (!launched?.licensed_content_id) return;
-    if (launched.lesson_type !== 'licensed_3d' && launched.lesson_type !== 'licensed_embed') return;
+    if (!['licensed_3d', 'licensed_embed', 'licensed_link'].includes(String(launched.lesson_type))) return;
     const launchKey = `${joinedSessionId || ''}:${launched.lesson_type}:${launched.licensed_content_id}:${launched.launch_id || ''}`;
     if (typeof window !== 'undefined' && sessionStorage.getItem('learnxr_handled_licensed_launch') === launchKey) return;
     if (typeof window !== 'undefined') {

@@ -16,6 +16,7 @@ import { requestLogging } from './middleware/logging';
 import { pathNormalization } from './middleware/pathNormalization';
 import { initializeAdmin } from './utils/services';
 import { syncAllQueues } from './services/n8nLessonBuilderQueue';
+import { enforceLicensedProviderExpiry } from './services/licensedContentExpiry';
 
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set
@@ -514,4 +515,21 @@ export const cleanupPartnerTelemetry = onSchedule(
     expired.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
   }
+);
+
+export const enforceLicensedContentExpiry = onSchedule(
+  {
+    schedule: 'every day 02:15',
+    timeZone: 'Asia/Kolkata',
+    region: 'us-central1',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+    maxInstances: 1,
+    invoker: 'private',
+  },
+  async () => {
+    initializeAdmin();
+    const result = await enforceLicensedProviderExpiry();
+    console.log('Licensed provider expiry lifecycle complete:', result);
+  },
 );

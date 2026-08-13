@@ -4,11 +4,18 @@ import * as admin from 'firebase-admin';
 import { getUserProfile, normalizeUserRole, UserProfile } from '../middleware/rbac.js';
 import {
   buildLicensedContentDocument,
+  canSetMappingReviewStatus,
+  canUpdateExistingMapping,
   isAllowedHostedOrigin,
   isEntitlementActive,
+  LICENSED_LINK_TYPES,
+  LessonContentMapping,
+  LessonContentMappingValidation,
   LicensedContentImport,
+  resolveExternalLinkLaunch,
   resolveLicensedCatalogAvailability,
   validateImportedManifest,
+  validateLessonContentMapping,
 } from '../services/licensedContentDomain.js';
 
 const router = express.Router();
@@ -121,6 +128,9 @@ function getProviderPreviewUrl(content: Record<string, unknown>): string | null 
 }
 
 function sanitizeSummary(id: string, content: Record<string, unknown>, includeStaffFields = false) {
+  const external = typeof content.external_link === 'object' && content.external_link
+    ? content.external_link as Record<string, unknown>
+    : null;
   const summary = {
     id,
     provider: content.provider,
@@ -138,6 +148,13 @@ function sanitizeSummary(id: string, content: Record<string, unknown>, includeSt
     capabilities: content.capabilities,
     attribution: content.attribution,
     status: content.status,
+    ...(external ? {
+      external_link: {
+        link_type: external.link_type,
+        link_expires_at: external.link_expires_at || null,
+        last_verified_at: external.last_verified_at || null,
+      },
+    } : {}),
   };
   const providerPreviewUrl = includeStaffFields ? getProviderPreviewUrl(content) : null;
   return {
@@ -253,7 +270,19 @@ router.get('/catalog', async (req, res) => {
         return haystack.includes(search);
       });
 
-    const items = await Promise.all(candidates.map(async ({ id, content }) => ({
+    const providerIds = [...new Set(candidates.map(({ content }) => String(content.provider || '')).filter(Boolean))];
+    const providerSnapshots = providerIds.length > 0
+      ? await db().getAll(...providerIds.map((providerId) => db().collection('licensed_content_providers').doc(providerId)))
+      : [];
+    const providers = new Map(providerSnapshots.map((providerSnapshot) => [providerSnapshot.id, providerSnapshot.data() || {}]));
+    const availableCandidates = includeDrafts
+      ? candidates
+      : candidates.filter(({ content }) => content.delivery_mode !== 'external_link' || resolveExternalLinkLaunch(
+        content,
+        providers.get(String(content.provider || '')) || {},
+      ).allowed);
+
+    const items = await Promise.all(availableCandidates.map(async ({ id, content }) => ({
       ...sanitizeSummary(id, content, isContentStaff(profile)),
       thumbnail_url: await signStoragePath(content.thumbnail_storage_path),
     })));
@@ -309,11 +338,16 @@ router.get('/lesson-links', async (req, res) => {
       .get();
     const entitlements = await getEntitlements(profile);
     const manifests = await Promise.all(links.docs.map(async (link) => {
+      if (link.data().review_status && link.data().review_status !== 'approved') return null;
       const contentId = String(link.data().licensed_content_id || '');
       const contentSnapshot = await db().collection('licensed_content').doc(contentId).get();
       if (!contentSnapshot.exists) return null;
       const content = contentSnapshot.data() as Record<string, unknown>;
       if (content.status !== 'published' || !canAccessContent(profile, entitlements, content)) return null;
+      if (content.delivery_mode === 'external_link') {
+        const provider = await db().collection('licensed_content_providers').doc(String(content.provider || '')).get();
+        if (!resolveExternalLinkLaunch(content, provider.data() || {}).allowed) return null;
+      }
       const manifest = await createLaunchManifest(contentId, content);
       return { ...manifest, placement: link.data().placement, phase: link.data().phase, priority: link.data().priority };
     }));
@@ -389,6 +423,40 @@ router.post('/:id/embed-session', async (req, res) => {
   } catch (error) {
     console.error('Licensed embed launch error:', error);
     fail(res, 500, 'Could not start the hosted content session.');
+  }
+});
+
+router.post('/:id/launch', async (req, res) => {
+  try {
+    const loaded = await loadAccessibleContent(req, res);
+    if (!loaded) return;
+    if (loaded.content.delivery_mode !== 'external_link') {
+      fail(res, 409, 'This item does not use external-link delivery.');
+      return;
+    }
+    const providerId = String(loaded.content.provider || '');
+    const providerSnapshot = await db().collection('licensed_content_providers').doc(providerId).get();
+    const launch = resolveExternalLinkLaunch(loaded.content, providerSnapshot.data() || {});
+    if (!launch.allowed || !launch.launchUrl) {
+      const expired = ['provider_inactive', 'license_expired', 'link_expired'].includes(launch.code);
+      fail(res, expired ? 410 : 503, expired
+        ? 'This licensed enrichment is no longer available. Continue with the LearnXR lesson.'
+        : 'This licensed enrichment is not configured for launch.', { code: launch.code });
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    await appendAudit('external_link_launched', loaded.profile.uid, loaded.id, {
+      provider: providerId,
+      link_type: (loaded.content.external_link as Record<string, unknown> | undefined)?.link_type || null,
+    });
+    success(res, {
+      launch_url: launch.launchUrl,
+      provider: providerId,
+      license_ends_at: providerSnapshot.data()?.license_ends_at || null,
+    });
+  } catch (error) {
+    console.error('Licensed external launch error:', error);
+    fail(res, 500, 'Could not start the licensed enrichment.');
   }
 });
 
@@ -538,7 +606,9 @@ router.post('/admin/:id/status', async (req, res) => {
       const config = provider.data() || {};
       const deliveryApproved = content.delivery_mode === 'krpano_native'
         ? config.native_hosting_approved === true
-        : config.embed_sso_approved === true;
+        : content.delivery_mode === 'external_link'
+          ? resolveExternalLinkLaunch(content, config).allowed
+          : config.embed_sso_approved === true;
       if (config.licensing_approved !== true || !deliveryApproved) {
         fail(res, 409, 'Provider licensing and delivery rights must be approved before publication.');
         return;
@@ -562,6 +632,85 @@ router.post('/admin/:id/status', async (req, res) => {
   } catch (error) {
     console.error('Licensed status error:', error);
     fail(res, 500, 'Could not update licensed content status.');
+  }
+});
+
+router.get('/admin/providers/:provider', async (req, res) => {
+  try {
+    const profile = await requireProfile(req, res);
+    if (!profile) return;
+    if (!isContentAdmin(profile)) {
+      fail(res, 403, 'Administrator access is required.');
+      return;
+    }
+    const provider = String(req.params.provider || '').trim().toLowerCase();
+    if (!SAFE_DOCUMENT_ID.test(provider)) {
+      fail(res, 400, 'Invalid provider ID.');
+      return;
+    }
+    const snapshot = await db().collection('licensed_content_providers').doc(provider).get();
+    success(res, snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null);
+  } catch (error) {
+    console.error('Licensed provider read error:', error);
+    fail(res, 500, 'Could not load the licensed provider configuration.');
+  }
+});
+
+router.put('/admin/providers/:provider', async (req, res) => {
+  try {
+    const profile = await requireProfile(req, res);
+    if (!profile) return;
+    if (!isContentAdmin(profile)) {
+      fail(res, 403, 'Administrator access is required.');
+      return;
+    }
+    const provider = String(req.params.provider || '').trim().toLowerCase();
+    const status = String(req.body?.status || 'active');
+    const licenseStartsAt = new Date(String(req.body?.license_starts_at || ''));
+    const licenseEndsAt = new Date(String(req.body?.license_ends_at || ''));
+    const permittedLinkTypes = Array.isArray(req.body?.permitted_link_types)
+      ? [...new Set<string>(req.body.permitted_link_types.map(String))]
+      : [];
+    const licensedSeatCount = Number(req.body?.licensed_seat_count);
+    const agreementReference = String(req.body?.agreement_reference || '').trim().slice(0, 256);
+    if (
+      !SAFE_DOCUMENT_ID.test(provider) ||
+      !['active', 'expiring', 'expired'].includes(status) ||
+      Number.isNaN(licenseStartsAt.getTime()) ||
+      Number.isNaN(licenseEndsAt.getTime()) ||
+      licenseEndsAt.getTime() <= licenseStartsAt.getTime() ||
+      permittedLinkTypes.length === 0 ||
+      permittedLinkTypes.some((value) => !LICENSED_LINK_TYPES.includes(value as typeof LICENSED_LINK_TYPES[number])) ||
+      !Number.isInteger(licensedSeatCount) ||
+      licensedSeatCount < 1 ||
+      licensedSeatCount > 100000
+    ) {
+      fail(res, 400, 'Provider license dates, status, permitted link types, and licensed seat count are required.');
+      return;
+    }
+    const document = {
+      integration_mode: 'external_link',
+      licensing_approved: req.body?.licensing_approved === true,
+      external_link_approved: req.body?.external_link_approved === true,
+      status,
+      license_starts_at: licenseStartsAt.toISOString(),
+      license_ends_at: licenseEndsAt.toISOString(),
+      licensed_seat_count: licensedSeatCount,
+      permitted_link_types: permittedLinkTypes,
+      agreement_reference: agreementReference,
+      updated_by: profile.uid,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    await db().collection('licensed_content_providers').doc(provider).set(document, { merge: true });
+    await appendAudit('provider_license_updated', profile.uid, null, {
+      provider,
+      status,
+      license_ends_at: document.license_ends_at,
+    });
+    success(res, { id: provider, ...document });
+  } catch (error) {
+    console.error('Licensed provider update error:', error);
+    fail(res, 500, 'Could not update the licensed provider configuration.');
   }
 });
 
@@ -612,35 +761,134 @@ router.post('/admin/lesson-links', async (req, res) => {
       fail(res, 403, 'Associate or administrator access is required.');
       return;
     }
-    const licensedContentId = String(req.body?.licensed_content_id || '').trim();
-    const chapterId = String(req.body?.chapter_id || '').trim();
-    const topicId = String(req.body?.topic_id || '').trim();
-    if (!/^[a-f0-9]{40}$/.test(licensedContentId) || !chapterId || !topicId || chapterId.length > 256 || topicId.length > 256) {
-      fail(res, 400, 'licensed_content_id, chapter_id, and topic_id are required.');
+    const validation = validateLessonContentMapping(req.body);
+    if (!validation.ok || !validation.value) {
+      fail(res, 400, 'Curriculum mapping validation failed.', validation.errors);
       return;
     }
+    const mapping = validation.value;
+    if (!canSetMappingReviewStatus(profile.role, mapping.review_status)) {
+      fail(res, 403, 'Your role cannot set the requested mapping review status.');
+      return;
+    }
+    const licensedContentId = mapping.licensed_content_id;
+    const chapterId = mapping.chapter_id;
+    const topicId = mapping.topic_id;
     const content = await db().collection('licensed_content').doc(licensedContentId).get();
     if (!content.exists) {
       fail(res, 404, 'Licensed content was not found.');
       return;
     }
     const id = createHash('sha256').update(`${chapterId}:${topicId}:${licensedContentId}`).digest('hex').slice(0, 40);
-    await db().collection('lesson_content_links').doc(id).set({
-      licensed_content_id: licensedContentId,
-      chapter_id: chapterId,
-      topic_id: topicId,
-      phase: String(req.body?.phase || 'learn'),
-      placement: req.body?.placement && typeof req.body.placement === 'object' ? req.body.placement : null,
-      priority: Number.isFinite(Number(req.body?.priority)) ? Number(req.body.priority) : 0,
-      teaching_notes: String(req.body?.teaching_notes || '').slice(0, 2000),
+    const linkReference = db().collection('lesson_content_links').doc(id);
+    const existingLink = await linkReference.get();
+    if (!canUpdateExistingMapping(profile.role, existingLink.data()?.review_status)) {
+      fail(res, 403, 'Only an administrator can change an approved curriculum mapping.');
+      return;
+    }
+    await linkReference.set({
+      ...mapping,
+      reviewed_by: profile.uid,
+      reviewed_at: admin.firestore.FieldValue.serverTimestamp(),
+      ...(mapping.review_status === 'approved' ? {
+        approved_by: profile.uid,
+        approved_at: admin.firestore.FieldValue.serverTimestamp(),
+      } : {}),
       updated_by: profile.uid,
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
-    await appendAudit('lesson_link_upserted', profile.uid, licensedContentId, { link_id: id, chapter_id: chapterId, topic_id: topicId });
-    success(res, { id });
+    await appendAudit('lesson_link_upserted', profile.uid, licensedContentId, {
+      link_id: id,
+      chapter_id: chapterId,
+      topic_id: topicId,
+      review_status: mapping.review_status,
+      mapping_score: mapping.mapping_score,
+    });
+    success(res, { id, review_status: mapping.review_status });
   } catch (error) {
     console.error('Licensed lesson link error:', error);
     fail(res, 500, 'Could not map licensed content to the lesson.');
+  }
+});
+
+router.post('/admin/lesson-links-batch', async (req, res) => {
+  try {
+    const profile = await requireProfile(req, res);
+    if (!profile) return;
+    if (!isContentStaff(profile)) {
+      fail(res, 403, 'Associate or administrator access is required.');
+      return;
+    }
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (items.length === 0 || items.length > MAX_BATCH_IMPORT_ITEMS) {
+      fail(res, 400, `items must contain between 1 and ${MAX_BATCH_IMPORT_ITEMS} mappings.`);
+      return;
+    }
+    const validations: LessonContentMappingValidation[] = items.map((item: unknown) => validateLessonContentMapping(item));
+    const invalidIndex = validations.findIndex((validation) => !validation.ok || !validation.value);
+    if (invalidIndex >= 0) {
+      fail(res, 400, `Curriculum mapping ${invalidIndex + 1} failed validation.`, validations[invalidIndex].errors);
+      return;
+    }
+    const mappings: LessonContentMapping[] = validations.map((validation) => validation.value!);
+    const unauthorized = mappings.find((mapping) => !canSetMappingReviewStatus(profile.role, mapping.review_status));
+    if (unauthorized) {
+      fail(res, 403, 'Your role cannot set one or more requested mapping review statuses.');
+      return;
+    }
+    const uniqueContentIds = [...new Set(mappings.map((mapping) => mapping.licensed_content_id))];
+    const contentSnapshots = await db().getAll(...uniqueContentIds.map((id) => db().collection('licensed_content').doc(id)));
+    const missingContent = contentSnapshots.find((snapshot) => !snapshot.exists);
+    if (missingContent) {
+      fail(res, 404, `Licensed content ${missingContent.id} was not found.`);
+      return;
+    }
+
+    const linkIds = mappings.map((mapping) => createHash('sha256')
+      .update(`${mapping.chapter_id}:${mapping.topic_id}:${mapping.licensed_content_id}`)
+      .digest('hex')
+      .slice(0, 40));
+    const existingLinks = await db().getAll(...linkIds.map((id) => db().collection('lesson_content_links').doc(id)));
+    if (existingLinks.some((snapshot) => !canUpdateExistingMapping(profile.role, snapshot.data()?.review_status))) {
+      fail(res, 403, 'Only an administrator can change an approved curriculum mapping.');
+      return;
+    }
+
+    const batch = db().batch();
+    const ids: string[] = [];
+    mappings.forEach((mapping, index) => {
+      const id = linkIds[index];
+      ids.push(id);
+      batch.set(db().collection('lesson_content_links').doc(id), {
+        ...mapping,
+        reviewed_by: profile.uid,
+        reviewed_at: admin.firestore.FieldValue.serverTimestamp(),
+        ...(mapping.review_status === 'approved' ? {
+          approved_by: profile.uid,
+          approved_at: admin.firestore.FieldValue.serverTimestamp(),
+        } : {}),
+        updated_by: profile.uid,
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      batch.set(db().collection('licensed_content_audit_log').doc(), {
+        action: 'lesson_link_upserted',
+        actor_uid: profile.uid,
+        content_id: mapping.licensed_content_id,
+        metadata: {
+          link_id: id,
+          chapter_id: mapping.chapter_id,
+          topic_id: mapping.topic_id,
+          review_status: mapping.review_status,
+          mapping_score: mapping.mapping_score,
+        },
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    success(res, { imported: mappings.length, ids });
+  } catch (error) {
+    console.error('Licensed lesson link batch error:', error);
+    fail(res, 500, 'Could not import curriculum mappings.');
   }
 });
 

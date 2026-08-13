@@ -5,12 +5,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   importLicensedManifest,
   importLicensedManifestBatch,
+  importLessonContentLinkBatch,
   listLicensedContent,
   updateLicensedContentStatus,
   upsertContentEntitlement,
   upsertLessonContentLink,
 } from '../../services/licensedContentService';
 import type { LicensedContentSummary, LicensedManifestImport } from '../../types/licensedContent';
+import { ProviderLicensePanel } from '../../Components/studio/ProviderLicensePanel';
 
 const starterManifest = JSON.stringify({
   provider: 'corinth',
@@ -23,18 +25,19 @@ const starterManifest = JSON.stringify({
   curriculum_tags: ['curriculum-topic'],
   languages: ['en'],
   content_type: 'interactive_model',
-  delivery_mode: 'krpano_native',
+  delivery_mode: 'external_link',
   collection_ids: ['pilot-biology'],
-  capabilities: ['parts', 'labels', 'layers', 'animations'],
+  capabilities: ['provider_interactive'],
   attribution: 'Licensed from Corinth',
-  native: {
-    artifact_storage_path: '_licensed_content/corinth/provider-id/revision/model.glb',
-    sha256: '0'.repeat(64),
-    interaction_manifest: {},
+  external_link: {
+    approved_origins: ['https://app.corinth3d.com'],
+    launch_url: 'https://app.corinth3d.com/content/provider-slug',
+    link_type: 'permanent',
+    last_verified_at: new Date().toISOString(),
   },
 }, null, 2);
 
-type WorkspaceTab = 'catalog' | 'import' | 'mapping' | 'entitlements';
+type WorkspaceTab = 'catalog' | 'import' | 'mapping' | 'provider' | 'entitlements';
 
 export default function LicensedContentCuration() {
   const { profile } = useAuth();
@@ -127,6 +130,7 @@ export default function LicensedContentCuration() {
           <TabButton active={tab === 'catalog'} onClick={() => setTab('catalog')} label="Catalog" />
           <TabButton active={tab === 'import'} onClick={() => setTab('import')} label="Import manifest" />
           <TabButton active={tab === 'mapping'} onClick={() => setTab('mapping')} label="Curriculum mapping" />
+          {isAdmin && <TabButton active={tab === 'provider'} onClick={() => setTab('provider')} label="Provider license" />}
           {isAdmin && <TabButton active={tab === 'entitlements'} onClick={() => setTab('entitlements')} label="Entitlements" />}
         </nav>
 
@@ -159,7 +163,7 @@ export default function LicensedContentCuration() {
                       <tr key={item.id} className="border-b border-[#e2e8e9] align-top">
                         <td className="p-4"><div className="font-semibold">{item.title}</div><div className="mt-1 text-xs text-[#69787e]">{item.subject} · {item.grade_bands.join(', ')}</div></td>
                         <td className="p-4"><div>{item.provider_content_id}</div><div className="mt-1 text-xs text-[#69787e]">{item.provider} · {item.revision}</div></td>
-                        <td className="p-4">{item.delivery_mode === 'krpano_native' ? 'Native KRPano' : 'Hosted SSO'}</td>
+                        <td className="p-4">{item.delivery_mode === 'krpano_native' ? 'Native KRPano' : item.delivery_mode === 'external_link' ? `External ${item.external_link?.link_type || 'link'}` : 'Hosted SSO'}</td>
                         <td className="p-4"><span className="bg-[#edf3f2] px-2 py-1 text-xs font-semibold uppercase text-[#2d665f]">{item.status}</span></td>
                         <td className="p-4">
                           <select
@@ -209,44 +213,100 @@ export default function LicensedContentCuration() {
             <aside className="p-5 text-sm leading-6 text-[#5d6d73]">
               <ShieldCheck className="h-7 w-7 text-[#087f73]" />
               <h2 className="mt-4 font-semibold text-[#172126]">Import gate</h2>
-              <p className="mt-2">The importer accepts metadata and private Storage paths only. Provider usernames, passwords, API keys, tokens, and remote artifact URLs are rejected.</p>
+              <p className="mt-2">The importer accepts approved Corinth content links or metadata with private Storage paths. Provider usernames, passwords, API keys, and tokenized URLs are rejected.</p>
               <p className="mt-3">A revision stays in draft until an administrator confirms provider licensing and the approved delivery mode.</p>
             </aside>
           </section>
         )}
 
-        {tab === 'mapping' && <MappingForm items={items} selectedContentId={selectedContentId} setSelectedContentId={setSelectedContentId} />}
+        {tab === 'mapping' && <MappingForm items={items} selectedContentId={selectedContentId} setSelectedContentId={setSelectedContentId} isAdmin={isAdmin} />}
+        {tab === 'provider' && isAdmin && <ProviderLicensePanel />}
         {tab === 'entitlements' && isAdmin && <EntitlementForm />}
       </div>
     </main>
   );
 }
 
-function MappingForm({ items, selectedContentId, setSelectedContentId }: { items: LicensedContentSummary[]; selectedContentId: string; setSelectedContentId: (value: string) => void }) {
+function MappingForm({ items, selectedContentId, setSelectedContentId, isAdmin }: { items: LicensedContentSummary[]; selectedContentId: string; setSelectedContentId: (value: string) => void; isAdmin: boolean }) {
   const [chapterId, setChapterId] = useState('');
   const [topicId, setTopicId] = useState('');
+  const [classId, setClassId] = useState('');
+  const [subjectId, setSubjectId] = useState('');
+  const [curriculum, setCurriculum] = useState('CBSE');
   const [phase, setPhase] = useState('learn');
+  const [objectiveIds, setObjectiveIds] = useState('');
+  const [mappingScore, setMappingScore] = useState(80);
+  const [reviewStatus, setReviewStatus] = useState<'suggested' | 'academic_review' | 'scientific_review' | 'approved' | 'rejected'>('suggested');
+  const [sourceTitle, setSourceTitle] = useState('');
+  const [sourcePublisher, setSourcePublisher] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const importBatch = async (file: File) => {
+    setBusy(true);
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!Array.isArray(parsed)) throw new Error('Mapping file must contain a JSON array.');
+      const result = await importLessonContentLinkBatch(parsed);
+      toast.success(`Validated and staged ${result.imported} curriculum mappings.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Mapping batch import failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
   const submit = async () => {
     setBusy(true);
     try {
-      await upsertLessonContentLink({ licensed_content_id: selectedContentId, chapter_id: chapterId, topic_id: topicId, phase, teaching_notes: notes });
-      toast.success('Curriculum mapping saved.');
+      const reviewed = reviewStatus !== 'suggested';
+      const result = await upsertLessonContentLink({
+        licensed_content_id: selectedContentId,
+        chapter_id: chapterId,
+        topic_id: topicId,
+        class_id: classId,
+        subject_id: subjectId,
+        curriculum,
+        phase,
+        teaching_notes: notes,
+        priority: 0,
+        curriculum_objective_ids: objectiveIds.split(',').map((value) => value.trim()).filter(Boolean),
+        mapping_score: mappingScore,
+        score_breakdown: reviewed ? { semantic: 25, grade_fit: 20, learning_objective: 25, scientific_quality: 10 } : {},
+        scientific_sources: sourceUrl ? [{ title: sourceTitle, publisher: sourcePublisher, url: sourceUrl }] : [],
+        review_status: reviewStatus,
+      });
+      toast.success(`Curriculum mapping saved as ${result.review_status.replaceAll('_', ' ')}.`);
     } catch (error) { toast.error(error instanceof Error ? error.message : 'Mapping failed.'); }
     finally { setBusy(false); }
   };
+  const reviewedFieldsReady = reviewStatus === 'suggested' || Boolean(objectiveIds && sourceTitle && sourcePublisher && sourceUrl);
   return (
     <section className="bg-white p-5 lg:p-7">
-      <div className="mb-6 flex items-center gap-2"><Link2 className="h-5 w-5 text-[#087f73]" /><h2 className="text-lg font-semibold">Map a revision to a lesson topic</h2></div>
-      <div className="grid max-w-4xl gap-4 sm:grid-cols-2">
+      <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2"><Link2 className="h-5 w-5 text-[#087f73]" /><h2 className="text-lg font-semibold">Map a revision to a lesson topic</h2></div>
+        <label className="inline-flex h-10 cursor-pointer items-center gap-2 border border-[#bac7ca] bg-white px-4 text-sm font-semibold hover:border-[#087f73]">
+          <FileJson className="h-4 w-4" /> Import mapping batch
+          <input type="file" accept="application/json,.json" disabled={busy} className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBatch(file); event.target.value = ''; }} />
+        </label>
+      </div>
+      <p className="mb-6 max-w-4xl text-sm leading-6 text-[#5d6d73]">Mappings remain outside student lessons until an administrator approves the class, curriculum objective, and scientific evidence.</p>
+      <div className="grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Licensed revision"><select value={selectedContentId} onChange={(event) => setSelectedContentId(event.target.value)} className="field"><option value="">Select content</option>{items.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.revision}</option>)}</select></Field>
         <Field label="Lesson phase"><select value={phase} onChange={(event) => setPhase(event.target.value)} className="field"><option value="intro">Intro</option><option value="learn">Learn</option><option value="summary">Summary</option><option value="quiz">Quiz</option></select></Field>
+        <Field label="Review status"><select value={reviewStatus} onChange={(event) => setReviewStatus(event.target.value as typeof reviewStatus)} className="field"><option value="suggested">Suggested</option><option value="academic_review">Academic review</option>{isAdmin && <option value="scientific_review">Scientific review</option>}{isAdmin && <option value="approved">Approved</option>}{isAdmin && <option value="rejected">Rejected</option>}</select></Field>
+        <Field label="Curriculum"><input value={curriculum} onChange={(event) => setCurriculum(event.target.value)} className="field" /></Field>
+        <Field label="Class / grade"><input value={classId} onChange={(event) => setClassId(event.target.value)} placeholder="8" className="field" /></Field>
+        <Field label="Subject"><input value={subjectId} onChange={(event) => setSubjectId(event.target.value)} placeholder="science" className="field" /></Field>
         <Field label="Chapter ID"><input value={chapterId} onChange={(event) => setChapterId(event.target.value)} className="field" /></Field>
         <Field label="Topic ID"><input value={topicId} onChange={(event) => setTopicId(event.target.value)} className="field" /></Field>
-        <Field label="Teaching notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="field min-h-28 sm:col-span-2" /></Field>
+        <Field label="Mapping score (0-100)"><input type="number" min="0" max="100" value={mappingScore} onChange={(event) => setMappingScore(Number(event.target.value))} className="field" /></Field>
+        <Field label="Curriculum objective IDs"><input value={objectiveIds} onChange={(event) => setObjectiveIds(event.target.value)} placeholder="Comma separated" className="field" /></Field>
+        <Field label="Evidence title"><input value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} className="field" /></Field>
+        <Field label="Evidence publisher"><input value={sourcePublisher} onChange={(event) => setSourcePublisher(event.target.value)} placeholder="NCERT" className="field" /></Field>
+        <Field label="Evidence URL"><input type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://..." className="field" /></Field>
+        <Field label="Teaching notes"><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="field min-h-28" /></Field>
       </div>
-      <button type="button" onClick={() => void submit()} disabled={busy || !selectedContentId || !chapterId || !topicId} className="mt-5 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save mapping</button>
+      <button type="button" onClick={() => void submit()} disabled={busy || !selectedContentId || !chapterId || !topicId || !classId || !subjectId || !curriculum || !reviewedFieldsReady} className="mt-5 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy && <Loader2 className="h-4 w-4 animate-spin" />} Save mapping</button>
     </section>
   );
 }

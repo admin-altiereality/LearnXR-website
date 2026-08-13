@@ -32,6 +32,10 @@ export function LicensedStemOverview() {
   }), [items]);
 
   const openItem = (item: LicensedContentSummary) => {
+    if (item.delivery_mode === 'external_link') {
+      navigate(`/immersive-stem/${item.id}`);
+      return;
+    }
     if (item.provider_preview_url) {
       window.open(item.provider_preview_url, '_blank', 'noopener,noreferrer');
       return;
@@ -94,8 +98,8 @@ export function LicensedStemOverview() {
                       onClick={() => openItem(item)}
                       className="mt-auto inline-flex h-9 items-center justify-center gap-2 border border-border bg-background px-3 text-xs font-semibold text-foreground hover:border-primary hover:text-primary"
                     >
-                      {item.provider_preview_url ? <ExternalLink className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
-                      {item.provider_preview_url ? 'Preview in Corinth' : item.status === 'published' ? 'Open lesson' : 'Review content'}
+                      {item.provider_preview_url || item.delivery_mode === 'external_link' ? <ExternalLink className="h-3.5 w-3.5" /> : <ArrowRight className="h-3.5 w-3.5" />}
+                      {item.delivery_mode === 'external_link' ? 'Open in Corinth' : item.provider_preview_url ? 'Preview in Corinth' : item.status === 'published' ? 'Open lesson' : 'Review content'}
                     </button>
                   </article>
                 ))}

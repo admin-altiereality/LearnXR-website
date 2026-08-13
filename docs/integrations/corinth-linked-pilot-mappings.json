@@ -1,0 +1,112 @@
+[
+  {
+    "licensed_content_id": "e01181d18721d3bab0c5c312c6a828da9a7de8fe",
+    "chapter_id": "CBSE_8_Science_ch3_topic2",
+    "topic_id": "maintaining_a_healthy_lifestyle",
+    "class_id": "8",
+    "subject_id": "Science",
+    "curriculum": "CBSE",
+    "phase": "learn",
+    "priority": 20,
+    "curriculum_objective_ids": ["NCERT-LO-8-SCI-HEALTH-PRACTICES"],
+    "mapping_score": 86,
+    "score_breakdown": { "semantic": 28, "grade_fit": 20, "learning_objective": 23, "scientific_quality": 15 },
+    "scientific_sources": [
+      {
+        "title": "Learning Outcomes at the Elementary Stage: Class VIII Science",
+        "publisher": "NCERT",
+        "url": "https://www.ncert.nic.in/pdf/publication/otherpublications/tilops101.pdf"
+      }
+    ],
+    "review_status": "academic_review",
+    "teaching_notes": "Use as an ergonomic-health application after students identify daily habits that support physical wellbeing."
+  },
+  {
+    "licensed_content_id": "fa644759bf531c6a6b93241ee79e74fa17a22d68",
+    "chapter_id": "CBSE_8_Science_ch2_topic2",
+    "topic_id": "structure_and_function_of_cells",
+    "class_id": "8",
+    "subject_id": "Science",
+    "curriculum": "CBSE",
+    "phase": "learn",
+    "priority": 10,
+    "curriculum_objective_ids": ["NCERT-LO-8-SCI-PLANT-ANIMAL-CELLS"],
+    "mapping_score": 96,
+    "score_breakdown": { "semantic": 35, "grade_fit": 20, "learning_objective": 26, "scientific_quality": 15 },
+    "scientific_sources": [
+      {
+        "title": "Learning Outcomes at the Elementary Stage: Class VIII Science",
+        "publisher": "NCERT",
+        "url": "https://www.ncert.nic.in/pdf/publication/otherpublications/tilops101.pdf"
+      }
+    ],
+    "review_status": "academic_review",
+    "teaching_notes": "Compare cell wall, cell membrane, nucleus, cytoplasm, chloroplasts, and vacuole with the lesson objective."
+  },
+  {
+    "licensed_content_id": "3183b23958761dd1773bf1b8a647b742eca4ecc5",
+    "chapter_id": "CBSE_8_Science_ch2_topic4",
+    "topic_id": "levels_of_organisation_in_living_beings",
+    "class_id": "8",
+    "subject_id": "Science",
+    "curriculum": "CBSE",
+    "phase": "learn",
+    "priority": 30,
+    "curriculum_objective_ids": ["CBSE-8-SCI-CELL-TISSUE-ORGAN-SYSTEM"],
+    "mapping_score": 84,
+    "score_breakdown": { "semantic": 28, "grade_fit": 18, "learning_objective": 23, "scientific_quality": 15 },
+    "scientific_sources": [
+      {
+        "title": "CBSE Curriculum 2026-27",
+        "publisher": "Central Board of Secondary Education",
+        "url": "https://cbseacademic.nic.in/curriculum_2027.html"
+      }
+    ],
+    "review_status": "academic_review",
+    "teaching_notes": "Use the cow anatomy model to trace the hierarchy from tissues to organs and organ systems."
+  },
+  {
+    "licensed_content_id": "3c9e7f422d0f2538d5c7031ef02ed21d2051890a",
+    "chapter_id": "CBSE_8_Science_ch2_topic4",
+    "topic_id": "levels_of_organisation_in_living_beings",
+    "class_id": "8",
+    "subject_id": "Science",
+    "curriculum": "CBSE",
+    "phase": "learn",
+    "priority": 25,
+    "curriculum_objective_ids": ["CBSE-8-SCI-CELL-TISSUE-ORGAN-SYSTEM"],
+    "mapping_score": 88,
+    "score_breakdown": { "semantic": 31, "grade_fit": 18, "learning_objective": 24, "scientific_quality": 15 },
+    "scientific_sources": [
+      {
+        "title": "CBSE Curriculum 2026-27",
+        "publisher": "Central Board of Secondary Education",
+        "url": "https://cbseacademic.nic.in/curriculum_2027.html"
+      }
+    ],
+    "review_status": "academic_review",
+    "teaching_notes": "Use the stomach section as an organ-level example; distinguish tissue layers from the complete digestive system."
+  },
+  {
+    "licensed_content_id": "e0914df1a69067a8501fd26edc2dd54dc20b0577",
+    "chapter_id": "CBSE_8_Science_ch4_topic3",
+    "topic_id": "heating_effect_of_electric_current",
+    "class_id": "8",
+    "subject_id": "Science",
+    "curriculum": "CBSE",
+    "phase": "summary",
+    "priority": 40,
+    "curriculum_objective_ids": ["CBSE-8-SCI-ELECTRIC-CURRENT-SAFETY"],
+    "mapping_score": 80,
+    "score_breakdown": { "semantic": 25, "grade_fit": 18, "learning_objective": 22, "scientific_quality": 15 },
+    "scientific_sources": [
+      {
+        "title": "CBSE Curriculum 2026-27",
+        "publisher": "Central Board of Secondary Education",
+        "url": "https://cbseacademic.nic.in/curriculum_2027.html"
+      }
+    ],
+    "review_status": "academic_review",
+    "teaching_notes": "Treat this as a safety extension. Do not imply that step voltage is caused only by the heating effect."
+  }
+]

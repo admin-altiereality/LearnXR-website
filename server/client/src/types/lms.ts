@@ -146,7 +146,7 @@ export interface Principal {
 
 /** Default / curriculum path uses Firestore topics; 360 video tours use sentinel IDs + lesson_type;
  * `user_generated` reads from `user_generated_lessons/{chapter_id}` (chapter_id === topic_id === lessonId). */
-export type LaunchedLessonType = 'curriculum' | 'vr360_video' | 'user_generated' | 'licensed_3d' | 'licensed_embed';
+export type LaunchedLessonType = 'curriculum' | 'vr360_video' | 'user_generated' | 'licensed_3d' | 'licensed_embed' | 'licensed_link';
 
 /** Payload when teacher launches a curriculum lesson to the class */
 export interface LaunchedLesson {

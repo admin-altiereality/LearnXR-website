@@ -1,5 +1,13 @@
-export type LicensedDeliveryMode = 'krpano_native' | 'hosted_embed';
+export type LicensedDeliveryMode = 'krpano_native' | 'hosted_embed' | 'external_link';
 export type LicensedContentStatus = 'draft' | 'review' | 'published' | 'suspended' | 'retired';
+export type LicensedLinkType = 'permanent' | 'student_access' | 'temporary';
+export type LicensedProviderStatus = 'active' | 'expiring' | 'expired';
+
+export interface LicensedExternalLinkMetadata {
+  link_type: LicensedLinkType;
+  link_expires_at?: string | null;
+  last_verified_at?: string | null;
+}
 
 export interface LicensedContentSummary {
   id: string;
@@ -20,6 +28,7 @@ export interface LicensedContentSummary {
   status: LicensedContentStatus;
   thumbnail_url?: string | null;
   provider_preview_url?: string | null;
+  external_link?: LicensedExternalLinkMetadata | null;
 }
 
 export interface LicensedContentManifest extends LicensedContentSummary {
@@ -31,6 +40,36 @@ export interface LicensedContentManifest extends LicensedContentSummary {
     xr_supported: boolean;
     sdk_post_message: boolean;
   } | null;
+}
+
+export interface LicensedExternalLaunch {
+  launch_url: string;
+  provider: string;
+  license_ends_at: string | null;
+}
+
+export interface LicensedProviderConfig {
+  id: string;
+  integration_mode: 'external_link';
+  licensing_approved: boolean;
+  external_link_approved: boolean;
+  status: LicensedProviderStatus;
+  license_starts_at: string;
+  license_ends_at: string;
+  licensed_seat_count: number;
+  permitted_link_types: LicensedLinkType[];
+  agreement_reference?: string;
+}
+
+export interface LicensedProviderConfigInput {
+  licensing_approved: boolean;
+  external_link_approved: boolean;
+  status: LicensedProviderStatus;
+  license_starts_at: string;
+  license_ends_at: string;
+  licensed_seat_count: number;
+  permitted_link_types: LicensedLinkType[];
+  agreement_reference?: string;
 }
 
 export interface LicensedCatalogResponse {
@@ -76,5 +115,12 @@ export interface LicensedManifestImport {
     content_url?: string;
     xr_supported?: boolean;
     sdk_post_message?: boolean;
+  };
+  external_link?: {
+    approved_origins: string[];
+    launch_url: string;
+    link_type: LicensedLinkType;
+    link_expires_at?: string;
+    last_verified_at?: string;
   };
 }
