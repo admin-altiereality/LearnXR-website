@@ -47,6 +47,11 @@ export async function importLicensedManifest(manifest: LicensedManifestImport) {
   return unwrap<{ id: string; import_key: string; status: string }>(response);
 }
 
+export async function importLicensedManifestBatch(items: LicensedManifestImport[]) {
+  const response = await api.post('/licensed-content/admin/import-batch', { items });
+  return unwrap<{ imported: number; items: Array<{ id: string; import_key: string; status: string }> }>(response);
+}
+
 export async function updateLicensedContentStatus(contentId: string, status: string) {
   const response = await api.post(`/licensed-content/admin/${encodeURIComponent(contentId)}/status`, { status });
   return unwrap<{ id: string; status: string }>(response);

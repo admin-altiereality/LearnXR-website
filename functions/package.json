@@ -8,7 +8,8 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "stage:corinth-pilot": "npm run build && node scripts/stageCorinthLinkPilot.mjs ../docs/integrations/corinth-linked-pilot.json"
   },
   "engines": {
     "node": "22"

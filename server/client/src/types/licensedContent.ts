@@ -19,6 +19,7 @@ export interface LicensedContentSummary {
   attribution: string;
   status: LicensedContentStatus;
   thumbnail_url?: string | null;
+  provider_preview_url?: string | null;
 }
 
 export interface LicensedContentManifest extends LicensedContentSummary {
@@ -72,6 +73,7 @@ export interface LicensedManifestImport {
     approved_origins: string[];
     embed_approved: boolean;
     sso_enabled: boolean;
+    content_url?: string;
     xr_supported?: boolean;
     sdk_post_message?: boolean;
   };

@@ -73,6 +73,33 @@ test('allows hosted launches only when the exact origin is approved', () => {
   assert.equal(isAllowedHostedOrigin('javascript:alert(1)', approved), false);
 });
 
+test('accepts a permanent provider content link and rejects tokenized links', () => {
+  const hostedManifest = {
+    ...validManifest,
+    delivery_mode: 'hosted_embed',
+    native: undefined,
+    hosted: {
+      approved_origins: ['https://app.corinth3d.com'],
+      embed_approved: false,
+      sso_enabled: false,
+      content_url: 'https://app.corinth3d.com/content/p-clov-rez-zaludek',
+    },
+  };
+  const accepted = validateImportedManifest(hostedManifest);
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.value?.hosted?.content_url, hostedManifest.hosted.content_url);
+
+  const rejected = validateImportedManifest({
+    ...hostedManifest,
+    hosted: {
+      ...hostedManifest.hosted,
+      content_url: `${hostedManifest.hosted.content_url}?access_token=sensitive`,
+    },
+  });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.errors.join(' '), /token|query/i);
+});
+
 test('reports why a licensed catalog has no visible items', () => {
   assert.equal(resolveLicensedCatalogAvailability({
     publishedCount: 0,

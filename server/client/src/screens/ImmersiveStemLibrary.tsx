@@ -92,6 +92,10 @@ export default function ImmersiveStemLibrary() {
   const openContent = async (item: LicensedContentSummary) => {
     setLaunchingId(item.id);
     try {
+      if (item.status !== 'published' && item.provider_preview_url) {
+        window.open(item.provider_preview_url, '_blank', 'noopener,noreferrer');
+        return;
+      }
       if (item.delivery_mode === 'hosted_embed') {
         navigate(`/immersive-stem/${item.id}`);
         return;
@@ -250,7 +254,7 @@ export default function ImmersiveStemLibrary() {
                       className="inline-flex h-10 flex-1 items-center justify-center gap-2 bg-[#087f73] px-3 text-sm font-semibold text-white hover:bg-[#066d63] disabled:opacity-60"
                     >
                       {launchingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : item.delivery_mode === 'krpano_native' ? <Play className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
-                      Open
+                      {item.status !== 'published' && item.provider_preview_url ? 'Preview in Corinth' : 'Open'}
                     </button>
                     {canLaunchToClass && item.status === 'published' && (
                       <button

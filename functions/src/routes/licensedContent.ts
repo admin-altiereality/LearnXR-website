@@ -14,6 +14,7 @@ import {
 const router = express.Router();
 const db = () => admin.firestore();
 const MAX_CATALOG_ITEMS = 250;
+const MAX_BATCH_IMPORT_ITEMS = 100;
 const SIGNED_URL_TTL_MS = 15 * 60 * 1000;
 const SAFE_DOCUMENT_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 
@@ -106,8 +107,21 @@ function contentDocumentId(manifest: LicensedContentImport): string {
     .slice(0, 40);
 }
 
-function sanitizeSummary(id: string, content: Record<string, unknown>) {
-  return {
+function getProviderPreviewUrl(content: Record<string, unknown>): string | null {
+  const hosted = typeof content.hosted === 'object' && content.hosted
+    ? content.hosted as Record<string, unknown>
+    : null;
+  const contentUrl = typeof hosted?.content_url === 'string' ? hosted.content_url : '';
+  const approvedOrigins = Array.isArray(hosted?.approved_origins)
+    ? hosted.approved_origins.filter((value): value is string => typeof value === 'string')
+    : [];
+  if (!contentUrl || !isAllowedHostedOrigin(contentUrl, approvedOrigins)) return null;
+  const parsed = new URL(contentUrl);
+  return parsed.search || parsed.hash ? null : parsed.toString();
+}
+
+function sanitizeSummary(id: string, content: Record<string, unknown>, includeStaffFields = false) {
+  const summary = {
     id,
     provider: content.provider,
     provider_content_id: content.provider_content_id,
@@ -124,7 +138,11 @@ function sanitizeSummary(id: string, content: Record<string, unknown>) {
     capabilities: content.capabilities,
     attribution: content.attribution,
     status: content.status,
-    thumbnail_storage_path: content.thumbnail_storage_path,
+  };
+  const providerPreviewUrl = includeStaffFields ? getProviderPreviewUrl(content) : null;
+  return {
+    ...summary,
+    ...(providerPreviewUrl ? { provider_preview_url: providerPreviewUrl } : {}),
   };
 }
 
@@ -236,7 +254,7 @@ router.get('/catalog', async (req, res) => {
       });
 
     const items = await Promise.all(candidates.map(async ({ id, content }) => ({
-      ...sanitizeSummary(id, content),
+      ...sanitizeSummary(id, content, isContentStaff(profile)),
       thumbnail_url: await signStoragePath(content.thumbnail_storage_path),
     })));
     const publishedCount = includeDrafts
@@ -306,11 +324,11 @@ router.get('/lesson-links', async (req, res) => {
   }
 });
 
-async function createLaunchManifest(id: string, content: Record<string, unknown>) {
+async function createLaunchManifest(id: string, content: Record<string, unknown>, includeStaffFields = false) {
   const deliveryMode = content.delivery_mode;
   const native = typeof content.native === 'object' && content.native ? content.native as Record<string, unknown> : null;
   const hosted = typeof content.hosted === 'object' && content.hosted ? content.hosted as Record<string, unknown> : null;
-  const summary = sanitizeSummary(id, content);
+  const summary = sanitizeSummary(id, content, includeStaffFields);
   if (deliveryMode === 'krpano_native' && native) {
     return {
       ...summary,
@@ -333,7 +351,7 @@ router.get('/:id/manifest', async (req, res) => {
   try {
     const loaded = await loadAccessibleContent(req, res);
     if (!loaded) return;
-    success(res, await createLaunchManifest(loaded.id, loaded.content));
+    success(res, await createLaunchManifest(loaded.id, loaded.content, isContentStaff(loaded.profile)));
   } catch (error) {
     console.error('Licensed manifest error:', error);
     fail(res, 500, 'Could not create a licensed content manifest.');
@@ -417,6 +435,77 @@ router.post('/admin/import', async (req, res) => {
   } catch (error) {
     console.error('Licensed import error:', error);
     fail(res, 500, 'Could not import the licensed content manifest.');
+  }
+});
+
+router.post('/admin/import-batch', async (req, res) => {
+  try {
+    const profile = await requireProfile(req, res);
+    if (!profile) return;
+    if (!isContentStaff(profile)) {
+      fail(res, 403, 'Associate or administrator access is required.');
+      return;
+    }
+    const manifests: unknown[] = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (manifests.length === 0 || manifests.length > MAX_BATCH_IMPORT_ITEMS) {
+      fail(res, 400, `items must contain between 1 and ${MAX_BATCH_IMPORT_ITEMS} manifests.`);
+      return;
+    }
+    const validations = manifests.map((manifest) => validateImportedManifest(manifest));
+    const validationErrors = validations.flatMap((validation, index) => validation.errors.map((error) => ({ index, error })));
+    if (validationErrors.length > 0 || validations.some((validation) => !validation.value)) {
+      fail(res, 400, 'Batch manifest validation failed.', validationErrors);
+      return;
+    }
+    const values = validations.map((validation) => validation.value as LicensedContentImport);
+    const ids = values.map(contentDocumentId);
+    if (new Set(ids).size !== ids.length) {
+      fail(res, 409, 'The batch contains duplicate provider content revisions.');
+      return;
+    }
+    const refs = ids.map((id) => db().collection('licensed_content').doc(id));
+    const existingSnapshots = await db().getAll(...refs);
+    const immutable = existingSnapshots.find((snapshot) => snapshot.exists && !['draft', 'review'].includes(String(snapshot.data()?.status)));
+    if (immutable) {
+      fail(res, 409, `Revision ${immutable.id} is immutable. Import a new provider revision.`);
+      return;
+    }
+    const batch = db().batch();
+    const now = new Date();
+    values.forEach((value, index) => {
+      const document = buildLicensedContentDocument(value, profile.uid, now);
+      const existing = existingSnapshots[index];
+      batch.set(refs[index], {
+        ...document,
+        created_at: existing.data()?.created_at || admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: false });
+      const jobRef = db().collection('licensed_content_import_jobs').doc();
+      batch.set(jobRef, {
+        provider: value.provider,
+        import_key: document.import_key,
+        content_id: ids[index],
+        status: 'validated',
+        actor_uid: profile.uid,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      const auditRef = db().collection('licensed_content_audit_log').doc();
+      batch.set(auditRef, {
+        action: existing.exists ? 'revision_reimported' : 'revision_imported',
+        actor_uid: profile.uid,
+        content_id: ids[index],
+        metadata: { import_key: document.import_key, import_job_id: jobRef.id },
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+    success(res, {
+      imported: values.length,
+      items: values.map((value, index) => ({ id: ids[index], import_key: `${value.provider}:${value.provider_content_id}:${value.revision}`, status: 'draft' })),
+    }, 201);
+  } catch (error) {
+    console.error('Licensed batch import error:', error);
+    fail(res, 500, 'Could not import the licensed content batch.');
   }
 });
 

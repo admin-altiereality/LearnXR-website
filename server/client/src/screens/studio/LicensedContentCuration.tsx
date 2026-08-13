@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   importLicensedManifest,
+  importLicensedManifestBatch,
   listLicensedContent,
   updateLicensedContentStatus,
   upsertContentEntitlement,
@@ -68,9 +69,14 @@ export default function LicensedContentCuration() {
   const submitImport = async () => {
     setBusy(true);
     try {
-      const parsed = JSON.parse(manifestJson) as LicensedManifestImport;
-      const result = await importLicensedManifest(parsed);
-      toast.success(`Validated revision ${result.import_key}.`);
+      const parsed = JSON.parse(manifestJson) as LicensedManifestImport | LicensedManifestImport[];
+      if (Array.isArray(parsed)) {
+        const result = await importLicensedManifestBatch(parsed);
+        toast.success(`Validated ${result.imported} Corinth revisions.`);
+      } else {
+        const result = await importLicensedManifest(parsed);
+        toast.success(`Validated revision ${result.import_key}.`);
+      }
       await refresh();
       setTab('catalog');
     } catch (error) {
@@ -184,6 +190,17 @@ export default function LicensedContentCuration() {
           <section className="grid bg-white lg:grid-cols-[minmax(0,1fr)_360px]">
             <div className="border-b border-[#d7e0e2] p-5 lg:border-b-0 lg:border-r">
               <label className="mb-3 flex items-center gap-2 text-sm font-semibold"><FileJson className="h-4 w-4 text-[#087f73]" /> Approved provider manifest</label>
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  file.text().then(setManifestJson).catch(() => toast.error('Could not read the manifest file.'));
+                  event.target.value = '';
+                }}
+                className="mb-3 block w-full text-xs text-[#5d6d73] file:mr-3 file:border-0 file:bg-[#e5efed] file:px-3 file:py-2 file:font-semibold file:text-[#087f73]"
+              />
               <textarea value={manifestJson} onChange={(event) => setManifestJson(event.target.value)} spellCheck={false} className="h-[560px] w-full resize-y border border-[#bdc9cc] bg-[#11191c] p-4 font-mono text-xs leading-5 text-[#dce8e6] outline-none focus:border-[#087f73]" />
               <button type="button" onClick={() => void submitImport()} disabled={busy} className="mt-4 inline-flex h-10 items-center gap-2 bg-[#087f73] px-4 text-sm font-semibold text-white disabled:opacity-55">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Validate and stage revision

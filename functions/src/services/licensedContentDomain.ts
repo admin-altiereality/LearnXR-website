@@ -15,6 +15,7 @@ export interface LicensedHostedSource {
   approved_origins: string[];
   embed_approved: boolean;
   sso_enabled: boolean;
+  content_url?: string;
   xr_supported?: boolean;
   sdk_post_message?: boolean;
 }
@@ -192,11 +193,23 @@ export function validateImportedManifest(input: unknown): ManifestValidationResu
   if (deliveryMode === 'hosted_embed') {
     const source = isRecord(input.hosted) ? input.hosted : {};
     const approvedOrigins = stringList(source.approved_origins).filter((origin) => isAllowedHostedOrigin(origin, [origin]));
+    const contentUrl = stringValue(source.content_url);
     if (approvedOrigins.length === 0) errors.push('Hosted content requires at least one valid HTTPS approved origin.');
+    if (contentUrl) {
+      if (!isAllowedHostedOrigin(contentUrl, approvedOrigins)) {
+        errors.push('Hosted content_url must use an approved HTTPS origin.');
+      } else {
+        const parsedContentUrl = new URL(contentUrl);
+        if (parsedContentUrl.search || parsedContentUrl.hash) {
+          errors.push('Hosted content_url cannot contain query parameters, access tokens, or fragments.');
+        }
+      }
+    }
     hosted = {
       approved_origins: approvedOrigins,
       embed_approved: source.embed_approved === true,
       sso_enabled: source.sso_enabled === true,
+      ...(contentUrl ? { content_url: contentUrl } : {}),
       xr_supported: source.xr_supported === true,
       sdk_post_message: source.sdk_post_message === true,
     };
