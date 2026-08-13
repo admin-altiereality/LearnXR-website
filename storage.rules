@@ -11,7 +11,7 @@ service firebase.storage {
     function isValidSize() {
       return request.resource.size < 100 * 1024 * 1024;
     }
-    
+
     // Note: Storage rules cannot access Firestore documents directly
     // Core asset protection is enforced in UI + Firestore rules
     // Storage rules allow admin/superadmin to delete, UI will prevent admin from deleting core assets
@@ -93,10 +93,10 @@ service firebase.storage {
     }
     
     // Default: Allow read for authenticated users
-    match /{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidSize(); // UI enforces role checks
-      allow delete: if isAuthenticated(); // UI enforces role checks
+    match /{topLevel}/{allPaths=**} {
+      allow read: if isAuthenticated() && topLevel != '_licensed_content';
+      allow write: if isAuthenticated() && topLevel != '_licensed_content' && isValidSize(); // UI enforces role checks
+      allow delete: if isAuthenticated() && topLevel != '_licensed_content'; // UI enforces role checks
     }
   }
-} 
+}

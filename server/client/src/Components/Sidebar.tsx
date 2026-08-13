@@ -30,7 +30,8 @@ import {
   FaChartLine,
   FaMapMarkerAlt,
   FaGlobeAmericas,
-  FaVideo
+  FaVideo,
+  FaCube
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
@@ -155,6 +156,8 @@ const Sidebar = () => {
       items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
       items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
       items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+      items.push({ path: '/immersive-stem', label: 'Immersive STEM Library', icon: FaCube });
+      items.push({ path: '/studio/licensed-content', label: 'STEM Content Curation', icon: FaEdit });
       items.push({ path: '/create/street-view', label: 'Create Lesson', icon: FaMapMarkerAlt });
       items.push({ path: '/studio/n8n-lesson-builder', label: 'n8n Lesson Builder', icon: FaFlask });
       items.push({ path: '/admin/user-lessons', label: 'Community Lessons Review', icon: FaMapMarkerAlt });
@@ -167,6 +170,7 @@ const Sidebar = () => {
       items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
       items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
       items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+      items.push({ path: '/immersive-stem', label: 'Immersive STEM Library', icon: FaCube });
       items.push({ path: '/create/street-view', label: 'Create Lesson', icon: FaMapMarkerAlt });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
       return items;
@@ -178,6 +182,7 @@ const Sidebar = () => {
       items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
       items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
       items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+      items.push({ path: '/immersive-stem', label: 'Immersive STEM Library', icon: FaCube });
       items.push({ path: '/create/street-view', label: 'Create Lesson', icon: FaMapMarkerAlt });
       items.push({ path: '/teacher/approvals', label: 'Student Approvals', icon: FaUserCheck });
       items.push({ path: '/admin/classes', label: 'Class Management', icon: FaUsers });
@@ -200,6 +205,7 @@ const Sidebar = () => {
     items.push({ path: '/lessons', label: 'Curriculum Lesson', icon: FaBookOpen });
     items.push({ path: '/lessons/360', label: 'Around the World 360', icon: FaGlobeAmericas });
     items.push({ path: '/lessons/vr360', label: 'Video XR Lesson', icon: FaVideo });
+    items.push({ path: '/immersive-stem', label: 'Immersive STEM Library', icon: FaCube });
 
     // AI Tutor (Personalized Learning) - students only; routes to /personalized-learning
     if (isStudent) {
@@ -223,6 +229,7 @@ const Sidebar = () => {
 
     // Admin tools - only for admin/superadmin
     if (isAdminOrSuperadmin) {
+      items.push({ path: '/studio/licensed-content', label: 'STEM Content Curation', icon: FaEdit });
       items.push({ path: '/admin/approvals', label: 'Approvals', icon: FaUserCheck });
       items.push({ path: '/admin/lesson-edit-requests', label: 'Lesson Edit Requests', icon: FaEdit });
       items.push({ path: '/admin/schools', label: 'School Management', icon: FaSchool });

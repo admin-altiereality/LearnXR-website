@@ -44,5 +44,8 @@
     "firebase-functions-test": "^3.4.1",
     "typescript": "^5.7.3"
   },
+  "overrides": {
+    "tar": "^7.5.21"
+  },
   "private": true
 }

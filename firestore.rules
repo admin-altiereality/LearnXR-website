@@ -712,7 +712,7 @@ service cloud.firestore {
     function classSessionLaunchKeysOnly() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'status', 'launched_lesson', 'launched_scene', 'teacher_view',
-        'teacher_controlled_phase', 'control_students_enabled', 'updated_at'
+        'teacher_controlled_phase', 'control_students_enabled', 'teacher_content_state', 'updated_at'
       ]);
     }
     match /class_sessions/{sessionId} {
@@ -938,6 +938,27 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Licensed provider data is available only through entitlement-checking Cloud Functions.
+    // Client SDK access would bypass signed URL expiry and school/partner licensing checks.
+    match /licensed_content/{contentId} {
+      allow read, write: if false;
+    }
+    match /lesson_content_links/{linkId} {
+      allow read, write: if false;
+    }
+    match /content_entitlements/{entitlementId} {
+      allow read, write: if false;
+    }
+    match /licensed_content_import_jobs/{jobId} {
+      allow read, write: if false;
+    }
+    match /licensed_content_audit_log/{auditId} {
+      allow read, write: if false;
+    }
+    match /licensed_content_providers/{providerId} {
+      allow read, write: if false;
+    }
+
     // Street View Tile API session token + stitched-panorama cache, keyed by real-world
     // panoId. Admin-SDK-only (Cloud Functions); never read or written by clients directly.
     match /_config/streetview_tile_session {
@@ -1009,4 +1030,4 @@ service cloud.firestore {
       );
     }
   }
-} 
+}

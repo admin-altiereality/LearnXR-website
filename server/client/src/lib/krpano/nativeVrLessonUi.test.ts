@@ -70,6 +70,19 @@ test('lesson hotspot data cannot escape into executable KRPano actions', () => {
   assert.doesNotMatch(xml, /onclick="[^"]*__hotspotXss/);
 });
 
+test('licensed Three.js assets expose stable controller-safe interaction IDs', () => {
+  const xml = buildKrpanoXml({
+    sphereUrl: 'https://example.com/lab.jpg',
+    threeJsAssetUrls: ['https://example.com/model.glb'],
+    assetInteractionIds: ['licensed_heart'],
+  });
+
+  assert.match(xml, /dataassetid="licensed_heart"/);
+  assert.match(xml, /__krpanoLicensedModelAction/);
+  assert.match(xml, /__krpanoLicensedModelTransform/);
+  assert.match(xml, /capture="true" handcursor="true"/);
+});
+
 test('canvas controls use non-overlapping centimeter-based KRPano hit proxies', () => {
   const configuredScale = Number(immersiveUiSource.match(/iu_scale="([^"]+)"/)?.[1]);
   assert.equal(configuredScale, 0.1);

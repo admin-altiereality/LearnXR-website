@@ -56,6 +56,7 @@ export interface LessonBundle {
   assets3d: any[];
   images: any[]; // Images from chapter_images collection
   textTo3dAssets: any[]; // Text-to-3D assets with all fields including approval_status
+  licensedContent?: any[];
   intro?: any | null;
   explanation?: any | null;
   outro?: any | null;
@@ -81,6 +82,48 @@ export interface LessonBundle {
       textTo3dAssetsCount: number;
     };
   };
+}
+
+async function attachLicensedContent(
+  bundle: LessonBundle,
+  chapterId: string,
+  topicId?: string,
+): Promise<LessonBundle> {
+  const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
+  if (!effectiveTopicId) return bundle;
+  try {
+    const { getLicensedLessonContent } = await import('../licensedContentService');
+    const linked = await getLicensedLessonContent(chapterId, effectiveTopicId);
+    if (linked.length === 0) return bundle;
+    const licensedAssets = linked
+      .filter((item) => item.delivery_mode === 'krpano_native' && item.artifact_url)
+      .map((item) => ({
+        id: `licensed_${item.id}`,
+        glb_url: item.artifact_url,
+        render_url: item.artifact_url,
+        title: item.title,
+        provider: item.provider,
+        revision: item.revision,
+        placement: item.placement || null,
+        licensed_content_id: item.id,
+        interaction_manifest: item.interaction_manifest || null,
+      }));
+    return {
+      ...bundle,
+      assets3d: [...bundle.assets3d, ...licensedAssets],
+      licensedContent: linked,
+      _meta: {
+        ...bundle._meta,
+        counts: {
+          ...bundle._meta.counts,
+          assetsAfterFilter: bundle.assets3d.length + licensedAssets.length,
+        },
+      },
+    };
+  } catch (error) {
+    console.warn('[getLessonBundle] Licensed content links unavailable:', error);
+    return bundle;
+  }
 }
 
 /**
@@ -642,7 +685,7 @@ export async function getLessonBundle(params: {
         }
       }
     }
-    return bundle;
+    return attachLicensedContent(bundle, chapterId, topicId);
   }
 
   console.log(`[getLessonBundle] Fetching bundle for chapter ${chapterId}, language ${lang}`);
@@ -1283,7 +1326,7 @@ export async function getLessonBundle(params: {
       }
     }
 
-    return bundle;
+    return attachLicensedContent(bundle, chapterId, topicId);
   } catch (error) {
     console.error(`[getLessonBundle] Error building bundle:`, error);
     throw error;

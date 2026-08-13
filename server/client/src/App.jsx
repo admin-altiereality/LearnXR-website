@@ -40,6 +40,8 @@ import Landing from './screens/Landing';
 import Lessons from './screens/Lessons';
 import Lessons360 from './screens/Lessons360';
 import LessonsVr360 from './screens/LessonsVr360';
+import ImmersiveStemLibrary from './screens/ImmersiveStemLibrary';
+import ImmersiveStemViewer from './screens/ImmersiveStemViewer';
 import Profile from './screens/Profile';
 import School from './screens/School';
 import SkyboxFullScreen from './screens/SkyboxFullScreen';
@@ -93,6 +95,7 @@ import N8nLessonBuilder from './screens/studio/N8nLessonBuilder';
 import ChapterEditor from './screens/studio/ChapterEditor';
 import ContentLibrary from './screens/studio/ContentLibrary';
 import FirestoreDebugScreen from './screens/studio/FirestoreDebugScreen';
+import LicensedContentCuration from './screens/studio/LicensedContentCuration';
 import QuestionPaperGenerator from './screens/questionPaper/QuestionPaperGenerator';
 import QuestionPaperLibrary from './screens/questionPaper/QuestionPaperLibrary';
 import QuestionPaperPreview from './screens/questionPaper/QuestionPaperPreview';
@@ -110,7 +113,8 @@ const ConditionalFooter = () => {
   const hideFooterRoutes = ['/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour', '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer', '/learnxr/lesson', '/main', '/spiral'];
   
   // Hide footer completely on immersive experiences and main (environment studio) page
-  if (hideFooterRoutes.includes(location.pathname) || 
+  if (hideFooterRoutes.includes(location.pathname) ||
+      location.pathname.startsWith('/immersive-stem/') ||
       location.pathname.startsWith('/studio/')) {
     return null;
   }
@@ -151,7 +155,7 @@ const ConditionalSidebar = () => {
   ];
   
   // Hide sidebar on auth pages, onboarding, and immersive experiences
-  if (!user || hideSidebarRoutes.some(route => location.pathname.startsWith(route))) {
+  if (!user || location.pathname.startsWith('/immersive-stem/') || hideSidebarRoutes.some(route => location.pathname.startsWith(route))) {
     return null;
   }
   
@@ -706,6 +710,22 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
+
+                      <Route path="/immersive-stem" element={
+                        <ProtectedRoute>
+                          <RoleGuard><ImmersiveStemLibrary /></RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/immersive-stem/:contentId" element={
+                        <ProtectedRoute>
+                          <RoleGuard><ImmersiveStemViewer /></RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/studio/licensed-content" element={
+                        <ProtectedRoute>
+                          <StudioGuard><LicensedContentCuration /></StudioGuard>
+                        </ProtectedRoute>
+                      } />
                       
                       {/* Profile - All authenticated users */}
                       <Route path="/profile" element={
@@ -1146,6 +1166,22 @@ function App() {
                           <RoleGuard>
                             <LessonsVr360 />
                           </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      <Route path="/immersive-stem" element={
+                        <ProtectedRoute>
+                          <RoleGuard><ImmersiveStemLibrary /></RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/immersive-stem/:contentId" element={
+                        <ProtectedRoute>
+                          <RoleGuard><ImmersiveStemViewer /></RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      <Route path="/studio/licensed-content" element={
+                        <ProtectedRoute>
+                          <StudioGuard><LicensedContentCuration /></StudioGuard>
                         </ProtectedRoute>
                       } />
                       

@@ -431,6 +431,15 @@
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ],
       "density": "SPARSE_ALL"
+    },
+    {
+      "collectionGroup": "lesson_content_links",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "chapter_id", "order": "ASCENDING" },
+        { "fieldPath": "topic_id", "order": "ASCENDING" }
+      ],
+      "density": "SPARSE_ALL"
     }
   ],
   "fieldOverrides": []

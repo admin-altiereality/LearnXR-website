@@ -51,6 +51,8 @@ export interface KrpanoXmlOptions {
   hotspots?: KrpanoHotspotOption[];
   /** Optional GLB/GLTF URLs to render as threejs 3D hotspots (requires Three.js plugin) */
   threeJsAssetUrls?: string[];
+  /** Stable content asset IDs parallel to `threeJsAssetUrls`, used for XR selection and class sync. */
+  assetInteractionIds?: string[];
   /** Optional per-asset spherical placement, parallel to `threeJsAssetUrls` (same index, same length).
    * When an entry is present, it overrides the default grid layout for that asset — used for
    * Street View Tour "floating" assets placed by the author (ath/atv in degrees, depth in cm). */
@@ -145,6 +147,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     lookatByPhase,
     hotspots = [],
     threeJsAssetUrls = [],
+    assetInteractionIds = [],
     assetPlacements = [],
     avatarModelUrl,
   } = options;
@@ -152,7 +155,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...).
   // `assetPlacements` (when provided) is kept aligned index-for-index with `threeJsAssetUrls`.
   const safe3dEntries = threeJsAssetUrls
-    .map((url, i) => ({ url, placement: assetPlacements[i] }))
+    .map((url, i) => ({ url, placement: assetPlacements[i], interactionId: assetInteractionIds[i] || `asset_${i}` }))
     .filter((e) => isGlbOrGltfUrl(e.url) || isProxyToGlb(e.url) || isBlobModelUrl(e.url));
   const safe3dUrls = safe3dEntries.map((e) => e.url);
   const has3dAssets = safe3dUrls.length > 0;
@@ -212,23 +215,25 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   // is provided (Street View Tour floating assets), position on the sphere directly;
   // otherwise fall back to the default spaced-out grid so assets don't overlap (Quest + Web).
   const threeJsHotspotBlocks = safe3dEntries
-    .map(({ url, placement }, i) => {
+    .map(({ url, placement, interactionId }, i) => {
       const safeUrl = escapeXml(url);
       const name = `asset_${i}`;
+      const safeInteractionId = escapeXml(interactionId);
       const scale = placement?.scale ?? 1;
       const roty = placement?.rotationY !== undefined ? ` ry="${placement.rotationY}"` : '';
+      const interaction = ` dataassetid="${safeInteractionId}" onclick="js(window.__krpanoLicensedModelAction &amp;&amp; window.__krpanoLicensedModelAction(get(caller.dataassetid)));" onup="js(window.__krpanoLicensedModelTransform &amp;&amp; window.__krpanoLicensedModelTransform(get(caller.dataassetid), get(caller.tx), get(caller.ty), get(caller.tz), get(caller.rx), get(caller.ry), get(caller.rz), get(caller.scale)));"`;
       if (placement && (placement.ath !== undefined || placement.atv !== undefined)) {
         const ath = placement.ath ?? 0;
         const atv = placement.atv ?? 0;
         const depth = placement.depth ?? 500;
-        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty} hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty}${interaction} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
       }
       const col = i % 3;
       const row = Math.floor(i / 3);
       const tx = 40 + (col - 1) * 90;
       const ty = -20 - row * 25;
       const tz = 180 + row * 90;
-      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty} hittest="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty}${interaction} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
     })
     .join('\n');
   // Teacher avatar: center, standing (feet near floor, head near eye level).

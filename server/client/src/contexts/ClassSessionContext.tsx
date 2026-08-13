@@ -28,12 +28,14 @@ import {
   subscribeSessionProgress,
   getSession,
   broadcastTeacherPhase as apiBroadcastTeacherPhase,
+  updateTeacherContentState as apiUpdateTeacherContentState,
 } from '../services/classSessionService';
 import type {
   ClassSession,
   LaunchedLesson,
   LaunchedScene,
   SessionStudentProgress,
+  TeacherContentState,
 } from '../types/lms';
 
 interface ClassSessionContextValue {
@@ -49,6 +51,7 @@ interface ClassSessionContextValue {
   bindActiveSession: (sessionId: string) => void;
   /** Broadcast the teacher's current lesson phase so students follow it. */
   broadcastTeacherPhase: (phase: string, controlEnabled: boolean) => Promise<boolean>;
+  updateTeacherContentState: (state: TeacherContentState) => Promise<boolean>;
 
   // Student
   joinedSessionId: string | null;
@@ -133,6 +136,14 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
       const uid = user?.uid;
       if (!sid || !uid) return false;
       return apiBroadcastTeacherPhase(sid, uid, phase, controlEnabled);
+    },
+    [activeSessionId, user?.uid]
+  );
+
+  const updateTeacherContentState = useCallback(
+    async (state: TeacherContentState): Promise<boolean> => {
+      if (!activeSessionId || !user?.uid) return false;
+      return apiUpdateTeacherContentState(activeSessionId, user.uid, state);
     },
     [activeSessionId, user?.uid]
   );
@@ -386,6 +397,20 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     navigate('/dashboard/student', { replace: true });
   }, [joinedSession?.status, leaveSessionAsStudent, navigate]);
 
+  // Licensed class launches are routed centrally so they work from every dashboard.
+  useEffect(() => {
+    const launched = joinedSession?.launched_lesson;
+    if (!launched?.licensed_content_id) return;
+    if (launched.lesson_type !== 'licensed_3d' && launched.lesson_type !== 'licensed_embed') return;
+    const launchKey = `${joinedSessionId || ''}:${launched.lesson_type}:${launched.licensed_content_id}:${launched.launch_id || ''}`;
+    if (typeof window !== 'undefined' && sessionStorage.getItem('learnxr_handled_licensed_launch') === launchKey) return;
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('learnxr_handled_licensed_launch', launchKey);
+      if (joinedSessionId) sessionStorage.setItem(STORAGE_KEY_JOINED_SESSION, joinedSessionId);
+    }
+    navigate(`/immersive-stem/${encodeURIComponent(launched.licensed_content_id)}`);
+  }, [joinedSession?.launched_lesson, joinedSessionId, navigate]);
+
   // When teacher removes this student, leave session and redirect (unless requesting join)
   useEffect(() => {
     if (!joinedSession || !user?.uid) return;
@@ -484,6 +509,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     leaveSessionAsTeacher,
     bindActiveSession,
     broadcastTeacherPhase,
+    updateTeacherContentState,
     joinedSessionId,
     joinedSession,
     joinSession,

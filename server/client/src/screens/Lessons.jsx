@@ -1347,6 +1347,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
   React.useEffect(() => {
     const launched = joinedSession?.launched_lesson;
     if (!launched || !joinedSessionId || !user?.uid) return;
+    if (launched.lesson_type === 'licensed_3d' || launched.lesson_type === 'licensed_embed') return;
 
     if (launched.lesson_type === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
       const tid =

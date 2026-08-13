@@ -904,6 +904,7 @@ const VRLessonPlayerInner = () => {
   const bindActiveSession = classSession?.bindActiveSession;
   const endSession = classSession?.endSession;
   const broadcastTeacherPhase = classSession?.broadcastTeacherPhase;
+  const updateTeacherContentState = classSession?.updateTeacherContentState;
   const progressList = classSession?.progressList ?? [];
 
   // Extract from context with safety - use stable defaults
@@ -1281,6 +1282,8 @@ const VRLessonPlayerInner = () => {
   const krpanoViewerRef = useRef<KrpanoViewer | null>(null);
   const krpanoFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
+  const licensedAssetIndexRef = useRef<Map<string, number>>(new Map());
+  const licensedModelActionRef = useRef<((assetId: string, transform?: number[]) => void) | null>(null);
   /** When true, current TTS session was started via krpano soundinterface (so pause/stop/cleanup must call destroysound) */
   const ttsPlayedViaKrpanoRef = useRef(false);
   /** Set when we embed krpano with avatar (so we use krpano for TTS when available) */
@@ -1740,6 +1743,9 @@ const VRLessonPlayerInner = () => {
     let cancelled = false;
     const immersiveUiBridge = (action: string) => immersiveUiActionRef.current(action);
     const hotspotBridge = (name: string) => hotspotClickRef.current?.(name);
+    const licensedModelBridge = (assetId: string) => licensedModelActionRef.current?.(String(assetId || ''));
+    const licensedModelTransformBridge = (assetId: string, ...transform: number[]) =>
+      licensedModelActionRef.current?.(String(assetId || ''), transform.map(Number));
     const ttsCompleteBridge = () => ttsCompleteRef.current?.();
     const immersiveUiUpdateBridge = (state: KrpanoUiStatePayload) => {
       (window as unknown as Record<string, unknown>).__krpanoUIState = {
@@ -1780,6 +1786,8 @@ const VRLessonPlayerInner = () => {
     (window as unknown as { __krpanoUIAction?: (action: string) => void }).__krpanoUIAction = immersiveUiBridge;
     (window as unknown as { __krpanoUIUpdate?: (state: KrpanoUiStatePayload) => void }).__krpanoUIUpdate = immersiveUiUpdateBridge;
     (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = hotspotBridge;
+    (window as unknown as { __krpanoLicensedModelAction?: (assetId: string) => void }).__krpanoLicensedModelAction = licensedModelBridge;
+    (window as unknown as { __krpanoLicensedModelTransform?: (assetId: string, ...transform: number[]) => void }).__krpanoLicensedModelTransform = licensedModelTransformBridge;
     (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete = ttsCompleteBridge;
     immersiveUiUpdateBridge(immersiveUiStateRef.current);
     if (krpanoFallbackTimerRef.current) {
@@ -1817,14 +1825,14 @@ const VRLessonPlayerInner = () => {
 
     // Collect GLB/GLTF URLs for threejs plugin (proxy non-Firebase for CORS), paired with any
     // author-specified placement. Include all sources so student view gets same 3D assets as teacher.
-    const rawAssetEntries: Array<{ url: string; placement?: { ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } }> = [];
-    if (assetUrl && isSafeLessonGlbUrl(assetUrl)) rawAssetEntries.push({ url: assetUrl });
+    const rawAssetEntries: Array<{ id: string; url: string; placement?: { ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } }> = [];
+    if (assetUrl && isSafeLessonGlbUrl(assetUrl)) rawAssetEntries.push({ id: 'primary_asset', url: assetUrl });
     const hasBundle3dAssets = extraLessonData?.assets3d && Array.isArray(extraLessonData.assets3d) && extraLessonData.assets3d.length > 0;
     if (hasBundle3dAssets) {
       for (const a of extraLessonData.assets3d) {
         const glb = pickBestGlbUrl(a);
         if (glb && isGlbOrGltfUrl(glb) && !rawAssetEntries.some((e) => e.url === glb)) {
-          rawAssetEntries.push({ url: glb, placement: placementByAssetId.get(a.id) || placementByUrl.get(glb) });
+          rawAssetEntries.push({ id: String(a.id || `bundle_asset_${rawAssetEntries.length}`), url: glb, placement: placementByAssetId.get(a.id) || placementByUrl.get(glb) });
         }
       }
     }
@@ -1832,7 +1840,7 @@ const VRLessonPlayerInner = () => {
       for (const a of meshyAssets) {
         const glb = pickBestGlbUrl(a);
         if (glb && isGlbOrGltfUrl(glb) && !rawAssetEntries.some((e) => e.url === glb)) {
-          rawAssetEntries.push({ url: glb, placement: placementByAssetId.get(a.id) || placementByUrl.get(glb) });
+          rawAssetEntries.push({ id: String(a.id || `meshy_asset_${rawAssetEntries.length}`), url: glb, placement: placementByAssetId.get(a.id) || placementByUrl.get(glb) });
         }
       }
     }
@@ -1847,23 +1855,25 @@ const VRLessonPlayerInner = () => {
         const renderAssetBridgeReady = hasRenderAssetUrls ? await ensureRenderAssetBridgeReady() : false;
         if (cancelled) return;
 
-        const preparedEntries: Array<{ url: string; placement?: { ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } }> = [];
+        const preparedEntries: Array<{ id: string; url: string; placement?: { ath?: number; atv?: number; depth?: number; scale?: number; rotationY?: number } }> = [];
 
         for (const entry of rawAssetEntries) {
           if (isRenderAssetUrl(entry.url)) {
             if (renderAssetBridgeReady) {
-              preparedEntries.push({ url: toRenderAssetBridgeUrl(entry.url), placement: entry.placement });
+              preparedEntries.push({ id: entry.id, url: toRenderAssetBridgeUrl(entry.url), placement: entry.placement });
             } else {
               console.warn('[VRPlayer] Skipping Firebase render asset because the render bridge is not ready:', entry.url);
             }
           } else {
-            preparedEntries.push({ url: toKrpanoThreeJsAssetUrl(entry.url), placement: entry.placement });
+            preparedEntries.push({ id: entry.id, url: toKrpanoThreeJsAssetUrl(entry.url), placement: entry.placement });
           }
         }
 
         const validEntries = preparedEntries.filter((e) => !!e.url);
         const threeJsAssetUrls = validEntries.map((e) => e.url);
         const assetPlacements = validEntries.map((e) => e.placement);
+        const assetInteractionIds = validEntries.map((e) => e.id);
+        licensedAssetIndexRef.current = new Map(assetInteractionIds.map((id, index) => [id, index]));
         console.log('[VRPlayer] Prepared krpano 3D asset URLs:', threeJsAssetUrls);
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         const avatarModelUrl = origin + '/models/avatar3.glb';
@@ -1876,6 +1886,7 @@ const VRLessonPlayerInner = () => {
           lookatByPhase,
           hotspots,
           threeJsAssetUrls: threeJsAssetUrls.length > 0 ? threeJsAssetUrls : undefined,
+          assetInteractionIds: threeJsAssetUrls.length > 0 ? assetInteractionIds : undefined,
           assetPlacements: threeJsAssetUrls.length > 0 ? assetPlacements : undefined,
           avatarModelUrl,
         });
@@ -1952,12 +1963,19 @@ const VRLessonPlayerInner = () => {
         console.warn('[KrpanoUI] Failed to clean up native VR lesson UI:', err);
       }
       krpanoViewerRef.current = null;
+      licensedAssetIndexRef.current = new Map();
       (window as unknown as { __krpanoLessonViewer?: unknown }).__krpanoLessonViewer = undefined;
       if ((window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick === hotspotBridge) {
         (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
       }
       if ((window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete === ttsCompleteBridge) {
         (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
+      }
+      if ((window as unknown as { __krpanoLicensedModelAction?: unknown }).__krpanoLicensedModelAction === licensedModelBridge) {
+        (window as unknown as { __krpanoLicensedModelAction?: unknown }).__krpanoLicensedModelAction = undefined;
+      }
+      if ((window as unknown as { __krpanoLicensedModelTransform?: unknown }).__krpanoLicensedModelTransform === licensedModelTransformBridge) {
+        (window as unknown as { __krpanoLicensedModelTransform?: unknown }).__krpanoLicensedModelTransform = undefined;
       }
       if ((window as unknown as { __krpanoUIAction?: unknown }).__krpanoUIAction === immersiveUiBridge) {
         (window as unknown as { __krpanoUIAction?: unknown }).__krpanoUIAction = undefined;
@@ -1992,6 +2010,68 @@ const VRLessonPlayerInner = () => {
   }, [lastHotspotClicked]);
 
   const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
+
+  useEffect(() => {
+    licensedModelActionRef.current = (assetId: string, transform?: number[]) => {
+      if (!assetId) return;
+      setLastHotspotClicked(assetId);
+      const licensedContent = extraLessonData?.licensedContent;
+      if (!isTeacherInSession || !licensedContent?.id || !updateTeacherContentState) return;
+      const previous = activeSession?.teacher_content_state?.licensed_content_id === licensedContent.id
+        ? activeSession.teacher_content_state
+        : null;
+      const hasTransform = Array.isArray(transform) && transform.length >= 7 && transform.every(Number.isFinite);
+      void updateTeacherContentState({
+        licensed_content_id: licensedContent.id,
+        revision: licensedContent.revision,
+        selected_part_id: assetId,
+        visible_layer_ids: previous?.visible_layer_ids || [],
+        exploded: previous?.exploded || false,
+        animation_clip: previous?.animation_clip || null,
+        animation_time: previous?.animation_time || 0,
+        animation_playing: previous?.animation_playing || false,
+        ...(hasTransform ? {
+          model_transform: {
+            position: [transform[0], transform[1], transform[2]],
+            rotation: [transform[3], transform[4], transform[5]],
+            scale: [transform[6], transform[6], transform[6]],
+          },
+        } : previous?.model_transform ? { model_transform: previous.model_transform } : {}),
+        locked: activeSession?.control_students_enabled === true,
+        sync_id: Date.now(),
+      });
+    };
+    return () => { licensedModelActionRef.current = null; };
+  }, [activeSession?.control_students_enabled, activeSession?.teacher_content_state, extraLessonData?.licensedContent, isTeacherInSession, updateTeacherContentState]);
+
+  useEffect(() => {
+    const state = joinedSession?.teacher_content_state;
+    const viewer = krpanoViewerRef.current;
+    if (!viewer?.call) return;
+    if (!joinedSession?.control_students_enabled) {
+      licensedAssetIndexRef.current.forEach((index) => viewer.call?.(`set(hotspot[asset_${index}].enabled,true);`));
+      return;
+    }
+    if (!state?.licensed_content_id || state.licensed_content_id !== extraLessonData?.licensedContent?.id) return;
+    const selectedIndex = state.selected_part_id ? licensedAssetIndexRef.current.get(state.selected_part_id) : undefined;
+    licensedAssetIndexRef.current.forEach((index) => {
+      viewer.call?.(`set(hotspot[asset_${index}].enabled,${state.locked === false ? 'true' : 'false'});`);
+      if (index !== selectedIndex) viewer.call?.(`tween(hotspot[asset_${index}].scale,1,0.2);`);
+    });
+    if (selectedIndex === undefined) return;
+    const transform = state.model_transform;
+    const position = transform?.position;
+    const rotation = transform?.rotation;
+    const scale = transform?.scale?.[0];
+    if (position?.every(Number.isFinite)) {
+      viewer.call(`set(hotspot[asset_${selectedIndex}].tx,${position[0]});set(hotspot[asset_${selectedIndex}].ty,${position[1]});set(hotspot[asset_${selectedIndex}].tz,${position[2]});`);
+    }
+    if (rotation?.every(Number.isFinite)) {
+      viewer.call(`set(hotspot[asset_${selectedIndex}].rx,${rotation[0]});set(hotspot[asset_${selectedIndex}].ry,${rotation[1]});set(hotspot[asset_${selectedIndex}].rz,${rotation[2]});`);
+    }
+    viewer.call(`tween(hotspot[asset_${selectedIndex}].scale,${Number.isFinite(scale) ? Number(scale) * 1.08 : 1.08},0.2);`);
+  }, [extraLessonData?.licensedContent?.id, joinedSession?.control_students_enabled, joinedSession?.teacher_content_state?.sync_id]);
+
   const partnerSessionMeta = useMemo(() => {
     if (typeof window === 'undefined') return null;
     try {

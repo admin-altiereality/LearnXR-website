@@ -30,6 +30,7 @@ import type {
   SessionStudentView,
   SessionLessonPhase,
   SessionQuizAnswer,
+  TeacherContentState,
 } from '../types/lms';
 
 const COLLECTION_SESSIONS = 'class_sessions';
@@ -124,6 +125,23 @@ export async function launchLesson(
     return true;
   } catch (err) {
     console.error('classSessionService.launchLesson:', err);
+    return false;
+  }
+}
+
+export async function updateTeacherContentState(
+  sessionId: string,
+  _teacherUid: string,
+  state: TeacherContentState,
+): Promise<boolean> {
+  try {
+    await updateDoc(doc(db, COLLECTION_SESSIONS, sessionId), {
+      teacher_content_state: stripUndefinedDeep(state),
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.updateTeacherContentState:', err);
     return false;
   }
 }

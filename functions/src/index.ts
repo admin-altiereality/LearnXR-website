@@ -150,6 +150,14 @@ const getApp = (): express.Application => {
       legacyHeaders: false,
     });
 
+    const licensedContentLimiter = rateLimit({
+      windowMs: 60 * 1000,
+      max: 180,
+      message: { success: false, error: 'Too many licensed content requests. Please try again shortly.' },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
     // Mount public routes FIRST (before authentication)
     const leadRoutes = require('./routes/leads').default;
     const partnerRoutes = require('./routes/partners').default;
@@ -201,6 +209,7 @@ const getApp = (): express.Application => {
     const n8nBuilderRoutes = require('./routes/n8nBuilder').default;
     const partnerAdminRoutes = require('./routes/partnerAdmin').default;
     const userLessonsRoutes = require('./routes/userLessons').default;
+    const licensedContentRoutes = require('./routes/licensedContent').default;
 
     // Mount protected routes AFTER authentication
     app.use('/', healthRoutes);
@@ -241,6 +250,7 @@ const getApp = (): express.Application => {
     app.use('/pdf', pdfRoutes);
     app.use('/api/pdf', pdfRoutes);
     app.use('/lesson-bundle', lessonBundleRoutes);
+    app.use('/licensed-content', licensedContentLimiter, licensedContentRoutes);
     app.use('/n8n', n8nRoutes);
     app.use('/n8n-builder', n8nBuilderRoutes);
 

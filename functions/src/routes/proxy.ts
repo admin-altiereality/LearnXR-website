@@ -114,7 +114,8 @@ router.get(pathProxyGlbRegex, async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    let contentType = response.headers['content-type'] || '';
+    const upstreamContentType = response.headers['content-type'];
+    let contentType = typeof upstreamContentType === 'string' ? upstreamContentType : '';
     if (!contentType) contentType = 'model/gltf-binary';
     else if (contentType === 'application/octet-stream') contentType = 'model/gltf-binary';
     res.setHeader('Content-Type', contentType);
@@ -223,7 +224,8 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
       });
     }
 
-    let contentType = response.headers['content-type'] || 'application/octet-stream';
+    const upstreamContentType = response.headers['content-type'];
+    let contentType = typeof upstreamContentType === 'string' ? upstreamContentType : 'application/octet-stream';
     // Ensure GLB/GLTF is recognized (some origins return application/octet-stream)
     if (contentType === 'application/octet-stream' && /\.glb(\?|$)/i.test(decodedUrl)) {
       contentType = 'model/gltf-binary';
@@ -254,4 +256,3 @@ router.get('/proxy-asset', async (req: Request, res: Response) => {
 });
 
 export default router;
-

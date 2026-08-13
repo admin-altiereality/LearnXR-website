@@ -146,7 +146,7 @@ export interface Principal {
 
 /** Default / curriculum path uses Firestore topics; 360 video tours use sentinel IDs + lesson_type;
  * `user_generated` reads from `user_generated_lessons/{chapter_id}` (chapter_id === topic_id === lessonId). */
-export type LaunchedLessonType = 'curriculum' | 'vr360_video' | 'user_generated';
+export type LaunchedLessonType = 'curriculum' | 'vr360_video' | 'user_generated' | 'licensed_3d' | 'licensed_embed';
 
 /** Payload when teacher launches a curriculum lesson to the class */
 export interface LaunchedLesson {
@@ -164,6 +164,30 @@ export interface LaunchedLesson {
   lesson_type?: LaunchedLessonType;
   /** Tour id from config (e.g. "1".."5") when `lesson_type === 'vr360_video'` */
   vr360_tour_id?: string;
+  /** Entitlement-checked content ID for licensed native or hosted launches. */
+  licensed_content_id?: string;
+  /** Display title for licensed or generated launches. */
+  title?: string;
+  /** Unique dispatch ID so relaunching the same licensed item is not de-duplicated. */
+  launch_id?: string;
+}
+
+export interface TeacherContentState {
+  licensed_content_id: string;
+  revision?: string;
+  selected_part_id?: string | null;
+  visible_layer_ids?: string[];
+  exploded?: boolean;
+  animation_clip?: string | null;
+  animation_time?: number;
+  animation_playing?: boolean;
+  model_transform?: {
+    position?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number];
+  };
+  locked?: boolean;
+  sync_id: number;
 }
 
 /** Payload when teacher sends current Create-page scene to the class */
@@ -211,6 +235,8 @@ export interface ClassSession {
   teacher_controlled_phase?: string | null;
   /** Whether the teacher has "Control Students" mode active (students follow teacher phase). */
   control_students_enabled?: boolean;
+  /** Synchronized state for licensed 3D content while teacher control is enabled. */
+  teacher_content_state?: TeacherContentState | null;
   /** Partner tenancy metadata for quota-governed demo sessions. */
   partner_id?: string;
   hosted_by_partner?: boolean;
