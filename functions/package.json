@@ -9,7 +9,10 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "stage:corinth-pilot": "npm run build && node scripts/stageCorinthLinkPilot.mjs ../docs/integrations/corinth-linked-pilot.json"
+    "stage:corinth-pilot": "npm run build && node scripts/stageCorinthLinkPilot.mjs ../docs/integrations/corinth-linked-pilot.json",
+    "build:corinth-catalog": "npm run build && node scripts/buildCorinthLinkedCatalog.mjs",
+    "stage:corinth-catalog": "npm run build:corinth-catalog && node scripts/stageCorinthLinkPilot.mjs ../docs/integrations/corinth-linked-catalog-100.json",
+    "release:corinth-catalog": "node scripts/releaseCorinthLinkedCatalog.mjs ../docs/integrations/corinth-linked-catalog-100.json"
   },
   "engines": {
     "node": "22"

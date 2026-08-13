@@ -1,0 +1,4070 @@
+[
+  {
+    "provider": "corinth",
+    "provider_content_id": "i-tech-spravne-sezeni-u-pc",
+    "revision": "linked-2026-08-13",
+    "title": "Correct Body Posture for Working with PC",
+    "description": "Explore ergonomic body posture and workstation setup for safer computer use.",
+    "subject": "Technology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+    ],
+    "curriculum_tags": [
+      "ergonomics",
+      "health-and-safety",
+      "computer-use"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/i-tech-spravne-sezeni-u-pc",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-plicnim-sklipkem",
+    "revision": "linked-2026-08-13",
+    "title": "Alveolar Sacs",
+    "description": "Inspect the structure of alveolar sacs and their role in respiratory gas exchange.",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "respiratory-system",
+      "gas-exchange",
+      "human-biology"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-plicnim-sklipkem",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-aleo-prestosuchus",
+    "revision": "linked-2026-08-13",
+    "title": "Prestosuchus",
+    "description": "Examine the anatomy and reconstructed appearance of the prehistoric archosaur Prestosuchus.",
+    "subject": "Paleontology",
+    "grade_bands": [
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+    ],
+    "curriculum_tags": [
+      "prehistoric-life",
+      "archosaurs",
+      "evolution"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-aleo-prestosuchus",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "e-exp-055-rost-bunka",
+    "revision": "linked-2026-08-13",
+    "title": "Plant Cell, Component of All Plants",
+    "description": "Explore plant-cell organelles and the structures that distinguish plant cells from animal cells.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+    ],
+    "curriculum_tags": [
+      "plant-cell",
+      "cell-biology",
+      "organelles"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_experience",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/e-exp-055-rost-bunka",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "e-exp-075-skin",
+    "revision": "linked-2026-08-13",
+    "title": "Touch, a Sense Hidden in Our Skin",
+    "description": "Explore skin receptors and how mechanical stimuli become the sensation of touch.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+    ],
+    "curriculum_tags": [
+      "skin",
+      "senses",
+      "nervous-system"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_experience",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/e-exp-075-skin",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "e-exp-006-iss",
+    "revision": "linked-2026-08-13",
+    "title": "Space Exploration - International Space Station",
+    "description": "Explore the International Space Station and connect its systems to space science and engineering.",
+    "subject": "Astronomy",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "space-exploration",
+      "international-space-station",
+      "engineering"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_experience",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/e-exp-006-iss",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "fieldtrips-machinists",
+    "revision": "linked-2026-08-13",
+    "title": "Machinists",
+    "description": "Visit a machining environment and examine the tools, processes, and safety practices used by machinists.",
+    "subject": "Technology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "manufacturing",
+      "machining",
+      "career-exploration"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/fieldtrips-machinists",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "i-tech-zakladni-deska",
+    "revision": "linked-2026-08-13",
+    "title": "Motherboard",
+    "description": "Inspect the main components and connection points found on a computer motherboard.",
+    "subject": "Technology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "computer-hardware",
+      "motherboard",
+      "electronics"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/i-tech-zakladni-deska",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-krava-organy",
+    "revision": "linked-2026-08-13",
+    "title": "Cow",
+    "description": "Explore the external anatomy and major internal organ systems of a cow.",
+    "subject": "Biology",
+    "grade_bands": [
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+    ],
+    "curriculum_tags": [
+      "animal-anatomy",
+      "mammals",
+      "organ-systems"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-krava-organy",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-krokove-napeti",
+    "revision": "linked-2026-08-13",
+    "title": "Step Voltage Hazard",
+    "description": "Visualize step voltage around an electrical fault and study safe movement near energized ground.",
+    "subject": "Physics",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "electricity",
+      "voltage",
+      "electrical-safety"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-krokove-napeti",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-zaludek",
+    "revision": "linked-2026-08-13",
+    "title": "Stomach - Section",
+    "description": "Inspect a section through the human stomach and identify its principal tissue layers and regions.",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "digestive-system",
+      "stomach",
+      "human-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-zaludek",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-chutovy-poharek",
+    "revision": "linked-2026-08-13",
+    "title": "Taste Bud",
+    "description": "Inspect taste-bud structure and the sensory cells involved in detecting dissolved chemicals.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10"
+    ],
+    "curriculum_tags": [
+      "taste",
+      "senses",
+      "human-biology"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-chutovy-poharek",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-zvireci-bunka",
+    "revision": "linked-2026-08-13",
+    "title": "Somatic Cell",
+    "description": "A somatic cell is a general term for any body cell, encompassing all human cells except for the cells that produce eggs and sperm, which are referred to as germ cells. Each somatic cells contains two copies of each chromosome, one inherited from each parent. These paired chromosomes are referred to as homologous pairs, with each pair representing the two copies of a single chromosome within the cell. Humans are diploid organisms, meaning each somatic cell contains 23 homologous pairs of chromosomes. This paired chromosome condition is called diploidy.",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "somatic-cell"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-zvireci-bunka",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-zaludek",
+    "revision": "linked-2026-08-13",
+    "title": "Stomach",
+    "description": "The stomach has four main regions: the cardia, fundus, body and pylorus. The cardia, or cardiac region, is where the esophagus connects to the stomach, allowing food to enter. Positioned below the diaphragm, above and to the left of the cardia, is the dome-shaped fundus. The funnel-shaped pylorus connects the stomach to the duodenum. The wider end of the funnel, the pyloric antrum, connects to the body of the stomach. The narrower part, the pyloric canal, connects to the duodenum. At this junction, the pyloric sphincter, a muscular valve, controls the release of stomach contents into the duodenum. When empty, the stomach contracts inward, and its mucosa and submucosa fold into large structures called rugae. An additional inner oblique smooth muscle in the muscularis allows the stomach to vigorously churn and mix food.",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "stomach"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-zaludek",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-vylucovaci-soustava",
+    "revision": "linked-2026-08-13",
+    "title": "Urinary System",
+    "description": "Urinary system: The urethra is the only urinary structure that differs significantly between males and females, largely because of its dual role in males for transporting both urine and semen. The urethra originates from the trigone area at the base of the bladder. Urination is controlled by an involuntary internal sphincter of smooth muscle and a voluntary external sphincter of skeletal muscle. The shorter female urethra contributes to a higher incidence of bladder infections in females. In males, the urethra also receives secretions from the prostate gland, Cowper’s gland and seminal vesicles in addition to sperm. The bladder, largely retroperitoneal, can hold approximately 500–600 mL of urine. Micturition, the process of urinary voiding, involves both involuntary and voluntary actions. Voluntary control of micturition requires a mature and intact sacral micturition center and function",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "urinary-system"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-vylucovaci-soustava",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-virus-hiv",
+    "revision": "linked-2026-08-13",
+    "title": "HIV Virus",
+    "description": "Retroviruses, such as HIV, have an RNA genome that must undergo reverse transcription into DNA before being incorporated into the host cell's genome. They are categorized in group VI of the Baltimore classification scheme. To convert RNA into DNA, retroviruses possess genes that encode the virus-specific enzyme reverse transcriptase, which transcribes an RNA template into DNA. In uninfected host cells, reverse transcription does not occur, as the necessary reverse transcriptase enzyme is produced only from viral genes expressed within infected cells. HIV’s ability to produce certain enzymes unique to the virus has enabled researchers to develop drugs that specifically target these enzymes. For example, the reverse transcriptase inhibitor AZT inhibits HIV replication by decreasing the activity of the enzyme without interfering with the host cell's metabolism. This targeted approach has le",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "hiv-virus"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-virus-hiv",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-synapticke-zakonceni",
+    "revision": "linked-2026-08-13",
+    "title": "Synapse (Connection)",
+    "description": "In healthy individuals, the neuronal signal travels quickly along the axon to the terminal buttons, where synaptic vesicles release neurotransmitters into the synapse. The synapse, a tiny gap between two neurons, is crucial for neuron-to-neuron communication. After neurotransmitters are released into the synapse, they move across this small space and bind to specific receptors on the dendrite of an adjacent neuron. These receptors, which are proteins on the cell surface, have unique shapes that correspond to particular neurotransmitters, allowing each neurotransmitter to \"fit\" into matching receptors.",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "synapse-connection"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-synapticke-zakonceni",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-svaly-dolnich-koncetin",
+    "revision": "linked-2026-08-13",
+    "title": "Muscles of the Lower Limb",
+    "description": "The muscles of the anterior compartment of the thigh primarily function to flex the thigh and extend the leg. This compartment includes the quadriceps femoris group, which plays a key role in extending and stabilizing the knee. Within this group, the sartorius, a versatile, band-like muscle, flexes the leg at the knee and also flexes, abducts and laterally rotates the leg at the hip, enabling a cross-legged sitting position. The anterior compartment muscles of the lower leg are responsible for dorsiflexion, while the posterior compartment muscles handle plantar flexion. Muscles on the lateral and medial sides of both compartments assist in inverting, everting, and rotating the foot. The foot contains intrinsic muscles that primarily support the foot’s arch and contribute to toe movement. Muscles on the dorsal side of the foot generally extend the toes, while those on the plantar side fle",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "muscles-of-the-lower-limb"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-svaly-dolnich-koncetin",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-stavba-zily",
+    "revision": "linked-2026-08-13",
+    "title": "Vein ‒ Anatomy",
+    "description": "A vein is a blood vessel that carries blood toward the heart. Unlike arteries, veins have thin walls and large, often irregularly shaped lumens. Because of their low-pressure nature, larger veins are commonly equipped with valves that ensure unidirectional blood flow toward the heart, preventing backflow toward the capillaries. This valve system helps counteract both the low pressure within veins and the effects of gravity.",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "vein-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-stavba-zily",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-stavba-nefronu",
+    "revision": "linked-2026-08-13",
+    "title": "Nephron",
+    "description": "The nephron is the functional unit of the kidney, which is responsible for actively filtering blood and producing urine. The nephron consists of two main structures: the renal corpuscle and renal tubule. Nephrons have two types: cortical nephrons, located within the renal cortex, and juxtamedullary nephrons, positioned in the renal cortex near the renal medulla. Nephrons filter and exchange water and solutes through two sets of blood vessels, interacting closely with the kidney's surrounding tissue fluid.",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "nephron"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-stavba-nefronu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-stavba-klku",
+    "revision": "linked-2026-08-13",
+    "title": "Anatomy of Villus",
+    "description": "The small intestine is the primary site where the digestion of protein, fat and carbohydrates is completed. It is a long, tube-like organ with a highly folded surface that contains finger-like projections called villi. Each villus has an apical surface covered with microscopic projections called microvilli. These structures are lined with epithelial cells on the luminal side, enabling nutrients from digested food to be absorbed into the bloodstream on the opposite side. The villi and microvilli, with their many folds, greatly increase the intestine's surface area, enhancing the efficiency of nutrient absorption. Nutrients absorbed into the blood are transported via the hepatic portal vein to the liver, where nutrient distribution to the body is regulated, and toxic substances, including drugs, alcohol and certain pathogens, are filtered and removed.",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "anatomy-of-villus"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-stavba-klku",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-srdce",
+    "revision": "linked-2026-08-13",
+    "title": "Heart",
+    "description": "The heart centrally positioned between the lungs within the mediastinum. Roughly the size of a fist, it is broad at the top and tapers toward the base. The human heart has four chambers: each side, left and right, contains one atrium and one ventricle. The upper chambers, the right atrium and left atrium, function as receiving chambers, contracting to push blood into the lower chambers, the right and left ventricles. Blood flows from the right atrium into the right ventricle, where it is then pumped into the pulmonary circuit. In the pulmonary capillaries, gas exchange occurs, with oxygen entering the blood and carbon dioxide being released. Blood rich in oxygen and low in carbon dioxide then returns to the left atrium. From the left atrium, blood moves into the left ventricle, which pumps it into the systemic circuit. After exchange in the systemic capillaries, blood returns to the righ",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "heart"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-srdce",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-slzne-ustroji",
+    "revision": "linked-2026-08-13",
+    "title": "Lacrimal Apparatus",
+    "description": "Tears are produced by the lacrimal gland, which is located beneath the lateral edges of the nose. Tears from this gland flow through the lacrimal duct to the medial corner of the eye, where they spread over the conjunctiva, washing away foreign particles.",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "lacrimal-apparatus"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-slzne-ustroji",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-slinivka",
+    "revision": "linked-2026-08-13",
+    "title": "Pancreas ‒ Section",
+    "description": "The pancreas is an elongated organ located between the stomach and the proximal portion of the small intestine. It contains both exocrine cells, which excrete digestive enzymes, and endocrine cells, which release hormones. The endocrine cells of the pancreas form clusters called pancreatic islets or the islets of Langerhans. These islets consist primarily of two cell types: alpha cells, which produce glucagon, and beta cells, which produce insulin. These hormones work to regulate blood glucose levels. As blood glucose levels fall, alpha cells release glucagon to raise the blood glucose levels by increasing the rate of glycogen breakdown and glucose release by the liver. Conversely, when blood glucose levels rise, such as after a meal, beta cells secrete insulin to lower blood glucose levels by increasing the rate of glucose uptake in most body cells and increasing glycogen synthesis in s",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "pancreas-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-slinivka",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-zubem",
+    "revision": "linked-2026-08-13",
+    "title": "Tooth ‒ Section",
+    "description": "The teeth are anchored in the alveolar processes (sockets) of the maxilla and mandible. Gingivae, commonly known as gums, are soft tissues lining the alveolar processes and surround the necks of teeth. Teeth are also held in their sockets by a connective tissue called the periodontal ligament. Each tooth has two main parts: the crown, which projects above the gum line, and the root, which is embedded within the maxilla and mandible. Both parts contain an inner pulp cavity filled with loose connective tissue through which nerves and blood vessels pass. The region of the pulp cavity that runs through the root of the tooth is known as the root canal. Surrounding the pulp cavity is dentin, a bone-like tissue. In the root of each tooth, the dentin is covered by a harder, bone-like layer called cementum. In the crown, the dentin is coated by an outer layer of enamel, the hardest substance in t",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "tooth-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-zubem",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-stehenni-kosti",
+    "revision": "linked-2026-08-13",
+    "title": "Femur (Thigh Bone) ‒ Section",
+    "description": "Gross anatomy of a bone The structure of a long bone provides the clearest view of its components. The first section, the diaphysis, is the tubular shaft that runs between the proximal and distal ends of the bone. Inside the diaphysis is a hollow area known as the medullary cavity, which is filled with yellow marrow. The walls of the diaphysis consist of dense, hard compact bone. The second, wider section at each end of the bone is called the epiphysis, which is filled with spongy bone containing red marrow in its spaces. Each epiphysis meets the diaphysis at the metaphysis, a narrow area that contains the epiphyseal plate (or growth plate), a layer of hyaline (transparent) cartilage in growing bones. Around the ages of 18–21, the cartilage is replaced by osseous tissue, and the epiphyseal plate becomes an epiphyseal line as bone growth stops. The medullary cavity is lined with a delicat",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "femur-thigh-bone-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-stehenni-kosti",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-srdcem",
+    "revision": "linked-2026-08-13",
+    "title": "Heart ‒ Section",
+    "description": "The septum (from Latin, meaning \"something that encloses\") refers to a wall or partition that divides the heart into chambers. The septa are physical extensions of the myocardium lined with endocardium. The interatrial septum separates the two atria, while the interventricular septum lies between the two ventricles. This septum is considerably thicker than the interatrial septum because the ventricles generate much greater pressure during contraction. The atrioventricular septum separates the atria from the ventricles and features four openings that allow blood to flow from the atria to the ventricles and from the ventricles into the pulmonary trunk and aorta. Each of these openings between the atria and ventricles contains a valve, which ensures one-way blood flow. The valves located at the openings to the pulmonary trunk and aorta are collectively referred to as semilunar valves.",
+    "subject": "Biology",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "human-anatomy",
+      "heart-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-srdcem",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-oko",
+    "revision": "linked-2026-08-13",
+    "title": "Eyeball ‒ Section",
+    "description": "Structure of the Eye The eye is a spherical organ divided into anterior and posterior chambers. Its wall consists of three primary layers: the fibrous tunic, vascular tunic and neural tunic. Within the neural tunic lies the retina, which contains three cell layers separated by two synaptic layers. At the center of the retina is a small indentation called the fovea.",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "eyeball-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-oko",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-clov-rez-ledvinou",
+    "revision": "linked-2026-08-13",
+    "title": "Kidney ‒ Section",
+    "description": "Structure of the Kidney Externally, the kidneys are encased by three layers. The outermost layer, called the renal fascia, is a tough connective tissue. The second layer, the perirenal fat capsule, helps anchor the kidneys in place. The innermost layer is the renal capsule. Internally, the kidney has three main regions: the outer cortex, the medulla in the middle, and the renal pelvis in the area known as the hilum. The hilum is the concave part of the kidney where blood vessels, nerves, and the ureter enter and exit. The renal cortex has a granular appearance due to the presence of nephrons, which are the functional units of the kidney. The medulla contains multiple pyramid-shaped tissue masses called renal pyramids, with an average of eight per kidney. Renal columns are spaces between these pyramids, allowing blood vessels to pass through. The tips of the pyramids, known as renal papil",
+    "subject": "Biology",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "human-biology",
+      "cell-and-human-physiology",
+      "kidney-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-clov-rez-ledvinou",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-zelva-vodni-anatomie",
+    "revision": "linked-2026-08-13",
+    "title": "Red-Eared Slider ‒ Anatomy",
+    "description": "Turtles have a closed, double circulatory system with a three-chambered heart composed of two atria and one ventricle. Unlike most reptiles, where the sinus venosus functions as a separate chamber, in turtles (Testudines) it exists as a patch of cells that functions similarly to a pacemaker. Deoxygenated blood enters the ventricle from the right atrium and is pumped to the lungs, where it becomes oxygenated and then returns to the heart, a process known as pulmonary circulation. Once back in the heart, the oxygenated blood is pumped to the rest of the body in what is called systemic circulation. Due to their rigid bony shells, turtles cannot expand their chests to inhale. Instead, they rely on the contraction of flank muscles near their limbs to enlarge their body cavity, enabling inhalation. Exhalation occurs when other muscles contract, pushing the viscera upward and compressing the lu",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-anatomy",
+      "red-eared-slider-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-zelva-vodni-anatomie",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-zelva-sloni",
+    "revision": "linked-2026-08-13",
+    "title": "Aldabra Giant Tortoise",
+    "description": "Distribution: Islands of the Aldabra Size: Male ‒ 122 cm, Female ‒ 98 cm Life Span: Up to 150 years Diet: Herbivorous Social life: Solitary or in herds IUCN red list status: Vulnerable The Aldabra giant tortoise is one of the largest terrestrial tortoises in the world. Endemic to the Aldabra Atoll and the Seychelles in the Indian Ocean, populations have also been introduced to Mauritius and Réunion. These tortoises have created a unique habitat known as \"tortoise turf,\" a blend of various grasses and herbs that also serves as a natural habitat for several smaller species. Aldabra giant tortoises engage in a range of activities, including mating attempts, stretching, walking, feeding, sleeping and defecating. Currently, the Aldabra giant tortoise is one of only three giant tortoise species from the region that have survived past exploitation and habitat loss. It is the only species to rem",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "aldabra-giant-tortoise"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-zelva-sloni",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-nezmar-wall",
+    "revision": "linked-2026-08-13",
+    "title": "Hydra – Wall Anatomy",
+    "description": "The body wall of a hydra is composed of two main layers separated by a non-cellular, membranous mesoglea. The outer layer, known as the ectoderm, covers the body, while the inner layer, called the endoderm or gastrodermis, lines the body cavity. Both the ectoderm and endoderm are single layers of cells. The ectoderm consists of epithelial-muscle cells with projections firmly attached to the mesoglea, creating a structure known as epithelial muscles. These cells secrete mucus that covers the hydra's body, providing protection and lubrication. Among these cells are sensory cells, each equipped with a sensitive flagellum and linked to neural cells, which together form a sensory network. The sensory and neural cells are connected to specialized stinging cells. Each stinging cell is covered by a lid and contains a highly sensitive sensor. When this sensor is triggered, the lid opens, and the ",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-anatomy",
+      "hydra-wall-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-nezmar-wall",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-nezmar-e-anatomie",
+    "revision": "linked-2026-08-13",
+    "title": "Hydra – External Anatomy",
+    "description": "Hydras are animals with radially symmetrical bodies that can grow up to 10 mm in length. They attach to substrates using a basal disc, or \"foot,\" which secretes a sticky fluid for adhesion. At the opposite end of their body is an opening that functions as both mouth and anus, located in the center of their tentacles. These tentacles, which are highly elastic, can number up to twelve. When food is abundant, hydras reproduce asexually through a process called strobilation. In this process, a miniature version of the adult hydra grows from the body wall. Once it reaches a certain size, it detaches and becomes an independent organism. This entire strobilation process can occur in as little as two days when food is plentiful. In adverse conditions, such as the approach of winter, hydras are capable of sexual reproduction. The body wall swells, and either testes or ovaries develop within it. I",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-life-cycles",
+      "hydra-external-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-nezmar-e-anatomie",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-velryba",
+    "revision": "linked-2026-08-13",
+    "title": "Humpback Whale",
+    "description": "The humpback whale is a species of baleen whale, meaning its teeth are replaced by baleen plates. These plates allow Humpbacks to filter-feed on plankton and microscopic crustaceans by drawing large volumes of water into their mouths and sieving it through the baleen. Humpback whales are found throughout the world's oceans, undertaking the longest known migration of any mammal as they move seasonally between polar feeding grounds in the summer and tropical breeding grounds in the winter. Females with calves may form temporary groups, while males are typically solitary. During the mating season, males follow receptive females and guard them from rival males. Humpbacks, especially solitary males, communicate over vast distances using complex vocalizations known as whale songs. Humpbacks are known for their acrobatic displays, often leaping out of the water, sometimes entirely. When close t",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "humpback-whale"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-velryba",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-simpanz",
+    "revision": "linked-2026-08-13",
+    "title": "Chimpanzee",
+    "description": "The common chimpanzee is a species of ape found in equatorial Africa. Its preferred habitats include a range of forested areas, from evergreen rainforests and deciduous forests to dry savanna woodlands. Chimpanzees are omnivorous, feeding on fruits, leaves, tree bark, and insects, and they actively hunt for meat, primarily smaller vertebrates and other primate species. Highly intelligent and social, chimpanzees are considered the closest living relatives of humans. They form communities of both males and females, ranging from 5 to 150 individuals. Males remain in their natal community, establish a strictly linear hierarchy, and generally dominate the females in the group. During the females' estrus, marked by noticeable swellings of the external genitalia and buttocks, males may monopolize these females, isolating and protecting them from other males to ensure mating opportunities. Young",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "chimpanzee"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-simpanz",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-ptakopysk",
+    "revision": "linked-2026-08-13",
+    "title": "Platypus",
+    "description": "The platypus is one of the most unusual mammal species alive. Along with echidnas, it belongs to the most primitive mammalian group, known as Monotremes (Monotremata). All monotremes share a unique anatomical feature with birds: a single opening for both the digestive and reproductive tracts, unlike other mammals, which have separate openings for these systems. Native to Australia, the platypus inhabits streams and rivers, where it hunts small aquatic animals using highly sensitive sensors located on its bill. While this structure resembles a bird's beak, it is actually a modified mammalian jaw. Male platypuses are among the few venomous mammals, possessing venomous spurs on the back of their hind feet. While the venom is not life-threatening to humans, it can cause significant pain. Platypus reproduction is particularly fascinating. Unlike most mammals, the platypus does not give birth ",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-life-cycles",
+      "platypus"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-ptakopysk",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-nosorozec",
+    "revision": "linked-2026-08-13",
+    "title": "White Rhinoceros",
+    "description": "White rhinoceroses are the largest of the five rhinoceros species, with males commonly reaching weights of up to 2.3 tons and females up to 1.7 tons. They inhabit the bushy grasslands of South Africa, where they graze on plants and grasses. An adaptation to their grazing lifestyle is their wide upper lip, a feature that distinguishes them from other rhinoceros species, particularly the black rhinoceros, which also has two horns. Unlike horns made of bone, rhinoceros horns are composed entirely of keratin, and in white rhinoceroses, the longer front horn can reach up to 1 meter in length. The primary threat to rhinoceros populations is illegal poaching for their horns, which are used in traditional Chinese medicine and for ornamental purposes. The name \"white rhinoceros\" is not related to its color; rather, it likely originates from a mistranslation of the word \"wide,\" referring to the sh",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "white-rhinoceros"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-nosorozec",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-medved-cerny",
+    "revision": "linked-2026-08-13",
+    "title": "Black Bear",
+    "description": "The American black bear (Ursus americanus) is the smallest and most widely distributed bear species native to North America. Typically residing in forests, black bears are adept tree climbers. Despite their name, their coat color can vary widely and includes shades of blue-gray, blue-black, brown, cinnamon and, very rarely, white. Black bears are solitary animals that roam large territories, although they do not defend these areas from other bears. Males may travel within a home range spanning 15 to 80 square miles. Female black bears give birth to two or three blind, vulnerable cubs in mid-winter and nurse them in the den until spring, when the family emerges to search for food. The cubs stay with their highly protective mother for about two years.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "black-bear"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-medved-cerny",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-kun-domaci",
+    "revision": "linked-2026-08-13",
+    "title": "Horse",
+    "description": "Distribution: Cosmopolitan Size: 76‒175 cm Weight: 54‒998 kg Life Span: 25‒30 years. Diet: Herbivorous Social life: Herds IUCN red list status: No Status The horse is a hoofed, herbivorous mammal with numerous breeds, each uniquely adapted to specific roles and environments. Horses have an ancient relationship with humans, with the first domesticated horses likely originating among Asian nomadic groups around 4000 years ago. Since then, they have played crucial roles in various human societies. Horses are herbivores with a digestive system well-suited to a forage-based diet of grasses and other plant materials, which they consume steadily throughout the day. While most horses are domesticated, some still exist in the wild, forming groups that can be found in various regions worldwide. Wild horses typically gather in groups of 3 to 20 animals, led by a stallion (a mature male) and consist",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "horse"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-kun-domaci",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-krava",
+    "revision": "linked-2026-08-13",
+    "title": "Cow ‒ External Anatomy",
+    "description": "Cows are ruminant mammals and are the primary source of milk consumed by humans. Contrary to popular belief, they have a single stomach with four specialized compartments that enable them to digest plant matter that would otherwise be indigestible. Each day, cows produce over 50 liters of saliva and consume between 100 and 200 liters of water, both of which aid in digestion. Cows first swallow their food with minimal chewing and later regurgitate it as cud, which they chew thoroughly before swallowing again. They spend approximately eight hours each day feeding. Cows have limited color vision and are unable to distinguish some colors well; in bullfighting, it is the movement of the red flag, rather than its color, that agitates the bull. Cows have a gestation period of about nine months, similar to humans. They also possess an excellent sense of smell, capable of detecting scents from mi",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-anatomy",
+      "cow-external-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-krava",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-buvol",
+    "revision": "linked-2026-08-13",
+    "title": "African Buffalo",
+    "description": "The African buffalo is a widely distributed species in sub-Saharan Africa, inhabiting a variety of ecosystems ranging from moist lowland rainforests to montane grasslands and forests at elevations over 4000 meters above sea level. In savanna regions, buffalo populations form large herds consisting of hundreds of individuals, while those in forested areas form smaller groups made up of several related females with their offspring and one or more males. Adult males not belonging to these groups are either solitary or associate in bachelor groups. Female buffaloes typically give birth to a single calf after an 11-month gestation period, though twins are occasionally born. Newborn calves can follow the herd within a few hours of birth. Although African buffalo populations remain relatively high, several threats endanger them, including illegal hunting, habitat loss, and contagious diseases t",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "african-buffalo"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-buvol",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-anat-kun-domaci",
+    "revision": "linked-2026-08-13",
+    "title": "Horse ‒ Anatomy",
+    "description": "The horse's overall form is adapted for speed, with limbs attached to muscle groups in a way that maximizes energy efficiency. Its compact body is supported on the tips of its toes, which allows greater extension of the limbs during running. The hoof protects the horse's foot, providing durability and support for covering long distances. As a grazing herbivore, the horse has adaptations for plant consumption, including strong, high-crowned teeth suitable for grinding grasses and other tough vegetation. Its digestive system extends about 30 meters, with the majority being intestines. Despite its large body, the horse has a relatively small stomach, limiting the amount of food it can consume at one time. Horses demonstrate four distinct gaits: the walk, trot, canter and gallop.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-anatomy",
+      "horse-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-anat-kun-domaci",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-sumka",
+    "revision": "linked-2026-08-13",
+    "title": "Ascidian",
+    "description": "Ascidians (Ascidia) begin their lives as larvae, just a few millimeters long, living freely in the ocean and resembling tadpoles. After completing their larval stage, they undergo metamorphosis to become adults. This metamorphosis process is complex, taking several days to complete. The body of an adult, which lives a sedentary lifestyle, is covered by a tough outer layer called a tunic. The branchial orifice leads to a pharynx that occupies over half of the body’s volume and is perforated by thousands of tiny slits. These slits trap microscopic food particles, which are coated in mucus and moved by cilia toward the mouth. The digestive system then extends through the esophagus, stomach and intestines. Ascidians have a heart and veins, with each blood circulation cycle taking several minutes. Each individual has both male and female reproductive organs. However, self-fertilization does n",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-life-cycles",
+      "ascidian"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-sumka",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-pstruh-vyvoj",
+    "revision": "linked-2026-08-13",
+    "title": "Rainbow Trout ‒ Life cycle",
+    "description": "The life cycle of trout, like that of other fish, includes several fascinating stages. It begins in the upper parts of rivers, where males and females gather for breeding and eggs are fertilized. Mating can occur communally, with a single male often mating with multiple females in favorable areas. In temperate regions, the breeding season spans autumn and winter, during which males prepare their mating grounds by swiftly flicking their fins. After laying and quick fertilization, the parents provide no further care for the eggs. Interestingly, embryonic development continues even after hatching. Newly hatched trout, known as alevins, feed from a large yolk sac attached to their bellies. As the yolk sac is gradually digested and diminishes, the young trout begin to feed on food from their environment and are then referred to as fry. In both European and North American trout species, adults",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-life-cycles",
+      "rainbow-trout-life-cycle"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-pstruh-vyvoj",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-platys-velky",
+    "revision": "linked-2026-08-13",
+    "title": "Plaice",
+    "description": "Distribution: From the western Mediterranean and along all European coasts to the White and Barents Seas Size Length: up to 100 cm Weight: up to 7 Kg Age of maturity: 2‒5 years Diet: Carnivorous IUCN red list status: Least Concern The plaice is one of the most important commercial flatfish in Europe. As a typical flatfish it has an oval body, the upper side is brown with numerous orange/red spots and they are able to change their color to match the surroundings. The lower side is mainly white. After hatching, larvae spend about 6 weeks at the surface of the water before the transformation into adults. One of the most remarkable changes happens when the left eye moves around the head to the right side, which enables the fish to lie flat on the bottom, often partly buried. His diet is based on bottom-living animals like thin-shelled mollusks and polychaetes. The species is currently recove",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-life-cycles",
+      "plaice"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-platys-velky",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-zver-okoun-ricni-anatomie",
+    "revision": "linked-2026-08-13",
+    "title": "Perch ‒ Anatomy",
+    "description": "The body of a fish is divided into three main regions: the head, trunk, and tail. On the head, there is a mouth equipped with sharp teeth for capturing prey, as well as a pair of nostrils and eyes. The trunk features two sets of paired fins (the pectoral fins and the pelvic fins) as well as four unpaired fins: the cranial and caudal dorsal fins, the anal fin, and the caudal fin. The perch's skeleton is composed of both bone and cartilage. Its respiratory system includes four gills for breathing. The digestive system comprises a large liver, a stomach, a small intestine that empties into a large intestine, and an anus for expelling waste. The spleen is also present, functioning to filter blood, produce white blood cells, and contribute to the immune system. Perch have a two-chambered heart with an atrium and a ventricle. The primary reproductive organs differ by sex: males have a pair of ",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "animal-biology",
+      "animal-anatomy",
+      "perch-anatomy"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-zver-okoun-ricni-anatomie",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-smrk-ztepily-siska",
+    "revision": "linked-2026-08-13",
+    "title": "Norway Spruce (Picea Abies) ‒ Cone",
+    "description": "The Norway spruce is one of only two spruce species native to Europe. It is an economically important conifer and is frequently cultivated in monocultures. With a shallow root system, it is prone to uprooting. The tree's needles are dark green and can grow up to 2 cm (0.8 inches) in length. Mature cones hang downward and remain intact rather than breaking apart. Norway spruce wood is valued for crafting the top plates of guitars and other string instruments, such as violins and double basses. It is also an important resource in paper production.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "norway-spruce-picea-abies-cone"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-smrk-ztepily-siska",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-smrk-siska-male",
+    "revision": "linked-2026-08-13",
+    "title": "Spruce ‒ Male Cone",
+    "description": "The Norway spruce is one of only two spruce species native to Europe. It is an economically important conifer and is frequently cultivated in monocultures. With a shallow root system, it is prone to uprooting. The tree's needles are dark green and can grow up to 2 cm (0.8 inches) in length. Mature cones hang downward and remain intact rather than breaking apart. Norway spruce wood is valued for crafting the top plates of guitars and other string instruments, such as violins and double basses. It is also an important resource in paper production.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "spruce-male-cone"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-smrk-siska-male",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-borovice-samici-siska",
+    "revision": "linked-2026-08-13",
+    "title": "Scots Pine ‒ Female Cone",
+    "description": "Scots pine, a conifer native to Eurasia, thrives in nutrient-poor soils and can grow up to 40 meters tall, with a lifespan of up to 300 years. Its needles grow in pairs, known as fascicles, and its pollen grains are equipped with two air sacs to aid wind dispersal. After three years, the mature cones open to release seeds. Scots pine timber, valued for its moisture resistance, is commonly used in construction. The essential oil derived from this pine also has antiseptic properties. The Eurasian nuthatch bird uses the tree's bark scales as bedding material for its nest.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "scots-pine-female-cone"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-borovice-samici-siska",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-borovice-rez",
+    "revision": "linked-2026-08-13",
+    "title": "Scots Pine ‒ Cut Through the Trunk",
+    "description": "Scots pine, a conifer native to Eurasia, thrives in nutrient-poor soils and can grow up to 40 meters tall, with a lifespan of up to 300 years. Its needles grow in pairs, known as fascicles, and its pollen grains are equipped with two air sacs to aid wind dispersal. After three years, the mature cones open to release seeds. Scots pine timber, valued for its moisture resistance, is commonly used in construction. The essential oil derived from this pine also has antiseptic properties. The Eurasian nuthatch bird uses the tree's bark scales as bedding material for its nest.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "scots-pine-cut-through-the-trunk"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-borovice-rez",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-polnik-ztenceny",
+    "revision": "linked-2026-08-13",
+    "title": "Haircap Moss (Polytrichum Formosum)",
+    "description": "Haircap moss forms large clumps that help retain water on the forest floor. These clumps are made up of individual plants with simple green stems covered in small, pointed leaves. Separate male and female plants produce gametes, with sperm (male gamete) moving through the moist environment to fuse with an egg cell (female gamete). This fertilization results in the formation of a seta on the top of the female plant, which culminates in a capsule where spores develop. Once mature, the spores are released and germinate to form new plants.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "haircap-moss-polytrichum-formosum"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-polnik-ztenceny",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-plonik-protonema",
+    "revision": "linked-2026-08-13",
+    "title": "Haircap Moss – Protonema",
+    "description": "Haircap moss forms dense clumps that retain moisture on the forest floor. Each clump consists of individual plants with simple green stems bearing small, pointed leaves. Separate male and female plants produce gametes, with sperm (the male gamete) moving through the moist environment to fuse with an egg cell (the female gamete). This fusion results in the formation of a stalk, or seta, at the top of the female plant. The seta terminates in a capsule where spores develop. Once released, these spores germinate to create new plants.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "haircap-moss-protonema"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-plonik-protonema",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-kaprad-samec",
+    "revision": "linked-2026-08-13",
+    "title": "Male Fern (Dryopteris Filix-Mas)",
+    "description": "The male fern is a plant found throughout much of the northern hemisphere, thriving in shaded areas with humus-rich soil, although it does not prefer damp substrates. Its leaves emerge from a rhizome and are curled when young, at which point they are referred to as fiddleheads. Rounded clusters of sporangia develop on the underside of the leaves, in contrast to the related lady fern, whose sporangia clusters are croissant shaped. The spores mature and are released in the fall, after which the leaves die back before winter.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "male-fern-dryopteris-filix-mas"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-kaprad-samec",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-strevicnik",
+    "revision": "linked-2026-08-13",
+    "title": "Yellow Lady’s Slipper (Cypripedium Calceolus)",
+    "description": "The lady's slipper is an orchid that grows in bright woodlands and on hillsides. It is native to Eurasia, and a related species, Cypripedium parviflorum, can be found in North America. The lady's slipper has a zygomorphic flower with six tepals, typical of monocots: five are brown-red (with the lower two fused), and one forms the distinctive yellow lip. This lip emits a sweet scent to attract pollinators. Once inside, insects become temporarily trapped in the lip and must climb a “ladder” at the back to escape, which results in pollen attaching to them for cross-pollination.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "yellow-lady-s-slipper-cypripedium-calceolus"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-strevicnik",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-oves",
+    "revision": "linked-2026-08-13",
+    "title": "Oat",
+    "description": "Oat is a cereal crop in the grass family (Poaceae), originally introduced to Europe as a weed among wheat and barley. Its inflorescence is called a panicle, and its flowers are structured typically for grass. Each flower is surrounded by bracts (known as the lemma and palea), with a reduced perianth consisting of two lodicules and three stamens. Oat is commonly used as livestock feed and in food production. The grains are rich in fiber and can be rolled into flakes, which is the primary ingredient in muesli and oatmeal.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "oat"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-oves",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-penicillium",
+    "revision": "linked-2026-08-13",
+    "title": "Penicillium",
+    "description": "Penicillium is a genus of ascomycete fungi that reproduces exclusively through asexual means. Species within this genus are used in the production of blue cheeses, such as Camembert, Roquefort and Gorgonzola. In 1928, an open window in Alexander Fleming's lab allowed Penicillium spores to contaminate Petri dishes containing bacterial cultures. The bacteria near the mold began to die, leading to the discovery of penicillin, an antibiotic that inhibits bacterial cell wall formation. This breakthrough paved the way for other antibiotics derived from microorganisms.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "penicillium"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-penicillium",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-hrib-smrkovy",
+    "revision": "linked-2026-08-13",
+    "title": "Penny Bun (Boletus Edulis)",
+    "description": "Boletus edulis (also known as the king bolete) is a popular edible mushroom. Its fruit grows commonly under spruce and pine, living in mycorrhiza with those trees. Its cap is white, turning to brown later, and have around 6–20 cm (2‒8 inches) in diameter. On the bottom side of the cap there are white tubes, which are turning yellow-olive as they get old. The stipe is white and covered with a raised network pattern (reticulations). B. edulis can be mistaken for the inedible bitter bolete (Tylopilus felleus), which tubes are pinkish. B. edulis can be used fresh, but is also suitable for drying or pickling.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "penny-bun-boletus-edulis"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-hrib-smrkovy",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-olse-lepkava",
+    "revision": "linked-2026-08-13",
+    "title": "Black Alder (Alnus Glutinosa)",
+    "description": "The black alder thrives along stream banks and in wetlands, forming a mutual relationship with nitrogen-fixing bacteria, which enriches the soil and enables the alder to grow in nutrient-poor environments. As a pioneer species, it readily colonizes vacant land and is often used to stabilize river and stream banks. Its buds and young leaves are sticky, and both male and female flowers are produced in catkins, while its fruit resembles a small cone. Various species of lichen commonly grow on black alder.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "black-alder-alnus-glutinosa"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-olse-lepkava",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-lipa-kvet",
+    "revision": "linked-2026-08-13",
+    "title": "Small-Leaved Lime - Inflorescence",
+    "description": "The small-leaved lime is a tree that can reach heights of up to 30 meters (around 100 feet) and is commonly planted in cultivated landscapes. It often develops new branches at the base of the trunk. The leaves are heart-shaped (cordate), with serrated edges and small tufts of brown hair in the vein axils. Its inflorescence typically consists of 4–12 greenish flowers emerging from the axil of a bract. This bract aids in dispersal, allowing the fruits to float away from the tree. The flowers are used to make tea, and the wood is prized for carving. The small-leaved lime is also the national tree of the Czech Republic.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "small-leaved-lime-inflorescence"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-lipa-kvet",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-hruska",
+    "revision": "linked-2026-08-13",
+    "title": "European Pear - Fruit",
+    "description": "The European Pear is grown mainly for its fruit, although its valuable wood is also used in applications such as recorder manufacturing. Originating in Asia Minor, the pear spread to Greece, where four cultivars were known at the time, and later to the Roman Empire. Ancient pear cultivars had round pomes, but over time, trees producing the characteristic pear-shaped fruits were cultivated. Pears contain sclerenchyma cells, known as sclereids, which give the pulp a slightly gritty texture. The pear also serves as an intermediate host for pear rust, a fungal disease, and its leaves provide food for the larvae of the Saturnia pyri moth.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "european-pear-fruit"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-hruska",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-habr",
+    "revision": "linked-2026-08-13",
+    "title": "Hornbeam (Carpinus Betulus)",
+    "description": "The common hornbeam readily produces new shoots when cut back. Its bark is smooth and gray, marked by light, interconnected stripes. The leaves are ovate with serrated edges. As a monoecious tree, the hornbeam has both male and female flowers, which are arranged in catkins. The female flowers develop in the axils of distinctive three-lobed bracts. Once pollinated, the pistils mature into nuts that remain attached to these bracts, which function as a natural \"wing,\" aiding in seed dispersal. Hornbeam’s dense growth makes it an excellent choice for hedgerows.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "hornbeam-carpinus-betulus"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-habr",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-buk",
+    "revision": "linked-2026-08-13",
+    "title": "European Beech (Fagus Sylvatica)",
+    "description": "The European beech is a deciduous tree with smooth, gray bark and leaves that have short petioles and elliptical blades with slightly crenate margins. As a monoecious species, each tree contains separate male and female inflorescences. The nuts are encased in a spiny cupule. Beech wood is dense and durable, making it suitable for furniture and flooring. The larvae of the threatened Rosalia longicorn beetle rely on dying or fallen beech trees for development. The black woodpecker often nests in mature beech trees.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "european-beech-fagus-sylvatica"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-buk",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-sedmikraska",
+    "revision": "linked-2026-08-13",
+    "title": "Common Daisy (Bellis Perennis)",
+    "description": "The common daisy is a perennial plant in the Asteraceae family, typically found in grassy areas, pastures and meadows. It grows to a height of 5–10 cm (2–4 inches), with spoon-shaped leaves forming a rosette near the ground. Young leaves are edible and can be used in salads. The flower heads, or inflorescences, grow singly on stems. The outer white ray flowers are sterile, while the inner yellow disc flowers are hermaphroditic. There are cultivars of the common daisy with larger flower heads in a range of colors, including white, pink and red.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "common-daisy-bellis-perennis"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-sedmikraska",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "p-rost-rozrazil-kvet",
+    "revision": "linked-2026-08-13",
+    "title": "Bird's-Eye Speedwell ‒ Flower",
+    "description": "Bird's-eye speedwell is a perennial plant commonly found in meadows, gardens, and open woodlands. It grows to a height of 10 to 40 cm (4–16 inches). The stem features two opposite rows of hair that help channel water away from the leaves. The inflorescence forms a raceme with 10–30 flowers that close at the onset of rain. The calyx consists of four fused sepals, with a dark blue corolla and a white center. Each flower has two stamens. The fruit is a flattened capsule containing two seeds.",
+    "subject": "Biology",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "plant-biology",
+      "plant-reproduction",
+      "bird-s-eye-speedwell-flower"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/p-rost-rozrazil-kvet",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-zvedak",
+    "revision": "linked-2026-08-13",
+    "title": "Hydraulic Jack",
+    "description": "Hydraulic jack is a hydraulic device consisting of two pistons with a fluid, typically hydraulic oil (which has minimal compressibility), sealed between them. The operation of the hydraulic system is governed by Pascal's Law, which states that pressure applied to a fluid in a sealed system is transmitted equally in all directions throughout the liquid. In a hydraulic jack, a force F₁ is applied to the surface S₁ of the first piston, generating pressure ρ in the fluid. This pressure is uniformly distributed throughout the liquid and also acts on the second piston. The pressure ρ exerts an equal force per unit area on the surface S₂ of the second piston. The resulting force F₂ on the second piston depends on the size of its surface area, S₂. As a result, the force applied can either be increased or decreased depending on the relative sizes of the piston areas. When lifting a load, such as ",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "hydraulic-jack"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-zvedak",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-zehlicka-venek",
+    "revision": "linked-2026-08-13",
+    "title": "Iron",
+    "description": "An iron is a device used to smooth fabric by applying high temperature and pressure. The key component of the iron is the heating element, which is a conductor that generates heat by carrying an electric current (Joule heating). To ensure minimal heat loss in the lead wires and maximize heating in the element itself, the resistance of the heating element must be significantly higher than that of the wires. The heat generated by the element is then transferred to the soleplate. The soleplate is typically made of metal due to its excellent thermal conductivity, allowing heat to distribute evenly across the entire surface. It must be smooth or coated with materials such as ceramic or Teflon to prevent fabrics from sticking and to ensure smooth gliding over the fabric. The heating element is insulated to prevent any electrical current from passing through the soleplate. A thermostat regulate",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "iron"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-zehlicka-venek",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-zapojeni-zarovky",
+    "revision": "linked-2026-08-13",
+    "title": "Zinc–carbon Battery – Section",
+    "description": "An electric light is a device that produces visible light by the flow of electric current. It is the most common form of artificial lighting and is essential to modern society, providing interior lighting for buildings and exterior light for evening and nighttime activities. In technical usage, a replaceable component that produces light from electricity is called a lamp. Compact lamps are commonly called light bulbs; for example, the incandescent light bulb. Lamps usually have a base made of ceramic, metal, glass or plastic, which secures the lamp in the socket of a light fixture. The electrical connection to the socket may be made with a screw-thread base, two metal pins, two metal caps or a bayonet cap. In circuit diagrams lamps usually are shown as symbols. There are two main types of symbols, these are: - The cross in a circle, which usually represents a lamp as an indicator. - The ",
+    "subject": "Physics",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "energy-and-electricity",
+      "zinc-carbon-battery-section"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-zapojeni-zarovky",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-vodni-elektrarna",
+    "revision": "linked-2026-08-13",
+    "title": "Hydroelectric Generating Station",
+    "description": "Hydroelectric power supplies approximately 17.5% of the world's electricity. In some countries, it is a major source of electric power. In Norway, it accounts for 99% of the country's energy production. Hydro-turbines harness the potential energy of water from rivers or lakes, converting it into kinetic energy as the water descends. The flowing water drives a turbine, generating electricity. The operation of water turbines is based on the impulse of the working fluid acting on the turbine blades. This animation provides an inside look at a hydroelectric power plant and hydro-generator, illustrating its components and showing how water drives the turbine to produce electricity.",
+    "subject": "Physics",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "energy-and-electricity",
+      "hydroelectric-generating-station"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-vodni-elektrarna",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-vetrna-elektrarna",
+    "revision": "linked-2026-08-13",
+    "title": "Wind Turbine",
+    "description": "A wind turbine is a device that converts the kinetic energy of the wind into electrical power. As the wind turns the blades, the rotor spins a shaft connected to a generator, producing electricity for distribution. The key components of a wind turbine are the rotor, generator and structural support. The rotor converts wind energy into low-speed rotational energy. The generator component includes the electrical generator, control electronics, and typically a gearbox. These components convert the low-speed rotation into high-speed rotation, suitable for generating electricity. The structural support includes the tower and the rotor yaw mechanism, which orients the turbine towards the wind. The largest wind turbine by height and capacity is the Vestas V164, built in Denmark. It has a rated capacity of 8.0 MW and stands at an overall height of 220 meters.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "wind-turbine"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-vetrna-elektrarna",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-treni-kniha",
+    "revision": "linked-2026-08-13",
+    "title": "Book on a Desk ‒ Friction",
+    "description": "Friction is a phenomenon that occurs when a physical body moves in close contact with another body. During this process, a frictional force (Ft) is generated, which always works against the direction of movement. In the model, a book rests on a table, attached to a set of weights via a pulley system. The weights exert a force on the book, causing it to move. However, the frictional force between the surface of the book and the table resists this movement. A closer examination of the frictional surfaces reveals the molecular composition of both materials. The work required to overcome the frictional force is converted into internal energy, which results in a rise in temperature at the points of contact.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "book-on-a-desk-friction"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-treni-kniha",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-termoska",
+    "revision": "linked-2026-08-13",
+    "title": "Vacuum Flask",
+    "description": "The vacuum flask maintains the temperature of hot and cold liquids by thermally insulating them from their surroundings. The key component enabling this process is a double-walled glass bottle. The vacuum between the double walls of the bottle minimizes heat transfer, as fewer molecules inside the walls reduce the heat loss by convection and conduction. The glass is also coated with a silvered surface to reflect infrared radiation, further reducing heat loss due to radiation. The vacuum flask was invented by Sir James Dewar in 1892 and is also known as a Dewar flask or Dewar bottle. Vacuum flasks are commonly used at home to keep beverages hot or cold for extended periods. They also have various industrial applications.",
+    "subject": "Physics",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "vacuum-flask"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-termoska",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-tachometr",
+    "revision": "linked-2026-08-13",
+    "title": "Instantaneous Speed ‒ Speedometer",
+    "description": "A speedometer is a device used to measure the speed of a vehicle. The analog eddy current speedometer operates by measuring the number of revolutions or speed per unit of time. The rotation of the vehicle's wheels is transmitted to the speedometer via a flexible shaft. A permanent magnet, connected to the measuring shaft, rotates within an aluminum cup (also known as a speed cup). This rotation generates eddy currents in the aluminum cup, which exert a force proportional to the speed of rotation. A pointer attached to the cup moves accordingly, and a fine torsion spring returns the pointer to its zero position when the vehicle is stationary. The ribbon speedometer uses a two-color ribbon or tape, which is wrapped around two coils to display the current speed. The drum speedometer replaces the traditional pointer with a two-color drum that rotates to indicate the current speed.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "instantaneous-speed-speedometer"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-tachometr",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-sublimace-ledu",
+    "revision": "linked-2026-08-13",
+    "title": "Dry Ice Sublimation",
+    "description": "Dry ice is the solid form of carbon dioxide and is commonly used for cooling purposes. It is especially useful for preserving frozen foods or materials in situations where traditional refrigeration is not available. Dry ice sublimates, or changes directly from a solid to a gas, at −78.5 °C under normal atmospheric pressure, without transitioning through a liquid phase — hence the name \"dry ice\". Compared with regular water ice, dry ice provides more than twice the cooling energy by weight and three times the cooling energy by volume.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "dry-ice-sublimation"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-sublimace-ledu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-silomer",
+    "revision": "linked-2026-08-13",
+    "title": "Spring Dynamometer",
+    "description": "A spring dynamometer is an instrument used to measure force. One common design uses the deformation of a spring to determine the magnitude of the applied force. The shape and stiffness of the spring are selected according to the application. The operation of the dynamometer is based on Hooke's Law, which states that the greater the applied force, the greater the spring’s deflection and corresponding scale reading. In practical use, the extension of the spring changes in response to the total suspended weight. The scale is calibrated in Newtons (N), the SI unit of force.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "spring-dynamometer"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-silomer",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-rutherforduv-experiment",
+    "revision": "linked-2026-08-13",
+    "title": "Rutherford Experiment",
+    "description": "This model illustrates Rutherford's alpha-particle scattering experiment. In the experiment, a beam of alpha particles was directed at a thin gold foil. The results showed that approximately 99% of the alpha particles passed straight through the foil, while some were deflected at small angles, and a very small fraction rebounded off the foil. These observations led to the conclusion that the atom's positive charge is concentrated in a small, dense region. Based on this experiment, Rutherford identified the atomic nucleus. He further discovered that the nucleus occupies a relatively small portion of the atom's overall diameter, yet it contains most of the atom's mass.",
+    "subject": "Physics",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "modern-physics-and-measurement",
+      "rutherford-experiment"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-rutherforduv-experiment",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-rovnovaha-na-pace",
+    "revision": "linked-2026-08-13",
+    "title": "Balanced Lever",
+    "description": "A lever is a simple machine consisting of two physical components (a solid rod and a fulcrum) and two functional components (input and output forces). The solid rod rests against a pivot point, known as the fulcrum, which remains stationary. When a force is applied at a point along the rod's length, the rod pivots around the fulcrum, transferring the force to an object that needs to be moved.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "balanced-lever"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-rovnovaha-na-pace",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-reproduktor",
+    "revision": "linked-2026-08-13",
+    "title": "Electrodynamic Loudspeaker",
+    "description": "Speakers are electro-acoustic transducers, devices that convert electrical energy into mechanical energy in the form of sound. Typically, they consist of a diaphragm, a driver that receives the input signal, and various supporting components. For high-quality sound reproduction, it is important to achieve the broadest possible frequency range, ideally covering the entire audible spectrum (20 Hz to 20 kHz). To effectively transmit low frequencies, the speaker should have a large, rigid diaphragm, which requires a significant mass in the oscillating components. Conversely, high-frequency transmission requires a lightweight diaphragm. As a result, it is often advantageous to use multiple transducers, each optimized for a specific frequency band. These transducers are then combined to form a speaker system, which may also include auxiliary audio circuitry and other electronic components such",
+    "subject": "Physics",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "energy-and-electricity",
+      "electrodynamic-loudspeaker"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-reproduktor",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-regelace-ledu",
+    "revision": "linked-2026-08-13",
+    "title": "Ice Regelation",
+    "description": "This model demonstrates a classic experiment where a weight-loaded wire sling passes through a block of ice without cutting it apart, as the plane of separation refreezes. This phenomenon is known as the regelation of ice. The common explanation for this is largely based on the unique properties of water, specifically the decrease in melting temperature with increased pressure. However a significant aspect of the explanation is the role of heat conduction. When the experiment is repeated using wire with lower heat conductivity (such as nylon), the regelation effect disappears.",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "ice-regelation"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-regelace-ledu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-prototyp-kilogramu",
+    "revision": "linked-2026-08-13",
+    "title": "International Prototype of the Kilogram (IPK)",
+    "description": "A kilogram (symbol kg) is the fundamental unit of mass. It was originally defined as approximately equal to the mass of 1 liter of water. According to the International System of Units (SI), the kilogram was historically defined by the mass of the international prototype of the kilogram, which is kept at the International Bureau of Weights and Measures in Sèvres, France. The international prototype of the kilogram is a cylindrical object with a height and diameter of approximately 39 mm, made from an alloy consisting of 90% platinum and 10% iridium. Copies of this prototype were created with the highest possible precision and distributed to various countries for use in measurement standards. The material used for the prototype was selected based on several criteria, including corrosion resistance, high density (to minimize the effects of buoyancy when measured in air), good electrical co",
+    "subject": "Physics",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "modern-physics-and-measurement",
+      "international-prototype-of-the-kilogram-ipk"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-prototyp-kilogramu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-prenos-zvuku-v-uchu",
+    "revision": "linked-2026-08-13",
+    "title": "Human Ear Sound Transfer",
+    "description": "This model introduces the physics of hearing. The human ear is divided into three main sections: the outer, middle, and inner ear. We present the journey of a sound wave from the outermost part of the ear to the innermost part, which transmits signals to the brain. The outer ear collects and focuses the sound wave, directing it through the ear canal to the eardrum. The pressure fluctuations of the sound wave cause the eardrum vibrate. These vibrations are then transmitted through the three small bones in the middle ear to the inner ear. In the inner ear, sound waves are carried through fluid and converted into signals that are interpreted by the brain as sound. The inner ear, composed of thesemicircular canals, cochlea, and auditory nerve, is filled with fluid that allows the body to detect quick movements and maintain balance. Ion channels in the receptor cells of the inner ear adjust t",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "human-ear-sound-transfer"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-prenos-zvuku-v-uchu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-poruchy-krystalu",
+    "revision": "linked-2026-08-13",
+    "title": "Point Defects in a Crystal Lattice",
+    "description": "An ideal crystal is one in which every atom is of the same type and occupies its correct position in the crystal lattice. However, in reality, such perfect structures rarely exist, as most crystals contain defects. These crystal defects can be categorized into three main classes: point defects, linear defects, and planar defects. Point defects occur at specific points in the lattice where atoms are missing or irregularly placed. Common types of point defects include lattice vacancies, self-interstitial atoms, substitution impurity atoms, and interstitial impurity atoms. Linear defects involve groups of atoms that are out of alignment or in irregular positions within the lattice. Linear defects are also known as dislocations. are discontinuities that occur between different regions of the crystal. Types of planar defects include grain boundaries, stacking faults, and external surfaces.",
+    "subject": "Physics",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "waves-and-sound",
+      "point-defects-in-a-crystal-lattice"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-poruchy-krystalu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "f-vyna-pitchback",
+    "revision": "linked-2026-08-13",
+    "title": "Water Wheel Pitchback",
+    "description": "The pitchback water wheel harnesses both the potential energy of water and the kinetic energy of the flowing water below it to help rotate the wheel. This design uses a low head infeed system, where water is delivered near the top of the wheel from a pentrough positioned above it. Pitchback water wheels are ideal for locations with a small stream and a height difference of more than two meters, and they are well-suited for streams that experience significant seasonal variations in flow. One of the key advantages of the pitchback water wheel is its high efficiency, which exceeds 80% of the water's energy. This is due to the combined effects of the weight of the incoming water and the pressure of the water directed into the buckets from above, as well as the energy from the flowing water below. Essentially, the pitchback wheel uses the water's energy twice. The weight of the water in the b",
+    "subject": "Physics",
+    "grade_bands": [
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "physics",
+      "force-and-machines",
+      "water-wheel-pitchback"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/f-vyna-pitchback",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-rna",
+    "revision": "linked-2026-08-13",
+    "title": "RNA",
+    "description": "Description: RNA (ribonucleic acid) consists of a single, uniquely coiled strand. If two complementary regions within an RNA strand are in proximity, hydrogen bonds can form between the bases. Importance and types of RNA: There are various types of RNA that perform diverse roles within organisms. They include: - mRNA (messenger RNA): Formed by the transcription of protein-coding genes, mRNA carries the genetic information that encodes the amino acid sequence of proteins. Its primary function is to guide protein synthesis. - rRNA (ribosomal RNA): Forms the core structure of ribosomes, where it facilitates the translation of mRNA into protein. - tRNA (transfer RNA): Responsible for selecting the correct amino acids and positioning them on the ribosome for incorporation into the growing amino acid chain. - Ribozymes: Serve as catalysts for various biochemical reactions. Ribozymes, rRNA, and",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "biomolecules",
+      "rna"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-rna",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-hybridizace-sp3",
+    "revision": "linked-2026-08-13",
+    "title": "Orbital Hybridization – sp³",
+    "description": "The carbon atom has four valence electrons located in the 2s and 2p orbitals. During sp³ hybridization, one s-orbital and all three p-orbitals combine to form four equivalent sp³ hybrid orbitals. These hybrid orbitals are arranged in a tetrahedral geometry around the nucleus, with an angle of 109° 28' between them.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "orbital-hybridization-sp3"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-hybridizace-sp3",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-dna",
+    "revision": "linked-2026-08-13",
+    "title": "DNA",
+    "description": "Description: DNA (deoxyribonucleic acid) is structured as a right-handed double helix, composed of two complementary strands. These strands are anti-parallel, meaning that the polarity of one strand is opposite to that of the other (e.g., if one strand has a 3' end at a particular end of the molecule, the other strand will have a 5' end at the same position). The double helix is stabilized by hydrogen bonds between the nitrogenous bases of the two strands, contributing to the overall stability of the DNA molecule. Importance of DNA: DNA is essential for all living organisms, carrying the genetic information that governs biological functions and hereditary traits. During cell division, the DNA in the nucleus replicates, resulting in two identical double-helix molecules and ensuring that each daughter cell receives an identical copy of the genetic material. The sequence of DNA (its primary",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "biomolecules",
+      "dna"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-dna",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-adp",
+    "revision": "linked-2026-08-13",
+    "title": "Adenosine Diphosphate (ADP)",
+    "description": "Adenosine diphosphate is a nucleotide composed of the nitrogenous purine base adenine, the sugar D-ribose, and two phosphates (phosphoric acid residues). Both ADP and ATP are macroergic compounds whose hydrolysis releases a large amount of energy resulting from the electrostatic repulsions between negatively charged oxygen atoms. ADP is formed from the hydrolysis of ATP, accompanied by the release of energy according to the reaction: ATP + H₂O → ADP + P. The energy released from this process can then be used to drive endergonic reactions.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "biomolecules",
+      "adenosine-diphosphate-adp"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-adp",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-zmena-skup-latek-tuhnuti",
+    "revision": "linked-2026-08-13",
+    "title": "Phase Transition – Freezing",
+    "description": "During solidification, a liquid is transformed into a solid state. This process occurs when the liquid is cooled to its freezing point. The reverse process, in which a solid changes back into a liquid, is known as melting.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "phase-transition-freezing"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-zmena-skup-latek-tuhnuti",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-zmena-skup-latek-odparovani",
+    "revision": "linked-2026-08-13",
+    "title": "Phase Transition – Evaporation",
+    "description": "During evaporation, a substance transitions from a liquid to a gaseous state at its surface. This process can occur at any temperature below the boiling point. The reverse process is called liquefaction or condensation. Evaporation is different from boiling. At the boiling point, the liquid changes to a gas not only at its surface but also throughout the entire volume of the liquid.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "6",
+      "7",
+      "8",
+      "9",
+      "11"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "states-of-matter-and-solutions",
+      "phase-transition-evaporation"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-zmena-skup-latek-odparovani",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-zelezo-struktura",
+    "revision": "linked-2026-08-13",
+    "title": "Iron",
+    "description": "Symbol: Fe Atomic number: 26 International name: Iron Relative Atomic Weight: 55.847 Description: Iron is a relatively soft, shiny metal with a silver-gray color and ferromagnetic properties, exhibiting spontaneous magnetization. It is chemically reactive and prone to corrosion, which leads to the formation of rust (hydrated iron oxide layers that flake off). Because of the limitations of pure iron, it is typically processed into steel to enhance its properties. Applications: Iron is extracted in blast furnaces through the reduction of its oxides using coke. The resulting raw iron is hard and brittle due to impurities such as graphite and iron carbide. To improve its characteristics, raw iron is further refined into steel, primarily through the removal of carbon. Steel can be alloyed with elements such as nickel, chromium, vanadium, manganese and cobalt to produce stainless steel and oth",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "iron"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-zelezo-struktura",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-vitamin-c",
+    "revision": "linked-2026-08-13",
+    "title": "Vitamin C",
+    "description": "Chemical name: L-ascorbic acid Molecular formula: C₆H₈O₆ Molar mass: 178 g/mol Description: Vitamin C (L-ascorbic acid) is a water-soluble compound that is sensitive to heat and highly susceptible to oxidation. Effects: L-Ascorbic acid plays a vital role in cellular metabolism by aiding in the conversion of food into energy. It strengthens the body's resistance to infections, stimulates the production and function of connective tissues in bones and teeth, stabilizes blood vessels, and accelerates wound healing. It also enhances the absorption of iron from food. Vitamin C is an important antioxidant. Prolonged deficiency of vitamin C can lead to scurvy, a condition characterized by increased bleeding of mucous membranes, skin and muscle damage, tooth loss, weakness and reduced resistance to infections. Sources: Vitamin C is abundant in broccoli, red peppers, currants, kiwi and citrus frui",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "biomolecules",
+      "vitamin-c"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-vitamin-c",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-vapnik-struktura",
+    "revision": "linked-2026-08-13",
+    "title": "Calcium",
+    "description": "Symbol: Ca Atomic number: 20 International name: Calcium Relative Atomic Weight: 40.80 Description: Calcium is a soft, lightweight, reactive metal with a silvery appearance. It shares some properties with alkali metals, but it is less reactive. Calcium typically exists in its ionic form (Ca²⁺). Applications: Calcium is used as a reducing agent in both organic synthesis and the production of other more valuable metals, such as steel. It is also a component in the production of lime glass. Calcium oxide (quicklime) and calcium hydroxide (slaked lime) are used extensively in the construction industry. Occurrence: Calcium is one of the ten most abundant elements on Earth. Its most common form is calcium carbonate (CaCO₃), found in minerals such as calcite and aragonite. Limestone varieties include chalk and marble. Chalk is a nearly pure porous limestone derived from the shells of marine org",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "calcium"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-vapnik-struktura",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-uhlicitan-sodny",
+    "revision": "linked-2026-08-13",
+    "title": "Sodium Carbonate",
+    "description": "Molecular formula: Na₂CO₃ Molar mass: 105.988 g/mol Description: Sodium carbonate, commonly known as soda, is a white crystalline powder that is highly soluble in water, unlike most other carbonates. Its aqueous solution is alkaline. When dissolved in water, sodium carbonate forms sodium cations (Na⁺) and carbonate anions (CO₃²⁻). It can also crystallize from aqueous solutions as sodium carbonate decahydrate (Na₂CO₃·10H₂O), known as crystalline soda. Applications: Sodium carbonate is used as a water softener and in the production of glass.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "sodium-carbonate"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-uhlicitan-sodny",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-tvorba-aniontu",
+    "revision": "linked-2026-08-13",
+    "title": "Anion Formation",
+    "description": "Anions are negatively charged particles, which can be either atoms or molecules. They possess one or more extra electrons compared to their neutral form. The model depicts the formation of chloride anions through electron capture, according to the reaction: Cl + e- → Cl-. Ionic compounds are composed of both cations (positively charged ions) and anions. These ions are held together by strong electrostatic forces of attraction.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "anion-formation"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-tvorba-aniontu",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-titan-struktura",
+    "revision": "linked-2026-08-13",
+    "title": "Titanium",
+    "description": "Symbol: Ti Atomic number: 22 International name: Titanium Relative Atomic Weight: 47.88 Description: Titanium is a lightweight metal with a gray to silvery appearance. It is an excellent conductor of heat and electricity and is highly resistant to chemical corrosion. Applications: Titanium is used to produce high-strength alloys for aerospace applications. It is also commonly used in the manufacture of surgical instruments, implants, and piercings because of its biocompatibility. Titanium is also used in jewelry and luxury wristwatches. Occurrence: Titanium is relatively abundant in the Earth's crust. Its primary minerals are ilmenite FeTiO₃ and rutile TiO₂. Structure: Titanium crystallizes in a hexagonal system with a primitive unit cell structure.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "titanium"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-titan-struktura",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-tetrafluorethylen",
+    "revision": "linked-2026-08-13",
+    "title": "Tetrafluoroethylene",
+    "description": "Systematic name: Tetrafluoroethene Molecular formula: C₂F₄ Chemical formula (condensed): CF₂=CF₂ Molar mass: 100.02 g/mol Applications: Tetrafluoroethene is polymerized to form polytetrafluoroethylene (PTFE), which is the base unit [-CF₂-] of Teflon plastic. Properties: Teflon has a very high melting point and exceptional chemical resistance. It is non-flammable, self-lubricating, and does not have lipophilic or hydrophilic properties, preventing food from sticking to its surface.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "tetrafluoroethylene"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-tetrafluorethylen",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-stribro",
+    "revision": "linked-2026-08-13",
+    "title": "Silver",
+    "description": "Formula: Ag Atomic number: 47 International name: Silver Relative atomic mass: 107.87 g/mol Mohs scale hardness: 2 Crystal system: Cubic Unit Cell: Face-centered cubic Crystal habit: Wires, dendritic aggregates, coatings or solid masses. Description: Silver is a lustrous metal with a characteristic silver color that tarnishes to black when exposed to air because of the formation of a surface layer of silver sulfide Ag₂S. It is known for its exceptional thermal and electrical conductivity. Applications: Silver is used in the photographic industry, electronics, and jewelry.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "silver"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-stribro",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-slucovani-latek",
+    "revision": "linked-2026-08-13",
+    "title": "Combining Substances",
+    "description": "Chemical synthesis is a fundamental chemical reaction in which two or more initial substances, either elements or compounds, combine to form a new product. An example of such a synthesis is the formation of a water molecule from oxygen and hydrogen: 2 H₂ + O₂ → 2 H₂O.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "8",
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "elements-and-periodicity",
+      "combining-substances"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-slucovani-latek",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-rozpousteni-soli",
+    "revision": "linked-2026-08-13",
+    "title": "Salt Dissolving in Water",
+    "description": "Sodium chloride (NaCl), commonly known as table salt, dissolves in water to form a homogeneous solution. As an ionic compound, sodium chloride consists of a lattice of sodium cations (Na⁺) and chloride anions (Cl⁻). In an aqueous environment, water molecules, being polar, surround and separate these ions, effectively dissolving the salt in the solution.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "salt-dissolving-in-water"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-rozpousteni-soli",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-r12-mezoformy",
+    "revision": "linked-2026-08-13",
+    "title": "Meso Forms",
+    "description": "Meso forms are a special class of stereoisomers that, despite having multiple chiral centers, are optically inactive due to an internal plane of symmetry. This symmetry causes the optical rotations from different parts of the molecule to cancel each other out, resulting in no net rotation of plane-polarized light. Unlike enantiomers, which exist as non-superimposable mirror images, meso compounds are superimposable on their mirror images, making them achiral even though they contain chiral centers. Meso forms typically occur in molecules with two or more identical chiral centers, such as tartaric acid, where one half of the molecule is the mirror image of the other. Their presence reduces the number of optically active stereoisomers, impacting the molecule’s chemical behavior and interactions, particularly in biological and pharmaceutical applications.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "meso-forms"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-r12-mezoformy",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  },
+  {
+    "provider": "corinth",
+    "provider_content_id": "c-hemi-r10-iontova-vazbacacl2",
+    "revision": "linked-2026-08-13",
+    "title": "Formation of Ionic Bonds in CaCl₂",
+    "description": "A chemical bond is formed when a calcium atom and a chlorine atom are sufficiently close to each other. Because the chlorine atom has a significantly higher electronegativity than calcium, a complete transfer of electrons occurs from the outer orbital of the calcium atom to the outer orbital of the chlorine atom. This transfer results in the formation of two negatively charged chloride anions (Cl⁻) and one positively charged calcium cation (Ca²⁺), creating the compound CaCl₂. The positively charged cations are strongly attracted to the negatively charged anions. This type of bond, characterized by the formation of ions, is known as an ionic bond.",
+    "subject": "Chemistry",
+    "grade_bands": [
+      "9",
+      "10",
+      "11",
+      "12"
+    ],
+    "curriculum_tags": [
+      "chemistry",
+      "chemical-bonding",
+      "formation-of-ionic-bonds-in-cacl2"
+    ],
+    "languages": [
+      "en"
+    ],
+    "content_type": "interactive_model",
+    "delivery_mode": "external_link",
+    "collection_ids": [
+      "corinth-linked-catalog-100"
+    ],
+    "capabilities": [
+      "provider-viewer",
+      "interactive-3d"
+    ],
+    "attribution": "Licensed Corinth 3D link",
+    "external_link": {
+      "approved_origins": [
+        "https://app.corinth3d.com"
+      ],
+      "launch_url": "https://app.corinth3d.com/content/c-hemi-r10-iontova-vazbacacl2",
+      "link_type": "permanent",
+      "last_verified_at": "2026-08-13T00:00:00.000Z"
+    }
+  }
+]

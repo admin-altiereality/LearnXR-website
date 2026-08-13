@@ -197,6 +197,15 @@ export default function ImmersiveStemLibrary() {
           </label>
         </section>}
 
+        {items.length > 0 && !loading && (
+          <div className="flex min-h-12 items-center justify-between border-b border-[#dce3e5] text-sm text-[#5d6a70]" aria-live="polite">
+            <span className="font-semibold text-[#172126]">
+              {filteredItems.length} {filteredItems.length === 1 ? 'lesson' : 'lessons'}
+            </span>
+            {filteredItems.length !== items.length && <span>of {items.length} licensed lessons</span>}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex min-h-[360px] items-center justify-center text-[#526269]">
             <Loader2 className="mr-3 h-5 w-5 animate-spin" /> Loading licensed catalog
