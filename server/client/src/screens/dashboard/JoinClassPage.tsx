@@ -3,92 +3,29 @@
  * Students can join directly without the teacher sharing the code.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../config/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClassSession } from '../../contexts/ClassSessionContext';
-import { getActiveSessionsForSchool } from '../../services/classSessionService';
-import type { ClassSession } from '../../types/lms';
+import { useLiveClassSessions } from '../../hooks/useLiveClassSessions';
 import { Card, CardContent } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
 import { FaChalkboardTeacher, FaUsers, FaVideo, FaArrowRight } from 'react-icons/fa';
-import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
+import { learnXRFontStyle } from '../../Components/LearnXRTypography';
 import { toast } from 'react-toastify';
-
-interface SessionWithDetails extends ClassSession {
-  className?: string;
-  teacherName?: string;
-}
 
 const JoinClassPage = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const { joinSession, sessionLoading, joinedSessionId, isWaitingForApproval } = useClassSession();
-  const [sessions, setSessions] = useState<SessionWithDetails[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Scoped to the student's own classes — this page used to list every session in
+  // the school, so students could see and join other classes' lessons.
+  const { sessions, loading } = useLiveClassSessions('my-classes');
   const [joiningCode, setJoiningCode] = useState<string | null>(null);
   const [sessionCode, setSessionCode] = useState('');
 
   const schoolId = profile?.school_id || (profile as { managed_school_id?: string })?.managed_school_id;
   const isStudent = profile?.role === 'student';
-
-  const fetchSessions = useCallback(async () => {
-    if (!schoolId) {
-      setSessions([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const list = await getActiveSessionsForSchool(schoolId);
-      if (list.length === 0) {
-        setSessions([]);
-        setLoading(false);
-        return;
-      }
-      const classIds = [...new Set(list.map((s) => s.class_id))];
-      const teacherUids = [...new Set(list.map((s) => s.teacher_uid))];
-      const classesSnap = await Promise.all(
-        classIds.map((id) => getDoc(doc(db, 'classes', id)))
-      );
-      const teachersSnap = await Promise.all(
-        teacherUids.map((uid) => getDoc(doc(db, 'users', uid)))
-      );
-      const classNames: Record<string, string> = {};
-      classesSnap.forEach((snap, i) => {
-        if (snap.exists()) {
-          const d = snap.data();
-          classNames[classIds[i]] = d?.class_name || d?.name || classIds[i];
-        }
-      });
-      const teacherNames: Record<string, string> = {};
-      teachersSnap.forEach((snap, i) => {
-        if (snap.exists()) {
-          const d = snap.data();
-          teacherNames[teacherUids[i]] = d?.name || d?.displayName || d?.email || teacherUids[i];
-        }
-      });
-      const withDetails: SessionWithDetails[] = list.map((s) => ({
-        ...s,
-        className: classNames[s.class_id] || s.class_id,
-        teacherName: teacherNames[s.teacher_uid] || 'Teacher',
-      }));
-      setSessions(withDetails);
-    } catch (e) {
-      console.error('JoinClassPage fetch sessions:', e);
-      setSessions([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [schoolId]);
-
-  useEffect(() => {
-    fetchSessions();
-    const interval = setInterval(fetchSessions, 15000);
-    return () => clearInterval(interval);
-  }, [fetchSessions]);
 
   const handleJoin = async (sessionCode: string) => {
     setJoiningCode(sessionCode);

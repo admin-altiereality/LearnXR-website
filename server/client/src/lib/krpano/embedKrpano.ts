@@ -42,7 +42,7 @@ export function removeKrpano(target: string | HTMLElement): void {
 
 const SCRIPT_ID = 'krpano-viewer-script';
 /** Cache-bust so browsers do not reuse stale krpano assets across preview deploys. */
-const KRPANO_ASSET_VERSION = '1.23.3-r3';
+const KRPANO_ASSET_VERSION = '1.23.3-r4';
 const SCRIPT_URL = `/krpano/krpano.js?v=${KRPANO_ASSET_VERSION}`;
 
 /**

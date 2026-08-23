@@ -228,10 +228,28 @@ export const LessonProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
   
-  // Set lesson phase
+  /**
+   * Set lesson phase.
+   *
+   * The rendered script is `scripts[currentScriptIndex]` — it is indexed, not derived
+   * from the phase — so a phase change on its own used to leave the paragraph frozen on
+   * the intro while the labels, progress dots and narration all moved on. That showed up
+   * the moment the teacher drove phases directly (bottom-bar chips, or a student
+   * following `teacher_controlled_phase`) instead of pressing Continue, which happened
+   * to call `advanceScript()` as well.
+   *
+   * Keeping the index in step here means EVERY caller lands on the right script.
+   */
   const setPhase = useCallback((phase: LessonPhase) => {
     log('📍', 'Setting phase:', phase);
     setLessonPhase(phase);
+    const indexForPhase: Partial<Record<LessonPhase, number>> = {
+      intro: 0,
+      explanation: 1,
+      outro: 2,
+    };
+    const nextIndex = indexForPhase[phase];
+    if (nextIndex !== undefined) setCurrentScriptIndex(nextIndex);
   }, []);
   
   // Advance to next script

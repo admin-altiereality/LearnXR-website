@@ -373,6 +373,39 @@ export function canGuestWrite(profile: UserProfile | null): boolean {
 }
 
 /**
+ * Feature areas a guest student may not open. Guests get a single demo
+ * curriculum lesson on /lessons; every other lesson surface is sign-up gated.
+ */
+export const GUEST_LOCKED_PATHS = [
+  '/lessons/360',
+  '/lessons/vr360',
+  '/immersive-stem',
+  '/personalized-learning',
+  '/spiral',
+];
+
+/** True when path sits inside a feature area that is locked for guests. */
+export function isGuestLockedPath(path: string): boolean {
+  return GUEST_LOCKED_PATHS.some((locked) => path === locked || path.startsWith(`${locked}/`));
+}
+
+/**
+ * A guest in a Channel Partner demo must be able to open the licensed content the
+ * host launches, otherwise the demo is broken by the guest lock. This exemption is
+ * deliberately narrow: only the Immersive STEM viewer, and only while the guest is
+ * actually inside a live class session.
+ */
+function isPermittedGuestSessionPath(path: string): boolean {
+  if (!path.startsWith('/immersive-stem/')) return false;
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(sessionStorage.getItem('learnxr_joined_session_id'));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check if a user is approved (or doesn't need approval)
  * In hierarchical system, all roles except admin/superadmin need approval.
  * Guest students bypass approval.
@@ -615,6 +648,15 @@ export function checkAccess(
     };
   }
   
+  // Guests explore one demo curriculum lesson only; other feature areas need a full account
+  if (isGuestUser(profile) && isGuestLockedPath(path) && !isPermittedGuestSessionPath(path)) {
+    return {
+      allowed: false,
+      redirectTo: '/lessons',
+      reason: 'Guest users must sign up to open this feature',
+    };
+  }
+
   // Check role permissions for the route
   if (!canRoleAccessCategory(role, category)) {
     // Redirect based on role

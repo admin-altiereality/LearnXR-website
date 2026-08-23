@@ -110,7 +110,14 @@ export async function saveQuizScore(
   timeTakenSeconds?: number,
   launchId?: string,
   topicObjective?: string,
-  platform?: 'web' | 'mobile_vr' | 'vr'
+  platform?: 'web' | 'mobile_vr' | 'vr',
+  /**
+   * Class this score belongs to. Pass the live session's class_id when the lesson
+   * was taught in a class — profile.class_ids[0] is wrong for a student enrolled in
+   * more than one class, and a mismatched class_id also breaks the teacher's read
+   * (firestore.rules requires the teacher to manage resource.data.class_id).
+   */
+  classId?: string | null
 ): Promise<string | null> {
   if (!profile) return null;
   if (profile.role !== 'student') return null;
@@ -129,7 +136,7 @@ export async function saveQuizScore(
     const scoreData: Omit<StudentScore, 'id'> & { platform?: string } = {
       student_id: profile.uid,
       school_id: profile.school_id,
-      class_id: profile.class_ids?.[0] || null,
+      class_id: classId || profile.class_ids?.[0] || null,
       chapter_id: chapterId,
       topic_id: topicId,
       curriculum,

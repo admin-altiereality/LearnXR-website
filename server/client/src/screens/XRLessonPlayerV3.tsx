@@ -153,10 +153,18 @@ class XRPlayerErrorBoundary extends React.Component<
 // ============================================================================
 
 const XRLessonPlayerV3: React.FC = () => {
+  // No class-session awareness here — students in a live session must use the
+  // krpano player so the teacher's lockstep controls apply.
+  const inClassSession =
+    typeof window !== 'undefined' && Boolean(sessionStorage.getItem('learnxr_joined_session_id'));
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, profile } = useAuth();
-  
+
+  useEffect(() => {
+    if (inClassSession) navigate('/vrlessonplayer-krpano', { replace: true });
+  }, [inClassSession, navigate]);
+
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);

@@ -1,0 +1,239 @@
+<krpano>
+<!--
+	annotation_layer.xml
+	Teacher marker strokes, rendered inside the krpano Three.js scene so students
+	in a headset see the same ink as students on a screen.
+
+	A BackSide sphere just inside the panorama, textured with an equirectangular
+	canvas. Because strokes are stored as (ath, atv) a point maps straight to a
+	canvas pixel - u = (ath+180)/360, v = (90-atv)/180 - so there is no raycasting
+	and no per-frame work. We repaint only when the stroke set changes.
+
+	React pushes data via window.__krpanoAnnotations then calls annotation_layer_update(),
+	mirroring the __krpanoUIState / immersive_ui_update() idiom already used here.
+
+	NOTE: action bodies are CDATA because krpano XML would otherwise choke on the
+	bare && in JavaScript conditions.
+-->
+
+<action name="annotation_layer_draw" type="js"><![CDATA[
+	var L = krpano.annotation_layer_refs;
+	if (!L || !L.ctx) return;
+	var data = window.__krpanoAnnotations || { strokes: [], laser: null };
+	var ctx = L.ctx, W = L.W, H = L.H;
+	ctx.clearRect(0, 0, W, H);
+
+	var now = Date.now();
+	var all = [];
+	if (data.strokes) all = all.concat(data.strokes);
+	if (data.laser) all.push(data.laser);
+
+	// Attach the sphere only while there is something to draw, and remove it again
+	// when the ink is gone, so an idle lesson's 3D scene is identical to before.
+	var wanted = all.length > 0;
+	if (wanted && !L.attached && L.group) {
+		L.group.add(L.mesh);
+		L.attached = true;
+	} else if (!wanted && L.attached && L.mesh.parent) {
+		L.mesh.parent.remove(L.mesh);
+		L.attached = false;
+	}
+	L.mesh.visible = wanted;
+	if (!wanted) { if (L.texture) L.texture.needsUpdate = true; return; }
+
+	for (var i = 0; i < all.length; i++) {
+		var s = all[i];
+		if (!s || !s.points || s.points.length < 2) continue;
+
+		// Every stroke is temporary. Keep in sync with STROKE_TTL_MS / laserOpacity
+		// in src/lib/annotations/sphereGeometry.ts.
+		var alpha = 1;
+		var ttl = s.ttl_ms ? s.ttl_ms : 6500;
+		var age = now - s.created_ms;
+		if (age >= ttl) continue;
+		var fadeStart = ttl * 0.6;
+		if (age > fadeStart) alpha = 1 - (age - fadeStart) / (ttl - fadeStart);
+
+		ctx.globalAlpha = alpha;
+		ctx.strokeStyle = s.color || '#ffdd33';
+		ctx.lineWidth = Math.max(4, (s.width || 4) * 3.2);
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+
+		// Split at the +/-180 seam so a stroke across the back of the panorama
+		// does not draw all the way round the front.
+		var runs = [[]];
+		for (var p = 0; p < s.points.length; p++) {
+			if (p > 0 && Math.abs(s.points[p].a - s.points[p-1].a) > 180) runs.push([]);
+			runs[runs.length - 1].push(s.points[p]);
+		}
+
+		for (var r = 0; r < runs.length; r++) {
+			var run = runs[r];
+			if (run.length < 2) continue;
+			ctx.beginPath();
+			for (var q = 0; q < run.length; q++) {
+				var x = ((run[q].a + 180) / 360) * W;
+				var y = ((90 - run[q].v) / 180) * H;
+				if (q === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+			}
+			ctx.stroke();
+		}
+	}
+	ctx.globalAlpha = 1;
+	if (L.texture) L.texture.needsUpdate = true;
+]]></action>
+
+<action name="annotation_layer_build" type="js"><![CDATA[
+	if (!caller || !caller.threejsobject) return;
+	if (!krpano.threejs || !krpano.threejs.THREE) return;
+	var name = String(caller.name || "");
+	if (name !== "annotation_layer_3d") return;
+
+	var THREE = krpano.threejs.THREE;
+	var W = 4096, H = 2048;
+	var canvas = document.createElement('canvas');
+	canvas.width = W;
+	canvas.height = H;
+	var ctx = canvas.getContext('2d');
+	ctx.clearRect(0, 0, W, H);
+
+	var texture = new THREE.CanvasTexture(canvas);
+	texture.needsUpdate = true;
+
+	// Just inside the panorama sphere, and depth-test off so ink always shows.
+	var geo = new THREE.SphereGeometry(480, 64, 32);
+	var mat = new THREE.MeshBasicMaterial({
+		map: texture,
+		transparent: true,
+		side: THREE.BackSide,
+		depthWrite: false,
+		depthTest: false
+	});
+	var mesh = new THREE.Mesh(geo, mat);
+	mesh.renderOrder = 999;
+	// LAZY: do NOT attach the mesh yet. A full-sphere, depth-test-disabled mesh sitting
+	// in krpano's Three.js scene on every lesson is a change HEAD never had, and the
+	// scene must stay exactly as it was until there is actually ink to show.
+	mesh.visible = false;
+
+	krpano.annotation_layer_refs = {
+		canvas: canvas, ctx: ctx, texture: texture, mesh: mesh,
+		group: caller.threejsobject, attached: false, W: W, H: H
+	};
+
+	if (window.__krpanoAnnotations) krpano.call('annotation_layer_draw()');
+]]></action>
+
+<action name="annotation_layer_update" type="js"><![CDATA[
+	if (krpano.annotation_layer_refs) krpano.call('annotation_layer_draw()');
+]]></action>
+
+<action name="annotation_layer_cleanup" type="js"><![CDATA[
+	var L = krpano.annotation_layer_refs;
+	if (!L) return;
+	try {
+		if (L.mesh && L.mesh.parent) L.mesh.parent.remove(L.mesh);
+		if (L.mesh) { L.mesh.geometry.dispose(); L.mesh.material.dispose(); }
+		if (L.texture) L.texture.dispose();
+	} catch (e) {}
+	krpano.annotation_layer_refs = null;
+]]></action>
+
+<!--
+	Model marks: pins that stick to a 3D model.
+
+	Stored in the MODEL'S LOCAL space and parented to the model's own Object3D, so a
+	pin follows the model when it is dragged (drag3d), rotated, or moved by a layout
+	change. Texture painting was rejected: models are runtime GLBs with no guaranteed
+	UVs and their materials are re-authored on load.
+-->
+<action name="annotation_pick_model" type="js"><![CDATA[
+	// Raycast the pointer against every asset_N hotspot. Result is handed back to React
+	// through a global, matching the __krpanoUIState idiom used elsewhere here.
+	window.__krpanoModelPick = null;
+	if (!krpano.threejs || !krpano.threejs.THREE || !krpano.threejs.camera) return;
+	var THREE = krpano.threejs.THREE;
+
+	var px = (typeof args !== 'undefined' && args[1] !== undefined) ? Number(args[1]) : krpano.mouse.x;
+	var py = (typeof args !== 'undefined' && args[2] !== undefined) ? Number(args[2]) : krpano.mouse.y;
+
+	var ndc = new THREE.Vector2(
+		(px / krpano.stagewidth) * 2 - 1,
+		-(py / krpano.stageheight) * 2 + 1
+	);
+	var raycaster = new THREE.Raycaster();
+	raycaster.setFromCamera(ndc, krpano.threejs.camera);
+
+	var best = null;
+	for (var i = 0; i < 24; i++) {
+		var hs = null;
+		try { hs = krpano.get('hotspot[asset_' + i + ']'); } catch (e) { hs = null; }
+		if (!hs || !hs.threejsobject) continue;
+		// Recursive: a GLB is a group, not a single mesh.
+		var hits = raycaster.intersectObject(hs.threejsobject, true);
+		if (hits.length > 0) {
+			if (!best || hits[0].distance < best.distance) {
+				best = { distance: hits[0].distance, point: hits[0].point, root: hs.threejsobject, name: 'asset_' + i };
+			}
+		}
+	}
+	if (!best) return;
+
+	var local = best.root.worldToLocal(best.point.clone());
+	window.__krpanoModelPick = { asset_id: best.name, x: local.x, y: local.y, z: local.z };
+]]></action>
+
+<action name="annotation_marks_update" type="js"><![CDATA[
+	var THREE = (krpano.threejs && krpano.threejs.THREE) ? krpano.threejs.THREE : null;
+	if (!THREE) return;
+	if (!krpano.annotation_mark_objs) krpano.annotation_mark_objs = {};
+
+	var data = window.__krpanoAnnotations || {};
+	var marks = data.model_marks || [];
+	var now = Date.now();
+	var seen = {};
+
+	for (var i = 0; i < marks.length; i++) {
+		var m = marks[i];
+		if (!m || !m.id) continue;
+		var ttl = m.ttl_ms ? m.ttl_ms : 6500;
+		if (now - m.created_ms >= ttl) continue;
+		seen[m.id] = true;
+
+		var obj = krpano.annotation_mark_objs[m.id];
+		if (!obj) {
+			var hs = null;
+			try { hs = krpano.get('hotspot[' + m.asset_id + ']'); } catch (e) { hs = null; }
+			if (!hs || !hs.threejsobject) continue;
+			var mat = new THREE.SpriteMaterial({
+				color: new THREE.Color(m.color || '#ffdd33'),
+				depthTest: false,
+				depthWrite: false,
+				transparent: true
+			});
+			obj = new THREE.Sprite(mat);
+			obj.scale.set(6, 6, 6);
+			obj.renderOrder = 1000;
+			obj.position.set(m.x, m.y, m.z);
+			hs.threejsobject.add(obj);
+			krpano.annotation_mark_objs[m.id] = obj;
+		}
+		// Fade over the last 40% of life, same curve as the sphere strokes.
+		var age = now - m.created_ms;
+		var fadeStart = ttl * 0.6;
+		obj.material.opacity = age > fadeStart ? (1 - (age - fadeStart) / (ttl - fadeStart)) : 1;
+	}
+
+	// Drop anything expired or no longer present.
+	for (var id in krpano.annotation_mark_objs) {
+		if (seen[id]) continue;
+		var dead = krpano.annotation_mark_objs[id];
+		try {
+			if (dead.parent) dead.parent.remove(dead);
+			if (dead.material) dead.material.dispose();
+		} catch (e) {}
+		delete krpano.annotation_mark_objs[id];
+	}
+]]></action>
+</krpano>

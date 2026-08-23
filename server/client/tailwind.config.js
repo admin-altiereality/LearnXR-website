@@ -7,6 +7,20 @@ export default {
   ],
   theme: {
   	extend: {
+  		// Named stacking order for the VR player. Every layer in the player MUST
+  		// use one of these — raw z-[n] is what let panels collide arbitrarily
+  		// (and how `z-5`, which is not a real class, silently became z-index:auto).
+  		zIndex: {
+  			scene: '0',
+  			veil: '10',
+  			annot: '15',
+  			stage: '20',
+  			hud: '30',
+  			drawer: '40',
+  			gate: '50',
+  			modal: '60',
+  			critical: '70'
+  		},
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',

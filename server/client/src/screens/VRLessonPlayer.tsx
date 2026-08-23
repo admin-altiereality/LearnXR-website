@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
@@ -1948,7 +1948,7 @@ const VRLessonPlayerInner = () => {
       }
 
       // Legacy: Save/Update lesson progress in user_lesson_progress collection
-      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
+      const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}_${topicId}`);
       await setDoc(progressRef, {
         userId: user.uid,
         chapterId,
@@ -2196,7 +2196,7 @@ const VRLessonPlayerInner = () => {
         }, { merge: true });
         log('✅', 'Quiz results saved to user_quiz_results (legacy)');
 
-        const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}`);
+        const progressRef = doc(db, 'user_lesson_progress', `${user.uid}_${chapterId}_${topicId}`);
         await setDoc(progressRef, {
           userId: user.uid,
           chapterId,
@@ -3411,6 +3411,11 @@ const SafeVRLessonPlayer = () => {
 // ============================================================================
 
 const VRLessonPlayer = () => {
+  // This player has no class-session awareness: a student here cannot be held or
+  // controlled by the teacher. Send anyone in a live session to the krpano player.
+  if (typeof window !== 'undefined' && sessionStorage.getItem('learnxr_joined_session_id')) {
+    return <Navigate to="/vrlessonplayer-krpano" replace />;
+  }
   return (
     <VRPlayerErrorBoundary onReset={() => {
       sessionStorage.removeItem('activeLesson');

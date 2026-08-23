@@ -45,6 +45,12 @@
         window.__krpanoLayoutToSet = act.split(":")[1];
         try { krpano.call("immersive_ui_set_layout()"); } catch(e) {}
       }
+      // panelMove:<axis>:<step> — free move/resize of the lesson panel.
+      if (act.indexOf("panelMove:") === 0) {
+        var parts = act.split(":");
+        try { krpano.call("immersive_ui_nudge_panel(" + parts[1] + "," + parts[2] + ")"); } catch(e) {}
+        return;
+      }
       try { if (window.__xrHaptic) window.__xrHaptic(act.indexOf("mcqSubmit") === 0 ? "confirm" : "select"); } catch(e) {}
       try { if (window.__krpanoUIAction) window.__krpanoUIAction(act); } catch(e) {
         console.warn("[ImmersiveUI] Action bridge failed:", act, e);
@@ -206,9 +212,12 @@
       { x: 806,  y: 50,   w: 200, h: 48, action: "phaseGo:explanation" },
       { x: 1042, y: 50,   w: 200, h: 48, action: "phaseGo:outro" },
       { x: 1278, y: 50,   w: 200, h: 48, action: "phaseGo:quiz" },
-      { x: 1590, y: 56,   w: 130, h: 34, action: "layoutToggle:lecture" },
-      { x: 1728, y: 56,   w: 130, h: 34, action: "layoutToggle:podium" },
-      { x: 1866, y: 56,   w: 130, h: 34, action: "layoutToggle:museum" },
+      { x: 1520, y: 56,  w: 66, h: 34, action: "panelMove:x:-8" },
+      { x: 1592, y: 56,  w: 66, h: 34, action: "panelMove:x:8" },
+      { x: 1664, y: 56,  w: 66, h: 34, action: "panelMove:y:6" },
+      { x: 1736, y: 56,  w: 66, h: 34, action: "panelMove:y:-6" },
+      { x: 1808, y: 56,  w: 66, h: 34, action: "panelMove:scale:-0.12" },
+      { x: 1880, y: 56,  w: 66, h: 34, action: "panelMove:scale:0.12" },
       { x: 60,   y: 1090, w: 220, h: 72, action: "replay" },
       { x: 304,  y: 1090, w: 160, h: 72, action: "ttsPlay" },
       { x: 884,  y: 1090, w: 280, h: 72, action: "skipToQuiz" },
@@ -1165,41 +1174,38 @@
     }
 
     function drawLayoutToggle() {
-      var tabW = 130, tabH = 34, gap = 8, tabR = 17;
-      var keys = ["lecture", "podium", "museum"];
-      var labels = ["\u{1F3DB} Lecture", "\u{1F3A4} Podium", "\u{1F3DB} Museum"];
-      var totalW = keys.length * tabW + (keys.length - 1) * gap;
+      // Free move + resize of this panel. The preset layouts this replaced were
+      // reported as not working, so the panel is nudged directly instead.
+      var btnW = 66, btnH = 34, gap = 6, r = 17;
+      var defs = [
+        { label: "\u2190", action: "panelMove:x:-8" },
+        { label: "\u2192", action: "panelMove:x:8" },
+        { label: "\u2191", action: "panelMove:y:6" },
+        { label: "\u2193", action: "panelMove:y:-6" },
+        { label: "\u2212", action: "panelMove:scale:-0.12" },
+        { label: "+", action: "panelMove:scale:0.12" }
+      ];
+      var totalW = defs.length * btnW + (defs.length - 1) * gap;
       var startX = CW - totalW - 44;
       var Y = 56;
 
-      for (var i = 0; i < keys.length; i++) {
-        var tx = startX + i * (tabW + gap);
-        var isActive = refs.currentLayout === keys[i];
+      for (var i = 0; i < defs.length; i++) {
+        var bx = startX + i * (btnW + gap);
+        roundRect(bx, Y, btnW, btnH, r);
+        ctx.fillStyle = "rgba(51, 65, 85, 0.35)";
+        ctx.fill();
+        roundRect(bx, Y, btnW, btnH, r);
+        ctx.strokeStyle = "rgba(71, 85, 105, 0.35)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-        roundRect(tx, Y, tabW, tabH, tabR);
-        if (isActive) {
-          ctx.fillStyle = "rgba(16, 185, 129, 0.3)";
-          ctx.fill();
-          roundRect(tx, Y, tabW, tabH, tabR);
-          ctx.strokeStyle = "rgba(16, 185, 129, 0.5)";
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = "rgba(51, 65, 85, 0.3)";
-          ctx.fill();
-          roundRect(tx, Y, tabW, tabH, tabR);
-          ctx.strokeStyle = "rgba(71, 85, 105, 0.2)";
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-
-        ctx.fillStyle = isActive ? "#34d399" : "#94a3b8";
-        ctx.font = "600 15px " + FONT;
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "600 18px " + FONT;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(labels[i], tx + tabW / 2, Y + tabH / 2);
+        ctx.fillText(defs[i].label, bx + btnW / 2, Y + btnH / 2);
 
-        refs.buttonRegions.push({ x: tx, y: Y, w: tabW, h: tabH, action: "layoutToggle:" + keys[i] });
+        refs.buttonRegions.push({ x: bx, y: Y, w: btnW, h: btnH, action: defs[i].action });
       }
     }
 
@@ -1472,4 +1478,67 @@
     if (window.__krpanoImmersiveUiCleanup) window.__krpanoImmersiveUiCleanup();
   ]]></action>
 
+
+<!--
+	Free drag + resize of the lesson panel.
+
+	Preset layouts existed but were reported as not working, so the panel is moved
+	directly instead. A dedicated grab handle is used rather than making the whole
+	panel hit-testable: its buttons come from a raycast plus separate iu_gaze_btn_N
+	proxy hotspots, and a hit-testable panel would shadow its own controls.
+
+	Position/scale are pushed from React via window.__krpanoPanelTransform.
+-->
+<action name="immersive_ui_apply_panel_transform" type="js"><![CDATA[
+	var refs = krpano.immersive_ui_refs;
+	if (!refs || !refs.panel || !refs.panel.mesh) return;
+	var t = window.__krpanoPanelTransform;
+	if (!t) return;
+
+	var hs = null;
+	try { hs = krpano.get("hotspot[iu_panel_3d]"); } catch (e) { hs = null; }
+	if (hs) {
+		if (isFinite(t.tx)) krpano.set("hotspot[iu_panel_3d].tx", t.tx);
+		if (isFinite(t.ty)) krpano.set("hotspot[iu_panel_3d].ty", t.ty);
+		if (isFinite(t.tz)) krpano.set("hotspot[iu_panel_3d].tz", t.tz);
+	}
+	if (isFinite(t.scale) && t.scale > 0) {
+		refs.panel.mesh.scale.set(-t.scale, t.scale, t.scale);
+	}
+	// Gaze-button proxies are positioned off the panel, so re-place them after a move.
+	if (typeof krpano.call === "function") krpano.call("immersive_ui_gaze_update_positions()");
+]]></action>
+
+<action name="immersive_ui_nudge_panel" type="js"><![CDATA[
+	// Relative move/resize driven from the panel's own buttons, so it works in-headset
+	// with no controller drag required.
+	var hs = null;
+	try { hs = krpano.get("hotspot[iu_panel_3d]"); } catch (e) { hs = null; }
+	if (!hs) return;
+	var refs = krpano.immersive_ui_refs;
+
+	var axis = (typeof args !== "undefined" && args[1] !== undefined) ? String(args[1]) : "";
+	var step = (typeof args !== "undefined" && args[2] !== undefined) ? Number(args[2]) : 0;
+	if (!axis || !isFinite(step)) return;
+
+	if (axis === "x") krpano.set("hotspot[iu_panel_3d].tx", Number(hs.tx || 0) + step);
+	else if (axis === "y") krpano.set("hotspot[iu_panel_3d].ty", Number(hs.ty || 0) + step);
+	else if (axis === "z") krpano.set("hotspot[iu_panel_3d].tz", Number(hs.tz || 0) + step);
+	else if (axis === "scale" && refs && refs.panel && refs.panel.mesh) {
+		var cur = Math.abs(refs.panel.mesh.scale.y) || 1;
+		var next = Math.max(0.4, Math.min(2.5, cur + step));
+		refs.panel.mesh.scale.set(-next, next, next);
+	}
+
+	// Report back so React can persist the teacher's/student's preference.
+	var m = (refs && refs.panel && refs.panel.mesh) ? Math.abs(refs.panel.mesh.scale.y) : 1;
+	window.__krpanoPanelTransform = {
+		tx: Number(krpano.get("hotspot[iu_panel_3d].tx")) || 0,
+		ty: Number(krpano.get("hotspot[iu_panel_3d].ty")) || 0,
+		tz: Number(krpano.get("hotspot[iu_panel_3d].tz")) || 0,
+		scale: m
+	};
+	if (window.__krpanoOnPanelTransform) window.__krpanoOnPanelTransform(window.__krpanoPanelTransform);
+	if (typeof krpano.call === "function") krpano.call("immersive_ui_gaze_update_positions()");
+]]></action>
 </krpano>

@@ -39,6 +39,8 @@ import {
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import { useTeacherLaunchedLessons } from '../hooks/useTeacherLaunchedLessons';
+import { LaunchedLessonSpecs } from '../Components/classSession/LaunchedLessonSpecs';
 import { LanguageToggle } from '../Components/LanguageSelector';
 import { Button } from '../Components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../Components/ui/card';
@@ -46,7 +48,6 @@ import { Input } from '../Components/ui/input';
 import { PrismFluxLoader } from '../Components/ui/prism-flux-loader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../Components/ui/select';
 import { db } from '../config/firebase';
-import { VR360_TOUR_CHAPTER_ID, getVr360TourById } from '../config/vr360Tours';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
@@ -58,7 +59,6 @@ import {
 } from '../lib/firebase/utils/languageAvailability';
 import { isAdminOnly, isSuperadmin } from '../utils/rbac';
 import { getVRCapabilities } from '../utils/vrDetection';
-import { buildCreateSceneActiveLesson } from '../utils/buildCreateSceneActiveLesson';
 import { launchPartnerDemoLesson } from '../services/partnerService';
 
 // Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
@@ -92,7 +92,7 @@ const ContentBadges = memo(({ chapter }) => (
 
 // GRID VIEW - Lesson Card (Topic-based) - Memoized to prevent flickering
 // Approval status is read-only (no approve/unapprove from this page - use Approvals page)
-const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
+const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbnail, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin, launchRecord = null, onOpenSpecs }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const thumbnail = topic.skybox_url || chapter.topics?.find(t => t.skybox_url)?.skybox_url || null;
   const isCompleted = completedLessons[chapter.id];
@@ -148,6 +148,23 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
         
         {isCompleted && (
           <div className="absolute inset-0 bg-primary/10 pointer-events-none" />
+        )}
+
+        {/* Launched-to-class marker: distinguishes lessons the teacher has pushed
+            to a class from ones they have only previewed. */}
+        {launchRecord && (
+          <button
+            type="button"
+            title="View launched lesson specs"
+            onClick={(e) => { e.stopPropagation(); onOpenSpecs?.(launchRecord); }}
+            className={`absolute left-2 top-2 z-[5] inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold shadow-lg backdrop-blur transition hover:brightness-110 ${
+              launchRecord.isLive
+                ? 'border-emerald-300/50 bg-emerald-500/85 text-white'
+                : 'border-primary/40 bg-primary/85 text-primary-foreground'
+            }`}
+          >
+            {launchRecord.isLive ? '● LIVE NOW' : 'LAUNCHED'}
+          </button>
         )}
         
         {/* Badges: solid white text on dark pill — curriculum, class, chapter */}
@@ -319,7 +336,7 @@ const TopicRow = memo(({ topic, chapter, index, onOpenModal, selectedLanguage = 
 
 // LIST VIEW - Lesson Item (Topic-based) - Memoized
 // Approval status is read-only (no approve/unapprove from this page - use Approvals page)
-const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin }) => {
+const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, selectedLanguage = 'en', isLockedForGuest = false, onGuestSignup, onGuestLogin, launchRecord = null, onOpenSpecs }) => {
   const { topic, chapter, chapterInfo } = lessonItem;
   const isCompleted = completedLessons[chapter.id];
   const quizScore = isCompleted?.quizScore;
@@ -352,8 +369,22 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
           </p>
         </div>
       )}
+      {launchRecord && (
+        <button
+          type="button"
+          title="View launched lesson specs"
+          onClick={(e) => { e.stopPropagation(); onOpenSpecs?.(launchRecord); }}
+          className={`absolute right-3 top-3 z-[5] inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold transition hover:brightness-110 ${
+            launchRecord.isLive
+              ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-500'
+              : 'border-primary/40 bg-primary/15 text-primary'
+          }`}
+        >
+          {launchRecord.isLive ? '● LIVE NOW' : 'LAUNCHED · specs'}
+        </button>
+      )}
       <div 
-        className={`flex items-center gap-4 p-4 transition-colors ${isLockedForGuest ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
+        className={`flex items-center gap-4 p-4 transition-colors ${launchRecord ? 'border-l-2 border-l-primary' : ''} ${isLockedForGuest ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
         onClick={() => !isLockedForGuest && onOpenModal(chapter, topic)}
       >
         <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-primary/10 border border-border">
@@ -443,6 +474,10 @@ const Lessons = ({ setBackgroundSkybox }) => {
   
   // Completed lessons tracking
   const [completedLessons, setCompletedLessons] = useState({});
+
+  // Lessons this teacher has launched to a class, and the specs panel for one launch
+  const { byLesson: launchedByLesson } = useTeacherLaunchedLessons();
+  const [specsRecord, setSpecsRecord] = useState(null);
   
   // VR capabilities
   const [vrCapabilities, setVRCapabilities] = useState(null);
@@ -479,8 +514,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
     launchLesson: launchLessonToClass,
   } = useClassSession();
   const [sessionCodeInput, setSessionCodeInput] = useState('');
-  const launchedLessonHandledRef = React.useRef(null);
-  const launchedSceneHandledRef = React.useRef(null);
   
   // Student class data
   const [studentClasses, setStudentClasses] = useState([]);
@@ -1064,17 +1097,20 @@ const Lessons = ({ setBackgroundSkybox }) => {
       });
     });
     
+    // Guest students get exactly one demo lesson; the rest require a full account.
+    const visibleItems = isGuest ? items.slice(0, 1) : items;
+
     console.log('📦 Lesson items created:', {
-      totalItems: items.length,
-      sampleItem: items[0] ? {
-        topicName: items[0].topic.topic_name,
-        chapterName: items[0].chapter.chapter_name,
-        groupKey: items[0].groupKey,
+      totalItems: visibleItems.length,
+      sampleItem: visibleItems[0] ? {
+        topicName: visibleItems[0].topic.topic_name,
+        chapterName: visibleItems[0].chapter.chapter_name,
+        groupKey: visibleItems[0].groupKey,
       } : null,
     });
-    
-    return items;
-  }, [groupedTopicsByChapter]);
+
+    return visibleItems;
+  }, [groupedTopicsByChapter, isGuest]);
   
   // Search/filter - use language-specific names
   const filteredLessonItems = useMemo(() => {
@@ -1342,175 +1378,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
     setDataReady(false);
     fetchLessonData(chapter, topicInput);
   }, [fetchLessonData]);
-
-  // When teacher launches a lesson to the class, fetch bundle and open XR player
-  React.useEffect(() => {
-    const launched = joinedSession?.launched_lesson;
-    if (!launched || !joinedSessionId || !user?.uid) return;
-    if (['licensed_3d', 'licensed_embed', 'licensed_link'].includes(String(launched.lesson_type))) return;
-
-    if (launched.lesson_type === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
-      const tid =
-        launched.vr360_tour_id ||
-        (typeof launched.topic_id === 'string' && launched.topic_id.startsWith('tour-')
-          ? launched.topic_id.replace(/^tour-/, '')
-          : null);
-      const vKey = `vr360_${tid || 'x'}`;
-      if (launchedLessonHandledRef.current === vKey) return;
-      launchedLessonHandledRef.current = vKey;
-      const tour = tid ? getVr360TourById(tid) : undefined;
-      if (!tour) {
-        launchedLessonHandledRef.current = null;
-        return;
-      }
-      try {
-        sessionStorage.setItem(
-          'learnxr_vr360_tour',
-          JSON.stringify({
-            tourId: tour.id,
-            title: tour.title,
-            videoPath: tour.videoPath,
-            videoStoragePath: tour.videoStoragePath,
-            player: tour.player,
-            fromClassSession: true,
-          })
-        );
-        sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
-        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
-        setTimeout(() => navigate('/vr360-videotour'), 200);
-      } catch (err) {
-        console.error('Failed to open launched 360 video tour:', err);
-        launchedLessonHandledRef.current = null;
-      }
-      return;
-    }
-
-    const key = `${launched.chapter_id}_${launched.topic_id}`;
-    if (launchedLessonHandledRef.current === key) return;
-    launchedLessonHandledRef.current = key;
-
-    const effectiveLang = launched.lang ?? selectedLanguage;
-    let cancelled = false;
-    (async () => {
-      try {
-        const { getLessonBundle } = await import('../services/firestore/getLessonBundle');
-        const bundle = await getLessonBundle({
-          chapterId: launched.chapter_id,
-          lang: effectiveLang,
-          topicId: launched.topic_id,
-          source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
-        });
-        if (cancelled) return;
-        const fullData = bundle.chapter;
-        const topic = fullData.topics?.find((t) => t.topic_id === launched.topic_id) || fullData.topics?.[0];
-        if (!topic) return;
-        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
-        let assetUrls = topic.asset_urls || [];
-        const assetIds = topic.asset_ids || [];
-        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
-        safeAssets3d.forEach((asset) => {
-          const glb = asset?.animated_render_url || asset?.animated_glb_url || asset?.render_url || asset?.model_urls?.glb || asset?.glb_url;
-          if (glb && !assetUrls.includes(glb)) {
-            assetUrls.push(glb);
-            assetIds.push(asset.id || `asset_${assetUrls.length}`);
-          }
-        });
-        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
-        const mcqs = safeMcqs.map((m) => ({
-          id: m.id || `mcq_${Math.random()}`,
-          question: m.question || m.question_text || '',
-          options: Array.isArray(m.options) ? m.options : [],
-          correct_option_index: m.correct_option_index ?? 0,
-          explanation: m.explanation || '',
-        }));
-        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
-        const ttsAudio = safeTts
-          .map((tts) => ({
-            id: tts.id || '',
-            script_type: tts.script_type || tts.section || 'full',
-            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
-            language: tts.language || tts.lang || effectiveLang,
-          }))
-          .filter((tts) => (tts.language || 'en').toLowerCase() === effectiveLang.toLowerCase());
-        const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
-        const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
-
-        const cleanChapter = {
-          chapter_id: String(launched.chapter_id),
-          chapter_name: fullData.chapter_name || 'Untitled Chapter',
-          chapter_number: Number(fullData.chapter_number) || 1,
-          curriculum: String(launched.curriculum || fullData.curriculum || ''),
-          class_name: String((launched.class_name || fullData.class_name) ?? ''),
-          subject: String((launched.subject || fullData.subject) ?? ''),
-        };
-        const cleanTopic = {
-          topic_id: String(topic.topic_id ?? launched.topic_id),
-          topic_name: topic.topic_name || 'Untitled Topic',
-          topic_priority: Number(topic.topic_priority) || 1,
-          learning_objective: topic.learning_objective || '',
-          skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
-          skybox_remix_id: topic.skybox_remix_id ?? null,
-          skybox_url: skyboxUrl,
-          skybox_glb_url: skyboxGlb,
-          avatar_intro: scripts.intro || '',
-          avatar_explanation: scripts.explanation || '',
-          avatar_outro: scripts.outro || '',
-          asset_urls: assetUrls,
-          asset_ids: assetIds,
-          mcq_ids: topic.mcq_ids || [],
-          mcqs,
-          tts_ids: topic.tts_ids || [],
-          tts_audio_url: topic.tts_audio_url || '',
-          ttsAudio,
-          language: effectiveLang,
-        };
-        const fullLessonData = {
-          chapter: cleanChapter,
-          topic: cleanTopic,
-          image3dasset: fullData.image3dasset ?? null,
-          meshy_asset_ids: fullData.meshy_asset_ids ?? [],
-          assets3d: safeAssets3d,
-          startedAt: new Date().toISOString(),
-          _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
-          language: effectiveLang,
-          ttsAudio,
-        };
-        sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-        sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
-        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
-        if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
-        // Short delay so third-party iframes (e.g. Firebase Auth) can finish and avoid "message port closed" errors
-        setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
-      } catch (err) {
-        console.error('Failed to open launched lesson:', err);
-        launchedLessonHandledRef.current = null;
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [joinedSession?.launched_lesson, joinedSessionId, user?.uid, selectedLanguage, navigate, contextStartLesson]);
-
-  // When teacher sends a scene to the class, open VR lesson player (KRPano) with synthetic bundle
-  React.useEffect(() => {
-    const scene = joinedSession?.launched_scene;
-    if (!scene || scene.type !== 'create_scene' || !joinedSessionId || !user?.uid) return;
-    const key = `scene_${joinedSessionId}_${scene.skybox_image_url || scene.skybox_id || 'default'}_${scene.meshy_glb_url || ''}`;
-    if (launchedSceneHandledRef.current === key) return;
-    launchedSceneHandledRef.current = key;
-    try {
-      const fullLessonData = buildCreateSceneActiveLesson(scene);
-      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-      sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
-      sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
-      sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
-      if (typeof contextStartLesson === 'function') {
-        contextStartLesson(fullLessonData.chapter, fullLessonData.topic);
-      }
-      setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
-    } catch (e) {
-      console.error('Failed to open launched scene:', e);
-      launchedSceneHandledRef.current = null;
-    }
-  }, [joinedSession?.launched_scene, joinedSessionId, user?.uid, navigate, contextStartLesson]);
 
   // Show session join error
   React.useEffect(() => {
@@ -1834,10 +1701,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
         contextStartLesson(cleanChapter, cleanTopic);
       }
       
-      // Close modal and navigate
+      // Close modal and navigate. Students in a live class must use the krpano
+      // player — it is the only one that honours the teacher's lockstep controls.
       closeLessonModal();
       setTimeout(() => {
-        navigate('/xrlessonplayer');
+        navigate(joinedSessionId ? '/vrlessonplayer-krpano' : '/xrlessonplayer');
       }, 100);
       
     } catch (err) {
@@ -2562,6 +2430,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
                       >
                         <LessonCard 
                           lessonItem={lessonItem}
+                          launchRecord={launchedByLesson.get(`${lessonItem.chapter.id}__${lessonItem.topic.topic_id}`) || null}
+                          onOpenSpecs={setSpecsRecord}
                           completedLessons={completedLessons}
                           onOpenModal={openLessonModal}
                           getThumbnail={getThumbnail}
@@ -2612,6 +2482,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     <LessonListItem
                       key={`${itemKey}_${index}`}
                       lessonItem={lessonItem}
+                      launchRecord={launchedByLesson.get(`${lessonItem.chapter.id}__${lessonItem.topic.topic_id}`) || null}
+                      onOpenSpecs={setSpecsRecord}
                       completedLessons={completedLessons}
                       onOpenModal={openLessonModal}
                       selectedLanguage={selectedLanguage}
@@ -2629,6 +2501,16 @@ const Lessons = ({ setBackgroundSkybox }) => {
 
       {/* Lesson Detail Modal - Rendered outside AnimatePresence to prevent flicker */}
       {selectedLesson && renderModal()}
+
+      {/* Stats for a lesson this teacher launched to a class */}
+      {specsRecord && (
+        <LaunchedLessonSpecs
+          sessionId={specsRecord.sessionId}
+          classId={specsRecord.classId}
+          lessonTitle={specsRecord.title}
+          onClose={() => setSpecsRecord(null)}
+        />
+      )}
     </div>
   );
 };

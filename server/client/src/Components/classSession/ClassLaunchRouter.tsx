@@ -1,0 +1,278 @@
+/**
+ * ClassLaunchRouter
+ * -----------------
+ * The single place that reacts to a teacher launching content to the class.
+ *
+ * Previously this logic lived in three places — ClassSessionContext (licensed
+ * content only), Lessons.jsx (curriculum / vr360 / user_generated) and
+ * StudentDashboard (its Join button) — which meant a student sitting on any
+ * other page was never pulled into the lesson. Mounting this once inside
+ * ClassSessionProvider makes launches work app-wide.
+ *
+ * Renders nothing.
+ */
+
+import { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+import { useClassSession } from '../../contexts/ClassSessionContext';
+import { useLesson } from '../../contexts/LessonContext';
+import { buildCreateSceneActiveLesson } from '../../utils/buildCreateSceneActiveLesson';
+import { getVr360TourById, VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
+import type { LanguageCode } from '../../types/curriculum';
+import type { LessonChapter, LessonTopic } from '../../contexts/LessonContext';
+
+const LICENSED_TYPES = ['licensed_3d', 'licensed_embed', 'licensed_link'];
+/** Survives a reload so returning to the same launch does not re-navigate. */
+const HANDLED_KEY = 'learnxr_handled_launch_key';
+
+function readHandled(): string | null {
+  try {
+    return sessionStorage.getItem(HANDLED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeHandled(key: string) {
+  try {
+    sessionStorage.setItem(HANDLED_KEY, key);
+  } catch {
+    /* ignore */
+  }
+}
+
+export const ClassLaunchRouter = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { joinedSession, joinedSessionId } = useClassSession();
+  const { startLesson: contextStartLesson } = useLesson();
+  const inFlightRef = useRef<string | null>(null);
+
+  const launched = joinedSession?.launched_lesson ?? null;
+  const scene = joinedSession?.launched_scene ?? null;
+  // Hosts drive the class from their own player; never redirect them.
+  const isStudentInSession =
+    Boolean(joinedSessionId) && Boolean(user?.uid) && joinedSession?.teacher_uid !== user?.uid;
+
+  // ---- Launched lesson -----------------------------------------------------
+  useEffect(() => {
+    if (!launched || !joinedSessionId || !isStudentInSession) return;
+
+    const lessonType = String(launched.lesson_type ?? 'curriculum');
+
+    // Dedupe on launch_id so relaunching the SAME topic still re-opens it.
+    const identity =
+      launched.launch_id || `${launched.chapter_id}_${launched.topic_id}_${lessonType}`;
+    const key = `${joinedSessionId}:${identity}`;
+    if (readHandled() === key || inFlightRef.current === key) return;
+
+    // Licensed content opens in the Immersive STEM viewer.
+    if (LICENSED_TYPES.includes(lessonType)) {
+      if (!launched.licensed_content_id) return;
+      inFlightRef.current = key;
+      writeHandled(key);
+      try {
+        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
+      } catch {
+        /* ignore */
+      }
+      navigate(`/immersive-stem/${encodeURIComponent(launched.licensed_content_id)}`);
+      return;
+    }
+
+    // 360° video tours.
+    if (lessonType === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
+      const tid =
+        launched.vr360_tour_id ||
+        (typeof launched.topic_id === 'string' && launched.topic_id.startsWith('tour-')
+          ? launched.topic_id.replace(/^tour-/, '')
+          : null);
+      const tour = tid ? getVr360TourById(tid) : undefined;
+      if (!tour) return;
+      inFlightRef.current = key;
+      writeHandled(key);
+      try {
+        sessionStorage.setItem(
+          'learnxr_vr360_tour',
+          JSON.stringify({
+            tourId: tour.id,
+            title: tour.title,
+            videoPath: tour.videoPath,
+            videoStoragePath: tour.videoStoragePath,
+            player: tour.player,
+            fromClassSession: true,
+          })
+        );
+        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
+        setTimeout(() => navigate('/vr360-videotour'), 200);
+      } catch (err) {
+        console.error('ClassLaunchRouter: failed to open 360 tour:', err);
+        inFlightRef.current = null;
+      }
+      return;
+    }
+
+    // Curriculum / user-generated lessons: fetch the bundle, then open krpano.
+    inFlightRef.current = key;
+    const effectiveLang = (launched.lang ?? 'en') as LanguageCode;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
+        const bundle = await getLessonBundle({
+          chapterId: launched.chapter_id,
+          lang: effectiveLang,
+          topicId: launched.topic_id,
+          source: lessonType === 'user_generated' ? 'user_generated' : 'curriculum',
+        });
+        if (cancelled) return;
+
+        const fullData = bundle.chapter;
+        const topic =
+          fullData.topics?.find((t: { topic_id?: string }) => t.topic_id === launched.topic_id) ||
+          fullData.topics?.[0];
+        if (!topic) {
+          inFlightRef.current = null;
+          return;
+        }
+
+        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
+        const assetUrls = [...(topic.asset_urls || [])];
+        const assetIds = [...(topic.asset_ids || [])];
+        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
+        safeAssets3d.forEach((asset) => {
+          const glb =
+            asset?.animated_render_url ||
+            asset?.animated_glb_url ||
+            asset?.render_url ||
+            asset?.model_urls?.glb ||
+            asset?.glb_url;
+          if (glb && !assetUrls.includes(glb)) {
+            assetUrls.push(glb);
+            assetIds.push(asset.id || `asset_${assetUrls.length}`);
+          }
+        });
+
+        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
+        const mcqs = safeMcqs.map((m, i) => ({
+          id: m.id || `mcq_${i}`,
+          question: m.question || m.question_text || '',
+          options: Array.isArray(m.options) ? m.options : [],
+          correct_option_index: m.correct_option_index ?? 0,
+          explanation: m.explanation || '',
+        }));
+
+        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
+        const ttsAudio = safeTts
+          .map((tts) => ({
+            id: tts.id || '',
+            script_type: tts.script_type || tts.section || 'full',
+            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
+            language: tts.language || tts.lang || effectiveLang,
+          }))
+          .filter((tts) => (tts.language || 'en').toLowerCase() === effectiveLang.toLowerCase());
+
+        const skyboxUrl =
+          bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
+        const skyboxGlb =
+          bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
+
+        const cleanChapter = {
+          chapter_id: String(launched.chapter_id),
+          chapter_name: fullData.chapter_name || 'Untitled Chapter',
+          chapter_number: Number(fullData.chapter_number) || 1,
+          curriculum: String(launched.curriculum || fullData.curriculum || ''),
+          class_name: String((launched.class_name || fullData.class_name) ?? ''),
+          subject: String((launched.subject || fullData.subject) ?? ''),
+        };
+        const cleanTopic = {
+          topic_id: String(topic.topic_id ?? launched.topic_id),
+          topic_name: topic.topic_name || 'Untitled Topic',
+          topic_priority: Number(topic.topic_priority) || 1,
+          learning_objective: topic.learning_objective || '',
+          skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
+          skybox_remix_id: topic.skybox_remix_id ?? null,
+          skybox_url: skyboxUrl,
+          skybox_glb_url: skyboxGlb,
+          avatar_intro: scripts.intro || '',
+          avatar_explanation: scripts.explanation || '',
+          avatar_outro: scripts.outro || '',
+          asset_urls: assetUrls,
+          asset_ids: assetIds,
+          mcq_ids: topic.mcq_ids || [],
+          mcqs,
+          tts_ids: topic.tts_ids || [],
+          tts_audio_url: topic.tts_audio_url || '',
+          ttsAudio,
+          language: effectiveLang,
+        };
+        const fullLessonData = {
+          chapter: cleanChapter,
+          topic: cleanTopic,
+          image3dasset: fullData.image3dasset ?? null,
+          meshy_asset_ids: fullData.meshy_asset_ids ?? [],
+          assets3d: safeAssets3d,
+          startedAt: new Date().toISOString(),
+          _meta: {
+            assets3d: safeAssets3d,
+            meshy_asset_ids: fullData.meshy_asset_ids || [],
+          },
+          language: effectiveLang,
+          ttsAudio,
+        };
+
+        writeHandled(key);
+        sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
+        if (typeof contextStartLesson === 'function') {
+          // The player reads the richer payload from sessionStorage; LessonContext
+          // only needs the identifying fields, so narrow at this boundary.
+          contextStartLesson(
+            cleanChapter as unknown as LessonChapter,
+            cleanTopic as unknown as LessonTopic
+          );
+        }
+        // Small delay so third-party iframes (Firebase Auth) settle first.
+        setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
+      } catch (err) {
+        console.error('ClassLaunchRouter: failed to open launched lesson:', err);
+        inFlightRef.current = null;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [launched, joinedSessionId, isStudentInSession, navigate, contextStartLesson]);
+
+  // ---- Launched scene (Create page) ---------------------------------------
+  useEffect(() => {
+    if (!scene || scene.type !== 'create_scene' || !joinedSessionId || !isStudentInSession) return;
+    const key = `${joinedSessionId}:scene_${
+      scene.skybox_image_url || scene.skybox_id || 'default'
+    }_${scene.meshy_glb_url || ''}`;
+    if (readHandled() === key || inFlightRef.current === key) return;
+    inFlightRef.current = key;
+    try {
+      const fullLessonData = buildCreateSceneActiveLesson(scene);
+      writeHandled(key);
+      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
+      sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
+      sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
+      if (typeof contextStartLesson === 'function') {
+        contextStartLesson(
+          fullLessonData.chapter as unknown as LessonChapter,
+          fullLessonData.topic as unknown as LessonTopic
+        );
+      }
+      setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
+    } catch (err) {
+      console.error('ClassLaunchRouter: failed to open launched scene:', err);
+      inFlightRef.current = null;
+    }
+  }, [scene, joinedSessionId, isStudentInSession, navigate, contextStartLesson]);
+
+  return null;
+};

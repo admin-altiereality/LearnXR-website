@@ -19,7 +19,12 @@ export type TeacherViewLike = {
   sync_id?: number;
 };
 
+import { releaseUserControl, suspendUserControl } from './userControl';
+
 const DIRECT_LOCK_MS = 2800;
+
+/** Pending release for the Direct lock, so repeated Directs do not stack timers. */
+let directReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Read live h/v/fov from a krpano instance (supports get + call fallbacks). */
 export function readKrpanoLookat(viewer: KrpanoViewCaller | null | undefined): {
@@ -63,13 +68,23 @@ export function applyTeacherViewToKrpano(
   try {
     if (isDirect) {
       // Stop any in-flight tween, lock drag, then lookto with a clear blend.
+      // The lock goes through the shared refcount rather than writing the flag
+      // directly: the marker is another writer, and whichever released last used to
+      // win — a Direct could re-enable panning under an active marker, and a marker
+      // toggle could cancel this lock mid-tween.
       viewer.call('stoptween(view.hlookat); stoptween(view.vlookat); stoptween(view.fov);');
-      viewer.call('set(control.usercontrol, off);');
+      suspendUserControl(viewer, 'direct');
+      // Schedule the release BEFORE the call that can throw. krpano's lookto throws
+      // whenever the pano has not loaded; the outer catch swallowed it, the release was
+      // never scheduled, and 'direct' stuck in the module-level holder set forever —
+      // which then wrote `off` to every subsequently embedded viewer.
+      if (directReleaseTimer !== null) clearTimeout(directReleaseTimer);
+      directReleaseTimer = setTimeout(() => {
+        directReleaseTimer = null;
+        releaseUserControl(viewer, 'direct');
+      }, DIRECT_LOCK_MS);
       viewer.call(
         `lookto(${h}, ${v}, ${fov}, tween(easeInOutQuad, 0.55), true, true);`
-      );
-      viewer.call(
-        `delayedcall(${(DIRECT_LOCK_MS / 1000).toFixed(2)}, set(control.usercontrol, all););`
       );
     } else {
       viewer.call(

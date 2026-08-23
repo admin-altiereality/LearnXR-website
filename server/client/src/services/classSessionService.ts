@@ -17,6 +17,7 @@ import {
   where,
   onSnapshot,
   serverTimestamp,
+  writeBatch,
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -31,6 +32,11 @@ import type {
   SessionLessonPhase,
   SessionQuizAnswer,
   TeacherContentState,
+  TeacherPlayback,
+  SessionLobbyMember,
+  TeacherAnnotations,
+  AnnotationStroke,
+  TeacherImmersiveRequest,
 } from '../types/lms';
 
 const COLLECTION_SESSIONS = 'class_sessions';
@@ -73,12 +79,108 @@ function generateSessionCode(length: number = 6): string {
  * Create a new class session. Teacher must manage the class (teacher_ids or shared).
  * Returns session id or null.
  */
+/**
+ * A session nobody explicitly ended is treated as abandoned once it has been
+ * untouched for this long. Without this, a teacher who simply closed the tab
+ * leaves a session that shows as live forever and that students can still join.
+ */
+export const SESSION_STALE_AFTER_MS = 8 * 60 * 60 * 1000; // 8 hours
+
+/** Milliseconds since a session's last write, or null if the stamp is unusable. */
+export function sessionAgeMs(session: Pick<ClassSession, 'updated_at' | 'created_at'>): number | null {
+  const raw = (session.updated_at ?? session.created_at) as unknown;
+  if (!raw) return null;
+  const asDate =
+    typeof (raw as { toDate?: () => Date })?.toDate === 'function'
+      ? (raw as { toDate: () => Date }).toDate()
+      : new Date(raw as string);
+  const t = asDate.getTime();
+  if (Number.isNaN(t)) return null;
+  return Date.now() - t;
+}
+
+/** True when a session should no longer be shown or joinable. */
+export function isSessionStale(session: Pick<ClassSession, 'updated_at' | 'created_at' | 'status'>): boolean {
+  if (session.status === 'ended') return true;
+  const age = sessionAgeMs(session);
+  return age !== null && age > SESSION_STALE_AFTER_MS;
+}
+
+/**
+ * End every still-open session belonging to this teacher.
+ *
+ * Only one lesson may be live at a time, so starting or launching anywhere
+ * closes the rest. This is also what stops students joining a stale session:
+ * previously nothing ever moved a session to 'ended' unless the teacher
+ * remembered to click End Session.
+ */
+export async function endOtherSessionsForTeacher(
+  teacherUid: string,
+  exceptSessionId?: string | null
+): Promise<number> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_SESSIONS),
+      where('teacher_uid', '==', teacherUid),
+      where('status', 'in', ['waiting', 'active'])
+    );
+    const snap = await getDocs(q);
+    const stale = snap.docs.filter((d) => d.id !== exceptSessionId);
+    if (stale.length === 0) return 0;
+
+    // Chunked: Firestore batches cap at 500 writes.
+    let closed = 0;
+    for (let i = 0; i < stale.length; i += 400) {
+      const batch = writeBatch(db);
+      stale.slice(i, i + 400).forEach((d) => {
+        batch.update(d.ref, { status: 'ended', updated_at: serverTimestamp() });
+        closed += 1;
+      });
+      await batch.commit();
+    }
+    return closed;
+  } catch (err) {
+    console.error('classSessionService.endOtherSessionsForTeacher:', err);
+    return 0;
+  }
+}
+
+/**
+ * Re-issue the current launch so every joined student is pulled into the lesson,
+ * including anyone who navigated away. ClassLaunchRouter dedupes on launch_id, so
+ * a fresh id is what makes it act again.
+ */
+export async function forceStudentsToLesson(sessionId: string): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    const snap = await getDoc(sessionRef);
+    if (!snap.exists()) return false;
+    const launched = snap.data()?.launched_lesson as LaunchedLesson | null | undefined;
+    if (!launched) return false;
+    await updateDoc(sessionRef, {
+      launched_lesson: {
+        ...launched,
+        launch_id: `force_${Date.now()}`,
+      },
+      status: 'active',
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.forceStudentsToLesson:', err);
+    return false;
+  }
+}
+
 export async function createSession(
   teacherUid: string,
   schoolId: string,
   classId: string
 ): Promise<string | null> {
   try {
+    // One live lesson at a time: close anything this teacher left open.
+    await endOtherSessionsForTeacher(teacherUid);
+
     const sessionRef = doc(collection(db, COLLECTION_SESSIONS));
     const sessionCode = generateSessionCode(6);
 
@@ -108,7 +210,7 @@ export async function createSession(
  */
 export async function launchLesson(
   sessionId: string,
-  _teacherUid: string,
+  teacherUid: string,
   payload: LaunchedLesson
 ): Promise<boolean> {
   try {
@@ -116,8 +218,15 @@ export async function launchLesson(
     const snap = await getDoc(sessionRef);
     if (!snap.exists()) return false;
 
+    // Launching makes this the one live lesson — close any other open session.
+    if (teacherUid) await endOtherSessionsForTeacher(teacherUid, sessionId);
+
     await updateDoc(sessionRef, {
-      launched_lesson: stripUndefinedDeep(payload),
+      // Always stamp a launch id so relaunching the same topic still reaches students.
+      launched_lesson: stripUndefinedDeep({
+        ...payload,
+        launch_id: payload.launch_id || `launch_${Date.now()}`,
+      }),
       launched_scene: null, // clear scene when launching lesson
       status: 'active',
       updated_at: serverTimestamp(),
@@ -425,7 +534,8 @@ export function subscribeSession(
  */
 export function subscribeSessionProgress(
   sessionId: string,
-  onUpdate: (progress: SessionStudentProgress[]) => void
+  onUpdate: (progress: SessionStudentProgress[]) => void,
+  onError?: (err: unknown) => void
 ): Unsubscribe {
   const progressRef = collection(db, COLLECTION_SESSIONS, sessionId, SUBCOLLECTION_PROGRESS);
   const q = progressRef; // no ordering required for list
@@ -436,8 +546,10 @@ export function subscribeSessionProgress(
       onUpdate(list);
     },
     (err) => {
+      // Without onError a permission failure is indistinguishable from "no students joined".
       console.error('classSessionService.subscribeSessionProgress:', err);
       onUpdate([]);
+      onError?.(err);
     }
   );
 }
@@ -524,7 +636,9 @@ export async function getActiveSessionsForSchool(schoolId: string): Promise<Clas
       where('status', 'in', ['waiting', 'active'])
     );
     const snapshot = await getDocs(q);
-    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as ClassSession));
+    return snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() } as ClassSession))
+      .filter((s) => !isSessionStale(s));
   } catch (err) {
     console.error('classSessionService.getActiveSessionsForSchool:', err);
     return [];
@@ -567,6 +681,222 @@ export async function broadcastTeacherPhase(
     return true;
   } catch (err) {
     console.error('classSessionService.broadcastTeacherPhase:', err);
+    return false;
+  }
+}
+
+/**
+ * Turn lockstep ("Control Students") on or off.
+ *
+ * Enabling deliberately leaves the class HELD: `teacher_controlled_phase` stays
+ * null and playback is 'idle', so students load the scene but nothing plays until
+ * the teacher presses Play. This is the state the old overlay toggle could never
+ * reach, because it broadcast a phase at the same moment it enabled control.
+ */
+export async function setSessionControl(
+  sessionId: string,
+  enabled: boolean,
+  /** Also ask the class to move into immersive mode. */
+  requestImmersive = false
+): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    const heldPlayback: TeacherPlayback = {
+      state: 'idle',
+      phase: null,
+      play_token: 0,
+      at_ms: Date.now(),
+    };
+    if (enabled) {
+      const immersive: TeacherImmersiveRequest | null = requestImmersive
+        ? { requested: true, token: Date.now(), at_ms: Date.now() }
+        : null;
+      await updateDoc(sessionRef, {
+        control_students_enabled: true,
+        teacher_controlled_phase: null,
+        teacher_playback: heldPlayback,
+        ...(requestImmersive ? { teacher_immersive_request: immersive } : {}),
+        updated_at: serverTimestamp(),
+      });
+    } else {
+      // Releasing control also releases immersive: students get their chrome back.
+      await updateDoc(sessionRef, {
+        control_students_enabled: false,
+        teacher_immersive_request: null,
+        updated_at: serverTimestamp(),
+      });
+    }
+    return true;
+  } catch (err) {
+    console.error('classSessionService.setSessionControl:', err);
+    return false;
+  }
+}
+
+/**
+ * Set the teacher-driven playback gate. Writes `teacher_playback` and
+ * `teacher_controlled_phase` in one update so the existing student phase-lock
+ * stays consistent with the new playback state.
+ */
+export async function setTeacherPlayback(
+  sessionId: string,
+  playback: Omit<TeacherPlayback, 'at_ms'>
+): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    await updateDoc(sessionRef, {
+      teacher_playback: { ...playback, at_ms: Date.now() },
+      teacher_controlled_phase: playback.phase,
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.setTeacherPlayback:', err);
+    return false;
+  }
+}
+
+/**
+ * Publish the waiting-room roster. Students can only read their own progress doc,
+ * so the host mirrors names (never scores) onto the session doc for the lobby.
+ */
+export async function publishLobbyRoster(
+  sessionId: string,
+  roster: SessionLobbyMember[]
+): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    await updateDoc(sessionRef, {
+      lobby_roster: roster,
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.publishLobbyRoster:', err);
+    return false;
+  }
+}
+
+/**
+ * Record attendance for a student. `joined_at` is write-once: it is only included
+ * when the progress doc does not already carry one, so the merge writes below
+ * never reset the arrival time.
+ */
+export async function reportAttendance(
+  sessionId: string,
+  studentUid: string,
+  fields: { lessonReady?: boolean; left?: boolean; durationSeconds?: number }
+): Promise<boolean> {
+  try {
+    const progressRef = doc(db, COLLECTION_SESSIONS, sessionId, SUBCOLLECTION_PROGRESS, studentUid);
+    const existing = await getDoc(progressRef);
+    const data: Record<string, unknown> = {
+      student_uid: studentUid,
+      last_active_at: serverTimestamp(),
+    };
+    if (!existing.exists() || !existing.data()?.joined_at) {
+      data.joined_at = serverTimestamp();
+    }
+    if (fields.lessonReady !== undefined) data.lesson_ready = fields.lessonReady;
+    if (fields.left) data.left_at = serverTimestamp();
+    if (fields.durationSeconds !== undefined) data.duration_seconds = fields.durationSeconds;
+    await setDoc(progressRef, data, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.reportAttendance:', err);
+    return false;
+  }
+}
+
+/**
+ * Publish the teacher's marker strokes to the class.
+ *
+ * Written on pointer-up only, never during a drag: the teacher sees their own
+ * stroke locally at full framerate, and the class receives it complete. That
+ * trades a little latency for roughly a 50x reduction in writes.
+ *
+ * NOTE: `teacher_annotations` must be present in classSessionLaunchKeysOnly()
+ * in firestore.rules or this write is denied — and every write here swallows its
+ * error, so a missed rules deploy looks like "the marker does nothing".
+ */
+export async function publishAnnotations(
+  sessionId: string,
+  annotations: TeacherAnnotations
+): Promise<boolean> {
+  try {
+    const sessionRef = doc(db, COLLECTION_SESSIONS, sessionId);
+    await updateDoc(sessionRef, {
+      teacher_annotations: stripUndefinedDeep(annotations),
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.publishAnnotations:', err);
+    return false;
+  }
+}
+
+/** Wipe all ink and any in-flight laser stroke for the class. */
+export async function clearAnnotations(sessionId: string): Promise<boolean> {
+  const cleared: TeacherAnnotations = {
+    strokes: [],
+    laser: null,
+    sync_id: Date.now(),
+    cleared_at: Date.now(),
+  };
+  return publishAnnotations(sessionId, cleared);
+}
+
+/** Convenience: append one stroke to the existing set, applying caps. */
+export function appendStroke(
+  current: TeacherAnnotations | null | undefined,
+  stroke: AnnotationStroke,
+  maxInkStrokes: number
+): TeacherAnnotations {
+  const base: TeacherAnnotations = current ?? {
+    strokes: [],
+    laser: null,
+    sync_id: 0,
+    cleared_at: 0,
+  };
+  if (stroke.mode === 'laser') {
+    return { ...base, laser: stroke, sync_id: Date.now() };
+  }
+  const strokes = [...(base.strokes ?? []), stroke];
+  // Oldest ink drops out first once we hit the cap.
+  const trimmed = strokes.length > maxInkStrokes ? strokes.slice(strokes.length - maxInkStrokes) : strokes;
+  return { ...base, strokes: trimmed, sync_id: Date.now() };
+}
+
+/** Raise or lower a student's hand, or send a quick signal to the teacher. */
+export async function reportStudentSignal(
+  sessionId: string,
+  studentUid: string,
+  input: { handRaised?: boolean; signal?: 'help' | 'too_fast' | 'ok' | null }
+): Promise<boolean> {
+  try {
+    const progressRef = doc(db, COLLECTION_SESSIONS, sessionId, SUBCOLLECTION_PROGRESS, studentUid);
+    const data: Record<string, unknown> = {
+      student_uid: studentUid,
+      last_active_at: serverTimestamp(),
+    };
+    if (input.handRaised !== undefined) {
+      data.hand_raised = input.handRaised;
+      data.hand_raised_at = input.handRaised ? serverTimestamp() : null;
+      if (input.handRaised) {
+        const existing = await getDoc(progressRef);
+        const count = Number(existing.data()?.hand_raise_count ?? 0);
+        data.hand_raise_count = count + 1;
+      }
+    }
+    if (input.signal !== undefined) {
+      data.signal = input.signal;
+      data.signal_at = input.signal ? serverTimestamp() : null;
+    }
+    await setDoc(progressRef, data, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.reportStudentSignal:', err);
     return false;
   }
 }

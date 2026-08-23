@@ -9,6 +9,9 @@ import * as admin from 'firebase-admin';
 const router = express.Router();
 const guestJoinAttempts = new Map<string, { count: number; resetAt: number }>();
 
+/** Keep in sync with SESSION_STALE_AFTER_MS in the client's classSessionService. */
+const SESSION_STALE_AFTER_MS = 8 * 60 * 60 * 1000;
+
 function canAttemptGuestJoin(key: string): boolean {
   const now = Date.now();
   const current = guestJoinAttempts.get(key);
@@ -67,6 +70,24 @@ router.post('/join', async (req, res) => {
     const sessionDoc = sessionSnap.docs[0];
     const sessionData = sessionDoc.data();
     const sessionId = sessionDoc.id;
+
+    // A session nobody ended is abandoned after 8h. Close it here rather than
+    // letting a student join a dead class with an old code.
+    const lastTouched = sessionData.updated_at ?? sessionData.created_at;
+    const lastTouchedMs =
+      lastTouched && typeof lastTouched.toDate === 'function' ? lastTouched.toDate().getTime() : null;
+    if (lastTouchedMs !== null && Date.now() - lastTouchedMs > SESSION_STALE_AFTER_MS) {
+      await sessionDoc.ref.update({
+        status: 'ended',
+        updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'That class session has ended. Ask your teacher for the new code.',
+      });
+    }
+
     const sessionSchoolId = sessionData.school_id;
     const sessionClassId = sessionData.class_id;
 
@@ -209,6 +230,39 @@ router.post('/join', async (req, res) => {
       }
     }
 
+    // Record the student in the session roster NOW, not when they eventually open the
+    // player. Previously the progress subcollection was written only from inside the
+    // lesson player, so a student who joined and stayed on their dashboard was invisible
+    // to the teacher — the roster looked broken because the collection was empty.
+    if (!requiresApproval) {
+      try {
+        const displayName =
+          userData?.name || userData?.displayName || userData?.email || null;
+        await db
+          .collection('class_sessions')
+          .doc(sessionId)
+          .collection('progress')
+          .doc(uid)
+          .set(
+            {
+              student_uid: uid,
+              display_name: displayName,
+              email: userData?.email ?? null,
+              phase: 'idle',
+              joined_at: admin.firestore.FieldValue.serverTimestamp(),
+              last_active_at: admin.firestore.FieldValue.serverTimestamp(),
+              left_at: null,
+              removed: false,
+              lesson_ready: false,
+            },
+            { merge: true }
+          );
+      } catch (rosterErr) {
+        // Never fail the join because the roster write failed.
+        console.warn('Failed to seed session progress doc on join:', rosterErr);
+      }
+    }
+
     return res.json({
       success: true,
       data: {
@@ -297,11 +351,24 @@ router.post('/:sessionId/remove-student', async (req, res) => {
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Drop their live progress doc so the host roster does not keep showing them
+    // Flag rather than delete: the roster filters on removed_student_uids anyway,
+    // and deleting would erase the attendance and marks this student had already
+    // earned, which the end-of-lesson results screen needs.
     try {
-      await db.collection('class_sessions').doc(sessionId).collection('progress').doc(studentUid).delete();
+      await db
+        .collection('class_sessions')
+        .doc(sessionId)
+        .collection('progress')
+        .doc(studentUid)
+        .set(
+          {
+            removed: true,
+            left_at: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
     } catch (progressErr) {
-      console.warn('Failed to delete removed student progress doc:', progressErr);
+      console.warn('Failed to flag removed student progress doc:', progressErr);
     }
 
     return res.json({

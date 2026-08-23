@@ -31,11 +31,12 @@ import {
   FaMapMarkerAlt,
   FaGlobeAmericas,
   FaVideo,
-  FaCube
+  FaCube,
+  FaLock
 } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../hooks/useTheme';
-import { UserRole, ROLE_DISPLAY_NAMES } from '../utils/rbac';
+import { UserRole, ROLE_DISPLAY_NAMES, isGuestUser, isGuestLockedPath } from '../utils/rbac';
 import { learnXRFontStyle, TrademarkSymbol } from './LearnXRTypography';
 import { Sheet, SheetContent } from './ui/sheet';
 import { Badge } from './ui/badge';
@@ -53,6 +54,8 @@ interface NavItem {
   path: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Guest students see the entry but cannot open it */
+  locked?: boolean;
 }
 
 // Normalize role to lowercase for consistent comparison
@@ -250,7 +253,11 @@ const Sidebar = () => {
     return items;
   };
 
-  const navItems = getNavItems();
+  // Guests keep the full menu visible, but locked areas are not navigable.
+  const isGuest = isGuestUser(profile);
+  const navItems = getNavItems().map((item) =>
+    isGuest && isGuestLockedPath(item.path) ? { ...item, locked: true } : item
+  );
 
   // Role icon mapping
   const getRoleIcon = () => {
@@ -322,8 +329,36 @@ const Sidebar = () => {
       to: string,
       label: string,
       Icon: React.ComponentType<{ className?: string }>,
-      active: boolean
+      active: boolean,
+      locked = false
     ) => {
+      if (locked) {
+        const lockedHint = `${label} — sign up to unlock`;
+        return (
+          <button
+            type="button"
+            aria-disabled="true"
+            onClick={() => toast.info(`${label} is locked in guest mode. Sign up for full access.`)}
+            className={`flex items-center gap-2 px-2 py-2 rounded-lg text-sm font-medium w-full text-sidebar-foreground/40 cursor-not-allowed group relative ${
+              !expanded ? 'justify-center px-0' : ''
+            }`}
+            title={!expanded ? lockedHint : undefined}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {expanded && (
+              <>
+                <span className="truncate">{label}</span>
+                <FaLock className="ml-auto h-3 w-3 shrink-0" />
+              </>
+            )}
+            {!expanded && (
+              <span className="absolute left-full z-50 ml-2 rounded-md border border-sidebar-border bg-popover px-2 py-1.5 text-xs text-popover-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none whitespace-nowrap">
+                {lockedHint}
+              </span>
+            )}
+          </button>
+        );
+      }
       if (onNavClick) {
         return (
           <button
@@ -422,7 +457,9 @@ const Sidebar = () => {
                 location.pathname === item.path ||
                 (item.path !== '/lessons' && location.pathname.startsWith(item.path + '/'));
               return (
-                <li key={item.path}>{renderNavLink(item.path, item.label, item.icon, isActive)}</li>
+                <li key={item.path}>
+                  {renderNavLink(item.path, item.label, item.icon, isActive, item.locked)}
+                </li>
               );
             })}
           </ul>

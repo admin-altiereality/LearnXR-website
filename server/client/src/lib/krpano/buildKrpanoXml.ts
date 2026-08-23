@@ -78,7 +78,7 @@ const DEFAULT_HOTSPOT_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%23f97316" stroke="%23fff" stroke-width="3" opacity="0.95"/><circle cx="24" cy="24" r="8" fill="%23fff"/></svg>'
   );
 
-const KRPANO_ASSET_VERSION = '1.23.3-r7';
+const KRPANO_ASSET_VERSION = '1.23.3-r12';
 
 /**
  * Build hotspot XML for one hotspot. Uses image url or a default pin icon.
@@ -177,13 +177,15 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const xrInputIncludeUrl = pluginUrl(origin, basePath, 'xr_input.xml');
   const nativeVrLessonUiIncludeUrl = pluginUrl(origin, basePath, 'native_vr_lesson_ui.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
+  const annotationLayerIncludeUrl = pluginUrl(origin, basePath, 'annotation_layer.xml');
   const gyro2PluginUrl = pluginUrl(origin, basePath, 'gyro2.js');
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(immersiveUiIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(xrInputIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(nativeVrLessonUiIncludeUrl)}" />\n` +
-      `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n`
+      `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(annotationLayerIncludeUrl)}" />\n`
     : '';
   const gyroBlock = `  <plugin name="gyro" url="${escapeXml(gyro2PluginUrl)}" keep="true" keepaliveduration="60" />\n`;
 
@@ -193,6 +195,10 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const controls3dIncludeUrl = pluginUrl(origin, basePath, 'controls3d.xml');
   const drag3dIncludeUrl = pluginUrl(origin, basePath, 'drag3d.xml');
   const iphoneSwipeIncludeUrl = pluginUrl(origin, basePath, 'iphone_fullscreen_swipe.xml');
+  // controls3d + drag3d are restored to HEAD's behaviour (always included with the
+  // threejs plugin). They provide the on-screen joypad and level control, and HEAD —
+  // where dragging worked — loaded them with control.dragscale linked to 0. So neither
+  // the plugin nor dragscale disables panning; removing them was my error.
   const threeJsBlock = needThreeJs
     ? `  <include url="${escapeXml(controls3dIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(drag3dIncludeUrl)}" />\n` +
@@ -248,9 +254,14 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   // The Three.js canvas is visual-only; aligned KRPano hotspots provide XR hit targets.
   const iuPanel =
     '  <hotspot name="iu_panel_3d" type="threejs" url="custom" depth="0" scale="1" tx="0" ty="10" tz="250" hittest="false" keep="true" onloaded="immersive_ui_build_hotspot();" />';
+  // Teacher marker layer: an equirect-textured BackSide sphere just inside the
+  // panorama. Because strokes are stored as (ath, atv) they map straight to canvas
+  // pixels, so this needs no raycasting and no per-frame work.
+  const annotationLayer =
+    '  <hotspot name="annotation_layer_3d" type="threejs" url="custom" depth="0" scale="1" hittest="false" keep="true" onloaded="annotation_layer_build();" />';
   const immersiveUiThreeJsHotspotsSection =
     webvr && needThreeJs
-      ? '\n' + iuPanel + '\n'
+      ? '\n' + iuPanel + '\n' + annotationLayer + '\n'
       : '';
 
   // View sync per krpano docs: view.hlookat (-180..180), view.vlookat (-90..90), view.fov (degrees).

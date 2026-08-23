@@ -16,9 +16,14 @@ declare global {
  * Get the API base URL from environment variables or fallback to defaults
  * @returns The API base URL string
  */
+let _cachedApiBaseUrl: string | null = null;
+
 export const getApiBaseUrl = (): string => {
+  if (_cachedApiBaseUrl) return _cachedApiBaseUrl;
+
   if (typeof window !== 'undefined' && window.__LEARNXR_API_BASE_URL) {
-    return window.__LEARNXR_API_BASE_URL;
+    _cachedApiBaseUrl = window.__LEARNXR_API_BASE_URL;
+    return _cachedApiBaseUrl;
   }
   // Check if we're actually running on localhost in the browser
   // This is more reliable than (window.VITE_ENV?.DEV) which can be true in preview builds
@@ -36,10 +41,11 @@ export const getApiBaseUrl = (): string => {
       const region = 'us-central1';
       const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
       const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
-      console.log('🌐 Using production Firebase Functions:', productionUrl);
+      _cachedApiBaseUrl = productionUrl;
       return productionUrl;
     }
     console.log('🌐 Using explicit API base URL from VITE_API_BASE_URL:', explicitUrl);
+    _cachedApiBaseUrl = explicitUrl;
     return explicitUrl;
   }
   
@@ -47,6 +53,7 @@ export const getApiBaseUrl = (): string => {
   if (isLocalhost && (window.VITE_ENV?.DEV)) {
     const expressUrl = 'http://localhost:5002/api';
     console.log('🌐 Using local API (Express):', expressUrl);
+    _cachedApiBaseUrl = expressUrl;
     return expressUrl;
   }
   
@@ -54,12 +61,8 @@ export const getApiBaseUrl = (): string => {
   const region = 'us-central1';
   const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
   const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
-  console.log('🌐 Using production Firebase Functions:', productionUrl, {
-    hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
-    isLocalhost,
-    isDev: (window.VITE_ENV?.DEV),
-    mode: (window.VITE_ENV?.MODE)
-  });
+  console.log('🌐 Using production Firebase Functions:', productionUrl);
+  _cachedApiBaseUrl = productionUrl;
   return productionUrl;
 };
 

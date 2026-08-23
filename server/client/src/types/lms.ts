@@ -237,6 +237,18 @@ export interface ClassSession {
   control_students_enabled?: boolean;
   /** Synchronized state for licensed 3D content while teacher control is enabled. */
   teacher_content_state?: TeacherContentState | null;
+  /**
+   * Teacher-driven playback gate. Absent or `state: 'idle'` means the lesson is
+   * held – students load the scene but nothing plays until the teacher presses
+   * Play. A late joiner reads this to land on the class's current point.
+   */
+  teacher_playback?: TeacherPlayback | null;
+  /** Names-only lobby roster published by the host so students can see who joined. */
+  lobby_roster?: SessionLobbyMember[] | null;
+  /** Teacher marker strokes, anchored in panorama sphere coordinates. */
+  teacher_annotations?: TeacherAnnotations | null;
+  /** Teacher asking the class to move into immersive mode. */
+  teacher_immersive_request?: TeacherImmersiveRequest | null;
   /** Partner tenancy metadata for quota-governed demo sessions. */
   partner_id?: string;
   hosted_by_partner?: boolean;
@@ -257,6 +269,98 @@ export type SessionLessonPhase =
   | 'outro'
   | 'quiz'
   | 'completed';
+
+/** Teacher-driven playback state broadcast to every student in the session. */
+export interface TeacherPlayback {
+  /** 'idle' = held, nothing has started yet. */
+  state: 'idle' | 'playing' | 'paused';
+  phase: SessionLessonPhase | null;
+  /** Bumped on every Play/Replay so re-playing the same phase still re-fires. */
+  play_token: number;
+  /** Date.now() when this state was set. */
+  at_ms: number;
+}
+
+/**
+ * A single teacher marker stroke.
+ *
+ * Points are stored in PANORAMA sphere coordinates (degrees), not screen pixels,
+ * so a circle drawn round an object stays on that object regardless of where each
+ * student is looking or what their field of view is.
+ */
+export interface AnnotationPoint {
+  /** ath — horizontal angle, -180..180 */
+  a: number;
+  /** atv — vertical angle, -90..90 */
+  v: number;
+}
+
+export interface AnnotationStroke {
+  id: string;
+  /** 'laser' fades after ttl_ms; 'ink' persists until the teacher clears. */
+  mode: 'laser' | 'ink';
+  color: string;
+  /** Stroke width in px at a reference fov of 90; scaled by 90/fov at render. */
+  width: number;
+  points: AnnotationPoint[];
+  created_ms: number;
+  /** Laser only. */
+  ttl_ms?: number;
+}
+
+/**
+ * A mark pinned to a 3D model, stored in the MODEL'S OWN local space so it rotates,
+ * drags and re-lays-out with the model. Texture painting was rejected: models are
+ * runtime GLBs with no guaranteed UVs, and materials are re-authored on load.
+ */
+export interface AnnotationModelMark {
+  id: string;
+  /** krpano hotspot name, e.g. "asset_0". */
+  asset_id: string;
+  /** Position in the model's local space. */
+  x: number;
+  y: number;
+  z: number;
+  color: string;
+  created_ms: number;
+  ttl_ms?: number;
+}
+
+/** Teacher marker state broadcast to the class. */
+export interface TeacherAnnotations {
+  /** Persistent ink, oldest dropped first once capped. */
+  strokes: AnnotationStroke[];
+  /** Most recent laser stroke; clients expire it locally from created_ms + ttl_ms. */
+  laser: AnnotationStroke | null;
+  /** Marks pinned to 3D models. */
+  model_marks?: AnnotationModelMark[];
+  /** Bumped so clients re-apply even when the stroke list looks unchanged. */
+  sync_id: number;
+  cleared_at: number;
+}
+
+/**
+ * Teacher's request that the class move into immersive mode.
+ *
+ * A browser will not start a WebXR session without a user gesture, and students
+ * auto-enter the lesson with zero taps — so this cannot silently force real VR
+ * everywhere. It forces the *presentation* (2D chrome hidden) immediately, and
+ * drives a one-tap prompt for actual headset entry.
+ */
+export interface TeacherImmersiveRequest {
+  requested: boolean;
+  /** Bumped so a student who reloads mid-class re-applies the request. */
+  token: number;
+  at_ms: number;
+}
+
+/** One entry in the waiting-room roster – names only, never scores. */
+export interface SessionLobbyMember {
+  uid: string;
+  name: string;
+  /** True once the student's scene and audio have finished loading. */
+  ready: boolean;
+}
 
 /** Per-question result for teacher quiz analytics */
 export interface SessionQuizAnswer {
@@ -304,4 +408,23 @@ export interface SessionStudentProgress {
   quiz_answers?: SessionQuizAnswer[] | null;
   /** Student’s current view in 360° lesson (hlookat, vlookat, fov) for teacher preview */
   student_view?: SessionStudentView | null;
+
+  // --- Attendance (write-once joined_at; the rest update as the student works) ---
+  /** First time this student joined the session. Never overwritten. */
+  joined_at?: Timestamp | string | null;
+  last_active_at?: Timestamp | string | null;
+  left_at?: Timestamp | string | null;
+  duration_seconds?: number | null;
+  /** True once the student's scene/audio finished loading (drives the lobby). */
+  lesson_ready?: boolean;
+  /** Set instead of deleting the doc when a teacher removes a student mid-session. */
+  removed?: boolean;
+
+  // --- Student signals ---
+  hand_raised?: boolean;
+  hand_raised_at?: Timestamp | string | null;
+  /** How many times this student raised a hand across the session. */
+  hand_raise_count?: number;
+  signal?: 'help' | 'too_fast' | 'ok' | null;
+  signal_at?: Timestamp | string | null;
 }

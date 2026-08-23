@@ -168,6 +168,7 @@ const VR360VideoTourPlayer = () => {
     progressList,
     bindActiveSession,
   } = useClassSession();
+  const [tourDrawer, setTourDrawer] = useState<null | 'roster' | 'approvals' | 'preview'>(null);
   const [payload, setPayload] = useState<Vr360TourSessionPayload | null>(null);
   const [mergedTour, setMergedTour] = useState<Vr360TourItem | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -683,15 +684,48 @@ const VR360VideoTourPlayer = () => {
       </div>
 
       {showHostOverlay && (
-        <LiveClassHostOverlay
-          session={sessionSnap || activeSession}
-          sessionId={classSessionId}
-          hostUid={user?.uid ?? null}
-          progressList={progressList}
-          sessionCode={hostSessionCode}
-          hostView={hostLookat || sessionSnap?.teacher_view || null}
-          getLiveHostView={getLiveHostView}
-        />
+        <>
+          {/* Compact host strip. The old floating control stack was removed when
+              LiveClassHostOverlay was reduced to just its drawer; this keeps the
+              two controls this player actually used. */}
+          <div className="pointer-events-auto absolute right-3 top-3 z-hud flex items-center gap-1.5 rounded-xl border border-white/12 bg-zinc-950/80 p-1.5 backdrop-blur-2xl">
+            <button
+              type="button"
+              onClick={() => setTourDrawer((d) => (d === 'roster' ? null : 'roster'))}
+              title="Student roster"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/12 bg-white/[0.06] px-2.5 text-xs font-semibold text-white/80 transition hover:bg-white/10"
+            >
+              Roster <span className="tabular-nums">{progressList.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const v = getLiveHostView?.() || hostLookat || sessionSnap?.teacher_view || null;
+                if (!v || !classSessionId || !user?.uid) return;
+                void updateTeacherView(classSessionId, user.uid, {
+                  hlookat: v.hlookat,
+                  vlookat: v.vlookat,
+                  fov: v.fov,
+                  force: true,
+                  sync_id: Date.now(),
+                });
+              }}
+              title="Point the whole class at what you are looking at"
+              className="inline-flex h-9 items-center rounded-lg border border-white/12 bg-white/[0.06] px-2.5 text-xs font-semibold text-white/80 transition hover:bg-white/10"
+            >
+              Direct view
+            </button>
+          </div>
+          <LiveClassHostOverlay
+            session={sessionSnap || activeSession}
+            sessionId={classSessionId}
+            hostUid={user?.uid ?? null}
+            progressList={progressList}
+            sessionCode={hostSessionCode}
+            openDrawer={tourDrawer}
+            onDrawerChange={setTourDrawer}
+          />
+        </>
       )}
 
       {showKrpano && (

@@ -712,7 +712,9 @@ service cloud.firestore {
     function classSessionLaunchKeysOnly() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'status', 'launched_lesson', 'launched_scene', 'teacher_view',
-        'teacher_controlled_phase', 'control_students_enabled', 'teacher_content_state', 'updated_at'
+        'teacher_controlled_phase', 'control_students_enabled', 'teacher_content_state',
+        'teacher_playback', 'lobby_roster', 'teacher_annotations',
+        'teacher_immersive_request', 'updated_at'
       ]);
     }
     match /class_sessions/{sessionId} {
@@ -737,6 +739,12 @@ service cloud.firestore {
       // Owner, managing teacher, school/principal hosts, students in class/school, admins,
       // and guests who joined a partner-hosted demo by code
       allow read: if isAuthenticated() && (
+        // A teacher can always read their own sessions. This must come FIRST and must not
+        // depend on canHostClassSession's keys().hasAll() guard: a single legacy session
+        // doc missing school_id or class_id would otherwise fail that guard and, because
+        // one denied document fails an entire query, break every teacher-scoped listing
+        // (endOtherSessionsForTeacher, useTeacherLaunchedLessons).
+        resource.data.teacher_uid == request.auth.uid ||
         canHostClassSession(resource.data) ||
         studentInClass(resource.data.class_id, resource.data.school_id) ||
         studentSameSchool(resource.data.school_id) ||

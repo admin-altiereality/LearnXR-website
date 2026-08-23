@@ -24,6 +24,8 @@ import Sidebar from './Components/Sidebar';
 import { AssetGenerationProvider } from './contexts/AssetGenerationContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ClassSessionProvider } from './contexts/ClassSessionContext';
+import { ClassLaunchRouter } from './Components/classSession/ClassLaunchRouter';
+import { LiveClassTopBar } from './Components/classSession/LiveClassTopBar';
 import { CreateGenerationProvider } from './contexts/CreateGenerationContext';
 import { LessonProvider } from './contexts/LessonContext';
 import { LoadingProvider, useLoading } from './contexts/LoadingContext';
@@ -84,6 +86,7 @@ import ChannelPartners from './screens/ChannelPartners';
 import AssociateDashboard from './screens/dashboard/AssociateDashboard';
 import PartnerDashboard from './screens/dashboard/PartnerDashboard';
 import JoinClassPage from './screens/dashboard/JoinClassPage';
+import ClassSessionResults from './screens/dashboard/ClassSessionResults';
 import PrincipalDashboard from './screens/dashboard/PrincipalDashboard';
 import SchoolDashboard from './screens/dashboard/SchoolDashboard';
 import StudentDashboard from './screens/dashboard/StudentDashboard';
@@ -165,6 +168,30 @@ const ConditionalSidebar = () => {
   }
   
   return <Sidebar />;
+};
+
+// Conditional Live Class Bar - persistent "your class is live" banner for students.
+// Hidden on auth/onboarding pages and inside immersive experiences (the player has
+// its own session chrome and the bar would overlap the canvas).
+const ConditionalLiveClassBar = () => {
+  const location = useLocation();
+  const { user } = useAuth();
+
+  const hideBarRoutes = [
+    '/login', '/partner-login', '/signup', '/forgot-password',
+    '/onboarding', '/approval-pending',
+    '/web-preview',
+    '/spiral', '/vrlessonplayer', '/vrlessonplayer-krpano', '/vr360-videotour',
+    '/vrplayer-standalone', '/studio-standalone', '/main-standalone', '/xrlessonplayer',
+    '/learnxr/lesson'
+  ];
+
+  if (!user || location.pathname.startsWith('/immersive-stem/') ||
+      hideBarRoutes.some(route => location.pathname.startsWith(route))) {
+    return null;
+  }
+
+  return <LiveClassTopBar />;
 };
 
 // Smart Landing - redirects authenticated users to /lessons, shows Landing for guests
@@ -477,10 +504,12 @@ function App() {
               <LoadingProvider>
                   <Router>
                   <ClassSessionProvider>
+              <ClassLaunchRouter />
               <SmoothScroll>
               <div className="relative w-full h-screen bg-gradient-to-br from-blue-950 via-slate-900 to-blue-900">
               {/* Main Content Layer with Sidebar */}
               <div className="relative flex min-h-screen">
+                <ConditionalLiveClassBar />
                 {/* Sidebar Navigation */}
                 <ConditionalSidebar />
 
@@ -949,12 +978,14 @@ function App() {
               <LoadingProvider>
                   <Router>
                   <ClassSessionProvider>
+              <ClassLaunchRouter />
               <SmoothScroll>
               <ConditionalCanvas backgroundSkybox={backgroundSkybox}>
               {/* Skybox Background Layer - Only shows on /main and /history pages */}
               <ConditionalBackground backgroundSkybox={backgroundSkybox} backgroundKey={key} />
               {/* Main Content Layer with Sidebar */}
               <div className="relative flex min-h-screen">
+                <ConditionalLiveClassBar />
                 {/* Sidebar Navigation */}
                 <ConditionalSidebar />
 
@@ -1202,11 +1233,25 @@ function App() {
                           </RoleGuard>
                         </ProtectedRoute>
                       } />
-                      <Route path="/join-class" element={<JoinClassPage />} />
+                      <Route path="/join-class" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['student']}>
+                            <JoinClassPage />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
                       <Route path="/dashboard/teacher" element={
                         <ProtectedRoute>
                           <RoleGuard allowedRoles={['teacher']}>
                             <TeacherDashboard />
+                          </RoleGuard>
+                        </ProtectedRoute>
+                      } />
+                      {/* End-of-lesson marks for the class the teacher just taught */}
+                      <Route path="/class-session/:sessionId/results" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['teacher', 'school', 'principal', 'partner', 'admin', 'superadmin']}>
+                            <ClassSessionResults />
                           </RoleGuard>
                         </ProtectedRoute>
                       } />

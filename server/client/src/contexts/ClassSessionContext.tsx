@@ -10,10 +10,11 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
@@ -29,6 +30,11 @@ import {
   getSession,
   broadcastTeacherPhase as apiBroadcastTeacherPhase,
   updateTeacherContentState as apiUpdateTeacherContentState,
+  setSessionControl as apiSetSessionControl,
+  setTeacherPlayback as apiSetTeacherPlayback,
+  publishLobbyRoster as apiPublishLobbyRoster,
+  reportStudentSignal as apiReportStudentSignal,
+  forceStudentsToLesson as apiForceStudentsToLesson,
 } from '../services/classSessionService';
 import type {
   ClassSession,
@@ -36,6 +42,8 @@ import type {
   LaunchedScene,
   SessionStudentProgress,
   TeacherContentState,
+  TeacherPlayback,
+  SessionLobbyMember,
 } from '../types/lms';
 
 interface ClassSessionContextValue {
@@ -52,12 +60,22 @@ interface ClassSessionContextValue {
   /** Broadcast the teacher's current lesson phase so students follow it. */
   broadcastTeacherPhase: (phase: string, controlEnabled: boolean) => Promise<boolean>;
   updateTeacherContentState: (state: TeacherContentState) => Promise<boolean>;
+  /** Turn lockstep on/off. Enabling holds the class until the teacher presses Play. */
+  setSessionControl: (enabled: boolean, requestImmersive?: boolean) => Promise<boolean>;
+  /** Drive the class's playback gate (Play / Pause / Replay / jump to a phase). */
+  setTeacherPlayback: (playback: Omit<TeacherPlayback, 'at_ms'>) => Promise<boolean>;
+  /** Publish the names-only waiting-room roster for students. */
+  publishLobbyRoster: (roster: SessionLobbyMember[]) => Promise<boolean>;
+  /** Re-issue the current launch so every joined student is pulled into the lesson. */
+  forceStudentsToLesson: () => Promise<boolean>;
 
   // Student
   joinedSessionId: string | null;
   joinedSession: ClassSession | null;
   joinSession: (sessionCode: string) => Promise<boolean>;
   leaveSessionAsStudent: () => void;
+  /** Raise/lower hand or send a quick signal to the teacher. */
+  reportSignal: (input: { handRaised?: boolean; signal?: 'help' | 'too_fast' | 'ok' | null }) => Promise<boolean>;
 
   // Shared
   isWaitingForApproval: boolean;
@@ -146,6 +164,43 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
       return apiUpdateTeacherContentState(activeSessionId, user.uid, state);
     },
     [activeSessionId, user?.uid]
+  );
+
+  const setSessionControl = useCallback(
+    async (enabled: boolean, requestImmersive = false): Promise<boolean> => {
+      if (!activeSessionId) return false;
+      return apiSetSessionControl(activeSessionId, enabled, requestImmersive);
+    },
+    [activeSessionId]
+  );
+
+  const setTeacherPlayback = useCallback(
+    async (playback: Omit<TeacherPlayback, 'at_ms'>): Promise<boolean> => {
+      if (!activeSessionId) return false;
+      return apiSetTeacherPlayback(activeSessionId, playback);
+    },
+    [activeSessionId]
+  );
+
+  const publishLobbyRoster = useCallback(
+    async (roster: SessionLobbyMember[]): Promise<boolean> => {
+      if (!activeSessionId) return false;
+      return apiPublishLobbyRoster(activeSessionId, roster);
+    },
+    [activeSessionId]
+  );
+
+  const forceStudentsToLesson = useCallback(async (): Promise<boolean> => {
+    if (!activeSessionId) return false;
+    return apiForceStudentsToLesson(activeSessionId);
+  }, [activeSessionId]);
+
+  const reportSignal = useCallback(
+    async (input: { handRaised?: boolean; signal?: 'help' | 'too_fast' | 'ok' | null }): Promise<boolean> => {
+      if (!joinedSessionId || !user?.uid) return false;
+      return apiReportStudentSignal(joinedSessionId, user.uid, input);
+    },
+    [joinedSessionId, user?.uid]
   );
 
   const leaveSessionAsStudent = useCallback(() => {
@@ -293,8 +348,25 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
   }, [activeSessionId, leaveSessionAsTeacher]);
 
   // Host: subscribe to progress once session doc is readable (students must not use activeSessionId)
+  // The removed-set is read through a ref so the listener is NOT torn down and
+  // rebuilt on every session snapshot (teacher_view writes fire on each 360 drag).
+  const removedStudentsRef = useRef<Set<string>>(new Set());
+  const removedStudentsKey = Array.isArray(activeSession?.removed_student_uids)
+    ? activeSession!.removed_student_uids!.join(',')
+    : '';
   useEffect(() => {
-    if (!activeSessionId || !activeSession || !user?.uid) {
+    removedStudentsRef.current = new Set(
+      removedStudentsKey ? removedStudentsKey.split(',').filter(Boolean) : []
+    );
+    // Re-filter what we already have so a removal takes effect without a new snapshot.
+    setProgressList((prev) =>
+      prev.filter((s) => s?.student_uid && !removedStudentsRef.current.has(s.student_uid))
+    );
+  }, [removedStudentsKey]);
+
+  const hasReadableSession = Boolean(activeSession);
+  useEffect(() => {
+    if (!activeSessionId || !hasReadableSession || !user?.uid) {
       setProgressList([]);
       return;
     }
@@ -302,40 +374,24 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
       setProgressList([]);
       return;
     }
-    const removed = new Set(
-      Array.isArray(activeSession.removed_student_uids) ? activeSession.removed_student_uids : []
-    );
-    const unsubProgress = subscribeSessionProgress(activeSessionId, (list) => {
-      setProgressList(list.filter((s) => s?.student_uid && !removed.has(s.student_uid)));
-    });
-    return () => unsubProgress();
-  }, [activeSessionId, activeSession, activeSession?.removed_student_uids, user?.uid, profile?.role]);
-
-  // Backup poll: query Firestore every 5 seconds to ensure we catch any missed updates or slow syncs
-  useEffect(() => {
-    if (!activeSessionId || profile?.role === 'student') return;
-
-    const interval = setInterval(async () => {
-      try {
-        const sessionRef = doc(db, 'class_sessions', activeSessionId);
-        const sessionSnap = await getDoc(sessionRef);
-        if (sessionSnap.exists()) {
-          const data = { id: sessionSnap.id, ...sessionSnap.data() } as any;
-          setActiveSession(data);
-
-          const progressRef = collection(db, 'class_sessions', activeSessionId, 'progress');
-          const progressSnap = await getDocs(progressRef);
-          const list = progressSnap.docs.map((d) => ({ ...d.data() } as any));
-          const removed = new Set(Array.isArray(data.removed_student_uids) ? data.removed_student_uids : []);
-          setProgressList(list.filter((s) => s?.student_uid && !removed.has(s.student_uid)));
-        }
-      } catch (err) {
-        console.error('Backup poll failed:', err);
+    const unsubProgress = subscribeSessionProgress(
+      activeSessionId,
+      (list) => {
+        setProgressList(
+          list.filter((s) => s?.student_uid && !removedStudentsRef.current.has(s.student_uid))
+        );
+      },
+      (err) => {
+        const code = (err as { code?: string })?.code;
+        setSessionError(
+          code === 'permission-denied'
+            ? 'You do not have permission to view this class roster.'
+            : 'Could not load the class roster. Check your connection.'
+        );
       }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [activeSessionId, profile?.role]);
+    );
+    return () => unsubProgress();
+  }, [activeSessionId, hasReadableSession, user?.uid, profile?.role]);
 
   // Student: subscribe to joined session; retry briefly after join (guest school link can lag)
   useEffect(() => {
@@ -510,10 +566,15 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     bindActiveSession,
     broadcastTeacherPhase,
     updateTeacherContentState,
+    setSessionControl,
+    setTeacherPlayback,
+    publishLobbyRoster,
+    forceStudentsToLesson,
     joinedSessionId,
     joinedSession,
     joinSession,
     leaveSessionAsStudent,
+    reportSignal,
     isWaitingForApproval,
     sessionLoading,
     sessionError,

@@ -189,6 +189,8 @@ const Spiral = () => {
     joinedSession,
     joinSession: joinClassSession,
     leaveSessionAsStudent,
+    sessionError,
+    clearSessionError,
   } = useClassSession();
 
   const avatarRef = useRef<TeacherAvatarHandle | null>(null);
@@ -240,10 +242,6 @@ const Spiral = () => {
 
   const isTeacher = profile?.role === 'teacher';
   const isStudent = profile?.role === 'student';
-  const studentClassIds = useMemo<string[]>(() => {
-    const ids = (profile as any)?.class_ids;
-    return Array.isArray(ids) ? ids.filter(Boolean).map(String) : [];
-  }, [profile]);
 
   const clearGenerationProgressTimer = useCallback(() => {
     if (generationProgressTimerRef.current) {
@@ -1348,10 +1346,11 @@ const Spiral = () => {
       {/* Right: student joinable classes panel */}
       {isStudent && (
         <SpiralStudentClassesPanel
-          studentUid={user?.uid ?? null}
-          classIds={studentClassIds}
+          sessionLoading={sessionLoading}
           joinedSessionId={joinedSessionId}
-          onJoin={joinClassSession}
+          sessionError={sessionError}
+          clearSessionError={clearSessionError}
+          onJoinWithCode={joinClassSession}
         />
       )}
 

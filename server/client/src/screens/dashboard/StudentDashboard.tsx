@@ -5,14 +5,12 @@
  * scores, and completion status. Students can ONLY see their own data.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClassSession } from '../../contexts/ClassSessionContext';
-import { useLesson } from '../../contexts/LessonContext';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
-import type { LessonLaunch, StudentScore, Class, UserProfile, LaunchedScene, ClassSession } from '../../types/lms';
+import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
 import { getStudentEvaluation, type StudentEvaluation } from '../../services/evaluationService';
 import { FaBook, FaChartLine, FaCheckCircle, FaClock, FaGraduationCap, FaChalkboardTeacher, FaUsers, FaKey, FaVideo, FaArrowRight } from 'react-icons/fa';
 import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypography';
@@ -26,20 +24,13 @@ import { ActiveSessionCodeBadge } from '../../Components/classSession/ActiveSess
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
-import { buildCreateSceneActiveLesson } from '../../utils/buildCreateSceneActiveLesson';
-import { getActiveSessionsForSchool } from '../../services/classSessionService';
-
-interface SessionWithDetails extends ClassSession {
-  className?: string;
-  teacherName?: string;
-}
+import { useLiveClassSessions } from '../../hooks/useLiveClassSessions';
 
 const GUEST_AVATAR_URL = 'https://api.dicebear.com/7.x/avataaars/svg?seed=LearnXRGuest';
 
 const StudentDashboard = () => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
-  const { startLesson: contextStartLesson } = useLesson();
   const {
     joinedSessionId,
     joinedSession,
@@ -56,12 +47,10 @@ const StudentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [classes, setClasses] = useState<Class[]>([]);
   const [classTeachers, setClassTeachers] = useState<Map<string, UserProfile>>(new Map());
-  const [activeSessions, setActiveSessions] = useState<SessionWithDetails[]>([]);
-  const [activeSessionsLoading, setActiveSessionsLoading] = useState(false);
+  const { sessions: activeSessions, loading: activeSessionsLoading } =
+    useLiveClassSessions('my-classes');
   const [joiningSessionCode, setJoiningSessionCode] = useState<string | null>(null);
   const [sessionCodeInput, setSessionCodeInput] = useState('');
-  const launchedLessonHandledRef = useRef<string | null>(null);
-  const launchedSceneHandledRef = useRef<string | null>(null);
   const [stats, setStats] = useState({
     totalLessons: 0,
     completedLessons: 0,
@@ -126,174 +115,6 @@ const StudentDashboard = () => {
     };
   }, [user?.uid, profile]);
 
-  // When teacher launches a lesson to the class, fetch bundle and open XR player
-  useEffect(() => {
-    const launched = joinedSession?.launched_lesson;
-    if (!launched || !joinedSessionId || !user?.uid) return;
-    if (['licensed_3d', 'licensed_embed', 'licensed_link'].includes(String(launched.lesson_type))) return;
-
-    if (launched.lesson_type === 'vr360_video' || launched.chapter_id === VR360_TOUR_CHAPTER_ID) {
-      const tid =
-        launched.vr360_tour_id ||
-        (typeof launched.topic_id === 'string' && launched.topic_id.startsWith('tour-')
-          ? launched.topic_id.replace(/^tour-/, '')
-          : null);
-      const vKey = `vr360_${tid || 'x'}`;
-      if (launchedLessonHandledRef.current === vKey) return;
-      launchedLessonHandledRef.current = vKey;
-      (async () => {
-        const { getVr360TourById } = await import('../../config/vr360Tours');
-        const tour = tid ? getVr360TourById(tid) : undefined;
-        if (!tour) {
-          launchedLessonHandledRef.current = null;
-          return;
-        }
-        try {
-          sessionStorage.setItem(
-            'learnxr_vr360_tour',
-            JSON.stringify({
-              tourId: tour.id,
-              title: tour.title,
-              videoPath: tour.videoPath,
-              videoStoragePath: tour.videoStoragePath,
-              player: tour.player,
-              fromClassSession: true,
-            })
-          );
-          sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
-          sessionStorage.setItem('learnxr_class_session_id', joinedSessionId);
-          setTimeout(() => navigate('/vr360-videotour'), 200);
-        } catch (err) {
-          console.error('Failed to open launched 360 video tour:', err);
-          launchedLessonHandledRef.current = null;
-        }
-      })();
-      return;
-    }
-
-    const key = `${launched.chapter_id}_${launched.topic_id}`;
-    if (launchedLessonHandledRef.current === key) return;
-    launchedLessonHandledRef.current = key;
-
-    const effectiveLang = launched.lang ?? 'en';
-    let cancelled = false;
-    (async () => {
-      try {
-        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
-        const bundle = await getLessonBundle({
-          chapterId: launched.chapter_id,
-          lang: effectiveLang,
-          topicId: launched.topic_id,
-          source: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
-        });
-        if (cancelled) return;
-        const fullData = bundle.chapter;
-        const topic = fullData.topics?.find((t) => t.topic_id === launched.topic_id) || fullData.topics?.[0];
-        if (!topic) return;
-        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
-        let assetUrls = topic.asset_urls || [];
-        const assetIds = topic.asset_ids || [];
-        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
-        safeAssets3d.forEach((asset) => {
-          const glb = asset?.animated_render_url || asset?.animated_glb_url || asset?.render_url || asset?.model_urls?.glb || asset?.glb_url;
-          if (glb && !assetUrls.includes(glb)) {
-            assetUrls.push(glb);
-            assetIds.push(asset.id || `asset_${assetUrls.length}`);
-          }
-        });
-        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
-        const mcqs = safeMcqs.map((m) => ({
-          id: m.id || `mcq_${Math.random()}`,
-          question: m.question || m.question_text || '',
-          options: Array.isArray(m.options) ? m.options : [],
-          correct_option_index: m.correct_option_index ?? 0,
-          explanation: m.explanation || '',
-        }));
-        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
-        const ttsAudio = safeTts
-          .map((tts) => ({
-            id: tts.id || '',
-            script_type: tts.script_type || tts.section || 'full',
-            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
-            language: tts.language || tts.lang || effectiveLang,
-          }))
-          .filter((tts) => (tts.language || 'en').toLowerCase() === effectiveLang.toLowerCase());
-        const skyboxUrl = bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
-        const skyboxGlb = bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
-
-        const cleanChapter = {
-          chapter_id: String(launched.chapter_id),
-          chapter_name: fullData.chapter_name || 'Untitled Chapter',
-          chapter_number: Number(fullData.chapter_number) || 1,
-          curriculum: String(launched.curriculum || fullData.curriculum || ''),
-          class_name: String((launched.class_name || fullData.class_name) ?? ''),
-          subject: String((launched.subject || fullData.subject) ?? ''),
-        };
-        const cleanTopic = {
-          topic_id: String(topic.topic_id ?? launched.topic_id),
-          topic_name: topic.topic_name || 'Untitled Topic',
-          topic_priority: Number(topic.topic_priority) || 1,
-          learning_objective: topic.learning_objective || '',
-          skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
-          skybox_remix_id: topic.skybox_remix_id ?? null,
-          skybox_url: skyboxUrl,
-          skybox_glb_url: skyboxGlb,
-          avatar_intro: scripts.intro || '',
-          avatar_explanation: scripts.explanation || '',
-          avatar_outro: scripts.outro || '',
-          asset_urls: assetUrls,
-          asset_ids: assetIds,
-          mcq_ids: topic.mcq_ids || [],
-          mcqs,
-          tts_ids: topic.tts_ids || [],
-          tts_audio_url: topic.tts_audio_url || '',
-          ttsAudio,
-          language: effectiveLang,
-        };
-        const fullLessonData = {
-          chapter: cleanChapter,
-          topic: cleanTopic,
-          image3dasset: fullData.image3dasset ?? null,
-          meshy_asset_ids: fullData.meshy_asset_ids ?? [],
-          assets3d: safeAssets3d,
-          startedAt: new Date().toISOString(),
-          _meta: { assets3d: safeAssets3d, meshy_asset_ids: fullData.meshy_asset_ids || [] },
-          language: effectiveLang,
-          ttsAudio,
-        };
-        sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-        sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
-        if (typeof contextStartLesson === 'function') contextStartLesson(cleanChapter, cleanTopic);
-        setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
-      } catch (err) {
-        console.error('Failed to open launched lesson:', err);
-        launchedLessonHandledRef.current = null;
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [joinedSession?.launched_lesson, joinedSessionId, user?.uid, navigate, contextStartLesson]);
-
-  // When teacher sends a scene to the class, open VR lesson player (KRPano) with synthetic bundle
-  useEffect(() => {
-    const scene = joinedSession?.launched_scene;
-    if (!scene || scene.type !== 'create_scene' || !joinedSessionId || !user?.uid) return;
-    const key = `scene_${joinedSessionId}_${scene.skybox_image_url || scene.skybox_id || 'default'}_${scene.meshy_glb_url || ''}`;
-    if (launchedSceneHandledRef.current === key) return;
-    launchedSceneHandledRef.current = key;
-    try {
-      const fullLessonData = buildCreateSceneActiveLesson(scene as LaunchedScene);
-      sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-      sessionStorage.setItem('learnxr_launched_scene', JSON.stringify(scene));
-      sessionStorage.setItem('learnxr_joined_session_id', joinedSessionId);
-      const ch = fullLessonData.chapter as Record<string, string>;
-      const tp = fullLessonData.topic as Record<string, unknown>;
-      if (typeof contextStartLesson === 'function') contextStartLesson(ch, tp);
-      setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
-    } catch (e) {
-      console.error('Failed to open launched scene:', e);
-      launchedSceneHandledRef.current = null;
-    }
-  }, [joinedSession?.launched_scene, joinedSessionId, user?.uid, navigate, contextStartLesson]);
 
   // Show session join error
   useEffect(() => {
@@ -384,72 +205,6 @@ const StudentDashboard = () => {
     };
   }, [profile?.uid, profile?.class_ids]);
 
-  useEffect(() => {
-    if (!user?.uid || profile?.role !== 'student' || !profile?.school_id || profile?.isGuest) {
-      setActiveSessions([]);
-      setActiveSessionsLoading(false);
-      return;
-    }
-
-    const profileClassIds = Array.isArray(profile.class_ids) ? profile.class_ids.filter(Boolean) : [];
-    const allowedClassIds = new Set(profileClassIds);
-
-    let cancelled = false;
-    const loadSessions = async () => {
-      setActiveSessionsLoading(true);
-      try {
-        const list = await getActiveSessionsForSchool(profile.school_id!);
-        const classIds = [...new Set(list.map((session) => session.class_id).filter(Boolean))];
-        const teacherUids = [...new Set(list.map((session) => session.teacher_uid).filter(Boolean))];
-        const [classSnaps, teacherSnaps] = await Promise.all([
-          Promise.all(classIds.map((id) => getDoc(doc(db, 'classes', id)))),
-          Promise.all(teacherUids.map((uid) => getDoc(doc(db, 'users', uid)))),
-        ]);
-        const classNames: Record<string, string> = {};
-        const classStudentIds: Record<string, string[]> = {};
-        classSnaps.forEach((snap, index) => {
-          if (!snap.exists()) return;
-          const data = snap.data();
-          classNames[classIds[index]] = data?.class_name || data?.name || classIds[index];
-          classStudentIds[classIds[index]] = Array.isArray(data?.student_ids)
-            ? data.student_ids.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
-            : [];
-        });
-        const filtered = list.filter((session) => {
-          if (allowedClassIds.has(session.class_id)) return true;
-          return classStudentIds[session.class_id]?.includes(user.uid) === true;
-        });
-        const teacherNames: Record<string, string> = {};
-        teacherSnaps.forEach((snap, index) => {
-          if (!snap.exists()) return;
-          const data = snap.data();
-          teacherNames[teacherUids[index]] = data?.name || data?.displayName || data?.email || teacherUids[index];
-        });
-        if (!cancelled) {
-          setActiveSessions(
-            filtered.map((session) => ({
-              ...session,
-              className: classNames[session.class_id] || session.class_id,
-              teacherName: teacherNames[session.teacher_uid] || 'Teacher',
-            }))
-          );
-        }
-      } catch (error) {
-        console.error('StudentDashboard active sessions:', error);
-        if (!cancelled) setActiveSessions([]);
-      } finally {
-        if (!cancelled) setActiveSessionsLoading(false);
-      }
-    };
-
-    void loadSessions();
-    const interval = setInterval(() => void loadSessions(), 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [user?.uid, profile?.role, profile?.school_id, profile?.isGuest, profile?.class_ids]);
-
   const updateStats = (launches: LessonLaunch[], scoresData: StudentScore[]) => {
     const totalLessons = launches.length;
     const completedLessons = launches.filter(l => l.completion_status === 'completed').length;
@@ -536,8 +291,8 @@ const StudentDashboard = () => {
                     : 'Get personalized recommendations and track your progress across subjects.'}
                 </p>
                 {isGuest ? (
-                  <Link to="/personalized-learning" className="text-primary font-medium text-sm hover:underline">
-                    See demo recommendations →
+                  <Link to="/signup" className="text-primary font-medium text-sm hover:underline">
+                    Sign up to unlock the AI Tutor →
                   </Link>
                 ) : (
                   <Link to="/personalized-learning" className="text-primary font-medium text-sm hover:underline">
@@ -606,26 +361,20 @@ const StudentDashboard = () => {
                               variant={isJoined ? 'secondary' : 'default'}
                               className="shrink-0 gap-1.5"
                               onClick={async () => {
-                                if (isJoined) {
-                                  navigate('/vrlessonplayer-krpano');
-                                  return;
-                                }
+                                // Navigation is owned by ClassLaunchRouter — it reacts to
+                                // launched_lesson/launched_scene wherever the student is.
+                                if (isJoined) return;
                                 setJoiningSessionCode(session.session_code);
                                 try {
                                   const ok = await joinSession(session.session_code);
-                                  if (ok) {
-                                    toast.success('Joined the class session.');
-                                    if (session.launched_lesson || session.launched_scene) {
-                                      navigate('/vrlessonplayer-krpano');
-                                    }
-                                  }
+                                  if (ok) toast.success('Joined the class session.');
                                 } finally {
                                   setJoiningSessionCode(null);
                                 }
                               }}
-                              disabled={isJoining}
+                              disabled={isJoining || isJoined}
                             >
-                              {isJoined ? 'Open class' : isJoining ? 'Joining...' : 'Join'}
+                              {isJoined ? 'Joined' : isJoining ? 'Joining...' : 'Join'}
                               <FaArrowRight className="h-3 w-3" />
                             </Button>
                           </div>
