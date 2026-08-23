@@ -186,6 +186,7 @@ export function useMarkerDrawing({
       const pick = pickModelAt(viewerRef.current, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
       if (pick && onModelMark) {
         onModelMark(pick);
+        try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* ignore */ }
         return;
       }
       drawingRef.current = true;

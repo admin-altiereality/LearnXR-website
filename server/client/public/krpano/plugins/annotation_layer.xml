@@ -165,16 +165,22 @@
 	var raycaster = new THREE.Raycaster();
 	raycaster.setFromCamera(ndc, krpano.threejs.camera);
 
+	// Iterate the EXISTING hotspot array by index. Never address one by name:
+	// krpano auto-creates an array element on access, so probing asset_0..asset_23
+	// spawned phantom hotspots that captured pointer events and permanently killed
+	// panorama dragging the first time the marker was switched on.
 	var best = null;
-	for (var i = 0; i < 24; i++) {
+	var count = Number(krpano.get('hotspot.count')) || 0;
+	for (var i = 0; i < count; i++) {
 		var hs = null;
-		try { hs = krpano.get('hotspot[asset_' + i + ']'); } catch (e) { hs = null; }
-		if (!hs || !hs.threejsobject) continue;
+		try { hs = krpano.hotspot.getItem(i); } catch (e) { hs = null; }
+		if (!hs || !hs.name || String(hs.name).indexOf('asset_') !== 0) continue;
+		if (!hs.threejsobject) continue;
 		// Recursive: a GLB is a group, not a single mesh.
 		var hits = raycaster.intersectObject(hs.threejsobject, true);
 		if (hits.length > 0) {
 			if (!best || hits[0].distance < best.distance) {
-				best = { distance: hits[0].distance, point: hits[0].point, root: hs.threejsobject, name: 'asset_' + i };
+				best = { distance: hits[0].distance, point: hits[0].point, root: hs.threejsobject, name: String(hs.name) };
 			}
 		}
 	}
@@ -204,7 +210,13 @@
 		var obj = krpano.annotation_mark_objs[m.id];
 		if (!obj) {
 			var hs = null;
-			try { hs = krpano.get('hotspot[' + m.asset_id + ']'); } catch (e) { hs = null; }
+			try {
+				var hc = Number(krpano.get('hotspot.count')) || 0;
+				for (var hi = 0; hi < hc; hi++) {
+					var cand = krpano.hotspot.getItem(hi);
+					if (cand && String(cand.name) === String(m.asset_id)) { hs = cand; break; }
+				}
+			} catch (e) { hs = null; }
 			if (!hs || !hs.threejsobject) continue;
 			var mat = new THREE.SpriteMaterial({
 				color: new THREE.Color(m.color || '#ffdd33'),

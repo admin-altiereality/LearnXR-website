@@ -3797,10 +3797,16 @@ const VRLessonPlayerInner = () => {
   useEffect(() => {
     const viewer = krpanoViewerRef.current;
     if (!viewer?.call) return;
+    // Walk the existing hotspot array — addressing hotspot[asset_N] by name makes
+    // krpano CREATE that hotspot, which is how switching the marker on once left
+    // phantom hotspots capturing every pointer event and killed panorama dragging.
     const enabled = markerActive && isClassHost ? 'false' : 'true';
     try {
-      for (let i = 0; i < 24; i += 1) {
-        viewer.call(`if(hotspot[asset_${i}], set(hotspot[asset_${i}].hittest, ${enabled}); set(hotspot[asset_${i}].capture, ${enabled}););`);
+      const count = Number(viewer.get?.('hotspot.count')) || 0;
+      for (let i = 0; i < count; i += 1) {
+        const name = String(viewer.get?.(`hotspot[${i}].name`) ?? '');
+        if (!name.startsWith('asset_')) continue;
+        viewer.call(`set(hotspot[${i}].hittest, ${enabled}); set(hotspot[${i}].capture, ${enabled});`);
       }
     } catch { /* non-fatal */ }
   }, [markerActive, isClassHost, sceneReady]);
