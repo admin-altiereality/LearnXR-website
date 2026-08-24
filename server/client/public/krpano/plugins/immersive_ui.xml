@@ -45,12 +45,6 @@
         window.__krpanoLayoutToSet = act.split(":")[1];
         try { krpano.call("immersive_ui_set_layout()"); } catch(e) {}
       }
-      // panelMove:<axis>:<step> — free move/resize of the lesson panel.
-      if (act.indexOf("panelMove:") === 0) {
-        var parts = act.split(":");
-        try { krpano.call("immersive_ui_nudge_panel(" + parts[1] + "," + parts[2] + ")"); } catch(e) {}
-        return;
-      }
       try { if (window.__xrHaptic) window.__xrHaptic(act.indexOf("mcqSubmit") === 0 ? "confirm" : "select"); } catch(e) {}
       try { if (window.__krpanoUIAction) window.__krpanoUIAction(act); } catch(e) {
         console.warn("[ImmersiveUI] Action bridge failed:", act, e);
@@ -212,12 +206,8 @@
       { x: 806,  y: 50,   w: 200, h: 48, action: "phaseGo:explanation" },
       { x: 1042, y: 50,   w: 200, h: 48, action: "phaseGo:outro" },
       { x: 1278, y: 50,   w: 200, h: 48, action: "phaseGo:quiz" },
-      { x: 1520, y: 56,  w: 66, h: 34, action: "panelMove:x:-8" },
-      { x: 1592, y: 56,  w: 66, h: 34, action: "panelMove:x:8" },
-      { x: 1664, y: 56,  w: 66, h: 34, action: "panelMove:y:6" },
-      { x: 1736, y: 56,  w: 66, h: 34, action: "panelMove:y:-6" },
-      { x: 1808, y: 56,  w: 66, h: 34, action: "panelMove:scale:-0.12" },
-      { x: 1880, y: 56,  w: 66, h: 34, action: "panelMove:scale:0.12" },
+      { x: 929,  y: 18,   w: 190, h: 26, action: "panelGrab" },
+      { x: 1976, y: 1208, w: 46,  h: 46, action: "panelResize" },
       { x: 60,   y: 1090, w: 220, h: 72, action: "replay" },
       { x: 304,  y: 1090, w: 160, h: 72, action: "ttsPlay" },
       { x: 884,  y: 1090, w: 280, h: 72, action: "skipToQuiz" },
@@ -280,7 +270,18 @@
         krpano.set("hotspot[" + r.name + "].ty", c.ty);
         krpano.set("hotspot[" + r.name + "].tz", c.tz);
         krpano.set("hotspot[" + r.name + "].dataaction", r.action);
-        krpano.set("hotspot[" + r.name + "].onclick", "jscall('window.__krpanoImmersiveUiClick(caller.name)');");
+        if (r.action === "panelGrab" || r.action === "panelResize") {
+          // Direct manipulation, not a click. drag3d() is the same mover the asset_N
+          // model hotspots use, so it already handles mouse AND headset controllers; a
+          // JS loop mirrors the handle's motion onto the panel while the press lasts.
+          krpano.call("immersive_ui_install_panel_drag()");
+          var startFn = r.action === "panelGrab" ? "__krpanoPanelGrabStart" : "__krpanoPanelResizeStart";
+          krpano.set("hotspot[" + r.name + "].ondown", "jscall('window." + startFn + "()'); drag3d();");
+          krpano.set("hotspot[" + r.name + "].onup", "jscall('window.__krpanoPanelDragEnd()');");
+          krpano.set("hotspot[" + r.name + "].onclick", "");
+        } else {
+          krpano.set("hotspot[" + r.name + "].onclick", "jscall('window.__krpanoImmersiveUiClick(caller.name)');");
+        }
         krpano.set("hotspot[" + r.name + "].onover", "jscall('window.__krpanoImmersiveUiHover(caller.name,true)');");
         krpano.set("hotspot[" + r.name + "].onout", "jscall('window.__krpanoImmersiveUiHover(caller.name,false)');");
         krpano.set("hotspot[" + r.name + "].handcursor", true);
@@ -311,6 +312,9 @@
   ]]></action>
 
   <action name="immersive_ui_gaze_update_positions" type="js"><![CDATA[
+    // Never re-place the proxies mid-drag: they are positioned FROM the panel, so doing
+    // so would snap the handle out from under the pointer on every frame of the drag.
+    if (krpano.immersive_ui_panel_dragging) return;
     krpano.call("immersive_ui_create_gaze_hotspots()");
   ]]></action>
 
@@ -1173,40 +1177,86 @@
       refs.buttonRegions.push({ x: x, y: y, w: w, h: h, action: "directClassView" });
     }
 
-    function drawLayoutToggle() {
-      // Free move + resize of this panel. The preset layouts this replaced were
-      // reported as not working, so the panel is nudged directly instead.
-      var btnW = 66, btnH = 34, gap = 6, r = 17;
+    function drawHostModelButtons() {
+      // In-headset mirrors of the bottom-bar model controls, so a teacher wearing a headset
+      // is not forced back to a screen to take a model apart. Host-only, and only when the
+      // scene actually has separable geometry — React reports that via S.modelPartCount.
+      if (!S.isHost) return;
+      if (!S.modelPartCount || S.modelPartCount < 2) return;
+
       var defs = [
-        { label: "\u2190", action: "panelMove:x:-8" },
-        { label: "\u2192", action: "panelMove:x:8" },
-        { label: "\u2191", action: "panelMove:y:6" },
-        { label: "\u2193", action: "panelMove:y:-6" },
-        { label: "\u2212", action: "panelMove:scale:-0.12" },
-        { label: "+", action: "panelMove:scale:0.12" }
+        { label: "Apart",   action: "model:explodeUp" },
+        { label: "Together",action: "model:explodeDown" },
+        { label: "Isolate", action: "model:isolate" },
+        { label: "Section", action: "model:section" },
+        { label: "Reset",   action: "model:reset" }
       ];
-      var totalW = defs.length * btnW + (defs.length - 1) * gap;
-      var startX = CW - totalW - 44;
-      var Y = 56;
+      var w = 168, h = 64, gap = 10, r = 14;
+      var totalW = defs.length * w + (defs.length - 1) * gap;
+      var x0 = (CW - totalW) / 2;
+      var y = CH - 275;
 
       for (var i = 0; i < defs.length; i++) {
-        var bx = startX + i * (btnW + gap);
-        roundRect(bx, Y, btnW, btnH, r);
-        ctx.fillStyle = "rgba(51, 65, 85, 0.35)";
+        var bx = x0 + i * (w + gap);
+        roundRect(bx, y, w, h, r);
+        ctx.fillStyle = "rgba(15, 118, 110, 0.30)";
         ctx.fill();
-        roundRect(bx, Y, btnW, btnH, r);
-        ctx.strokeStyle = "rgba(71, 85, 105, 0.35)";
-        ctx.lineWidth = 1;
+        roundRect(bx, y, w, h, r);
+        ctx.strokeStyle = "rgba(45, 212, 191, 0.40)";
+        ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        ctx.fillStyle = "#cbd5e1";
-        ctx.font = "600 18px " + FONT;
+        ctx.fillStyle = "#ecfeff";
+        ctx.font = "700 22px " + FONT;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(defs[i].label, bx + btnW / 2, Y + btnH / 2);
+        ctx.fillText(defs[i].label, bx + w / 2, y + h / 2);
 
-        refs.buttonRegions.push({ x: bx, y: Y, w: btnW, h: btnH, action: defs[i].action });
+        refs.buttonRegions.push({ x: bx, y: y, w: w, h: h, action: defs[i].action });
       }
+    }
+
+    function drawPanelHandles() {
+      // A grab handle and a resize corner, replacing six 66x34 nudge buttons that were
+      // labelled with raw Unicode text glyphs. Direct manipulation instead of discrete
+      // steps: the handle drags the panel, the corner scales it.
+      var GRAB_W = 190, GRAB_H = 26;
+      var gx = (CW - GRAB_W) / 2, gy = 18;
+
+      // Grab bar — centred on the top edge, where a window title bar would be.
+      roundRect(gx, gy, GRAB_W, GRAB_H, GRAB_H / 2);
+      ctx.fillStyle = "rgba(148, 163, 184, 0.22)";
+      ctx.fill();
+      roundRect(gx, gy, GRAB_W, GRAB_H, GRAB_H / 2);
+      ctx.strokeStyle = "rgba(203, 213, 225, 0.30)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Two short gripper rules, the conventional "draggable" cue.
+      ctx.strokeStyle = "rgba(226, 232, 240, 0.55)";
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      for (var g = 0; g < 2; g++) {
+        var lineY = gy + GRAB_H / 2 - 3 + g * 6;
+        ctx.beginPath();
+        ctx.moveTo(gx + 62, lineY);
+        ctx.lineTo(gx + GRAB_W - 62, lineY);
+        ctx.stroke();
+      }
+      refs.buttonRegions.push({ x: gx, y: gy, w: GRAB_W, h: GRAB_H, action: "panelGrab" });
+
+      // Resize corner — bottom-right, drawn as stacked diagonals.
+      var RS = 46, rx = CW - RS - 26, ry = CH - RS - 26;
+      ctx.strokeStyle = "rgba(203, 213, 225, 0.45)";
+      ctx.lineWidth = 2.5;
+      for (var d = 0; d < 3; d++) {
+        var off = d * 11;
+        ctx.beginPath();
+        ctx.moveTo(rx + RS - off, ry + RS);
+        ctx.lineTo(rx + RS, ry + RS - off);
+        ctx.stroke();
+      }
+      refs.buttonRegions.push({ x: rx, y: ry, w: RS, h: RS, action: "panelResize" });
     }
 
     // ===== MAIN DRAW =====
@@ -1230,7 +1280,8 @@
       }
 
       drawHostDirectButton();
-      drawLayoutToggle();
+      drawHostModelButtons();
+      drawPanelHandles();
 
       // Phase stepper pills: add click regions (after other regions so they are not cleared)
       var stepW = 200, gap = 36, stepH = 48, Y = 50;
@@ -1352,6 +1403,7 @@
     if (isNaN(S.selectedAnswer)) S.selectedAnswer = -1;
     S.waitingForUser = d.waitingForUser === true;
     S.isPlayingAudio = d.isPlayingAudio === true;
+    S.modelPartCount = parseInt(d.modelPartCount, 10) || 0;
     S.currentMcqIndex = parseInt(d.currentMcqIndex, 10) || 0;
     S.totalMcqs = parseInt(d.totalMcqs, 10) || 0;
     S.correctAnswer = parseInt(d.correctAnswer, 10);
@@ -1509,36 +1561,117 @@
 	if (typeof krpano.call === "function") krpano.call("immersive_ui_gaze_update_positions()");
 ]]></action>
 
-<action name="immersive_ui_nudge_panel" type="js"><![CDATA[
-	// Relative move/resize driven from the panel's own buttons, so it works in-headset
-	// with no controller drag required.
-	var hs = null;
-	try { hs = krpano.get("hotspot[iu_panel_3d]"); } catch (e) { hs = null; }
-	if (!hs) return;
+
+<!--
+	Panel drag / resize.
+
+	Installed once. The handle hotspots carry ondown="...; drag3d();" so krpano itself
+	moves the HANDLE — that call already works for both a mouse and a headset controller,
+	because the asset_N model hotspots have used it since before this panel existed. All
+	this adds is a loop that mirrors the handle's motion onto the panel and then puts the
+	handle back, so the two never drift apart.
+-->
+<action name="immersive_ui_install_panel_drag" type="js"><![CDATA[
+	if (window.__krpanoPanelDragInstalled) return;
+	window.__krpanoPanelDragInstalled = true;
+
+	var num = function (name) {
+		var v = Number(krpano.get(name));
+		return isFinite(v) ? v : 0;
+	};
+	var panelScale = function () {
+		var refs = krpano.immersive_ui_refs;
+		return (refs && refs.panel && refs.panel.mesh) ? Math.abs(refs.panel.mesh.scale.y) || 1 : 1;
+	};
+
+	var session = null;
+	var raf = null;
+
+	var handleName = function (mode) {
+		// The proxies are named by their index in refs.buttonRegions, so find ours by the
+		// dataaction we stamped on it rather than assuming a fixed index.
+		var refs = krpano.immersive_ui_refs;
+		if (!refs || !refs.gazeHotspotNames) return null;
+		var wanted = mode === "grab" ? "panelGrab" : "panelResize";
+		for (var i = 0; i < refs.gazeHotspotNames.length; i++) {
+			var n = refs.gazeHotspotNames[i];
+			if (String(krpano.get("hotspot[" + n + "].dataaction")) === wanted) return n;
+		}
+		return null;
+	};
+
+	var stop = function () {
+		if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
+		session = null;
+		krpano.immersive_ui_panel_dragging = false;
+	};
+
+	var tick = function () {
+		if (!session) return;
+		var hn = session.handle;
+		var hx = num("hotspot[" + hn + "].tx");
+		var hy = num("hotspot[" + hn + "].ty");
+		var hz = num("hotspot[" + hn + "].tz");
+
+		if (session.mode === "grab") {
+			krpano.set("hotspot[iu_panel_3d].tx", session.panel.tx + (hx - session.handle0.tx));
+			krpano.set("hotspot[iu_panel_3d].ty", session.panel.ty + (hy - session.handle0.ty));
+			krpano.set("hotspot[iu_panel_3d].tz", session.panel.tz + (hz - session.handle0.tz));
+		} else {
+			// Scale from how much further the corner was pulled from the panel centre.
+			var dx = hx - session.panel.tx, dy = hy - session.panel.ty;
+			var dist = Math.sqrt(dx * dx + dy * dy);
+			if (session.dist0 > 0.0001) {
+				var next = Math.max(0.4, Math.min(2.5, session.scale0 * (dist / session.dist0)));
+				var refs = krpano.immersive_ui_refs;
+				if (refs && refs.panel && refs.panel.mesh) refs.panel.mesh.scale.set(-next, next, next);
+			}
+		}
+		raf = requestAnimationFrame(tick);
+	};
+
+	var start = function (mode) {
+		var hn = handleName(mode);
+		if (!hn) return;
+		stop();
+		var px = num("hotspot[iu_panel_3d].tx");
+		var py = num("hotspot[iu_panel_3d].ty");
+		var pz = num("hotspot[iu_panel_3d].tz");
+		var hx = num("hotspot[" + hn + "].tx");
+		var hy = num("hotspot[" + hn + "].ty");
+		var hz = num("hotspot[" + hn + "].tz");
+		var ddx = hx - px, ddy = hy - py;
+		session = {
+			mode: mode, handle: hn,
+			panel: { tx: px, ty: py, tz: pz },
+			handle0: { tx: hx, ty: hy, tz: hz },
+			dist0: Math.sqrt(ddx * ddx + ddy * ddy),
+			scale0: panelScale()
+		};
+		krpano.immersive_ui_panel_dragging = true;
+		raf = requestAnimationFrame(tick);
+	};
+
+	window.__krpanoPanelGrabStart = function () { start("grab"); };
+	window.__krpanoPanelResizeStart = function () { start("resize"); };
+	window.__krpanoPanelDragEnd = function () {
+		stop();
+		// Persist, then re-place the proxies onto the panel's new position/size.
+		krpano.call("immersive_ui_report_panel_transform()");
+		krpano.call("immersive_ui_gaze_update_positions()");
+	};
+]]></action>
+
+<!-- Publish the panel's current transform so React can persist it per user. -->
+<action name="immersive_ui_report_panel_transform" type="js"><![CDATA[
 	var refs = krpano.immersive_ui_refs;
-
-	var axis = (typeof args !== "undefined" && args[1] !== undefined) ? String(args[1]) : "";
-	var step = (typeof args !== "undefined" && args[2] !== undefined) ? Number(args[2]) : 0;
-	if (!axis || !isFinite(step)) return;
-
-	if (axis === "x") krpano.set("hotspot[iu_panel_3d].tx", Number(hs.tx || 0) + step);
-	else if (axis === "y") krpano.set("hotspot[iu_panel_3d].ty", Number(hs.ty || 0) + step);
-	else if (axis === "z") krpano.set("hotspot[iu_panel_3d].tz", Number(hs.tz || 0) + step);
-	else if (axis === "scale" && refs && refs.panel && refs.panel.mesh) {
-		var cur = Math.abs(refs.panel.mesh.scale.y) || 1;
-		var next = Math.max(0.4, Math.min(2.5, cur + step));
-		refs.panel.mesh.scale.set(-next, next, next);
-	}
-
-	// Report back so React can persist the teacher's/student's preference.
 	var m = (refs && refs.panel && refs.panel.mesh) ? Math.abs(refs.panel.mesh.scale.y) : 1;
 	window.__krpanoPanelTransform = {
 		tx: Number(krpano.get("hotspot[iu_panel_3d].tx")) || 0,
 		ty: Number(krpano.get("hotspot[iu_panel_3d].ty")) || 0,
 		tz: Number(krpano.get("hotspot[iu_panel_3d].tz")) || 0,
-		scale: m
+		scale: isFinite(m) && m > 0 ? m : 1
 	};
 	if (window.__krpanoOnPanelTransform) window.__krpanoOnPanelTransform(window.__krpanoPanelTransform);
-	if (typeof krpano.call === "function") krpano.call("immersive_ui_gaze_update_positions()");
 ]]></action>
 </krpano>

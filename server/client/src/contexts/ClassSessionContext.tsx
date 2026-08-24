@@ -31,6 +31,7 @@ import {
   broadcastTeacherPhase as apiBroadcastTeacherPhase,
   updateTeacherContentState as apiUpdateTeacherContentState,
   setSessionControl as apiSetSessionControl,
+  setStudentUiVisible as apiSetStudentUiVisible,
   setTeacherPlayback as apiSetTeacherPlayback,
   publishLobbyRoster as apiPublishLobbyRoster,
   reportStudentSignal as apiReportStudentSignal,
@@ -54,7 +55,8 @@ interface ClassSessionContextValue {
   startSession: (classId: string) => Promise<string | null>;
   launchLesson: (payload: LaunchedLesson, sessionIdOverride?: string) => Promise<boolean>;
   launchScene: (payload: LaunchedScene, sessionIdOverride?: string) => Promise<boolean>;
-  endSession: () => Promise<boolean>;
+  /** Ends the class. Pass a sessionId when the caller knows it (partner-hosted). */
+  endSession: (sessionIdOverride?: string) => Promise<boolean>;
   leaveSessionAsTeacher: () => void;
   bindActiveSession: (sessionId: string) => void;
   /** Broadcast the teacher's current lesson phase so students follow it. */
@@ -62,6 +64,8 @@ interface ClassSessionContextValue {
   updateTeacherContentState: (state: TeacherContentState) => Promise<boolean>;
   /** Turn lockstep on/off. Enabling holds the class until the teacher presses Play. */
   setSessionControl: (enabled: boolean, requestImmersive?: boolean) => Promise<boolean>;
+  /** Show/hide the in-headset panel for students only, while control is held. */
+  setStudentUiVisible: (visible: boolean) => Promise<boolean>;
   /** Drive the class's playback gate (Play / Pause / Replay / jump to a phase). */
   setTeacherPlayback: (playback: Omit<TeacherPlayback, 'at_ms'>) => Promise<boolean>;
   /** Publish the names-only waiting-room roster for students. */
@@ -174,6 +178,14 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     [activeSessionId]
   );
 
+  const setStudentUiVisible = useCallback(
+    async (visible: boolean): Promise<boolean> => {
+      if (!activeSessionId) return false;
+      return apiSetStudentUiVisible(activeSessionId, visible);
+    },
+    [activeSessionId]
+  );
+
   const setTeacherPlayback = useCallback(
     async (playback: Omit<TeacherPlayback, 'at_ms'>): Promise<boolean> => {
       if (!activeSessionId) return false;
@@ -277,11 +289,15 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     [activeSessionId, user?.uid]
   );
 
-  const endSession = useCallback(async (): Promise<boolean> => {
-    if (!activeSessionId || !user?.uid) return false;
+  const endSession = useCallback(async (sessionIdOverride?: string): Promise<boolean> => {
+    // Accept an override for the same reason leaveSessionAsTeacher does: activeSessionId
+    // is null for a partner-hosted session, where the id lives on partnerSessionMeta. This
+    // used to return false before attempting any write, and the caller discarded it.
+    const sessionId = sessionIdOverride ?? activeSessionId;
+    if (!sessionId || !user?.uid) return false;
     setSessionLoading(true);
     try {
-      const ok = await apiEndSession(activeSessionId, user.uid);
+      const ok = await apiEndSession(sessionId, user.uid);
       if (ok) leaveSessionAsTeacher();
       else setSessionError('Failed to end session.');
       return ok;
@@ -567,6 +583,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     broadcastTeacherPhase,
     updateTeacherContentState,
     setSessionControl,
+    setStudentUiVisible,
     setTeacherPlayback,
     publishLobbyRoster,
     forceStudentsToLesson,

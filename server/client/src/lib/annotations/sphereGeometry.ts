@@ -123,15 +123,52 @@ export function capPoints(points: AnnotationPoint[], max = MAX_POINTS_PER_STROKE
 /** Default lifetime for a marker stroke. Every stroke is temporary. */
 export const STROKE_TTL_MS = 6500;
 
+/**
+ * Teacher-vs-viewer clock offset, in ms.
+ *
+ * `created_ms` is stamped from the TEACHER's `Date.now()`, but expiry was compared against
+ * the VIEWER's `Date.now()`. Nothing reconciled the two, so a student whose clock ran ~4s
+ * fast saw every stroke arrive already fading, and ~6.5s fast filtered every stroke out
+ * before it was ever projected — ink that silently never appeared, permanently.
+ *
+ * No server timestamp is needed to fix it. `sync_id` is the teacher's own `Date.now()` at
+ * the moment of the write, so on receipt `sync_id - Date.now()` is the teacher-vs-viewer
+ * offset directly (network latency biases it very slightly negative, which only makes
+ * strokes live marginally longer — harmless). On the teacher's own client it resolves to
+ * ~0, so the same code path is correct for host and student alike.
+ */
+let clockOffsetMs = 0;
+
+/** Ignore anything beyond this; a wilder value means a bad clock, not a real offset. */
+const MAX_CLOCK_OFFSET_MS = 60_000;
+
+/** Feed the offset from an incoming annotation payload's `sync_id`. */
+export function setAnnotationClockOffset(syncId: number | null | undefined): void {
+  if (typeof syncId !== 'number' || !Number.isFinite(syncId)) return;
+  const offset = syncId - Date.now();
+  if (Math.abs(offset) > MAX_CLOCK_OFFSET_MS) return;
+  clockOffsetMs = offset;
+}
+
+/** "Now", expressed on the teacher's clock — the one `created_ms` was stamped with. */
+export function annotationNow(): number {
+  return Date.now() + clockOffsetMs;
+}
+
+/** Current offset, for diagnostics. */
+export function getAnnotationClockOffset(): number {
+  return clockOffsetMs;
+}
+
 /** True once a stroke has outlived its ttl. Applies to every stroke, not just laser. */
-export function isStrokeExpired(stroke: AnnotationStroke, now = Date.now()): boolean {
+export function isStrokeExpired(stroke: AnnotationStroke, now = annotationNow()): boolean {
   const ttl = stroke.ttl_ms ?? STROKE_TTL_MS;
   if (!ttl) return false;
   return now - stroke.created_ms > ttl;
 }
 
 /** 0..1 opacity for a stroke as it fades out over the last 40% of its life. */
-export function laserOpacity(stroke: AnnotationStroke, now = Date.now()): number {
+export function laserOpacity(stroke: AnnotationStroke, now = annotationNow()): number {
   const ttl = stroke.ttl_ms ?? STROKE_TTL_MS;
   if (!ttl) return 1;
   const age = now - stroke.created_ms;

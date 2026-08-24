@@ -295,11 +295,17 @@ router.get('/', async (req: Request, res: Response) => {
         audio_url: t?.audio_url || t?.audioUrl || t?.url,
         language: t?.language || t?.lang || lang,
       })),
+      // Pass the answer-bearing fields through UNCHANGED and let the client resolve them
+      // (src/lib/mcq/answerIndex.ts). This used to project each MCQ down to five fields,
+      // which discarded `correct_option_text` — the only field that names the right answer
+      // without relying on a base convention — along with the `option1..4` / `option_a..d`
+      // scalars that the n8n curriculum path writes INSTEAD of an `options` array. For
+      // every n8n-ingested lesson this endpoint therefore returned `options: []` and an
+      // index with nothing to index into.
       mcqs: mcqsList.filter(Boolean).map((m: any) => ({
+        ...m,
         id: m?.id ?? '',
         question: m?.question || m?.question_text,
-        options: Array.isArray(m?.options) ? m.options : [],
-        correct_option_index: m?.correct_option_index ?? 0,
         explanation: m?.explanation || '',
       })),
       avatarScripts,

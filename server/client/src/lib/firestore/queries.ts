@@ -21,6 +21,7 @@ import {
   Unsubscribe,
   QueryConstraint,
 } from 'firebase/firestore';
+import { extractMcqOptions, resolveCorrectAnswerIndex } from '../mcq/answerIndex';
 import { db } from '../../config/firebase';
 import {
   Chapter,
@@ -694,21 +695,20 @@ export const getMCQs = async (
               options.push('');
             }
             
-            // Get correct option index - handle both numeric and text-based matching
-            let correctIndex = 0;
-            const correctIndexVal = topic[`mcq${i}_correct_option_index`];
-            const correctText = topic[`mcq${i}_correct_option_text`] as string | undefined;
-            
-            if (typeof correctIndexVal === 'number') {
-              correctIndex = correctIndexVal;
-            } else if (correctText && options.length > 0) {
-              // Try to find the correct option by matching text
-              const idx = options.findIndex(opt => opt === correctText);
-              if (idx !== -1) {
-                correctIndex = idx;
-              }
-            }
-            
+            // Correct option, via the shared resolver. This block used to prefer the
+            // numeric index and fall back to the text; the priority is now the other way
+            // round, because the text names the answer outright while the index depends
+            // on a base convention that some legacy n8n payloads got wrong.
+            const correctIndex = resolveCorrectAnswerIndex(
+              {
+                correct_option_index: topic[`mcq${i}_correct_option_index`],
+                correct_option_text: topic[`mcq${i}_correct_option_text`],
+                question,
+              },
+              options,
+              'flattenedTopicMcqs'
+            );
+
             flattenedMcqs.push({
               id: (topic[`mcq${i}_question_id`] as string) || `mcq_${i}`,
               question,
@@ -1678,38 +1678,11 @@ export const getChapterMCQs = async (
         if (mcqSnap.exists()) {
           const data = mcqSnap.data();
           
-          // Handle various field name variations for options
-          let options: string[] = [];
-          if (Array.isArray(data.options) && data.options.length > 0) {
-            options = data.options;
-          } else if (Array.isArray(data.choices)) {
-            options = data.choices;
-          } else if (Array.isArray(data.answers)) {
-            options = data.answers;
-          } else {
-            // Try to extract options from individual fields (A, B, C, D format)
-            const extractedOptions: string[] = [];
-            ['option_a', 'option_b', 'option_c', 'option_d', 'optionA', 'optionB', 'optionC', 'optionD',
-             'option1', 'option2', 'option3', 'option4', 'a', 'b', 'c', 'd'].forEach(key => {
-              if (data[key]) extractedOptions.push(data[key]);
-            });
-            if (extractedOptions.length > 0) {
-              options = extractedOptions;
-            }
-          }
-          
-          // Handle various field name variations for correct answer index
-          let correctIndex = data.correct_option_index ?? data.correct_index ?? data.correctIndex ?? data.correct ?? 0;
-          if (typeof correctIndex !== 'number') {
-            correctIndex = parseInt(String(correctIndex), 10) || 0;
-          }
-          // Handle if correct answer is stored as a letter (A, B, C, D)
-          if (typeof data.correct_answer === 'string' && data.correct_answer.length === 1) {
-            const letterIndex = data.correct_answer.toUpperCase().charCodeAt(0) - 65;
-            if (letterIndex >= 0 && letterIndex < options.length) {
-              correctIndex = letterIndex;
-            }
-          }
+          // Options and the correct answer are resolved in one shared place
+          // (src/lib/mcq/answerIndex.ts) so this fetch layer, getLessonBundle and all
+          // four players cannot disagree about which option is correct.
+          const options = extractMcqOptions(data);
+          const correctIndex = resolveCorrectAnswerIndex(data, options, 'getChapterMCQs');
           
           console.log(`📋 MCQ ${mcqId}:`, {
             question: (data.question || data.question_text || '').substring(0, 50),

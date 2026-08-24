@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ReactNode, ErrorInfo, useMemo } from 'react';
+import { extractMcqOptions, resolveCorrectAnswerIndex } from '../lib/mcq/answerIndex';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -1066,54 +1067,14 @@ const VRLessonPlayerInner = () => {
       // Convert ChapterMCQ to the format expected by the MCQ UI
       // Handle various field formats that might exist in Firestore
       return fetchedMCQs.map(mcq => {
-        // Handle different possible formats for options
-        let options: string[] = [];
-        if (Array.isArray(mcq.options) && mcq.options.length > 0) {
-          options = mcq.options;
-        } else if ((mcq as any).choices && Array.isArray((mcq as any).choices)) {
-          // Some MCQs might use "choices" instead of "options"
-          options = (mcq as any).choices;
-        } else if ((mcq as any).answers && Array.isArray((mcq as any).answers)) {
-          // Some MCQs might use "answers"
-          options = (mcq as any).answers;
-        } else {
-          // Try to extract options from individual fields (option_a, option_b, etc.)
-          const extractedOptions: string[] = [];
-          const mcqAny = mcq as any;
-          ['option_a', 'option_b', 'option_c', 'option_d', 'option1', 'option2', 'option3', 'option4'].forEach(key => {
-            if (mcqAny[key]) extractedOptions.push(mcqAny[key]);
-          });
-          if (extractedOptions.length > 0) {
-            options = extractedOptions;
-          }
-        }
-        
-        // Handle correct answer index
-        let rawIndex = mcq.correct_option_index ?? 0;
-        if (typeof rawIndex !== 'number') {
-          rawIndex = parseInt(String(rawIndex), 10) || 0;
-        }
-        // Handle if correct answer is stored with alternate field name
-        if ((mcq as any).correct_answer_index !== undefined) {
-          rawIndex = (mcq as any).correct_answer_index;
-        }
-        // Handle if correct answer is stored as letter (A, B, C, D)
-        const correctLetter = (mcq as any).correct_answer || (mcq as any).correct_option;
-        if (typeof correctLetter === 'string' && correctLetter.length === 1) {
-          const letterIndex = correctLetter.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
-          if (letterIndex >= 0 && letterIndex < options.length) {
-            rawIndex = letterIndex; // Already 0-based from letter conversion
-          }
-        } else {
-          // CRITICAL FIX: Convert 1-based DB index to 0-based frontend index
-          // DB stores: 1=A, 2=B, 3=C, 4=D; Frontend expects: 0=A, 1=B, 2=C, 3=D
-          if (rawIndex >= 1 && rawIndex <= options.length) {
-            rawIndex = rawIndex - 1;
-          }
-        }
-        
-        // Validate bounds
-        const correctIndex = Math.max(0, Math.min(rawIndex, options.length - 1));
+        const options = extractMcqOptions(mcq as unknown as Record<string, unknown>);
+        // One resolver for every player (src/lib/mcq/answerIndex.ts). The local copy this
+        // replaces subtracted 1 from an index the backend already stores 0-based.
+        const correctIndex = resolveCorrectAnswerIndex(
+          mcq as unknown as Record<string, unknown>,
+          options,
+          'vr-quiz'
+        );
 
         return {
           id: mcq.id || `mcq_${Math.random().toString(36).substr(2, 9)}`,
@@ -1129,16 +1090,11 @@ const VRLessonPlayerInner = () => {
     return embeddedMcqs
       .filter((mcq: any) => mcq.question && mcq.options?.length > 0)
       .map((mcq: any) => {
-        const options = mcq.options || [];
-        let rawIdx = mcq.correct_option_index ?? 0;
-        if (typeof rawIdx !== 'number') rawIdx = parseInt(String(rawIdx), 10) || 0;
-        // Convert 1-based to 0-based if needed
-        if (rawIdx >= 1 && rawIdx <= options.length) {
-          rawIdx = rawIdx - 1;
-        }
+        const options = extractMcqOptions(mcq);
         return {
           ...mcq,
-          correctAnswer: Math.max(0, Math.min(rawIdx, options.length - 1)),
+          options,
+          correctAnswer: resolveCorrectAnswerIndex(mcq, options, 'vr-quiz'),
         };
       });
   }, [fetchedMCQs, activeLesson]);

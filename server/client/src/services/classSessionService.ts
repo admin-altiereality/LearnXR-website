@@ -380,7 +380,20 @@ export async function endSession(sessionId: string, _teacherUid: string): Promis
     });
     return true;
   } catch (err) {
-    console.error('classSessionService.endSession:', err);
+    // Name the likely cause rather than dumping a bare FirebaseError. A denied write here
+    // means the rules' classSessionLaunchKeysOnly()/canHostClassSession() guard rejected
+    // it, which is not obvious from the message Firestore returns.
+    const code = (err as { code?: string })?.code ?? '';
+    if (code === 'permission-denied') {
+      console.error(
+        'classSessionService.endSession: permission denied writing status=ended. ' +
+          'Check that the signed-in user still satisfies canHostClassSession() for this ' +
+          'session, and that "status" is in classSessionLaunchKeysOnly().',
+        { sessionId, err }
+      );
+    } else {
+      console.error('classSessionService.endSession:', err);
+    }
     return false;
   }
 }
@@ -686,6 +699,26 @@ export async function broadcastTeacherPhase(
 }
 
 /**
+ * Show or hide the in-headset panel for STUDENTS only, while control is held.
+ * The teacher's own panel is never affected — they need the in-VR controls.
+ */
+export async function setStudentUiVisible(
+  sessionId: string,
+  visible: boolean
+): Promise<boolean> {
+  try {
+    await updateDoc(doc(db, COLLECTION_SESSIONS, sessionId), {
+      student_ui_visible: visible,
+      updated_at: serverTimestamp(),
+    });
+    return true;
+  } catch (err) {
+    console.error('classSessionService.setStudentUiVisible:', err);
+    return false;
+  }
+}
+
+/**
  * Turn lockstep ("Control Students") on or off.
  *
  * Enabling deliberately leaves the class HELD: `teacher_controlled_phase` stays
@@ -720,6 +753,8 @@ export async function setSessionControl(
       });
     } else {
       // Releasing control also releases immersive: students get their chrome back.
+      // The student panel is NOT reset here — it follows Start class, not control, and
+      // stays as the teacher last set it for the lesson.
       await updateDoc(sessionRef, {
         control_students_enabled: false,
         teacher_immersive_request: null,
@@ -832,7 +867,35 @@ export async function publishAnnotations(
     return true;
   } catch (err) {
     console.error('classSessionService.publishAnnotations:', err);
+    notifyAnnotationWriteDenied(err);
     return false;
+  }
+}
+
+/**
+ * Tell the teacher once when ink is not reaching the class.
+ *
+ * updateDoc is latency-compensated: the teacher's own client renders the stroke from the
+ * optimistic local snapshot whether or not the server accepts it, and a rejection is
+ * reverted inside a window shorter than the 6.5s stroke TTL. So a denied write is
+ * invisible to the person drawing and total for everyone else. Announce it rather than
+ * letting "the marker silently does nothing" happen twice.
+ */
+let annotationWriteDeniedReported = false;
+function notifyAnnotationWriteDenied(err: unknown): void {
+  if (annotationWriteDeniedReported) return;
+  const code = (err as { code?: string } | null)?.code ?? '';
+  if (code !== 'permission-denied') return;
+  annotationWriteDeniedReported = true;
+  console.error(
+    '[classSession] Marker ink is NOT reaching students: the session write was denied. ' +
+      "Check that classSessionLaunchKeysOnly() in firestore.rules lists 'teacher_annotations' " +
+      'and that the rules are deployed to the Firestore project.'
+  );
+  try {
+    (window as unknown as { __onAnnotationWriteDenied?: () => void }).__onAnnotationWriteDenied?.();
+  } catch {
+    /* no listener mounted */
   }
 }
 

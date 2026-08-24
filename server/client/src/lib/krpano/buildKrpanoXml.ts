@@ -78,7 +78,7 @@ const DEFAULT_HOTSPOT_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" fill="%23f97316" stroke="%23fff" stroke-width="3" opacity="0.95"/><circle cx="24" cy="24" r="8" fill="%23fff"/></svg>'
   );
 
-const KRPANO_ASSET_VERSION = '1.23.3-r13';
+const KRPANO_ASSET_VERSION = '1.23.3-r16';
 
 /**
  * Build hotspot XML for one hotspot. Uses image url or a default pin icon.
@@ -178,6 +178,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const nativeVrLessonUiIncludeUrl = pluginUrl(origin, basePath, 'native_vr_lesson_ui.xml');
   const ambienceIncludeUrl = pluginUrl(origin, basePath, 'classroom_ambience.xml');
   const annotationLayerIncludeUrl = pluginUrl(origin, basePath, 'annotation_layer.xml');
+  const modelControlIncludeUrl = pluginUrl(origin, basePath, 'model_control.xml');
   const gyro2PluginUrl = pluginUrl(origin, basePath, 'gyro2.js');
   const includeWebVr = webvr
     ? `  <include url="${escapeXml(webvrIncludeUrl)}" />\n` +
@@ -185,7 +186,8 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
       `  <include url="${escapeXml(xrInputIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(nativeVrLessonUiIncludeUrl)}" />\n` +
       `  <include url="${escapeXml(ambienceIncludeUrl)}" />\n` +
-      `  <include url="${escapeXml(annotationLayerIncludeUrl)}" />\n`
+      `  <include url="${escapeXml(annotationLayerIncludeUrl)}" />\n` +
+      `  <include url="${escapeXml(modelControlIncludeUrl)}" />\n`
     : '';
   const gyroBlock = `  <plugin name="gyro" url="${escapeXml(gyro2PluginUrl)}" keep="true" keepaliveduration="60" />\n`;
 
@@ -226,7 +228,11 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
       const name = `asset_${i}`;
       const safeInteractionId = escapeXml(interactionId);
       const scale = placement?.scale ?? 1;
-      const roty = placement?.rotationY !== undefined ? ` ry="${placement.rotationY}"` : '';
+      // rx/ry/rz are emitted explicitly. The onup handler below already reads caller.rx and
+      // caller.rz, but nothing ever declared those attributes, so they read as 0 and a
+      // teacher's rotation could never survive a round-trip through the session document.
+      const roty =
+        ` rx="0" ry="${placement?.rotationY !== undefined ? placement.rotationY : 0}" rz="0"`;
       const interaction = ` dataassetid="${safeInteractionId}" onclick="js(window.__krpanoLicensedModelAction &amp;&amp; window.__krpanoLicensedModelAction(get(caller.dataassetid)));" onup="js(window.__krpanoLicensedModelTransform &amp;&amp; window.__krpanoLicensedModelTransform(get(caller.dataassetid), get(caller.tx), get(caller.ty), get(caller.tz), get(caller.rx), get(caller.ry), get(caller.rz), get(caller.scale)));"`;
       if (placement && (placement.ath !== undefined || placement.atv !== undefined)) {
         const ath = placement.ath ?? 0;

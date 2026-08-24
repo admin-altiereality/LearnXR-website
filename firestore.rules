@@ -714,7 +714,7 @@ service cloud.firestore {
         'status', 'launched_lesson', 'launched_scene', 'teacher_view',
         'teacher_controlled_phase', 'control_students_enabled', 'teacher_content_state',
         'teacher_playback', 'lobby_roster', 'teacher_annotations',
-        'teacher_immersive_request', 'updated_at'
+        'teacher_immersive_request', 'student_ui_visible', 'updated_at'
       ]);
     }
     match /class_sessions/{sessionId} {

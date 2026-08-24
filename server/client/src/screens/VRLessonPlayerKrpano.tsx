@@ -32,11 +32,18 @@ import { AnnotationOverlay } from '../Components/player/AnnotationOverlay';
 import { MARKER_COLORS } from '../Components/player/MarkerToolbar';
 import { usePlayerViewport } from '../hooks/usePlayerViewport';
 import { useMarkerDrawing, screenToSphere, LASER_TTL_MS, type MarkerMode } from '../hooks/useMarkerDrawing';
+import { extractMcqOptions, resolveCorrectAnswerIndex } from '../lib/mcq/answerIndex';
 import { installViewChangeBus, onViewChange as onKrpanoViewChange } from '../lib/krpano/viewChangeBus';
 import { resetUserControl, reconcileUserControl } from '../lib/krpano/userControl';
-import { MAX_INK_STROKES, strokeCentroid, isStrokeExpired } from '../lib/annotations/sphereGeometry';
+import {
+  MAX_INK_STROKES,
+  strokeCentroid,
+  isStrokeExpired,
+  setAnnotationClockOffset,
+  getAnnotationClockOffset,
+} from '../lib/annotations/sphereGeometry';
 import { publishAnnotations, clearAnnotations, appendStroke } from '../services/classSessionService';
-import type { SessionLessonPhase, SessionQuizAnswer } from '../types/lms';
+import type { SessionLessonPhase, SessionQuizAnswer, TeacherContentState } from '../types/lms';
 import { auth, db } from '../config/firebase';
 import { signInWithCustomToken } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
@@ -193,6 +200,8 @@ interface KrpanoUiStatePayload {
   selectedAnswer: number;
   waitingForUser: boolean;
   isPlayingAudio: boolean;
+  /** Separable meshes in the scene; the in-VR model buttons hide below 2. */
+  modelPartCount?: number;
   currentMcqIndex: number;
   totalMcqs: number;
   correctAnswer: number;
@@ -915,6 +924,7 @@ const VRLessonPlayerInner = () => {
   const broadcastTeacherPhase = classSession?.broadcastTeacherPhase;
   const updateTeacherContentState = classSession?.updateTeacherContentState;
   const setSessionControl = classSession?.setSessionControl;
+  const setStudentUiVisible = classSession?.setStudentUiVisible;
   const setTeacherPlayback = classSession?.setTeacherPlayback;
   const publishLobbyRoster = classSession?.publishLobbyRoster;
   const reportSignal = classSession?.reportSignal;
@@ -1323,6 +1333,7 @@ const VRLessonPlayerInner = () => {
     selectedAnswer: -1,
     waitingForUser: false,
     isPlayingAudio: false,
+    modelPartCount: 0,
     currentMcqIndex: 0,
     totalMcqs: 0,
     correctAnswer: -1,
@@ -1432,79 +1443,36 @@ const VRLessonPlayerInner = () => {
       // Convert ChapterMCQ to the format expected by the MCQ UI
       // Handle various field formats that might exist in Firestore
       return fetchedMCQs.map(mcq => {
-        // Handle different possible formats for options
-        let options: string[] = [];
-        if (Array.isArray(mcq.options) && mcq.options.length > 0) {
-          options = mcq.options;
-        } else if ((mcq as any).choices && Array.isArray((mcq as any).choices)) {
-          // Some MCQs might use "choices" instead of "options"
-          options = (mcq as any).choices;
-        } else if ((mcq as any).answers && Array.isArray((mcq as any).answers)) {
-          // Some MCQs might use "answers"
-          options = (mcq as any).answers;
-        } else {
-          // Try to extract options from individual fields (option_a, option_b, etc.)
-          const extractedOptions: string[] = [];
-          const mcqAny = mcq as any;
-          ['option_a', 'option_b', 'option_c', 'option_d', 'option1', 'option2', 'option3', 'option4'].forEach(key => {
-            if (mcqAny[key]) extractedOptions.push(mcqAny[key]);
-          });
-          if (extractedOptions.length > 0) {
-            options = extractedOptions;
-          }
-        }
-        
-        // Handle correct answer index
-        let rawIndex = mcq.correct_option_index ?? 0;
-        if (typeof rawIndex !== 'number') {
-          rawIndex = parseInt(String(rawIndex), 10) || 0;
-        }
-        // Handle if correct answer is stored with alternate field name
-        if ((mcq as any).correct_answer_index !== undefined) {
-          rawIndex = (mcq as any).correct_answer_index;
-        }
-        // Handle if correct answer is stored as letter (A, B, C, D)
-        const correctLetter = (mcq as any).correct_answer || (mcq as any).correct_option;
-        if (typeof correctLetter === 'string' && correctLetter.length === 1) {
-          const letterIndex = correctLetter.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
-          if (letterIndex >= 0 && letterIndex < options.length) {
-            rawIndex = letterIndex; // Already 0-based from letter conversion
-          }
-        } else {
-          // CRITICAL FIX: Convert 1-based DB index to 0-based frontend index
-          // DB stores: 1=A, 2=B, 3=C, 4=D; Frontend expects: 0=A, 1=B, 2=C, 3=D
-          if (rawIndex >= 1 && rawIndex <= options.length) {
-            rawIndex = rawIndex - 1;
-          }
-        }
-        
-        // Validate bounds
-        const correctIndex = Math.max(0, Math.min(rawIndex, options.length - 1));
+        const options = extractMcqOptions(mcq as unknown as Record<string, unknown>);
+        // The correct option comes from the backend, resolved in ONE place. This block
+        // used to re-derive it and subtracted 1 to "convert 1-based DB to 0-based
+        // frontend" — but every writer in this repo stores it 0-based, so that shift
+        // scored B as A, C as B and D as C.
+        const correctIndex = resolveCorrectAnswerIndex(
+          mcq as unknown as Record<string, unknown>,
+          options,
+          'krpano-quiz'
+        );
 
         return {
           id: mcq.id || `mcq_${Math.random().toString(36).substr(2, 9)}`,
           question: mcq.question || (mcq as any).question_text || '',
           options: options,
-          correctAnswer: correctIndex, // 0-based index for frontend
+          correctAnswer: correctIndex, // 0-based, or -1 when the document does not say
           explanation: mcq.explanation || (mcq as any).explanation_text || '',
         };
       }).filter(mcq => mcq.question && mcq.options.length > 0); // Only include valid MCQs
     }
-    // Fallback to embedded MCQs - apply same conversion
+    // Fallback to embedded MCQs — same single resolver, no local index maths.
     const embeddedMcqs = activeLesson?.topic?.mcqs || [];
     return embeddedMcqs
       .filter((mcq: any) => mcq.question && mcq.options?.length > 0)
       .map((mcq: any) => {
-        const options = mcq.options || [];
-        let rawIdx = mcq.correct_option_index ?? 0;
-        if (typeof rawIdx !== 'number') rawIdx = parseInt(String(rawIdx), 10) || 0;
-        // Convert 1-based to 0-based if needed
-        if (rawIdx >= 1 && rawIdx <= options.length) {
-          rawIdx = rawIdx - 1;
-        }
+        const options = extractMcqOptions(mcq);
         return {
           ...mcq,
-          correctAnswer: Math.max(0, Math.min(rawIdx, options.length - 1)),
+          options,
+          correctAnswer: resolveCorrectAnswerIndex(mcq, options, 'krpano-quiz'),
         };
       });
   }, [fetchedMCQs, activeLesson]);
@@ -1735,19 +1703,16 @@ const VRLessonPlayerInner = () => {
     }
   }, [skyboxLoading, skyboxData]);
 
-  // Detect Meta Quest / mobile so we can configure immersive UI visibility
+  // Detect Meta Quest / mobile. This decides whether the device COULD show the in-headset
+  // panel at all; whether it actually does is decided below, from class control state.
+  const [immersiveUiDeviceCapable, setImmersiveUiDeviceCapable] = useState(false);
   useEffect(() => {
     const quest = isMetaQuestBrowser();
     setIsQuestDevice(quest);
 
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
     const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
-
-    try {
-      (window as any).__showImmersiveUI = quest || isMobile;
-    } catch (e) {
-      // ignore if window is not available
-    }
+    setImmersiveUiDeviceCapable(quest || isMobile);
   }, []);
 
   // Embed krpano when we have skybox and container is mounted (with or without 3D assets; 3D via threejs plugin)
@@ -1782,6 +1747,7 @@ const VRLessonPlayerInner = () => {
         selectedAnswer: state.selectedAnswer ?? -1,
         waitingForUser: state.waitingForUser === true,
         isPlayingAudio: state.isPlayingAudio === true,
+        modelPartCount: state.modelPartCount ?? 0,
         currentMcqIndex: state.currentMcqIndex ?? 0,
         totalMcqs: state.totalMcqs ?? 0,
         correctAnswer: state.correctAnswer ?? -1,
@@ -2041,66 +2007,6 @@ const VRLessonPlayerInner = () => {
 
   const isTeacherInSession = Boolean(activeSessionId && activeSession && user?.uid && activeSession.teacher_uid === user.uid);
 
-  useEffect(() => {
-    licensedModelActionRef.current = (assetId: string, transform?: number[]) => {
-      if (!assetId) return;
-      setLastHotspotClicked(assetId);
-      const licensedContent = extraLessonData?.licensedContent;
-      if (!isTeacherInSession || !licensedContent?.id || !updateTeacherContentState) return;
-      const previous = activeSession?.teacher_content_state?.licensed_content_id === licensedContent.id
-        ? activeSession.teacher_content_state
-        : null;
-      const hasTransform = Array.isArray(transform) && transform.length >= 7 && transform.every(Number.isFinite);
-      void updateTeacherContentState({
-        licensed_content_id: licensedContent.id,
-        revision: licensedContent.revision,
-        selected_part_id: assetId,
-        visible_layer_ids: previous?.visible_layer_ids || [],
-        exploded: previous?.exploded || false,
-        animation_clip: previous?.animation_clip || null,
-        animation_time: previous?.animation_time || 0,
-        animation_playing: previous?.animation_playing || false,
-        ...(hasTransform ? {
-          model_transform: {
-            position: [transform[0], transform[1], transform[2]],
-            rotation: [transform[3], transform[4], transform[5]],
-            scale: [transform[6], transform[6], transform[6]],
-          },
-        } : previous?.model_transform ? { model_transform: previous.model_transform } : {}),
-        locked: activeSession?.control_students_enabled === true,
-        sync_id: Date.now(),
-      });
-    };
-    return () => { licensedModelActionRef.current = null; };
-  }, [activeSession?.control_students_enabled, activeSession?.teacher_content_state, extraLessonData?.licensedContent, isTeacherInSession, updateTeacherContentState]);
-
-  useEffect(() => {
-    const state = joinedSession?.teacher_content_state;
-    const viewer = krpanoViewerRef.current;
-    if (!viewer?.call) return;
-    if (!joinedSession?.control_students_enabled) {
-      licensedAssetIndexRef.current.forEach((index) => viewer.call?.(`set(hotspot[asset_${index}].enabled,true);`));
-      return;
-    }
-    if (!state?.licensed_content_id || state.licensed_content_id !== extraLessonData?.licensedContent?.id) return;
-    const selectedIndex = state.selected_part_id ? licensedAssetIndexRef.current.get(state.selected_part_id) : undefined;
-    licensedAssetIndexRef.current.forEach((index) => {
-      viewer.call?.(`set(hotspot[asset_${index}].enabled,${state.locked === false ? 'true' : 'false'});`);
-      if (index !== selectedIndex) viewer.call?.(`tween(hotspot[asset_${index}].scale,1,0.2);`);
-    });
-    if (selectedIndex === undefined) return;
-    const transform = state.model_transform;
-    const position = transform?.position;
-    const rotation = transform?.rotation;
-    const scale = transform?.scale?.[0];
-    if (position?.every(Number.isFinite)) {
-      viewer.call(`set(hotspot[asset_${selectedIndex}].tx,${position[0]});set(hotspot[asset_${selectedIndex}].ty,${position[1]});set(hotspot[asset_${selectedIndex}].tz,${position[2]});`);
-    }
-    if (rotation?.every(Number.isFinite)) {
-      viewer.call(`set(hotspot[asset_${selectedIndex}].rx,${rotation[0]});set(hotspot[asset_${selectedIndex}].ry,${rotation[1]});set(hotspot[asset_${selectedIndex}].rz,${rotation[2]});`);
-    }
-    viewer.call(`tween(hotspot[asset_${selectedIndex}].scale,${Number.isFinite(scale) ? Number(scale) * 1.08 : 1.08},0.2);`);
-  }, [extraLessonData?.licensedContent?.id, joinedSession?.control_students_enabled, joinedSession?.teacher_content_state?.sync_id]);
 
   const partnerSessionMeta = useMemo(() => {
     if (typeof window === 'undefined') return null;
@@ -2133,6 +2039,258 @@ const VRLessonPlayerInner = () => {
           (profile?.role === 'partner' && activeSession.hosted_by_partner === true)))
   );
 
+  /**
+   * Which 3D scene is this, stably?
+   *
+   * Model state used to be keyed on `licensedContent.id`, which is set only by
+   * buildNativeLicensedLesson() — i.e. Immersive-STEM lessons. Both the writer and the
+   * student applier required it, so on an ordinary Meshy/bundle GLB lesson NOTHING a
+   * teacher did to a model was ever broadcast; the drag stayed in their own browser with no
+   * error anywhere. `launch_id` exists for every launched lesson, so key on that and keep
+   * the licensed id as a fallback for sessions already in flight.
+   */
+  const hostSceneKey =
+    activeSession?.launched_lesson?.launch_id || extraLessonData?.licensedContent?.id || null;
+  const studentSceneKey =
+    joinedSession?.launched_lesson?.launch_id || extraLessonData?.licensedContent?.id || null;
+
+  useEffect(() => {
+    licensedModelActionRef.current = (assetId: string, transform?: number[]) => {
+      if (!assetId) return;
+      setLastHotspotClicked(assetId);
+      // isClassHost, not isTeacherInSession: the latter matches teacher_uid only and so
+      // silently excluded partner hosts — the same gate that stopped them ending a session.
+      if (!isClassHost || !hostSceneKey || !updateTeacherContentState) return;
+      const prevState = activeSession?.teacher_content_state ?? null;
+      const prevKey = prevState?.scene_key || prevState?.licensed_content_id || null;
+      const previous = prevKey === hostSceneKey ? prevState : null;
+      const hasTransform = Array.isArray(transform) && transform.length >= 7 && transform.every(Number.isFinite);
+      void updateTeacherContentState({
+        scene_key: hostSceneKey,
+        // Still written so a student on an older build keeps working.
+        licensed_content_id: extraLessonData?.licensedContent?.id || hostSceneKey,
+        revision: extraLessonData?.licensedContent?.revision,
+        selected_part_id: assetId,
+        selected_part_name: previous?.selected_part_name ?? null,
+        visible_layer_ids: previous?.visible_layer_ids || [],
+        exploded: previous?.exploded ?? 0,
+        isolated: previous?.isolated ?? false,
+        clip: previous?.clip ?? null,
+        animation_clip: previous?.animation_clip || null,
+        animation_time: previous?.animation_time || 0,
+        animation_playing: previous?.animation_playing || false,
+        ...(hasTransform ? {
+          model_transform: {
+            position: [transform[0], transform[1], transform[2]],
+            rotation: [transform[3], transform[4], transform[5]],
+            scale: [transform[6], transform[6], transform[6]],
+          },
+        } : previous?.model_transform ? { model_transform: previous.model_transform } : {}),
+        locked: activeSession?.control_students_enabled === true,
+        sync_id: Date.now(),
+      });
+    };
+    return () => { licensedModelActionRef.current = null; };
+  }, [activeSession?.control_students_enabled, activeSession?.teacher_content_state, extraLessonData?.licensedContent, hostSceneKey, isClassHost, updateTeacherContentState]);
+
+  useEffect(() => {
+    const state = joinedSession?.teacher_content_state;
+    const viewer = krpanoViewerRef.current;
+    if (!viewer?.call) return;
+    // Control off = students explore: their own model is theirs to handle.
+    if (!joinedSession?.control_students_enabled) {
+      licensedAssetIndexRef.current.forEach((index) => viewer.call?.(`set(hotspot[asset_${index}].enabled,true);`));
+      return;
+    }
+    const stateKey = state?.scene_key || state?.licensed_content_id || null;
+    if (!stateKey || !studentSceneKey || stateKey !== studentSceneKey) return;
+
+    const selectedIndex = state?.selected_part_id
+      ? licensedAssetIndexRef.current.get(state.selected_part_id)
+      : undefined;
+
+    licensedAssetIndexRef.current.forEach((index) => {
+      viewer.call?.(`set(hotspot[asset_${index}].enabled,${state?.locked === false ? 'true' : 'false'});`);
+    });
+
+    // Explode / isolate / clip are whole-scene states, applied whether or not one asset is
+    // selected. Wrapped because the plugin may not have loaded yet on a slow connection.
+    try {
+      (window as unknown as Record<string, unknown>).__krpanoModelState = state;
+      viewer.call('model_apply_state();');
+    } catch { /* plugin not ready; it reads the global on load */ }
+
+    if (selectedIndex === undefined) return;
+    const transform = state?.model_transform;
+    const position = transform?.position;
+    const rotation = transform?.rotation;
+    const scale = transform?.scale?.[0];
+    if (position?.every(Number.isFinite)) {
+      viewer.call(`set(hotspot[asset_${selectedIndex}].tx,${position[0]});set(hotspot[asset_${selectedIndex}].ty,${position[1]});set(hotspot[asset_${selectedIndex}].tz,${position[2]});`);
+    }
+    if (rotation?.every(Number.isFinite)) {
+      viewer.call(`set(hotspot[asset_${selectedIndex}].rx,${rotation[0]});set(hotspot[asset_${selectedIndex}].ry,${rotation[1]});set(hotspot[asset_${selectedIndex}].rz,${rotation[2]});`);
+    }
+    // The teacher's ACTUAL scale. This used to be overwritten with scale * 1.08 as a
+    // selection highlight — and every other asset tweened back to 1 — which discarded the
+    // authored placement scale and made a synced scale impossible to express. Selection is
+    // now shown by an emissive tint instead (model_highlight), leaving scale to mean scale.
+    if (Number.isFinite(scale)) {
+      viewer.call(`tween(hotspot[asset_${selectedIndex}].scale,${Number(scale)},0.2);`);
+    }
+  }, [studentSceneKey, joinedSession?.control_students_enabled, joinedSession?.teacher_content_state?.sync_id]);
+
+  // --- Teacher 3D model controls -------------------------------------------------------
+  const [modelExplode, setModelExplode] = useState(0);
+  const [modelIsolated, setModelIsolated] = useState(false);
+  const [modelClip, setModelClip] = useState<{ axis: 'x' | 'y' | 'z'; offset: number } | null>(null);
+  const [modelSelectedPartName, setModelSelectedPartName] = useState<string | null>(null);
+  const [modelPartCount, setModelPartCount] = useState(0);
+
+  /**
+   * Count the separable meshes once the scene is up, so the toolbar can disable Explode on a
+   * single-piece GLB rather than offering a slider that visibly does nothing.
+   */
+  useEffect(() => {
+    if (!sceneReady || !isClassHost) return;
+    const viewer = krpanoViewerRef.current;
+    if (!viewer?.call) return;
+    let cancelled = false;
+    // The models stream in after sceneReady, so re-count for a few seconds rather than once.
+    const tick = () => {
+      if (cancelled) return;
+      try {
+        viewer.call?.('model_report_parts();');
+        const parts = (window as unknown as { __krpanoModelParts?: { assets?: Array<{ partCount: number }> } })
+          .__krpanoModelParts;
+        const total = (parts?.assets ?? []).reduce((n, a) => n + (Number(a.partCount) || 0), 0);
+        setModelPartCount(total);
+      } catch { /* plugin not loaded yet */ }
+    };
+    tick();
+    const id = window.setInterval(tick, 1500);
+    const stop = window.setTimeout(() => window.clearInterval(id), 12000);
+    return () => { cancelled = true; window.clearInterval(id); window.clearTimeout(stop); };
+  }, [sceneReady, isClassHost]);
+
+  /**
+   * Publish model state, throttled.
+   *
+   * Same shape as the teacher_view throttle: coalesce while a control is being dragged, and
+   * always land a final write so the class does not end up on an intermediate value.
+   */
+  const modelPublishTimerRef = useRef<number | null>(null);
+  const modelPendingRef = useRef<Partial<TeacherContentState> | null>(null);
+  const publishModelState = useCallback(
+    (patch: Partial<TeacherContentState>, immediate = false) => {
+      if (!isClassHost || !hostSceneKey || !updateTeacherContentState) return;
+      modelPendingRef.current = { ...(modelPendingRef.current ?? {}), ...patch };
+
+      const flush = () => {
+        modelPublishTimerRef.current = null;
+        const pending = modelPendingRef.current;
+        modelPendingRef.current = null;
+        if (!pending) return;
+        const prev = activeSession?.teacher_content_state ?? null;
+        const prevKey = prev?.scene_key || prev?.licensed_content_id || null;
+        const base = prevKey === hostSceneKey ? prev : null;
+        void updateTeacherContentState({
+          ...(base ?? {}),
+          scene_key: hostSceneKey,
+          licensed_content_id: extraLessonData?.licensedContent?.id || hostSceneKey,
+          locked: activeSession?.control_students_enabled === true,
+          ...pending,
+          sync_id: Date.now(),
+        } as TeacherContentState);
+      };
+
+      if (immediate) {
+        if (modelPublishTimerRef.current !== null) window.clearTimeout(modelPublishTimerRef.current);
+        flush();
+        return;
+      }
+      if (modelPublishTimerRef.current !== null) return;
+      modelPublishTimerRef.current = window.setTimeout(flush, 200);
+    },
+    [isClassHost, hostSceneKey, updateTeacherContentState, activeSession?.teacher_content_state,
+     activeSession?.control_students_enabled, extraLessonData?.licensedContent?.id]
+  );
+
+  /** Apply the teacher's own model state locally, so they see exactly what the class sees. */
+  const applyModelStateLocally = useCallback(
+    (state: Partial<TeacherContentState>) => {
+      const viewer = krpanoViewerRef.current;
+      if (!viewer?.call) return;
+      try {
+        (window as unknown as Record<string, unknown>).__krpanoModelState = state;
+        viewer.call('model_apply_state();');
+      } catch { /* plugin not ready */ }
+    },
+    []
+  );
+
+  const modelStateForApply = useCallback(
+    (over: Partial<TeacherContentState> = {}): Partial<TeacherContentState> => ({
+      exploded: modelExplode,
+      isolated: modelIsolated,
+      clip: modelClip,
+      selected_part_name: modelSelectedPartName,
+      selected_part_id: lastHotspotClicked || null,
+      ...over,
+    }),
+    [modelExplode, modelIsolated, modelClip, modelSelectedPartName, lastHotspotClicked]
+  );
+
+  // The immersive action router is installed once and lives for the whole session, so it
+  // must reach the CURRENT handlers rather than close over the first render's copies.
+  const handleModelExplodeRef = useRef<((t: number) => void) | null>(null);
+  const handleToggleModelIsolateRef = useRef<(() => void) | null>(null);
+  const handleModelSectionToggleRef = useRef<(() => void) | null>(null);
+  const handleModelResetRef = useRef<(() => void) | null>(null);
+
+  const handleModelExplode = useCallback((t: number) => {
+    setModelExplode(t);
+    applyModelStateLocally(modelStateForApply({ exploded: t }));
+    publishModelState({ exploded: t }, t === 0 || t === 1);
+  }, [applyModelStateLocally, modelStateForApply, publishModelState]);
+
+  const handleToggleModelIsolate = useCallback(() => {
+    const next = !modelIsolated;
+    setModelIsolated(next);
+    applyModelStateLocally(modelStateForApply({ isolated: next }));
+    publishModelState({ isolated: next, selected_part_name: modelSelectedPartName }, true);
+  }, [modelIsolated, modelSelectedPartName, applyModelStateLocally, modelStateForApply, publishModelState]);
+
+  const handleModelClipChange = useCallback((clip: { axis: 'x' | 'y' | 'z'; offset: number } | null) => {
+    setModelClip(clip);
+    applyModelStateLocally(modelStateForApply({ clip }));
+    publishModelState({ clip }, clip === null);
+  }, [applyModelStateLocally, modelStateForApply, publishModelState]);
+
+  const handleModelReset = useCallback(() => {
+    setModelExplode(0);
+    setModelIsolated(false);
+    setModelClip(null);
+    const cleared: Partial<TeacherContentState> = {
+      exploded: 0, isolated: false, clip: null, selected_part_name: null,
+    };
+    const viewer = krpanoViewerRef.current;
+    try { viewer?.call?.('model_reset();'); } catch { /* plugin not ready */ }
+    applyModelStateLocally(cleared);
+    publishModelState(cleared, true);
+  }, [applyModelStateLocally, publishModelState]);
+
+  const handleModelSectionToggle = useCallback(() => {
+    handleModelClipChange(modelClip ? null : { axis: 'x', offset: 0 });
+  }, [modelClip, handleModelClipChange]);
+
+  useEffect(() => {
+    handleModelExplodeRef.current = handleModelExplode;
+    handleToggleModelIsolateRef.current = handleToggleModelIsolate;
+    handleModelSectionToggleRef.current = handleModelSectionToggle;
+    handleModelResetRef.current = handleModelReset;
+  }, [handleModelExplode, handleToggleModelIsolate, handleModelSectionToggle, handleModelReset]);
+
   const teacherView = joinedSession?.teacher_view;
   const isStudentInSession = Boolean(joinedSessionId && joinedSession && user?.uid && joinedSession.teacher_uid !== user.uid);
   const isStudentRemoved = useMemo(() => {
@@ -2145,11 +2303,56 @@ const VRLessonPlayerInner = () => {
   const sessionForControl = isStudentInSession ? joinedSession : activeSession;
   const controlStudentsEnabled = sessionForControl?.control_students_enabled ?? false;
   const teacherControlledPhase = sessionForControl?.teacher_controlled_phase ?? null;
+  /**
+   * Has the class actually STARTED? This is the gate for the student panel, rather than
+   * "has the teacher taken control": students should be free to explore the scene from the
+   * moment they arrive, and the lesson UI should appear when the lesson begins.
+   * teacher_playback is absent or 'idle' until the teacher presses Start class.
+   */
+  const classStarted = Boolean(
+    sessionForControl?.teacher_playback && sessionForControl.teacher_playback.state !== 'idle'
+  );
+  /** Teacher's explicit override. Defaults to shown, so starting the class just works. */
+  const studentUiVisible = sessionForControl?.student_ui_visible ?? true;
   const currentStudentDisplayName = resolveStudentDisplayName(profile as any, {
     uid: user?.uid,
     displayName: user?.displayName,
     email: user?.email,
   });
+  /**
+   * Who sees the in-headset panel.
+   *
+   * This used to be a bare device flag (`quest || isMobile`) written once on mount, with no
+   * relation to the class at all. Now it follows the LESSON: students explore the scene with
+   * a clean view until the teacher presses Start class, and the teacher can hide the panel
+   * again with the toggle without ever losing their own.
+   *
+   * The krpano side re-reads `__showImmersiveUI` on an 800ms poll and ANDs it with
+   * `webvr.isenabled`, so writing the global is enough — no XML change needed.
+   */
+  const showImmersiveUiForThisViewer =
+    immersiveUiDeviceCapable &&
+    (isClassHost || !isStudentInSession || (classStarted && studentUiVisible));
+  useEffect(() => {
+    try {
+      (window as unknown as Record<string, unknown>).__showImmersiveUI = showImmersiveUiForThisViewer;
+    } catch {
+      /* window unavailable */
+    }
+  }, [showImmersiveUiForThisViewer]);
+
+  // If the ink write is ever rejected, say so. updateDoc is latency-compensated, so the
+  // teacher's own strokes render from the optimistic local snapshot either way — a denied
+  // write is invisible to the person drawing and total for everyone else.
+  useEffect(() => {
+    if (!isClassHost) return;
+    const w = window as unknown as Record<string, unknown>;
+    w.__onAnnotationWriteDenied = () => {
+      toast.error('Your marker is not reaching students — the class session write was denied.');
+    };
+    return () => { delete w.__onAnnotationWriteDenied; };
+  }, [isClassHost]);
+
   const blockStudentPhaseControl = useCallback((actionLabel: string): boolean => {
     if (!isStudentInSession || !controlStudentsEnabled) return false;
     toast.info(`Teacher is controlling the lesson. ${actionLabel} is locked for now.`);
@@ -2173,6 +2376,7 @@ const VRLessonPlayerInner = () => {
       ? mcqs.filter((mcq) => mcqAnswers[mcq.id] === mcq.correctAnswer).length
       : 0;
   immersiveUiStateRef.current = {
+    modelPartCount,
     phase: lessonPhase as string,
     script: currentScript || '',
     ttsStatus,
@@ -2318,7 +2522,7 @@ const VRLessonPlayerInner = () => {
     if (!uiUpdate) return;
 
     uiUpdate(immersiveUiStateRef.current);
-  }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio, controlStudentsEnabled, isStudentInSession, isClassHost]);
+  }, [useKrpanoView, sceneReady, lessonPhase, currentScript, ttsStatus, mcqs, currentMcqIndex, mcqAnswers, showMcqResult, selectedAnswer, waitingForUser, isPlayingAudio, controlStudentsEnabled, isStudentInSession, isClassHost, modelPartCount]);
   useEffect(() => {
     if (!useKrpanoView || !krpanoViewerRef.current?.call) return;
     // krpanoViewerRef is set on embed, but the viewer's internal view object only
@@ -2390,11 +2594,29 @@ const VRLessonPlayerInner = () => {
   useEffect(() => {
     if (!isClassHost || (!useKrpanoView && !useThreeScene) || !hostSessionIdForSync || !user?.uid) return;
     let lastSent = 0;
-    const throttleMs = 100;
+    let lastView: { h: number; v: number; fov: number } | null = null;
+    // 100ms meant ~10 writes/sec for the whole lesson. Students tween each update over
+    // 0.28s, so a 200ms cadence is indistinguishable in motion and halves the writes —
+    // and the fan-out, since every student reads every one of them.
+    const throttleMs = 200;
+    /** Below this, the movement is not worth a document write to the whole class. */
+    const MIN_DELTA_DEG = 0.5;
     const sendView = (h: number, v: number, fov: number) => {
+      // Continuous follow is applied by students ONLY under lockstep, so outside it every
+      // one of these writes was read by everyone and then discarded.
+      if (!classControlRef.current.controlEnabled) return;
       const now = Date.now();
       if (now - lastSent < throttleMs) return;
+      if (
+        lastView &&
+        Math.abs(lastView.h - h) < MIN_DELTA_DEG &&
+        Math.abs(lastView.v - v) < MIN_DELTA_DEG &&
+        Math.abs(lastView.fov - fov) < MIN_DELTA_DEG
+      ) {
+        return;
+      }
       lastSent = now;
+      lastView = { h, v, fov };
       setHostLookat({ hlookat: h, vlookat: v, fov });
       // Continuous drag sync — no force/sync_id (that is reserved for “Direct class to my view”).
       updateTeacherView(hostSessionIdForSync, user!.uid, { hlookat: h, vlookat: v, fov }).catch((err) => {
@@ -2606,6 +2828,8 @@ const VRLessonPlayerInner = () => {
 
   // --- Teacher marker -------------------------------------------------------
   const [markerActive, setMarkerActive] = useState(false);
+  /** First End click arms the confirmation; the second actually ends the class. */
+  const [endSessionConfirming, setEndSessionConfirming] = useState(false);
   // One marker, no modes — every stroke is temporary now.
   const markerMode: MarkerMode = 'laser';
   const [markerColor, setMarkerColor] = useState<string>(MARKER_COLORS[0]);
@@ -3662,7 +3886,9 @@ const VRLessonPlayerInner = () => {
   // Annotations the class is currently showing (host reads its own, student reads the teacher's).
   const liveAnnotations =
     (isClassHost ? activeSession?.teacher_annotations : joinedSession?.teacher_annotations) ?? null;
-  const annotationSessionId = activeSessionId || joinedSessionId || null;
+  // Matches hostSessionIdForSync's resolution order. This omitted partnerSessionMeta?.id,
+  // so a partner-hosted session that never populated activeSessionId published no ink at all.
+  const annotationSessionId = activeSessionId || partnerSessionMeta?.id || joinedSessionId || null;
 
   // Host: sweep expired strokes out of Firestore, and wipe ink when the lesson changes.
   // Expiry is otherwise render-only, so a late joiner would fetch stale ink forever.
@@ -3681,7 +3907,9 @@ const VRLessonPlayerInner = () => {
   useEffect(() => {
     if (!isClassHost || !annotationSessionId) return;
     const hasAny =
-      Boolean(liveAnnotations?.laser) || (liveAnnotations?.strokes?.length ?? 0) > 0;
+      Boolean(liveAnnotations?.laser) ||
+      (liveAnnotations?.strokes?.length ?? 0) > 0 ||
+      (liveAnnotations?.model_marks?.length ?? 0) > 0;
     if (!hasAny) return;
     const id = window.setInterval(() => {
       const now = Date.now();
@@ -3689,17 +3917,33 @@ const VRLessonPlayerInner = () => {
       if (!current) return;
       const survivors = (current.strokes ?? []).filter((st) => !isStrokeExpired(st, now));
       const laserAlive = current.laser && !isStrokeExpired(current.laser, now);
-      if (survivors.length === (current.strokes ?? []).length && Boolean(laserAlive) === Boolean(current.laser)) return;
+      // Pins expire too. Sweeping them matters for the same reason strokes do: expiry is
+      // render-side only, so a late joiner would fetch pins that everyone else has
+      // already watched fade away.
+      const marks = current.model_marks ?? [];
+      const liveMarks = marks.filter((m) => now - m.created_ms < (m.ttl_ms ?? LASER_TTL_MS));
+      if (
+        survivors.length === (current.strokes ?? []).length &&
+        Boolean(laserAlive) === Boolean(current.laser) &&
+        liveMarks.length === marks.length
+      ) return;
       void publishAnnotations(annotationSessionId, {
         ...current,
         strokes: survivors,
         laser: laserAlive ? current.laser : null,
+        model_marks: liveMarks,
         sync_id: Date.now(),
       });
     }, 3000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClassHost, annotationSessionId, liveAnnotations?.laser, liveAnnotations?.strokes?.length]);
+  }, [
+    isClassHost,
+    annotationSessionId,
+    liveAnnotations?.laser,
+    liveAnnotations?.strokes?.length,
+    liveAnnotations?.model_marks?.length,
+  ]);
 
   /**
    * Roster counts. progressList holds one doc per student who has EVER joined this
@@ -3755,8 +3999,11 @@ const VRLessonPlayerInner = () => {
   );
 
   const handleModelMark = useCallback(
-    (pick: { asset_id: string; x: number; y: number; z: number }) => {
+    (pick: { asset_id: string; x: number; y: number; z: number; part_name?: string | null }) => {
       if (!annotationSessionId || !isClassHost) return;
+      // The tap also selects the part it landed on — that is what Isolate acts on, and it
+      // is the only way a sub-mesh name ever enters the session state.
+      if (pick.part_name) setModelSelectedPartName(pick.part_name);
       const current = activeSession?.teacher_annotations ?? null;
       const mark = {
         id: `m_${Date.now()}_${Math.round(performance.now() % 1000)}`,
@@ -3782,7 +4029,7 @@ const VRLessonPlayerInner = () => {
     [annotationSessionId, isClassHost, activeSession?.teacher_annotations, markerColor]
   );
 
-  const { handlers: markerHandlers, liveStroke } = useMarkerDrawing({
+  const { handlers: markerHandlers, liveStroke, spaceHeld: markerSpaceHeld, captureRef: markerCaptureRef } = useMarkerDrawing({
     viewer: krpanoViewerRef.current as never,
     active: markerActive && isClassHost,
     mode: markerMode,
@@ -3816,10 +4063,18 @@ const VRLessonPlayerInner = () => {
   // set a global, then call the plugin action to repaint its equirect canvas.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    // Reconcile clocks BEFORE anything reads an expiry. created_ms is on the teacher's
+    // clock; sync_id is the teacher's Date.now() at the moment of this write, so it gives
+    // the offset directly. Without this a student whose clock runs fast expires every
+    // stroke on arrival and sees nothing, with no error anywhere.
+    setAnnotationClockOffset(liveAnnotations?.sync_id);
     (window as unknown as Record<string, unknown>).__krpanoAnnotations = liveAnnotations ?? {
       strokes: [],
       laser: null,
     };
+    // The in-headset layer does its own expiry maths in JS, so it needs the same offset.
+    (window as unknown as Record<string, unknown>).__krpanoAnnotationClockOffset =
+      getAnnotationClockOffset();
     try {
       krpanoViewerRef.current?.call?.('annotation_layer_update()');
       krpanoViewerRef.current?.call?.('annotation_marks_update()');
@@ -3828,12 +4083,17 @@ const VRLessonPlayerInner = () => {
     }
   }, [liveAnnotations]);
 
-  // Laser strokes expire on a timer, so keep the VR canvas repainting while one is live.
+  // Annotations expire on a timer, so keep the VR layer repainting while any are live.
   useEffect(() => {
-    // Any live stroke needs the VR canvas repainting so it can fade out — this was
-    // gated on laser-only and never ran for ink.
+    // Every KIND of annotation needs this pump, not just strokes. It was gated on
+    // laser-only (so ink never faded), then on laser-or-strokes (so a 3D PIN placed with
+    // nothing else on screen never faded and was never removed — annotation_marks_update
+    // is what both fades a pin and deletes its sprite once expired, and with no interval
+    // it ran exactly once, at full opacity, forever).
     const hasAny =
-      Boolean(liveAnnotations?.laser) || (liveAnnotations?.strokes?.length ?? 0) > 0;
+      Boolean(liveAnnotations?.laser) ||
+      (liveAnnotations?.strokes?.length ?? 0) > 0 ||
+      (liveAnnotations?.model_marks?.length ?? 0) > 0;
     if (!hasAny) return;
     const id = window.setInterval(() => {
       try {
@@ -3842,7 +4102,11 @@ const VRLessonPlayerInner = () => {
       } catch { /* ignore */ }
     }, 120);
     return () => window.clearInterval(id);
-  }, [liveAnnotations?.laser, liveAnnotations?.strokes?.length]);
+  }, [
+    liveAnnotations?.laser,
+    liveAnnotations?.strokes?.length,
+    liveAnnotations?.model_marks?.length,
+  ]);
 
   /**
    * Teacher playback commands. This is the ONLY thing that releases a held class:
@@ -4410,6 +4674,16 @@ const VRLessonPlayerInner = () => {
         else playTTS();
       } else if (action === 'toggleMute') {
         setIsMuted((previous) => !previous);
+      } else if (action.startsWith('model:')) {
+        // In-headset mirrors of the bottom-bar model controls. They route through the SAME
+        // handlers via refs, so the in-VR path cannot drift from the 2D one.
+        if (!classControl.isHost) return;
+        const verb = action.slice('model:'.length);
+        if (verb === 'explodeUp') handleModelExplodeRef.current?.(1);
+        else if (verb === 'explodeDown') handleModelExplodeRef.current?.(0);
+        else if (verb === 'isolate') handleToggleModelIsolateRef.current?.();
+        else if (verb === 'section') handleModelSectionToggleRef.current?.();
+        else if (verb === 'reset') handleModelResetRef.current?.();
       } else if (action === 'directClassView') {
         if (!classControl.isHost) return;
         void directClassToCurrentView().then((ok) => {
@@ -5030,8 +5304,16 @@ const VRLessonPlayerInner = () => {
         </div>
       )}
 
-      {/* Teacher marker strokes, projected from sphere coords onto the screen. */}
-      {!immersivePresentation && (
+      {/* Teacher marker strokes, projected from sphere coords onto the screen.
+          Gated on ACTUALLY being in VR, not on `immersivePresentation`.
+          `immersivePresentation` includes `teacherWantsImmersive`, which is
+          `requested && isStudentInSession` — student-exclusive. Taking control raises
+          teacher_immersive_request for the whole class, so gating here unmounted this
+          overlay for every student the instant the teacher took control, including
+          students still on a flat screen who never entered VR. Their only fallback is the
+          krpano 3D layer, which needs krpano.webvr.isenabled — false on a desktop. Net
+          effect: the teacher saw their own ink and no student saw any, in either mode. */}
+      {!isInKrpanoVR && (
         <AnnotationOverlay
           annotations={liveAnnotations}
           viewer={krpanoViewerRef.current as never}
@@ -5043,7 +5325,14 @@ const VRLessonPlayerInner = () => {
           steals pointer events from the panorama at other times. */}
       {markerActive && isClassHost && !immersivePresentation && (
         <div
-          className="pointer-events-auto absolute inset-0 z-annot cursor-crosshair touch-none"
+          ref={markerCaptureRef}
+          // touch-none is required: it stops the browser claiming the gesture as a scroll,
+          // which is what guarantees pointer events for both the one-finger draw and the
+          // two-finger pan. The cursor flips to a grab hand while Space is held so the pan
+          // mode is visible rather than something the teacher has to remember.
+          className={`pointer-events-auto absolute inset-0 z-annot touch-none ${
+            markerSpaceHeld ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+          }`}
           {...markerHandlers}
         />
       )}
@@ -5177,15 +5466,31 @@ const VRLessonPlayerInner = () => {
                     }
                   : null
               }
+              endSessionConfirming={endSessionConfirming}
               onEndSession={
                 isClassHost && endSession
                   ? async () => {
-                      if (!window.confirm('End this class session for everyone?')) return;
+                      // Two-step, in-app. This gated on window.confirm(), which returns
+                      // false outright in any browser that has suppressed dialogs — so the
+                      // handler returned before writing anything: no request, no toast, no
+                      // console output. Pressing End simply did nothing.
+                      if (!endSessionConfirming) {
+                        setEndSessionConfirming(true);
+                        window.setTimeout(() => setEndSessionConfirming(false), 4000);
+                        return;
+                      }
+                      setEndSessionConfirming(false);
+                      // Resolve the id the way every other host-sync path here does. The
+                      // context resolves activeSessionId ONLY, so a partner-hosted session
+                      // returned false without attempting a write — and the old code
+                      // discarded that false silently.
                       const endedSessionId = activeSessionId || partnerSessionMeta?.id || null;
-                      const ok = await endSession();
+                      const ok = await endSession(endedSessionId ?? undefined);
                       if (ok) {
                         if (endedSessionId) navigate(`/class-session/${endedSessionId}/results`);
                         else handleExit();
+                      } else {
+                        toast.error('Could not end the session — it is still live. See the console for why.');
                       }
                     }
                   : undefined
@@ -5206,7 +5511,19 @@ const VRLessonPlayerInner = () => {
               onToggleControl={(enabled) => {
                 if (!enabled) teacherPlaybackStartedRef.current = false;
                 // Taking control also asks the class into immersive mode.
-                void setSessionControl?.(enabled, enabled);
+                void (async () => {
+                  const ok = await setSessionControl?.(enabled, enabled);
+                  // Snap the whole class onto the teacher's view the moment control is
+                  // taken, rather than leaving them scattered until the teacher next
+                  // happens to move. Awaited so students already have
+                  // control_students_enabled true when the forced Direct lands.
+                  if (ok && enabled) await directClassToCurrentView();
+                })();
+              }}
+              classStarted={classStarted}
+              studentUiVisible={studentUiVisible}
+              onToggleStudentUi={(visible) => {
+                void setStudentUiVisible?.(visible);
               }}
               onForceStudentsIn={async () => {
                 const ok = await forceStudentsToLesson?.();
@@ -5219,6 +5536,15 @@ const VRLessonPlayerInner = () => {
               liveCount={rosterCounts.joined}
               onOpenRoster={() => setHostDrawer((d) => (d === 'roster' ? null : 'roster'))}
               raisedHands={progressList.filter((s) => s.hand_raised).length}
+              modelPartCount={modelPartCount}
+              modelExplode={modelExplode}
+              onModelExplodeChange={handleModelExplode}
+              modelIsolated={modelIsolated}
+              modelSelectedPartName={modelSelectedPartName}
+              onToggleModelIsolate={handleToggleModelIsolate}
+              modelClip={modelClip}
+              onModelClipChange={handleModelClipChange}
+              onModelReset={handleModelReset}
               markerActive={markerActive}
               markerColor={markerColor}
               onToggleMarker={() => setMarkerActive((v) => !v)}

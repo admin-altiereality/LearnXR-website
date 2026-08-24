@@ -80,8 +80,13 @@ export function reconcileUserControl(viewer: KrpanoLike | null | undefined) {
   try {
     const current = String(target.get('control.usercontrol') ?? '');
     if (current && current !== desiredValue()) {
+      // Name the holders. This watchdog ENFORCES the holder set, so a claim that is never
+      // released does not get repaired — it gets re-asserted every 2s, and panning stays
+      // dead. Without the names in the log there is no way to tell that apart from an
+      // external writer stamping on the flag.
       console.warn(
-        `[userControl] repairing control.usercontrol: was "${current}", expected "${desiredValue()}"`
+        `[userControl] repairing control.usercontrol: was "${current}", expected "${desiredValue()}"` +
+          ` (holders: ${holders.size ? [...holders].join(', ') : 'none'})`
       );
       write(target);
     }

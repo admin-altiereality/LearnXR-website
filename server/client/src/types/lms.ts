@@ -173,11 +173,27 @@ export interface LaunchedLesson {
 }
 
 export interface TeacherContentState {
+  /**
+   * Stable identity of the 3D scene. Preferred over `licensed_content_id`, which only
+   * exists for Immersive-STEM lessons and therefore silently disabled model sync on every
+   * ordinary GLB lesson.
+   */
+  scene_key?: string;
   licensed_content_id: string;
   revision?: string;
   selected_part_id?: string | null;
+  /** Node name of the picked sub-mesh, shown as the label when a part is isolated. */
+  selected_part_name?: string | null;
   visible_layer_ids?: string[];
-  exploded?: boolean;
+  /**
+   * Explode amount, 0..1. Widened from boolean: a slider needs a magnitude, and a boolean
+   * could only ever say "apart" or "together". `true` from an older client reads as 1.
+   */
+  exploded?: number | boolean;
+  /** True while everything except `selected_part_id` is dimmed back. */
+  isolated?: boolean;
+  /** Cross-section plane, or null for no cut. `offset` is normalised -1..1 of the model. */
+  clip?: { axis: 'x' | 'y' | 'z'; offset: number } | null;
   animation_clip?: string | null;
   animation_time?: number;
   animation_playing?: boolean;
@@ -235,6 +251,12 @@ export interface ClassSession {
   teacher_controlled_phase?: string | null;
   /** Whether the teacher has "Control Students" mode active (students follow teacher phase). */
   control_students_enabled?: boolean;
+  /**
+   * Whether STUDENTS see the in-headset lesson panel. The teacher always keeps theirs.
+   * Set true when control is taken and false when it is released, so a class returns to
+   * free exploration with a clean scene; the teacher can override it while control is held.
+   */
+  student_ui_visible?: boolean;
   /** Synchronized state for licensed 3D content while teacher control is enabled. */
   teacher_content_state?: TeacherContentState | null;
   /**

@@ -17,6 +17,7 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { extractMcqOptions, resolveCorrectAnswerIndex } from '../lib/mcq/answerIndex';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -669,19 +670,14 @@ const XRLessonPlayerV3: React.FC = () => {
         if (mcqs.length > 0) {
           // Convert to MCQData format with 1-based to 0-based index conversion
           const convertedMCQs: MCQData[] = mcqs.map((mcq: any) => {
-            const options = Array.isArray(mcq.options) ? mcq.options : [];
-            let rawIndex = mcq.correct_option_index ?? 0;
-            if (typeof rawIndex !== 'number') rawIndex = parseInt(String(rawIndex), 10) || 0;
-            // CRITICAL: Convert 1-based DB index to 0-based frontend index
-            let correctAnswer = rawIndex;
-            if (rawIndex >= 1 && rawIndex <= options.length) {
-              correctAnswer = rawIndex - 1;
-            }
+            const options = extractMcqOptions(mcq);
+            // Resolved in one place (src/lib/mcq/answerIndex.ts) — the index the backend
+            // stores is already 0-based, so the -1 this replaces scored B as A.
             return {
               id: mcq.id || '',
               question: mcq.question || '',
               options: options,
-              correctAnswer: Math.max(0, Math.min(correctAnswer, options.length - 1)),
+              correctAnswer: resolveCorrectAnswerIndex(mcq, options, 'xr-quiz'),
               explanation: mcq.explanation || '',
             };
           });
@@ -736,19 +732,12 @@ const XRLessonPlayerV3: React.FC = () => {
             
             // Only include if language matches
             if (mcqLang === lessonLanguage) {
-              const options = data.options || [];
-              let rawIndex = data.correct_option_index ?? data.correct_answer ?? data.correctAnswer ?? 0;
-              if (typeof rawIndex !== 'number') rawIndex = parseInt(String(rawIndex), 10) || 0;
-              // CRITICAL: Convert 1-based DB index to 0-based frontend index
-              let correctAnswer = rawIndex;
-              if (rawIndex >= 1 && rawIndex <= options.length) {
-                correctAnswer = rawIndex - 1;
-              }
+              const options = extractMcqOptions(data);
               mcqResults.push({
                 id: mcqId,
                 question: data.question || data.question_text || '',
                 options: options,
-                correctAnswer: Math.max(0, Math.min(correctAnswer, options.length - 1)),
+                correctAnswer: resolveCorrectAnswerIndex(data, options, 'xr-quiz'),
                 explanation: data.explanation || '',
               });
               addDebug(`MCQ loaded: ${mcqId} (${mcqLang})`);

@@ -41,6 +41,7 @@ export const LiveClassTopBar = () => {
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [forcing, setForcing] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [confirmEnd, setConfirmEnd] = useState(false);
 
   const isStudent = profile?.role === 'student';
   const isHost = HOST_ROLES.includes(profile?.role ?? '');
@@ -135,23 +136,45 @@ export const LiveClassTopBar = () => {
             <span className="hidden sm:inline">Dashboard</span>
           </Link>
 
+          {/* Two-step confirm, in-app.
+              This used to gate on window.confirm(). A browser that suppresses dialogs —
+              which every major one does once the user ticks "prevent this page from
+              creating additional dialogs", and which also happens in embedded contexts —
+              returns false from confirm(), so the handler returned immediately: no write,
+              no toast, no error. Clicking End did nothing at all, with nothing to see in
+              the console. The result is also honoured now; it used to toast success
+              unconditionally, so a rejected write still read as "Class session ended." */}
           <button
             type="button"
             disabled={ending}
+            title={confirmEnd ? 'Click again to end for everyone' : 'End this class session for everyone'}
             onClick={async () => {
-              if (!window.confirm('End this class session for everyone?')) return;
+              if (!confirmEnd) {
+                setConfirmEnd(true);
+                window.setTimeout(() => setConfirmEnd(false), 4000);
+                return;
+              }
+              setConfirmEnd(false);
               setEnding(true);
               try {
-                await endSession();
-                toast.success('Class session ended.');
+                const ok = await endSession();
+                toast[ok ? 'success' : 'error'](
+                  ok ? 'Class session ended.' : 'Could not end the session. It is still live — see the console for why.'
+                );
               } finally {
                 setEnding(false);
               }
             }}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-destructive/40 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+              confirmEnd
+                ? 'border-destructive bg-destructive/15 text-destructive'
+                : 'border-destructive/40 text-destructive hover:bg-destructive/10'
+            }`}
           >
             <FaStop className="h-3 w-3" />
-            <span className="hidden sm:inline">{ending ? 'Ending…' : 'End'}</span>
+            <span className="hidden sm:inline">
+              {ending ? 'Ending…' : confirmEnd ? 'Confirm end?' : 'End'}
+            </span>
           </button>
         </div>
       </div>

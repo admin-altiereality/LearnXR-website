@@ -16,6 +16,83 @@
 	bare && in JavaScript conditions.
 -->
 
+<!--
+	Sphere-direction calibration.
+
+	The canvas is equirectangular, so a stroke's (ath, atv) has to become a canvas pixel.
+	The previous mapping hard-coded u = (ath+180)/360 and v = (90-atv)/180, which assumed
+	(a) three.js SphereGeometry's UV seam sits exactly at krpano's ath = 180 and
+	(b) krpano's atv is positive-UP. Neither holds: SphereGeometry sweeps from phiStart=0,
+	and krpano's atv is positive-DOWN — so ink rendered in a headset was both rotated and
+	flipped vertically relative to where the teacher drew it.
+
+	Rather than guess the offset and the two signs, derive them from krpano's own camera.
+	The camera's world orientation and view.hlookat / view.vlookat describe the SAME
+	direction, so one reading solves the mapping exactly, and it re-solves every repaint so
+	it cannot drift.
+
+	For the default geometry a horizontal point at parameter u lies along
+	    dir = ( -cos(2*PI*u), 0, sin(2*PI*u) )
+	so the azimuth that indexes the canvas is A = atan2(dir.z, -dir.x), in 0..2*PI.
+-->
+<action name="annotation_calibrate" type="js"><![CDATA[
+	var THREE = (krpano.threejs && krpano.threejs.THREE) ? krpano.threejs.THREE : null;
+	var cam = (krpano.threejs && krpano.threejs.camera) ? krpano.threejs.camera : null;
+	if (!THREE || !cam) return;
+
+	cam.updateMatrixWorld();
+
+	// Camera forward and right, in world space.
+	var fwd   = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+	var right = new THREE.Vector3(1, 0,  0).applyQuaternion(cam.quaternion);
+
+	var azimuthOf = function (v) {
+		return Math.atan2(v.z, -v.x) * 180 / Math.PI;   // degrees, matches u above
+	};
+
+	var hlookat = Number(krpano.get('view.hlookat'));
+	var vlookat = Number(krpano.get('view.vlookat'));
+	if (!isFinite(hlookat) || !isFinite(vlookat)) return;
+
+	// Nudge the forward direction toward camera-right: that is the direction krpano
+	// reaches by INCREASING hlookat, so it tells us the sign without moving the view.
+	var nudged = fwd.clone().addScaledVector(right, 0.05);
+	var dA = azimuthOf(nudged) - azimuthOf(fwd);
+	while (dA >  180) dA -= 360;
+	while (dA < -180) dA += 360;
+	var athSign = dA >= 0 ? 1 : -1;
+
+	// Elevation of the forward ray vs vlookat gives the vertical sign the same way.
+	var fl = fwd.length() || 1;
+	var elevation = Math.asin(Math.max(-1, Math.min(1, fwd.y / fl))) * 180 / Math.PI;
+	// atv = atvSign * elevation. krpano is positive-DOWN, so this resolves to -1.
+	var atvSign = 1;
+	if (Math.abs(vlookat) > 2 && Math.abs(elevation) > 0.5) {
+		atvSign = (vlookat * elevation) >= 0 ? 1 : -1;
+	} else {
+		atvSign = -1;   // near the horizon the ratio is noise; use krpano's documented sign
+	}
+
+	var cal = {
+		azRef: azimuthOf(fwd),   // canvas azimuth of the current view centre
+		athRef: hlookat,         // the ath that same direction has
+		athSign: athSign,
+		atvSign: atvSign
+	};
+
+	// Published on the krpano object rather than returned: krpano.call() does not
+	// forward a JS action's return value.
+	krpano.annotation_cal = cal;
+
+	if (!krpano.annotation_cal_logged) {
+		krpano.annotation_cal_logged = true;
+		try {
+			console.log('[annotation_layer] sphere calibration', cal,
+				'(atvSign -1 = krpano atv is positive-down, as documented)');
+		} catch (e) {}
+	}
+]]></action>
+
 <action name="annotation_layer_draw" type="js"><![CDATA[
 	var L = krpano.annotation_layer_refs;
 	if (!L || !L.ctx) return;
@@ -23,7 +100,9 @@
 	var ctx = L.ctx, W = L.W, H = L.H;
 	ctx.clearRect(0, 0, W, H);
 
-	var now = Date.now();
+	// Same teacher-clock reconciliation the React layer uses: created_ms is stamped on the
+	// teacher's clock, so a viewer with a fast clock would expire every stroke on arrival.
+	var now = Date.now() + (Number(window.__krpanoAnnotationClockOffset) || 0);
 	var all = [];
 	if (data.strokes) all = all.concat(data.strokes);
 	if (data.laser) all.push(data.laser);
@@ -40,6 +119,25 @@
 	}
 	L.mesh.visible = wanted;
 	if (!wanted) { if (L.texture) L.texture.needsUpdate = true; return; }
+
+	// Re-solve the direction mapping every repaint; it is a few vector ops and it means
+	// the layer cannot be left using a stale calibration after a re-embed.
+	krpano.call('annotation_calibrate()');
+	var cal = krpano.annotation_cal || L.cal;
+	if (!cal) return;
+	L.cal = cal;
+
+	// (ath, atv) -> canvas pixel. Wrapped so a stroke near the seam still lands.
+	var toX = function (ath) {
+		var a = cal.azRef + cal.athSign * (ath - cal.athRef);
+		a = ((a % 360) + 360) % 360;
+		return (a / 360) * W;
+	};
+	var toY = function (atv) {
+		// elevation = atv / atvSign; canvas row 0 is the north pole (elevation +90).
+		var elevation = atv / cal.atvSign;
+		return ((90 - elevation) / 180) * H;
+	};
 
 	for (var i = 0; i < all.length; i++) {
 		var s = all[i];
@@ -60,12 +158,16 @@
 		ctx.lineCap = 'round';
 		ctx.lineJoin = 'round';
 
-		// Split at the +/-180 seam so a stroke across the back of the panorama
-		// does not draw all the way round the front.
+		// Split wherever consecutive points jump more than half the canvas in x. That
+		// covers both the +/-180 seam in the source data AND the seam introduced by the
+		// calibrated rotation, which the old fixed-offset version could not see.
 		var runs = [[]];
+		var prevX = null;
 		for (var p = 0; p < s.points.length; p++) {
-			if (p > 0 && Math.abs(s.points[p].a - s.points[p-1].a) > 180) runs.push([]);
-			runs[runs.length - 1].push(s.points[p]);
+			var xp = toX(s.points[p].a);
+			if (prevX !== null && Math.abs(xp - prevX) > W / 2) runs.push([]);
+			runs[runs.length - 1].push({ x: xp, y: toY(s.points[p].v) });
+			prevX = xp;
 		}
 
 		for (var r = 0; r < runs.length; r++) {
@@ -73,9 +175,7 @@
 			if (run.length < 2) continue;
 			ctx.beginPath();
 			for (var q = 0; q < run.length; q++) {
-				var x = ((run[q].a + 180) / 360) * W;
-				var y = ((90 - run[q].v) / 180) * H;
-				if (q === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+				if (q === 0) { ctx.moveTo(run[q].x, run[q].y); } else { ctx.lineTo(run[q].x, run[q].y); }
 			}
 			ctx.stroke();
 		}
@@ -85,10 +185,29 @@
 ]]></action>
 
 <action name="annotation_layer_build" type="js"><![CDATA[
-	if (!caller || !caller.threejsobject) return;
 	if (!krpano.threejs || !krpano.threejs.THREE) return;
-	var name = String(caller.name || "");
-	if (name !== "annotation_layer_3d") return;
+
+	// Normally invoked from the hotspot's onloaded, where `caller` IS the hotspot. But
+	// onloaded is not guaranteed to fire for type="threejs" url="custom", and when it did
+	// not the layer was never built, annotation_layer_update() returned early forever, and
+	// every student in a headset saw no ink at all with nothing logged. So fall back to
+	// locating the hotspot ourselves.
+	//
+	// Scan the array BY INDEX. Addressing hotspot[annotation_layer_3d] by name would make
+	// krpano CREATE it — the phantom-hotspot mechanism that once killed panorama dragging.
+	var host = (caller && caller.threejsobject && String(caller.name || "") === "annotation_layer_3d")
+		? caller
+		: null;
+	if (!host) {
+		var hc = Number(krpano.get('hotspot.count')) || 0;
+		for (var hi = 0; hi < hc; hi++) {
+			var cand = null;
+			try { cand = krpano.hotspot.getItem(hi); } catch (e) { cand = null; }
+			if (cand && String(cand.name) === "annotation_layer_3d" && cand.threejsobject) { host = cand; break; }
+		}
+	}
+	if (!host) return;
+	if (krpano.annotation_layer_refs) return;   // already built
 
 	var THREE = krpano.threejs.THREE;
 	var W = 4096, H = 2048;
@@ -101,8 +220,18 @@
 	var texture = new THREE.CanvasTexture(canvas);
 	texture.needsUpdate = true;
 
-	// Just inside the panorama sphere, and depth-test off so ink always shows.
-	var geo = new THREE.SphereGeometry(480, 64, 32);
+	// Radius in krpano's THREE world units, where 1 unit = hotspotworldscale cm (100 by
+	// default, i.e. 1 metre). This was hard-coded to 480 — a number borrowed from krpano's
+	// ~500-unit panorama sphere, which is a DIFFERENT coordinate space. In three.js units
+	// that is a 480-METRE sphere, far enough out to sit beyond the camera's far plane and
+	// be clipped away entirely, which is why the in-headset ink never appeared while the
+	// immersive panel (which does convert via hotspotworldscale) renders fine.
+	var ws = (krpano.display && krpano.display.hotspotworldscale) || 100;
+	var RADIUS_CM = 1000;                    // 10 m: outside any model, well inside any far plane
+	var radius = RADIUS_CM / ws;
+	if (!isFinite(radius) || radius <= 0) radius = 10;
+	// Depth-test off so ink always shows.
+	var geo = new THREE.SphereGeometry(radius, 64, 32);
 	var mat = new THREE.MeshBasicMaterial({
 		map: texture,
 		transparent: true,
@@ -112,6 +241,11 @@
 	});
 	var mesh = new THREE.Mesh(geo, mat);
 	mesh.renderOrder = 999;
+	// This sphere ENCLOSES the camera, so any raycast over the scene hits it from every
+	// pointer position. The hotspot is declared hittest="false", and this enforces the
+	// same intent on the three.js side so the mesh can never swallow a drag or a model
+	// pick once ink exists.
+	mesh.raycast = function () {};
 	// LAZY: do NOT attach the mesh yet. A full-sphere, depth-test-disabled mesh sitting
 	// in krpano's Three.js scene on every lesson is a change HEAD never had, and the
 	// scene must stay exactly as it was until there is actually ink to show.
@@ -119,13 +253,17 @@
 
 	krpano.annotation_layer_refs = {
 		canvas: canvas, ctx: ctx, texture: texture, mesh: mesh,
-		group: caller.threejsobject, attached: false, W: W, H: H
+		group: host.threejsobject, attached: false, W: W, H: H, cal: null,
+		radius: radius, worldScale: ws
 	};
 
 	if (window.__krpanoAnnotations) krpano.call('annotation_layer_draw()');
 ]]></action>
 
 <action name="annotation_layer_update" type="js"><![CDATA[
+	// Build-then-draw. This used to return silently when refs were null, which turned a
+	// missed onloaded into "students in VR never see ink", with no error anywhere.
+	if (!krpano.annotation_layer_refs) krpano.call('annotation_layer_build()');
 	if (krpano.annotation_layer_refs) krpano.call('annotation_layer_draw()');
 ]]></action>
 
@@ -155,12 +293,21 @@
 	if (!krpano.threejs || !krpano.threejs.THREE || !krpano.threejs.camera) return;
 	var THREE = krpano.threejs.THREE;
 
-	var px = (typeof args !== 'undefined' && args[1] !== undefined) ? Number(args[1]) : krpano.mouse.x;
-	var py = (typeof args !== 'undefined' && args[2] !== undefined) ? Number(args[2]) : krpano.mouse.y;
+	var px = (typeof args !== 'undefined' && args[1] !== undefined) ? Number(args[1])
+		: (krpano.mouse ? krpano.mouse.x : NaN);
+	var py = (typeof args !== 'undefined' && args[2] !== undefined) ? Number(args[2])
+		: (krpano.mouse ? krpano.mouse.y : NaN);
+
+	// Read the stage through get() with the bare property only as a fallback. Bare
+	// property access is not guaranteed on the krpano interface, and an undefined here
+	// made the NDC NaN, so the raycast silently missed and no pin was ever placed.
+	var SW = Number(krpano.get('stagewidth')) || Number(krpano.stagewidth);
+	var SH = Number(krpano.get('stageheight')) || Number(krpano.stageheight);
+	if (!isFinite(px) || !isFinite(py) || !SW || !SH) return;
 
 	var ndc = new THREE.Vector2(
-		(px / krpano.stagewidth) * 2 - 1,
-		-(py / krpano.stageheight) * 2 + 1
+		(px / SW) * 2 - 1,
+		-(py / SH) * 2 + 1
 	);
 	var raycaster = new THREE.Raycaster();
 	raycaster.setFromCamera(ndc, krpano.threejs.camera);
@@ -197,7 +344,9 @@
 
 	var data = window.__krpanoAnnotations || {};
 	var marks = data.model_marks || [];
-	var now = Date.now();
+	// Same teacher-clock reconciliation the React layer uses: created_ms is stamped on the
+	// teacher's clock, so a viewer with a fast clock would expire every stroke on arrival.
+	var now = Date.now() + (Number(window.__krpanoAnnotationClockOffset) || 0);
 	var seen = {};
 
 	for (var i = 0; i < marks.length; i++) {
@@ -225,7 +374,20 @@
 				transparent: true
 			});
 			obj = new THREE.Sprite(mat);
-			obj.scale.set(6, 6, 6);
+			// Size from the MODEL, not a constant. The sprite is parented to the model's
+			// Object3D, so it inherits the model's scale: a fixed 6 local units swallowed a
+			// GLB normalised to ~1 unit and vanished inside one authored in centimetres.
+			// 4% of the largest bounding-box dimension reads as a pin at any model scale.
+			// Measured once and cached: recomputing would include pins already parented to
+			// the model and grow the box — and therefore every later pin — on each pick.
+			if (!hs.__annotationPinSpan) {
+				var box = new THREE.Box3().setFromObject(hs.threejsobject);
+				var size = box.getSize(new THREE.Vector3());
+				var measured = Math.max(size.x, size.y, size.z);
+				hs.__annotationPinSpan = (isFinite(measured) && measured > 0) ? measured : 0;
+			}
+			var pin = hs.__annotationPinSpan > 0 ? hs.__annotationPinSpan * 0.04 : 1;
+			obj.scale.set(pin, pin, pin);
 			obj.renderOrder = 1000;
 			obj.position.set(m.x, m.y, m.z);
 			hs.threejsobject.add(obj);
@@ -247,5 +409,89 @@
 		} catch (e) {}
 		delete krpano.annotation_mark_objs[id];
 	}
+]]></action>
+
+<!--
+	One-call diagnosis of the in-headset ink layer.
+
+	Every failure so far has been silent: a missing hotspot, an unbuilt layer, a clipped
+	mesh and an empty payload all look identical from inside a headset. This reports the
+	whole chain at once into window.__krpanoAnnotationDiag.
+-->
+<action name="annotation_layer_diagnose" type="js"><![CDATA[
+	var out = { ts: Date.now() };
+	try {
+		out.threejs = !!(krpano.threejs && krpano.threejs.THREE);
+		out.camera = !!(krpano.threejs && krpano.threejs.camera);
+		out.webvrEnabled = String(krpano.get('webvr.isenabled'));
+		out.worldScale = (krpano.display && krpano.display.hotspotworldscale) || null;
+
+		// Is the host hotspot present at all? (by index — never by name)
+		var count = Number(krpano.get('hotspot.count')) || 0;
+		out.hotspotCount = count;
+		out.hostHotspot = null;
+		for (var i = 0; i < count; i++) {
+			var hs = null;
+			try { hs = krpano.hotspot.getItem(i); } catch (e) { hs = null; }
+			if (hs && String(hs.name) === 'annotation_layer_3d') {
+				out.hostHotspot = { index: i, hasThreejsObject: !!hs.threejsobject };
+				break;
+			}
+		}
+
+		var L = krpano.annotation_layer_refs;
+		out.layerBuilt = !!L;
+		if (L) {
+			out.radius = L.radius;
+			out.attachedFlag = L.attached;
+			out.meshInScene = !!(L.mesh && L.mesh.parent);
+			out.meshVisible = !!(L.mesh && L.mesh.visible);
+			out.calibration = L.cal || null;
+			if (L.mesh) {
+				// Walk up to confirm the mesh really reaches the rendered scene graph,
+				// and report where it ended up in world space.
+				var n = L.mesh, depth = 0, rootType = null;
+				while (n.parent && depth < 32) { n = n.parent; depth++; }
+				out.ancestorDepth = depth;
+				out.rootIsScene = (n && n.type === 'Scene');
+				rootType = n ? n.type : null;
+				out.rootType = rootType;
+				if (krpano.threejs && krpano.threejs.THREE && krpano.threejs.camera) {
+					var THREE = krpano.threejs.THREE;
+					var cam = krpano.threejs.camera;
+					out.cameraNear = cam.near; out.cameraFar = cam.far;
+					// Clipped if the sphere sits entirely beyond the far plane.
+					out.radiusBeyondFarPlane = (typeof cam.far === 'number') ? (L.radius > cam.far) : null;
+					var wp = new THREE.Vector3();
+					L.mesh.getWorldPosition(wp);
+					out.meshWorldPos = [ +wp.x.toFixed(2), +wp.y.toFixed(2), +wp.z.toFixed(2) ];
+					var cp = new THREE.Vector3();
+					cam.getWorldPosition(cp);
+					out.cameraWorldPos = [ +cp.x.toFixed(2), +cp.y.toFixed(2), +cp.z.toFixed(2) ];
+					out.cameraInsideSphere = wp.distanceTo(cp) < L.radius;
+				}
+			}
+		}
+
+		var data = window.__krpanoAnnotations || {};
+		out.payload = {
+			strokes: (data.strokes || []).length,
+			laser: !!data.laser,
+			marks: (data.model_marks || []).length,
+			clockOffset: Number(window.__krpanoAnnotationClockOffset) || 0
+		};
+		// How many strokes are actually LIVE right now, on the teacher's clock.
+		var now = Date.now() + (Number(window.__krpanoAnnotationClockOffset) || 0);
+		var live = 0, all = (data.strokes || []).concat(data.laser ? [data.laser] : []);
+		for (var k = 0; k < all.length; k++) {
+			var st = all[k]; if (!st) continue;
+			if (now - st.created_ms < (st.ttl_ms || 6500)) live++;
+		}
+		out.payload.liveNow = live;
+	} catch (e) {
+		out.error = String(e && e.message ? e.message : e);
+	}
+	window.__krpanoAnnotationDiag = out;
+	try { console.log('[annotation_layer] diagnose', out); } catch (e) {}
 ]]></action>
 </krpano>

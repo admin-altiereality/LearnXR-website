@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AnnotationStroke, TeacherAnnotations } from '../../types/lms';
 import {
   angularDistance,
+  annotationNow,
   isStrokeExpired,
   laserOpacity,
   splitAtSeam,
@@ -82,7 +83,7 @@ export const AnnotationOverlay = ({ annotations, viewer, localStrokes = [] }: An
   }, [hasLiveStroke]);
 
   const strokes = useMemo(() => {
-    const now = Date.now();
+    const now = annotationNow();
     const all: AnnotationStroke[] = [
       ...(annotations?.strokes ?? []),
       ...(annotations?.laser ? [annotations.laser] : []),
@@ -100,7 +101,7 @@ export const AnnotationOverlay = ({ annotations, viewer, localStrokes = [] }: An
     };
     const centre = { a: view.hlookat, v: view.vlookat };
     const fovScale = 90 / (view.fov || 90);
-    const now = Date.now();
+    const now = annotationNow();
     const out: Segment[] = [];
 
     strokes.forEach((stroke) => {

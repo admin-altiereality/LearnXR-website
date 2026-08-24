@@ -1,0 +1,259 @@
+<krpano>
+<!--
+	model_control.xml
+	Teacher-driven manipulation of the 3D models in a lesson scene.
+
+	Everything here operates on `hotspot[asset_N].threejsobject` — the GLB's own Object3D
+	group — the same handle the annotation pins already use.
+
+	React pushes state to `window.__krpanoModelState` then calls `model_apply_state()`,
+	mirroring the __krpanoAnnotations / annotation_layer_update() idiom used next door.
+
+	TWO RULES that this file must never break:
+	  1. Walk the hotspot array BY INDEX and match on name. Addressing hotspot[asset_N] by
+	     name makes krpano CREATE that element — the phantom-hotspot bug that killed
+	     panorama dragging once already.
+	  2. Cache anything derived from the model (original transforms, materials, bounds) on
+	     first touch. Recomputing after a mutation compounds it.
+
+	Action bodies are CDATA because krpano XML would otherwise choke on the bare && in
+	JavaScript conditions.
+-->
+
+<action name="model_collect" type="js"><![CDATA[
+	// Build (once) the list of asset hotspots and cache each model's pristine state.
+	if (!krpano.threejs || !krpano.threejs.THREE) return;
+	var THREE = krpano.threejs.THREE;
+	if (!krpano.model_ctl) krpano.model_ctl = { assets: [], byName: {} };
+	var M = krpano.model_ctl;
+
+	var count = Number(krpano.get('hotspot.count')) || 0;
+	for (var i = 0; i < count; i++) {
+		var hs = null;
+		try { hs = krpano.hotspot.getItem(i); } catch (e) { hs = null; }
+		if (!hs || !hs.name || String(hs.name).indexOf('asset_') !== 0) continue;
+		if (!hs.threejsobject) continue;
+		var name = String(hs.name);
+		if (M.byName[name]) continue;
+
+		var root = hs.threejsobject;
+		var box = new THREE.Box3().setFromObject(root);
+		var centre = box.getCenter(new THREE.Vector3());
+		var size = box.getSize(new THREE.Vector3());
+		var span = Math.max(size.x, size.y, size.z) || 1;
+
+		// Cache every mesh with its pristine position and material.
+		var parts = [];
+		root.traverse(function (child) {
+			if (!child.isMesh) return;
+			var pbox = new THREE.Box3().setFromObject(child);
+			var pc = pbox.getCenter(new THREE.Vector3());
+			// Direction the part flies when exploded: model centre -> part centre.
+			var dir = pc.clone().sub(centre);
+			if (dir.lengthSq() < 1e-8) dir.set(0, 1, 0); else dir.normalize();
+			parts.push({
+				mesh: child,
+				name: String(child.name || ''),
+				home: child.position.clone(),
+				dir: dir,
+				origMaterial: child.material,
+				dimMaterial: null
+			});
+		});
+
+		var rec = { name: name, index: i, root: root, centre: centre, span: span, parts: parts };
+		M.byName[name] = rec;
+		M.assets.push(rec);
+	}
+]]></action>
+
+<!--
+	Exploded view. `t` is 0..1; each mesh slides outward along its own centre->part vector.
+	Positions are always derived from the CACHED home position, never from the current one,
+	so repeated calls cannot accumulate drift.
+-->
+<action name="model_explode" type="js"><![CDATA[
+	krpano.call('model_collect()');
+	var M = krpano.model_ctl;
+	if (!M) return;
+	var t = (typeof args !== 'undefined' && args[1] !== undefined) ? Number(args[1]) : 0;
+	if (!isFinite(t)) t = 0;
+	if (t < 0) t = 0; if (t > 1) t = 1;
+
+	for (var a = 0; a < M.assets.length; a++) {
+		var rec = M.assets[a];
+		// A single-mesh GLB has nothing to come apart; leave it exactly alone.
+		if (rec.parts.length < 2) continue;
+		for (var p = 0; p < rec.parts.length; p++) {
+			var part = rec.parts[p];
+			part.mesh.position.set(
+				part.home.x + part.dir.x * t * rec.span,
+				part.home.y + part.dir.y * t * rec.span,
+				part.home.z + part.dir.z * t * rec.span
+			);
+		}
+	}
+]]></action>
+
+<!-- How many separable meshes the scene has, so the UI can disable a control that would do nothing. -->
+<action name="model_report_parts" type="js"><![CDATA[
+	krpano.call('model_collect()');
+	var M = krpano.model_ctl;
+	var out = { assets: [] };
+	if (M) {
+		for (var a = 0; a < M.assets.length; a++) {
+			var names = [];
+			for (var p = 0; p < M.assets[a].parts.length; p++) names.push(M.assets[a].parts[p].name);
+			out.assets.push({ name: M.assets[a].name, partCount: M.assets[a].parts.length, partNames: names });
+		}
+	}
+	window.__krpanoModelParts = out;
+]]></action>
+
+<!--
+	Isolate: dim every mesh except the named part.
+
+	Materials are frequently SHARED between meshes in a GLB, so mutating opacity in place
+	would dim every part that happens to share that material. Each dimmed mesh therefore
+	gets its own clone, made once and reused, and the pristine material is restored on exit.
+-->
+<action name="model_isolate" type="js"><![CDATA[
+	krpano.call('model_collect()');
+	var M = krpano.model_ctl;
+	if (!M) return;
+	var wanted = (typeof args !== 'undefined' && args[1] !== undefined) ? String(args[1]) : '';
+	var on = (typeof args !== 'undefined' && args[2] !== undefined) ? (String(args[2]) === 'true') : false;
+
+	for (var a = 0; a < M.assets.length; a++) {
+		var rec = M.assets[a];
+		for (var p = 0; p < rec.parts.length; p++) {
+			var part = rec.parts[p];
+			var keep = !on || (wanted !== '' && part.name === wanted);
+			if (keep) {
+				if (part.mesh.material !== part.origMaterial) part.mesh.material = part.origMaterial;
+				continue;
+			}
+			if (!part.dimMaterial) {
+				try {
+					part.dimMaterial = part.origMaterial.clone();
+					part.dimMaterial.transparent = true;
+					part.dimMaterial.opacity = 0.15;
+					part.dimMaterial.depthWrite = false;
+				} catch (e) { part.dimMaterial = null; }
+			}
+			if (part.dimMaterial) part.mesh.material = part.dimMaterial;
+		}
+	}
+]]></action>
+
+<!--
+	Cross-section. One plane, applied to the live materials of every asset.
+
+	Requires renderer.localClippingEnabled, which is why the renderer is fetched rather than
+	assumed — krpano exposes it (xr_input.xml and immersive_ui.xml already use it).
+
+	LIMITATION: the cut face is hollow on single-sided or non-manifold geometry, because a
+	clipping plane removes fragments rather than capping the solid. Capping needs a stencil
+	pass; that is deliberately out of scope here.
+-->
+<action name="model_clip" type="js"><![CDATA[
+	krpano.call('model_collect()');
+	var M = krpano.model_ctl;
+	if (!M || !krpano.threejs || !krpano.threejs.THREE) return;
+	var THREE = krpano.threejs.THREE;
+
+	var axis = (typeof args !== 'undefined' && args[1] !== undefined) ? String(args[1]) : '';
+	var offset = (typeof args !== 'undefined' && args[2] !== undefined) ? Number(args[2]) : 0;
+	var enabled = axis === 'x' || axis === 'y' || axis === 'z';
+	if (!isFinite(offset)) offset = 0;
+
+	var renderer = krpano.threejs.renderer;
+	if (renderer) renderer.localClippingEnabled = true;
+
+	for (var a = 0; a < M.assets.length; a++) {
+		var rec = M.assets[a];
+		var planes = [];
+		if (enabled) {
+			var n = new THREE.Vector3(axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0);
+			// offset is normalised -1..1 across the model, measured from its own centre.
+			var d = rec.centre.dot(n) + offset * rec.span * 0.5;
+			planes.push(new THREE.Plane(n.clone().negate(), d));
+		}
+		for (var p = 0; p < rec.parts.length; p++) {
+			var mat = rec.parts[p].mesh.material;
+			if (!mat) continue;
+			var list = Array.isArray(mat) ? mat : [mat];
+			for (var m = 0; m < list.length; m++) {
+				list[m].clippingPlanes = enabled ? planes : null;
+				list[m].clipShadows = enabled;
+				list[m].needsUpdate = true;
+			}
+		}
+	}
+]]></action>
+
+<!--
+	Selection highlight as an emissive tint.
+
+	Selection used to be shown by scaling the chosen asset to 1.08 and every other asset back
+	to 1 — which destroyed the authored placement scale and made a synced scale impossible to
+	express. Tinting leaves the transform channels alone.
+-->
+<action name="model_highlight" type="js"><![CDATA[
+	krpano.call('model_collect()');
+	var M = krpano.model_ctl;
+	if (!M) return;
+	var wanted = (typeof args !== 'undefined' && args[1] !== undefined) ? String(args[1]) : '';
+
+	for (var a = 0; a < M.assets.length; a++) {
+		var rec = M.assets[a];
+		var on = rec.name === wanted;
+		for (var p = 0; p < rec.parts.length; p++) {
+			var mat = rec.parts[p].mesh.material;
+			if (!mat || !mat.emissive) continue;
+			if (on) {
+				if (!mat.__modelCtlEmissive) mat.__modelCtlEmissive = mat.emissive.clone();
+				mat.emissive.setRGB(0.16, 0.22, 0.30);
+			} else if (mat.__modelCtlEmissive) {
+				mat.emissive.copy(mat.__modelCtlEmissive);
+			}
+		}
+	}
+]]></action>
+
+<!-- Put every model back exactly as the lesson authored it. -->
+<action name="model_reset" type="js"><![CDATA[
+	krpano.call('model_explode(0)');
+	krpano.call('model_isolate(,false)');
+	krpano.call('model_clip()');
+	krpano.call('model_highlight()');
+]]></action>
+
+<!--
+	Apply a whole TeacherContentState in one call. This is what a student's client runs on
+	every sync_id change, and what the teacher's own client runs after a local change so both
+	sides go through identical code.
+-->
+<action name="model_apply_state" type="js"><![CDATA[
+	var st = window.__krpanoModelState;
+	if (!st) return;
+
+	// `exploded` was a boolean before it was a 0..1 amount; treat legacy true as fully apart.
+	var t = st.exploded;
+	if (t === true) t = 1; else if (t === false || t === undefined || t === null) t = 0;
+	t = Number(t);
+	if (!isFinite(t)) t = 0;
+	krpano.call('model_explode(' + t + ')');
+
+	var partName = st.selected_part_name ? String(st.selected_part_name) : '';
+	krpano.call('model_isolate(' + partName + ',' + (st.isolated === true ? 'true' : 'false') + ')');
+
+	if (st.clip && st.clip.axis) {
+		krpano.call('model_clip(' + String(st.clip.axis) + ',' + Number(st.clip.offset || 0) + ')');
+	} else {
+		krpano.call('model_clip()');
+	}
+
+	krpano.call('model_highlight(' + (st.selected_part_id ? String(st.selected_part_id) : '') + ')');
+]]></action>
+</krpano>

@@ -23,6 +23,7 @@ import { db } from '../../config/firebase';
 import type { LanguageCode } from '../../types/curriculum';
 import { cacheManager, CacheManager, LESSON_BUNDLE_CACHE_TTL_MS } from '../../utils/cacheManager';
 import { extractTopicScriptsForLanguage } from '../../lib/firestore/queries';
+import { extractMcqOptions, resolveCorrectAnswerIndex } from '../../lib/mcq/answerIndex';
 import {
   getLatestUnapprovedVersionForUser,
   getChapterSnapshot,
@@ -1014,66 +1015,10 @@ export async function getLessonBundle(params: {
     const ttsBeforeFilter = ttsRaw.length;
     const assetsBeforeFilter = (meshyAssetsRaw?.length || 0);
 
-    // Helper function to extract MCQ options from various field formats
-    const extractMcqOptions = (data: any): string[] => {
-      // Priority 1: Check for options array
-      if (Array.isArray(data.options) && data.options.length > 0) {
-        return data.options;
-      }
-      // Priority 2: Check for choices array
-      if (Array.isArray(data.choices) && data.choices.length > 0) {
-        return data.choices;
-      }
-      // Priority 3: Check for answers array
-      if (Array.isArray(data.answers) && data.answers.length > 0) {
-        return data.answers;
-      }
-      // Priority 4: Extract from individual fields (option_a, option_b, etc.)
-      const extractedOptions: string[] = [];
-      const optionFields = [
-        'option_a', 'option_b', 'option_c', 'option_d',
-        'optionA', 'optionB', 'optionC', 'optionD',
-        'option1', 'option2', 'option3', 'option4',
-        'a', 'b', 'c', 'd',
-        'option_1', 'option_2', 'option_3', 'option_4',
-      ];
-      optionFields.forEach(key => {
-        if (data[key]) extractedOptions.push(String(data[key]));
-      });
-      if (extractedOptions.length > 0) {
-        return extractedOptions;
-      }
-      return [];
-    };
-
-    // Helper function to extract correct option index
-    const extractCorrectOptionIndex = (data: any, options: string[]): number => {
-      // Priority 1: Check correct_option_index
-      let correctIndex = data.correct_option_index ?? data.correct_index ?? data.correctIndex ?? data.correct ?? 0;
-      if (typeof correctIndex === 'number') {
-        return correctIndex;
-      }
-      // Priority 2: Parse as number
-      const parsed = parseInt(String(correctIndex), 10);
-      if (!isNaN(parsed)) {
-        return parsed;
-      }
-      // Priority 3: Check if correct answer is stored as a letter (A, B, C, D)
-      if (typeof data.correct_answer === 'string' && data.correct_answer.length === 1) {
-        const letterIndex = data.correct_answer.toUpperCase().charCodeAt(0) - 65; // A=0, B=1, etc.
-        if (letterIndex >= 0 && letterIndex < options.length) {
-          return letterIndex;
-        }
-      }
-      // Priority 4: Check correct_option_text and find matching index
-      if (data.correct_option_text && options.length > 0) {
-        const index = options.findIndex(opt => opt === data.correct_option_text);
-        if (index >= 0) {
-          return index;
-        }
-      }
-      return 0;
-    };
+    // Option extraction and correct-answer resolution now live in
+    // src/lib/mcq/answerIndex.ts so that the fetch layers and all four players agree.
+    // The old local copies defaulted an unreadable document to index 0, which scored
+    // option A correct instead of reporting that the answer could not be read.
 
     // For MCQs: Check for inline MCQs first (they're already language-filtered)
     let mcqs: any[] = [];
@@ -1086,14 +1031,17 @@ export async function getLessonBundle(params: {
       if (inlineMcqs.length > 0 && typeof inlineMcqs[0] === 'object' && inlineMcqs[0].question) {
         mcqs = inlineMcqs.map((mcq: any, index: number) => {
           const options = extractMcqOptions(mcq);
-          const correctIndex = extractCorrectOptionIndex(mcq, options);
+          const correctIndex = resolveCorrectAnswerIndex(mcq, options, 'getLessonBundle');
           return {
+            // Spread FIRST. It used to come last, which meant the raw document's
+            // correct_option_index overwrote the resolved one and this branch silently
+            // ignored correct_option_text entirely.
+            ...mcq,
             id: mcq.question_id || mcq.id || `inline_${lang}_${index}`,
             question: mcq.question || mcq.question_text || '',
             options: options,
             correct_option_index: correctIndex,
             explanation: mcq.explanation || mcq.explanation_text || '',
-            ...mcq,
           };
         });
       } else {
@@ -1101,7 +1049,7 @@ export async function getLessonBundle(params: {
         const filtered = filterByLanguage(mcqsRaw, lang);
         mcqs = filtered.map((mcq: any) => {
           const options = extractMcqOptions(mcq);
-          const correctIndex = extractCorrectOptionIndex(mcq, options);
+          const correctIndex = resolveCorrectAnswerIndex(mcq, options, 'getLessonBundle');
           return {
             ...mcq,
             options: options,
@@ -1114,7 +1062,7 @@ export async function getLessonBundle(params: {
       const filtered = filterByLanguage(mcqsRaw, lang);
       mcqs = filtered.map((mcq: any) => {
         const options = extractMcqOptions(mcq);
-        const correctIndex = extractCorrectOptionIndex(mcq, options);
+        const correctIndex = resolveCorrectAnswerIndex(mcq, options, 'getLessonBundle');
         return {
           ...mcq,
           options: options,

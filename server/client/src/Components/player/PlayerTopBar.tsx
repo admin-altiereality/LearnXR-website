@@ -34,6 +34,8 @@ interface PlayerTopBarProps {
   onCopyCode?: () => void;
   onOpenApprovals?: () => void;
   onEndSession?: () => void;
+  /** True once the first End click has armed it; the label becomes a confirmation. */
+  endSessionConfirming?: boolean;
 
   /** Stop the lesson and return to the entry gate. */
   onStopLesson?: () => void;
@@ -65,6 +67,7 @@ export const PlayerTopBar = ({
   onCopyCode,
   onOpenApprovals,
   onEndSession,
+  endSessionConfirming = false,
   onStopLesson,
   onEnterVR,
   tour = null,
@@ -225,11 +228,15 @@ export const PlayerTopBar = ({
         <button
           type="button"
           onClick={onEndSession}
-          title="End the class session for everyone"
-          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-rose-400/40 bg-rose-500/15 px-2.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/25"
+          title={endSessionConfirming ? 'Click again to end for everyone' : 'End the class session for everyone'}
+          className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+            endSessionConfirming
+              ? 'border-rose-300 bg-rose-500/35 text-white'
+              : 'border-rose-400/40 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+          }`}
         >
           <X className="h-3.5 w-3.5" />
-          {!compact && <span>End</span>}
+          {!compact && <span>{endSessionConfirming ? 'Confirm end?' : 'End'}</span>}
         </button>
       )}
     </div>
