@@ -30,6 +30,9 @@ interface RegenerationSettings {
   pollIntervalMs: number;
   maxPollAttempts: number;
   targetFormats: string[];
+  /** Meshy only honours `targetPolycount` when remeshing; leave this on or you get the raw high-poly mesh. */
+  shouldRemesh: boolean;
+  targetPolycount: number;
   hdTexture: boolean;
   enablePbr: boolean;
   removeLighting: boolean;
@@ -159,7 +162,11 @@ function normalizeSettings(settings?: Partial<RegenerationSettings>): Regenerati
     pollIntervalMs: Math.max(2500, Math.min(Number(settings?.pollIntervalMs || 5000), 15000)),
     maxPollAttempts: Math.max(30, Math.min(Number(settings?.maxPollAttempts || 90), 160)),
     targetFormats: Array.isArray(settings?.targetFormats) && settings.targetFormats.length ? settings.targetFormats : ['glb'],
-    hdTexture: settings?.hdTexture !== false,
+    shouldRemesh: settings?.shouldRemesh !== false,
+    targetPolycount: Math.max(1000, Math.min(Number(settings?.targetPolycount || 30000), 300000)),
+    // Defaults OFF, matching routes/meshy.ts: 4096px maps cost ~39MB on the wire and
+    // ~160MB of RGBA once decoded, for no visible gain at lesson viewing distance.
+    hdTexture: settings?.hdTexture === true,
     enablePbr: settings?.enablePbr !== false,
     removeLighting: settings?.removeLighting !== false,
     autoSize: settings?.autoSize !== false,
@@ -612,6 +619,10 @@ async function createPreviewTask(prompt: string, settings: RegenerationSettings)
     ai_model: settings.aiModel,
     model_type: 'standard',
     topology: 'triangle',
+    // Without should_remesh, Meshy ignores target_polycount and returns its raw mesh —
+    // this path previously sent neither, so every regenerated asset came back high-poly.
+    should_remesh: settings.shouldRemesh,
+    target_polycount: settings.targetPolycount,
     target_formats: settings.targetFormats,
     auto_size: settings.autoSize,
     origin_at: settings.originAt,

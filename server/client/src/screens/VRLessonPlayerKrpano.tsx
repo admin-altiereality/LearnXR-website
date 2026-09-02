@@ -13,12 +13,15 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Html } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Asset3DLoadingOverlay, Asset3DLoadingCard } from '../Components/Asset3DLoadingOverlay';
+import { LessonLoadProgress } from '../Components/LessonLoadProgress';
 import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano, removeKrpano } from '../lib/krpano/embedKrpano';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
+import { getKrpanoAssetScale, getCachedKrpanoAssetScale } from '../lib/krpano/measureGlbScale';
 import { applyTeacherViewToImmersiveKrpano, applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
@@ -519,6 +522,8 @@ function AssetModelInScene({
   const modelRef = useRef<THREE.Group>(null);
   const [model, setModel] = useState<THREE.Group | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloadProgress, setDownloadProgress] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+  const [loadPhase, setLoadPhase] = useState<'downloading' | 'processing'>('downloading');
   const onLoadRef = useRef(onLoad);
   const onErrorRef = useRef(onError);
   onLoadRef.current = onLoad;
@@ -530,6 +535,8 @@ function AssetModelInScene({
       return;
     }
     setLoading(true);
+    setLoadPhase('downloading');
+    setDownloadProgress({ loaded: 0, total: 0 });
     let loadUrl = url;
     const isExternal =
       typeof window !== 'undefined' &&
@@ -553,7 +560,12 @@ function AssetModelInScene({
         setLoading(false);
         onLoadRef.current?.();
       },
-      undefined,
+      (progress) => {
+        setDownloadProgress({ loaded: progress.loaded, total: progress.total });
+        if (progress.total > 0 && progress.loaded >= progress.total) {
+          setLoadPhase('processing');
+        }
+      },
       (err) => {
         setLoading(false);
         onErrorRef.current?.(err);
@@ -567,12 +579,11 @@ function AssetModelInScene({
 
   if (loading) {
     return (
-      <Html center>
-        <div className="flex items-center gap-2 text-white bg-black/50 px-4 py-2 rounded-lg">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading 3D model...
-        </div>
-      </Html>
+      <Asset3DLoadingOverlay
+        loaded={downloadProgress.loaded}
+        total={downloadProgress.total}
+        phase={loadPhase}
+      />
     );
   }
   if (!model) return null;
@@ -1305,6 +1316,7 @@ const VRLessonPlayerInner = () => {
   };
   const krpanoViewerRef = useRef<KrpanoViewer | null>(null);
   const krpanoFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const krpanoAssetLoadFailsafeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hotspotClickRef = useRef<((name: string) => void) | null>(null);
   const licensedAssetIndexRef = useRef<Map<string, number>>(new Map());
   const licensedModelActionRef = useRef<((assetId: string, transform?: number[]) => void) | null>(null);
@@ -1421,6 +1433,10 @@ const VRLessonPlayerInner = () => {
   const [sceneReady, setSceneReady] = useState(false);
   /** When true, krpano threejs 3D assets have had time to load (or there are none). Used so Start Lesson waits for 3D on Quest/Web. */
   const [krpano3dAssetsReady, setKrpano3dAssetsReady] = useState(true);
+  /** How many of the krpano-native threejs 3D asset hotspots have fired onloaded, out of the total expected. */
+  const [krpanoAssetLoadCount, setKrpanoAssetLoadCount] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+  const krpanoAssetLoadTotalRef = useRef(0);
+  const krpanoLoadedAssetNamesRef = useRef<Set<string>>(new Set());
 
   // LMS Tracking State
   const [currentLaunchId, setCurrentLaunchId] = useState<string | null>(null);
@@ -1491,17 +1507,50 @@ const VRLessonPlayerInner = () => {
   }, [scripts, ttsData, effectiveLesson?.topic, mcqs.length]);
 
   // All content ready: skybox, 3D assets (in krpano), TTS, and script data must be loaded before Start Lesson (Quest + Web).
-  const allReady = useMemo(() => {
+  // Broken out per stage (rather than folded straight into a boolean) so the loading bar can
+  // report which stage is outstanding from the same source of truth that gates the button —
+  // otherwise the two drift and the bar shows 100% next to a disabled Start Lesson.
+  const loadStages = useMemo(() => {
     const skyboxUrl = skyboxData?.imageUrl || skyboxData?.file_url;
     const skyboxReady = skyboxUrl ? sceneReady : !skyboxLoading;
     const hasGlbAsset = !!(assetUrl && isGlbOrGltfUrl(assetUrl));
     const assetReady = hasGlbAsset ? (!assetLoading || !!skyboxUrl) : true;
-    const ttsReady =
+    const narrationReady =
       ttsStatus !== 'loading' &&
       (ttsStatus === 'ready' || ttsStatus === 'playing' || ttsStatus === 'paused' || ttsData.length === 0);
-    const scriptDataReady = !effectiveLesson || !!effectiveLesson.topic;
-    return skyboxReady && assetReady && ttsReady && scriptDataReady && krpano3dAssetsReady;
-  }, [skyboxData, skyboxLoading, sceneReady, ttsStatus, ttsData.length, assetUrl, assetLoading, effectiveLesson, krpano3dAssetsReady]);
+    const lessonDataReady = !effectiveLesson || !!effectiveLesson.topic;
+    return {
+      lessonDataReady,
+      assetReady,
+      skyboxReady,
+      narrationReady,
+      modelsReady: krpano3dAssetsReady,
+      modelsLoaded: krpanoAssetLoadCount.loaded,
+      modelsTotal: krpanoAssetLoadCount.total,
+    };
+  }, [
+    skyboxData,
+    skyboxLoading,
+    sceneReady,
+    ttsStatus,
+    ttsData.length,
+    assetUrl,
+    assetLoading,
+    effectiveLesson,
+    krpano3dAssetsReady,
+    krpanoAssetLoadCount.loaded,
+    krpanoAssetLoadCount.total,
+  ]);
+
+  const allReady = useMemo(
+    () =>
+      loadStages.lessonDataReady &&
+      loadStages.assetReady &&
+      loadStages.skyboxReady &&
+      loadStages.narrationReady &&
+      loadStages.modelsReady,
+    [loadStages]
+  );
   
   // Debug log for MCQs
   useEffect(() => {
@@ -1533,11 +1582,23 @@ const VRLessonPlayerInner = () => {
         setThreadId(res.data.threadId);
         log('✅', 'Chat thread initialized:', res.data.threadId);
       } catch (error: any) {
-        console.error('Failed to initialize chat thread:', error);
+        // The chat thread is optional — the lesson plays fully without it. A 503 means the
+        // assistant provider is refusing us (quota/rate limit/key), which is an operational
+        // state rather than an application fault, so report it as a warning with the reason
+        // the server now sends back instead of a red console error on every lesson load.
+        const status = error?.response?.status;
+        const reason = error?.response?.data?.reason;
+        if (status === 503) {
+          console.warn(
+            `[VRPlayer] Assistant chat unavailable (${reason || 'upstream error'}) — continuing without chat.`
+          );
+        } else {
+          console.error('Failed to initialize chat thread:', error);
+        }
         log('❌', 'Thread creation failed:', error.message);
       }
     };
-    
+
     initThread();
   }, [activeLesson, threadId]);
 
@@ -1733,6 +1794,21 @@ const VRLessonPlayerInner = () => {
     const licensedModelTransformBridge = (assetId: string, ...transform: number[]) =>
       licensedModelActionRef.current?.(String(assetId || ''), transform.map(Number));
     const ttsCompleteBridge = () => ttsCompleteRef.current?.();
+    const assetLoadedBridge = (name: string) => {
+      if (!name || krpanoLoadedAssetNamesRef.current.has(name)) return;
+      krpanoLoadedAssetNamesRef.current.add(name);
+      const loaded = krpanoLoadedAssetNamesRef.current.size;
+      const total = krpanoAssetLoadTotalRef.current;
+      console.log('[VRPlayer] krpano threejs hotspot onloaded fired:', name, `${loaded}/${total}`);
+      setKrpanoAssetLoadCount({ loaded, total });
+      if (total > 0 && loaded >= total) {
+        setKrpano3dAssetsReady(true);
+        if (krpanoAssetLoadFailsafeTimerRef.current) {
+          clearTimeout(krpanoAssetLoadFailsafeTimerRef.current);
+          krpanoAssetLoadFailsafeTimerRef.current = null;
+        }
+      }
+    };
     const immersiveUiUpdateBridge = (state: KrpanoUiStatePayload) => {
       (window as unknown as Record<string, unknown>).__krpanoUIState = {
         initialized: true,
@@ -1773,6 +1849,7 @@ const VRLessonPlayerInner = () => {
     (window as unknown as { __krpanoUIAction?: (action: string) => void }).__krpanoUIAction = immersiveUiBridge;
     (window as unknown as { __krpanoUIUpdate?: (state: KrpanoUiStatePayload) => void }).__krpanoUIUpdate = immersiveUiUpdateBridge;
     (window as unknown as { __krpanoOnHotspotClick?: (name: string) => void }).__krpanoOnHotspotClick = hotspotBridge;
+    (window as unknown as { __krpanoOnAssetLoaded?: (name: string) => void }).__krpanoOnAssetLoaded = assetLoadedBridge;
     (window as unknown as { __krpanoLicensedModelAction?: (assetId: string) => void }).__krpanoLicensedModelAction = licensedModelBridge;
     (window as unknown as { __krpanoLicensedModelTransform?: (assetId: string, ...transform: number[]) => void }).__krpanoLicensedModelTransform = licensedModelTransformBridge;
     (window as unknown as { __krpanoOnTTSComplete?: () => void }).__krpanoOnTTSComplete = ttsCompleteBridge;
@@ -1780,6 +1857,10 @@ const VRLessonPlayerInner = () => {
     if (krpanoFallbackTimerRef.current) {
       clearTimeout(krpanoFallbackTimerRef.current);
       krpanoFallbackTimerRef.current = null;
+    }
+    if (krpanoAssetLoadFailsafeTimerRef.current) {
+      clearTimeout(krpanoAssetLoadFailsafeTimerRef.current);
+      krpanoAssetLoadFailsafeTimerRef.current = null;
     }
     // Guided lookto & hotspots from lesson topic (optional)
     const lookatByPhase: LookatByPhase | undefined = extraLessonData?.topic?.lookatByPhase;
@@ -1834,6 +1915,9 @@ const VRLessonPlayerInner = () => {
     if (rawAssetEntries.length > 0) {
       setKrpano3dAssetsReady(false);
     }
+    krpanoLoadedAssetNamesRef.current = new Set();
+    krpanoAssetLoadTotalRef.current = 0;
+    setKrpanoAssetLoadCount({ loaded: 0, total: 0 });
 
     loadKrpanoScript()
       .then(async () => {
@@ -1858,9 +1942,28 @@ const VRLessonPlayerInner = () => {
 
         const validEntries = preparedEntries.filter((e) => !!e.url);
         const threeJsAssetUrls = validEntries.map((e) => e.url);
-        const assetPlacements = validEntries.map((e) => e.placement);
+        // Auto-scale any asset without an author-specified placement.scale: krpano's
+        // threejs plugin has no built-in normalization (unlike the React fallback
+        // renderers), so an unscaled model can render as an invisible speck or an
+        // oversized blob depending on its native export scale. See measureGlbScale.ts.
+        // Never block the embed on a fresh measurement — that previously raced against
+        // a fixed timeout and silently fell back to the broken scale=1 default on a
+        // slow connection. Apply a cached scale immediately (synchronous, no wait);
+        // anything uncached embeds at scale=1 for now and gets live-corrected via
+        // krpano's scripting API once measurement resolves, however long that takes
+        // (see the measureUnscaledAssetsInBackground call after embedKrpano's onready).
+        const assetPlacements = validEntries.map((e) => {
+          if (e.placement?.scale !== undefined) return e.placement;
+          const cachedScale = getCachedKrpanoAssetScale(e.id);
+          return cachedScale !== null ? { ...e.placement, scale: cachedScale } : e.placement;
+        });
         const assetInteractionIds = validEntries.map((e) => e.id);
         licensedAssetIndexRef.current = new Map(assetInteractionIds.map((id, index) => [id, index]));
+        krpanoAssetLoadTotalRef.current = threeJsAssetUrls.length;
+        setKrpanoAssetLoadCount({ loaded: 0, total: threeJsAssetUrls.length });
+        if (threeJsAssetUrls.length === 0) {
+          setKrpano3dAssetsReady(true);
+        }
         console.log('[VRPlayer] Prepared krpano 3D asset URLs:', threeJsAssetUrls);
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
         const avatarModelUrl = origin + '/models/avatar3.glb';
@@ -1898,10 +2001,73 @@ const VRLessonPlayerInner = () => {
                 (krpano as KrpanoViewer).call?.('set(control.dragscale, 1.0);');
               } catch { /* non-fatal */ }
               setSceneReady(true);
+              // onready fired, so the "viewer never initialised" fallback below has done its
+              // job and must be cancelled. Leaving it armed was the cause of 3D assets
+              // appearing long after the progress bar hit 100%: the fallback unconditionally
+              // called setKrpano3dAssetsReady(true) at 12s, unblocking Enter Lesson while the
+              // GLB was still downloading, so the model popped in whenever it eventually
+              // finished. The viewer being ready says nothing about whether models have loaded.
+              if (krpanoFallbackTimerRef.current) {
+                clearTimeout(krpanoFallbackTimerRef.current);
+                krpanoFallbackTimerRef.current = null;
+              }
+              // Live-correct scale for any asset hotspot that embedded at the scale=1
+              // default because no cached measurement was available yet. Fire-and-forget:
+              // whenever each measurement resolves (fast or slow network), patch the
+              // already-rendered hotspot directly via krpano's scripting API rather than
+              // delaying the embed itself.
+              validEntries.forEach((entry, i) => {
+                if (assetPlacements[i]?.scale !== undefined) return;
+                getKrpanoAssetScale(entry.url, entry.id).then((scale) => {
+                  if (cancelled) return;
+                  try {
+                    krpanoViewerRef.current?.call?.(`set(hotspot[asset_${i}].scale, ${scale});`);
+                  } catch (err) {
+                    console.warn('[VRPlayer] Failed to apply auto-measured scale:', entry.id, err);
+                  }
+                });
+              });
               if (threeJsAssetUrls.length > 0) {
-                setTimeout(() => {
+                // Confirmed via diagnostic instrumentation: this plugin's `onloaded` XML
+                // attribute does not fire for real-GLB type="threejs" hotspots (only
+                // verified working on url="custom" hotspots like iu_panel_3d). So real
+                // completion is detected by polling hotspot[name].loaded directly via
+                // krpano's get() API instead — confirmed reliable by that same diagnostic.
+                // assetLoadedBridge/__krpanoOnAssetLoaded stays wired as a harmless
+                // no-cost fallback in case a future plugin build does fire it.
+                const pendingHotspotNames = new Set(validEntries.map((_, i) => `asset_${i}`));
+                const pollStart = Date.now();
+                const pollLoadedHotspots = () => {
+                  if (cancelled || pendingHotspotNames.size === 0) return;
+                  const viewer = krpanoViewerRef.current;
+                  if (viewer?.get) {
+                    for (const name of Array.from(pendingHotspotNames)) {
+                      let loaded: unknown;
+                      try {
+                        loaded = viewer.get(`hotspot[${name}].loaded`);
+                      } catch {
+                        loaded = undefined;
+                      }
+                      if (loaded === true || loaded === 'true') {
+                        pendingHotspotNames.delete(name);
+                        console.log('[VRPlayer] krpano hotspot confirmed loaded (polled):', name);
+                        assetLoadedBridge(name);
+                      }
+                    }
+                  }
+                  if (pendingHotspotNames.size > 0 && Date.now() - pollStart < 90000) {
+                    setTimeout(pollLoadedHotspots, 1500);
+                  }
+                };
+                setTimeout(pollLoadedHotspots, 1500);
+
+                // Failsafe only, in case polling never detects completion (e.g. .loaded
+                // isn't a real property on this hotspot type either) — long enough not
+                // to cut off a legitimately large/slow asset.
+                krpanoAssetLoadFailsafeTimerRef.current = setTimeout(() => {
                   if (!cancelled) setKrpano3dAssetsReady(true);
-                }, 3000);
+                  krpanoAssetLoadFailsafeTimerRef.current = null;
+                }, 90000);
               } else {
                 setKrpano3dAssetsReady(true);
               }
@@ -1916,11 +2082,17 @@ const VRLessonPlayerInner = () => {
           },
         });
 
-        // Fallback: if onready never fires (e.g. plugin load hang), allow user to proceed after 12s
+        // Fallback for the viewer itself never initialising (e.g. plugin load hang). Cancelled
+        // as soon as onready fires — see above. It deliberately does NOT touch
+        // krpano3dAssetsReady when models are still outstanding: model loading has its own
+        // completion tracking (polling + onloaded) and its own 90s failsafe, and short-circuiting
+        // it here is what made "Enter Lesson" appear before the 3D asset was actually in the scene.
         krpanoFallbackTimerRef.current = setTimeout(() => {
           if (!cancelled) {
             setSceneReady((prev) => (prev ? prev : true));
-            setKrpano3dAssetsReady(true);
+            if (krpanoAssetLoadTotalRef.current === 0) {
+              setKrpano3dAssetsReady(true);
+            }
           }
           krpanoFallbackTimerRef.current = null;
         }, 12000);
@@ -1940,6 +2112,10 @@ const VRLessonPlayerInner = () => {
       if (krpanoFallbackTimerRef.current) {
         clearTimeout(krpanoFallbackTimerRef.current);
         krpanoFallbackTimerRef.current = null;
+      }
+      if (krpanoAssetLoadFailsafeTimerRef.current) {
+        clearTimeout(krpanoAssetLoadFailsafeTimerRef.current);
+        krpanoAssetLoadFailsafeTimerRef.current = null;
       }
       const viewer = krpanoViewerRef.current ?? (document.getElementById('krpanoLessonViewer') as unknown as KrpanoViewer | null);
       try {
@@ -1963,6 +2139,9 @@ const VRLessonPlayerInner = () => {
       (window as unknown as { __krpanoLessonViewer?: unknown }).__krpanoLessonViewer = undefined;
       if ((window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick === hotspotBridge) {
         (window as unknown as { __krpanoOnHotspotClick?: unknown }).__krpanoOnHotspotClick = undefined;
+      }
+      if ((window as unknown as { __krpanoOnAssetLoaded?: unknown }).__krpanoOnAssetLoaded === assetLoadedBridge) {
+        (window as unknown as { __krpanoOnAssetLoaded?: unknown }).__krpanoOnAssetLoaded = undefined;
       }
       if ((window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete === ttsCompleteBridge) {
         (window as unknown as { __krpanoOnTTSComplete?: unknown }).__krpanoOnTTSComplete = undefined;
@@ -3326,7 +3505,25 @@ const VRLessonPlayerInner = () => {
   // Fetch 3D Assets from Firestore (Platform-aware)
   // ============================================================================
 
+  // `activeLesson` and `extraLessonData` are object references that get rebuilt on unrelated
+  // renders, so depending on them directly re-ran this whole discovery pass — the console showed
+  // every Firestore read (chapter resource IDs, batch asset query) happening twice per load, and
+  // each rerun resets assetDiscoveryComplete, which in turn delays the krpano embed. Key off the
+  // values actually read instead; the effect body still closes over the live objects.
+  const assetDiscoveryKey = useMemo(() => {
+    const chapterId = activeLesson?.chapter?.chapter_id || '';
+    const topicId = activeLesson?.topic?.topic_id || '';
+    const bundle = Array.isArray(extraLessonData?.assets3d)
+      ? (extraLessonData!.assets3d as Array<{ id?: string }>).map((a) => a?.id || '').join(',')
+      : '';
+    return `${chapterId}|${topicId}|${platform}|${bundle}`;
+  }, [activeLesson, extraLessonData, platform]);
+  const lastAssetDiscoveryKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
+    if (lastAssetDiscoveryKeyRef.current === assetDiscoveryKey) return;
+    lastAssetDiscoveryKeyRef.current = assetDiscoveryKey;
+
     const fetchAssets = async () => {
       setAssetDiscoveryComplete(false);
       setAssetUrl(null);
@@ -3441,7 +3638,7 @@ const VRLessonPlayerInner = () => {
       .finally(() => {
         setAssetDiscoveryComplete(true);
       });
-  }, [activeLesson, extraLessonData, platform]);
+  }, [assetDiscoveryKey, activeLesson, extraLessonData, platform]);
 
   // ============================================================================
   // Get TTS Audio URL for Current Script Type
@@ -5219,15 +5416,46 @@ const VRLessonPlayerInner = () => {
           />
         )}
 
-        {/* Loading overlay: skybox and, when integrated (skybox+3D), 3D asset must be ready */}
-        {(skyboxLoading || (skyboxImageUrl && !sceneReady) || (useIntegratedScene && assetLoading) || (useModelOnlyScene && assetLoading)) && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/80 z-veil">
-            <div className="text-center">
-              <Loader2 className="w-10 h-10 text-cyan-400 animate-spin mx-auto mb-3" />
-              <p className="text-slate-400">Loading environment...</p>
+        {/* Loading overlay: skybox and, when integrated (skybox+3D), 3D asset must be ready.
+            The krpano-native path (skybox + 3D together, the common case) loads its GLBs
+            through krpano's own threejs plugin outside React — krpano3dAssetsReady/krpanoAssetLoadCount
+            are fed by the onloaded hotspot callback wired in buildKrpanoXml.ts, so we can still show
+            an accurate "N of M objects ready" readout instead of a bare spinner. */}
+        {(() => {
+          const isKrpanoNativePath = !useIntegratedScene && !useModelOnlyScene;
+          const krpanoAssetsPending = isKrpanoNativePath && !krpano3dAssetsReady && krpanoAssetLoadCount.total > 0;
+          const show =
+            skyboxLoading ||
+            (skyboxImageUrl && !sceneReady) ||
+            (useIntegratedScene && assetLoading) ||
+            (useModelOnlyScene && assetLoading) ||
+            krpanoAssetsPending;
+          // The welcome screen is itself a modal that already carries the same progress bar and
+          // the Enter Lesson button. Showing this veil on top of it meant two competing popups:
+          // the loader card sat over the welcome card, then vanished to reveal the button, which
+          // read as a jarring hand-off. Suppressed here so progress fills and the button unlocks
+          // inside one continuous panel.
+          if (!show || showWelcomeScreen) return null;
+          return (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/80 z-veil">
+              {isKrpanoNativePath ? (
+                // krpano-native path (skybox + 3D together, the common case): every stage is
+                // observable, so show real progress rather than an indeterminate spinner.
+                <div className="w-full max-w-sm px-8 py-7 mx-4 bg-black/90 rounded-2xl backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/50">
+                  <LessonLoadProgress allReady={allReady} {...loadStages} />
+                </div>
+              ) : (
+                // Model-only / integrated React paths report byte-level progress instead.
+                <Asset3DLoadingCard
+                  countMode
+                  loadedCount={krpanoAssetLoadCount.loaded}
+                  totalCount={krpanoAssetLoadCount.total}
+                  label={skyboxLoading || (skyboxImageUrl && !sceneReady) ? 'Loading lesson environment…' : undefined}
+                />
+              )}
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* No skybox warning */}
         {!skyboxLoading && !skyboxImageUrl && (
@@ -5663,6 +5891,16 @@ const VRLessonPlayerInner = () => {
                     <span>360° view</span>
                   </div>
                 )}
+              </div>
+
+              {/* Load progress — the buttons below are gated on `allReady`, so show what is
+                  still outstanding instead of leaving the user with a disabled button and no
+                  explanation. Disappears once everything is ready. */}
+              {/* Kept mounted once ready rather than unmounted, so the card doesn't jump height
+                  at the exact moment the button becomes clickable — the bar simply settles at
+                  100% / "Ready to begin" directly above it. */}
+              <div className="mb-6 rounded-xl border border-white/10 bg-black/40 px-5 py-4 backdrop-blur-sm">
+                <LessonLoadProgress allReady={allReady} {...loadStages} />
               </div>
 
               {/* Start Buttons - enabled only when skybox, 3D assets, and TTS are ready */}

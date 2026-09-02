@@ -1,6 +1,5 @@
 const RENDER_ASSET_BRIDGE_PREFIX = '/__learnxr_render_asset__/';
 const RENDER_ASSET_MODEL_SUFFIX = '/model.glb';
-const RENDER_ASSET_CHUNK_BYTES = 4 * 1024 * 1024;
 const RENDER_ASSET_API_BASE = 'https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api';
 
 self.addEventListener('install', (event) => {
@@ -45,178 +44,59 @@ function getSourceUrlFromBridgeRequest(requestUrl) {
   }
 }
 
-async function fetchSourceSize(sourceUrl) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+/**
+ * Streams the asset straight through from the render-asset endpoint.
+ *
+ * This used to size the file with a HEAD probe and then re-fetch it as a sequence of 4MB
+ * `Range` requests, stitching the pieces into one stream. That existed solely to stay under
+ * the 32MB response cap on 2nd-gen Cloud Functions — a constraint that no longer applies now
+ * that /render-asset 302-redirects to a signed GCS URL, which streams the whole object.
+ *
+ * The chunking was actively harmful once it became unnecessary. A 110MB model meant ~27
+ * sequential round trips, each re-invoking the function and minting a fresh signed URL, and
+ * every one of them was a chance to fail: a single non-206 chunk called controller.error()
+ * and truncated the stream. Because glTF lays a GLB out with geometry first and image data
+ * last, a failure late in that sequence produced a file whose mesh parsed cleanly while its
+ * textures did not — the "correct shape but pure white, THREE.GLTFLoader: Couldn't load
+ * texture blob:" symptom. One request has no seam to fail at, and is dramatically faster.
+ *
+ * A Range header is forwarded only when the consumer actually sent one, so range requests
+ * still work for anything that seeks (and are answered by GCS directly).
+ */
+async function createRenderAssetResponse(sourceUrl, request) {
+  const rangeHeader = request.headers.get('range');
+  const headers = rangeHeader ? { Range: rangeHeader } : undefined;
 
-  try {
-    const response = await fetch(sourceUrl, {
-      method: 'HEAD',
-      mode: 'cors',
-      cache: 'no-store',
-      signal: controller.signal,
-    });
-
-    if (response.ok) {
-      const size = Number(response.headers.get('content-length') || 0);
-      if (Number.isFinite(size) && size > 0) {
-        return size;
-      }
-    }
-  } catch (error) {
-    console.warn('[render-asset-sw] Render asset HEAD failed; falling back to range size probe:', error);
-  } finally {
-    clearTimeout(timer);
-  }
-
-  return fetchSourceSizeFromRange(sourceUrl);
-}
-
-async function fetchSourceSizeFromRange(sourceUrl) {
-  const response = await fetch(sourceUrl, {
-    method: 'GET',
+  const upstream = await fetch(sourceUrl, {
+    method: request.method === 'HEAD' ? 'HEAD' : 'GET',
     mode: 'cors',
     cache: 'no-store',
-    headers: {
-      Range: 'bytes=0-0',
-    },
+    redirect: 'follow',
+    headers,
   });
 
-  if (!(response.ok || response.status === 206)) {
-    throw new Error(`Render asset range size probe failed with ${response.status}`);
+  if (!(upstream.ok || upstream.status === 206)) {
+    throw new Error(`Render asset fetch failed with ${upstream.status}`);
   }
 
-  response.body?.cancel();
-  const contentRange = response.headers.get('content-range') || '';
-  const rangeMatch = /\/(\d+)$/.exec(contentRange);
-  const size = rangeMatch
-    ? Number(rangeMatch[1])
-    : Number(response.headers.get('content-length') || 0);
-
-  if (!Number.isFinite(size) || size <= 0) {
-    throw new Error('Render asset size is unavailable');
-  }
-
-  return size;
-}
-
-async function pipeRangeToController(sourceUrl, start, end, controller) {
-  const response = await fetch(sourceUrl, {
-    method: 'GET',
-    mode: 'cors',
-    cache: 'no-store',
-    headers: {
-      Range: `bytes=${start}-${end}`,
-    },
-  });
-
-  if (!(response.ok || response.status === 206)) {
-    throw new Error(`Render asset range ${start}-${end} failed with ${response.status}`);
-  }
-
-  if (!response.body) {
-    controller.enqueue(new Uint8Array(await response.arrayBuffer()));
-    return;
-  }
-
-  const reader = response.body.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) controller.enqueue(value);
-  }
-}
-
-function createHeaders(size, extra = {}) {
-  return {
+  // Mirror the upstream framing rather than asserting our own Content-Length: declaring a
+  // length that disagrees with the bytes actually delivered is what silently truncates a body.
+  const responseHeaders = new Headers({
     'Content-Type': 'model/gltf-binary',
-    'Content-Length': String(size),
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'no-store',
-    ...extra,
-  };
-}
-
-function parseRangeHeader(rangeHeader, size) {
-  if (!rangeHeader) return null;
-  const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
-  if (!match) return null;
-
-  let start = match[1] ? Number(match[1]) : 0;
-  let end = match[2] ? Number(match[2]) : size - 1;
-
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-  if (match[1] === '' && match[2] !== '') {
-    const suffixLength = Number(match[2]);
-    start = Math.max(size - suffixLength, 0);
-    end = size - 1;
-  }
-
-  start = Math.max(0, start);
-  end = Math.min(size - 1, end);
-  if (start > end || start >= size) return null;
-  return { start, end };
-}
-
-async function createRangeResponse(sourceUrl, size, start, end) {
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        await pipeRangeToController(sourceUrl, start, end, controller);
-        controller.close();
-      } catch (error) {
-        controller.error(error);
-      }
-    },
   });
 
-  return new Response(stream, {
-    status: 206,
-    headers: createHeaders(end - start + 1, {
-      'Content-Range': `bytes ${start}-${end}/${size}`,
-    }),
-  });
-}
-
-async function createRenderAssetResponse(sourceUrl, request) {
-  const size = await fetchSourceSize(sourceUrl);
+  const contentLength = upstream.headers.get('content-length');
+  if (contentLength) responseHeaders.set('Content-Length', contentLength);
+  const contentRange = upstream.headers.get('content-range');
+  if (contentRange) responseHeaders.set('Content-Range', contentRange);
 
   if (request.method === 'HEAD') {
-    return new Response(null, {
-      status: 200,
-      headers: createHeaders(size),
-    });
+    return new Response(null, { status: upstream.status, headers: responseHeaders });
   }
 
-  const range = parseRangeHeader(request.headers.get('range'), size);
-  if (range) {
-    return createRangeResponse(sourceUrl, size, range.start, range.end);
-  }
-
-  let offset = 0;
-
-  const stream = new ReadableStream({
-    async pull(controller) {
-      if (offset >= size) {
-        controller.close();
-        return;
-      }
-
-      const start = offset;
-      const end = Math.min(start + RENDER_ASSET_CHUNK_BYTES - 1, size - 1);
-      offset = end + 1;
-      try {
-        await pipeRangeToController(sourceUrl, start, end, controller);
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-  });
-
-  return new Response(stream, {
-    status: 200,
-    headers: createHeaders(size),
-  });
+  return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
 }
 
 self.addEventListener('fetch', (event) => {

@@ -3,9 +3,48 @@
 
 import { Router, Request, Response, NextFunction } from 'express';
 import OpenAI from 'openai';
+import axios from 'axios';
 import { validateReadAccess } from '../middleware/validateIn3dApiKey';
 
 const router = Router();
+
+// Custom-hosted LLM fallback, routed through an n8n webhook so it can use
+// whichever model credential is configured there (e.g. Gemini), independent
+// of this service's own OpenAI key/quota.
+const N8N_3D_DETECTION_WEBHOOK_URL = process.env.N8N_3D_DETECTION_WEBHOOK_URL;
+
+/** True when an OpenAI error indicates exhausted/rate-limited credits (as opposed to a real failure). */
+const isQuotaOrRateLimitError = (error: any): boolean => {
+  const status = error?.status || error?.response?.status;
+  const code = error?.code || error?.error?.code || error?.response?.data?.error?.code;
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    status === 429 ||
+    code === 'insufficient_quota' ||
+    code === 'rate_limit_exceeded' ||
+    message.includes('quota') ||
+    message.includes('rate limit')
+  );
+};
+
+/**
+ * Detect 3D asset prompts via the n8n-hosted custom LLM webhook.
+ * The n8n workflow is expected to accept { prompt } and respond { assets: string[] }.
+ */
+async function detectAssetsViaN8n(prompt: string, requestId: string): Promise<string[]> {
+  if (!N8N_3D_DETECTION_WEBHOOK_URL) {
+    throw new Error('Custom LLM detection is not configured (N8N_3D_DETECTION_WEBHOOK_URL missing).');
+  }
+  console.log(`[${requestId}] Falling back to custom-hosted LLM via n8n for 3D asset detection`);
+  const response = await axios.post(
+    N8N_3D_DETECTION_WEBHOOK_URL,
+    { prompt },
+    { timeout: 30000 }
+  );
+  const data = response.data || {};
+  const rawAssets = Array.isArray(data.assets) ? data.assets : Array.isArray(data.output?.assets) ? data.output.assets : [];
+  return rawAssets.filter((a: any) => typeof a === 'string' && a.trim().length > 0).slice(0, 4);
+}
 
 // Test route to verify router is working
 router.get('/test', (req: Request, res: Response) => {
@@ -388,7 +427,7 @@ router.post('/extract-assets', validateReadAccess, async (req: Request, res: Res
   const requestId = (req as any).requestId;
   
   try {
-    const { prompt } = req.body;
+    const { prompt, provider } = req.body;
 
     if (!prompt || !prompt.trim()) {
       return res.status(200).json({
@@ -398,10 +437,35 @@ router.post('/extract-assets', validateReadAccess, async (req: Request, res: Res
       });
     }
 
+    // Explicit toggle: skip OpenAI entirely and use the n8n-hosted custom LLM.
+    if (provider === 'n8n') {
+      try {
+        const assets = await detectAssetsViaN8n(prompt.trim(), requestId);
+        console.log(`[${requestId}] Custom LLM (n8n) extraction completed:`, { count: assets.length, assets });
+        return res.status(200).json({ assets, success: true, method: 'n8n', requestId });
+      } catch (n8nError: any) {
+        console.error(`[${requestId}] Custom LLM (n8n) extraction failed:`, n8nError);
+        return res.status(200).json({
+          assets: [],
+          success: false,
+          error: n8nError?.message || 'Custom LLM detection failed',
+          requestId
+        });
+      }
+    }
+
     initializeOpenAI();
 
     if (!isConfigured || !openai) {
-      console.warn(`[${requestId}] OpenAI not configured, returning empty assets`);
+      console.warn(`[${requestId}] OpenAI not configured, trying custom LLM (n8n) fallback`);
+      if (N8N_3D_DETECTION_WEBHOOK_URL) {
+        try {
+          const assets = await detectAssetsViaN8n(prompt.trim(), requestId);
+          return res.status(200).json({ assets, success: true, method: 'n8n-fallback', requestId });
+        } catch (n8nError: any) {
+          console.error(`[${requestId}] Custom LLM (n8n) fallback also failed:`, n8nError);
+        }
+      }
       return res.status(200).json({
         assets: [],
         success: true,
@@ -492,13 +556,33 @@ Use 2-4 items when the script describes or implies that many objects. If no 3D o
       method: 'ai',
       requestId
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[${requestId}] Asset extraction error:`, error);
-    
+
+    // Credits exhausted / rate-limited on OpenAI: auto-fallback to the custom-hosted LLM (via n8n) if configured.
+    if (isQuotaOrRateLimitError(error) && N8N_3D_DETECTION_WEBHOOK_URL) {
+      try {
+        const prompt = req.body?.prompt || '';
+        const assets = await detectAssetsViaN8n(String(prompt).trim(), requestId);
+        console.log(`[${requestId}] Custom LLM (n8n) fallback succeeded after OpenAI quota error:`, { count: assets.length });
+        return res.status(200).json({
+          assets,
+          success: true,
+          method: 'n8n-fallback',
+          warning: 'OpenAI credits exhausted; used custom-hosted LLM fallback.',
+          requestId
+        });
+      } catch (n8nError: any) {
+        console.error(`[${requestId}] Custom LLM (n8n) fallback also failed:`, n8nError);
+      }
+    }
+
     return res.status(200).json({
       assets: [],
       success: false,
-      error: error instanceof Error ? error.message : 'Asset extraction failed',
+      error: isQuotaOrRateLimitError(error)
+        ? 'OpenAI credits/quota exhausted and no custom LLM fallback is configured.'
+        : (error instanceof Error ? error.message : 'Asset extraction failed'),
       requestId
     });
   }

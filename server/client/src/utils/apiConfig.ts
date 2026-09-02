@@ -105,6 +105,12 @@ export const getProxyAssetUrlForThreejs = (targetUrl: string): string => {
   if (targetUrl.startsWith('/assets/')) return targetUrl;
   if (targetUrl.startsWith('blob:')) return targetUrl;
 
+  // Our own render-asset URLs already have no query string (token is a path segment) and
+  // already redirect to a CORS-enabled signed Storage URL. Wrapping them through
+  // /proxy-asset again would pipe the (potentially 100MB+) file through a second Cloud
+  // Function, hitting the same 32MB response cap the redirect was added to avoid.
+  if (targetUrl.includes('/render-asset/')) return targetUrl;
+
   const shouldPreserveFirebaseStorageEncoding =
     targetUrl.includes('firebasestorage.googleapis.com') || targetUrl.includes('firebasestorage.app') || targetUrl.includes('appspot.com');
 

@@ -27,7 +27,7 @@ class AIDetectionService {
   /**
    * Detect prompt type using AI
    */
-  async detectPromptType(prompt: string): Promise<AIDetectionResponse> {
+  async detectPromptType(prompt: string, provider: 'openai' | 'n8n' = 'openai'): Promise<AIDetectionResponse> {
     try {
       if (!prompt || !prompt.trim()) {
         return {
@@ -44,7 +44,8 @@ class AIDetectionService {
         method: string;
         requestId?: string;
       }>('/ai-detection/detect', {
-        prompt: prompt.trim()
+        prompt: prompt.trim(),
+        provider
       });
 
       console.log('✅ AI Detection response received:', response.data);

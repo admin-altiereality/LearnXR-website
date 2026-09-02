@@ -55,7 +55,8 @@ export class AvatarTo3dService {
     chapterId: string,
     topicId: string,
     language: string,
-    explanationScript: string
+    explanationScript: string,
+    provider: 'openai' | 'n8n' = 'openai'
   ): Promise<DetectionResult> {
     if (!explanationScript || !explanationScript.trim()) {
       return {
@@ -66,14 +67,19 @@ export class AvatarTo3dService {
     }
 
     try {
-      console.log('🔍 Analyzing avatar explanation script for 3D objects...');
+      console.log(`🔍 Analyzing avatar explanation script for 3D objects (provider: ${provider})...`);
       console.log('Script preview:', explanationScript.substring(0, 100) + '...');
 
       // Use extract-assets endpoint directly (more reliable)
       try {
-        const extractResponse = await api.post<{ assets: string[]; success: boolean; error?: string }>('/ai-detection/extract-assets', {
-          prompt: explanationScript.trim()
+        const extractResponse = await api.post<{ assets: string[]; success: boolean; error?: string; method?: string; warning?: string }>('/ai-detection/extract-assets', {
+          prompt: explanationScript.trim(),
+          provider
         });
+
+        if (extractResponse.data.warning) {
+          console.warn('⚠️', extractResponse.data.warning);
+        }
 
         console.log('📦 Extract-assets response:', extractResponse.data);
 
@@ -120,7 +126,7 @@ export class AvatarTo3dService {
         
         // Fallback: Try detectPromptType
         console.log('🔄 Trying fallback detection method...');
-        const detectionResult = await aiDetectionService.detectPromptType(explanationScript);
+        const detectionResult = await aiDetectionService.detectPromptType(explanationScript, provider);
 
         if (detectionResult.success && detectionResult.data) {
           const aiData = detectionResult.data;

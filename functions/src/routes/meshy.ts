@@ -14,6 +14,7 @@ import { assertLessonAuthorAccess } from '../services/userGeneratedLessons';
 import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils/apiResponse';
 import {
   backfillAssets,
+  compressStoredAssets,
   finalizeAnimatedAsset,
   finalizeGeneratedAsset,
   registerUploadedAsset,
@@ -158,6 +159,38 @@ router.post('/backfill-assets', validateFullAccess, requireSuperadmin, async (re
     const { statusCode, response } = errorResponse(
       'Backfill failed',
       error?.message || 'Failed to backfill 3D assets',
+      ErrorCode.INTERNAL_ERROR,
+      HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      { requestId }
+    );
+    setCorsHeaders(res);
+    return res.status(statusCode).json(response);
+  }
+});
+
+/**
+ * Re-compress already-stored 3D assets (texture downsizing only; see glbCompression.ts).
+ * Idempotent and reversible — originals are archived as <name>.original.glb.
+ * Pass { dryRun: true } to report the savings without writing anything.
+ * POST /meshy/compress-assets
+ */
+router.post('/compress-assets', validateFullAccess, requireSuperadmin, async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId;
+
+  try {
+    const limit = Number(req.body?.limit || 25);
+    const dryRun = req.body?.dryRun === true;
+    const result = await compressStoredAssets(Number.isFinite(limit) ? limit : 25, { dryRun });
+    setCorsHeaders(res);
+    return res.status(HTTP_STATUS.OK).json(successResponse(result, {
+      requestId,
+      message: dryRun ? '3D asset compression dry run completed' : '3D asset compression completed',
+    }));
+  } catch (error: any) {
+    console.error(`[${requestId}] Compress assets error:`, error?.message || error);
+    const { statusCode, response } = errorResponse(
+      'Compression failed',
+      error?.message || 'Failed to compress 3D assets',
       ErrorCode.INTERNAL_ERROR,
       HTTP_STATUS.INTERNAL_SERVER_ERROR,
       { requestId }
@@ -351,7 +384,11 @@ router.post('/generate', requireLessonAuthorAccess, async (req: Request, res: Re
         preview_task_id: preview_task_id.trim(),
         ai_model: model,
         enable_pbr: enable_pbr !== undefined ? Boolean(enable_pbr) : true,
-        hd_texture: hd_texture !== undefined ? Boolean(hd_texture) : true,
+        // hd_texture defaults OFF: it produces 4096px maps, and a single asset's four PBR
+        // maps at that size were 39MB on the wire and ~160MB of RGBA once decoded (before
+        // mipmaps) — a real OOM risk on Quest. 2048px is indistinguishable on a prop viewed
+        // at ~180 krpano units. Still opt-in per request for hero assets.
+        hd_texture: hd_texture !== undefined ? Boolean(hd_texture) : false,
         remove_lighting: remove_lighting !== undefined ? Boolean(remove_lighting) : true,
         target_formats: Array.isArray(target_formats) && target_formats.length ? target_formats : ['glb'],
         auto_size: auto_size !== undefined ? Boolean(auto_size) : true,
@@ -405,8 +442,12 @@ router.post('/generate', requireLessonAuthorAccess, async (req: Request, res: Re
       include_art_style: includeArtStyle
     });
 
-    // should_remesh: default false for latest/meshy-6, true for meshy-5 (per Meshy v2 docs)
-    const defaultShouldRemesh = model === 'meshy-5';
+    // should_remesh must default ON for every model, not just meshy-5. Meshy only applies
+    // `target_polycount` when remeshing; with it off the parameter is silently ignored and
+    // Meshy returns its raw high-poly mesh. That is exactly what happened: we asked for
+    // 30k triangles and a shipped asset came back with 639,263 triangles / 1,914,805 verts
+    // in a 110MB GLB (65MB geometry + 39MB of 4096px textures), which is why lessons crawled.
+    const defaultShouldRemesh = true;
     const payload: Record<string, unknown> = {
       mode: 'preview',
       prompt: prompt.trim(),

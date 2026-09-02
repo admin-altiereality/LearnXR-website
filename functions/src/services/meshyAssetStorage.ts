@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import axios from 'axios';
 import { randomBytes } from 'crypto';
 import { initializeAdmin } from '../utils/services';
+import { compressGlb, GLB_COMPRESSION_VERSION } from './glbCompression';
 
 type SourceCollection = 'text_to_3d_assets' | 'avatar_to_3d_assets' | 'meshy_assets';
 
@@ -221,8 +222,31 @@ async function uploadRemoteFile(url: string, storagePath: string, fileName: stri
     validateStatus: (status) => status >= 200 && status < 400,
   });
 
-  const buffer = Buffer.from(response.data);
+  const downloaded = Buffer.from(response.data);
   const contentType = contentTypeForFile(fileName, String(response.headers['content-type'] || ''));
+
+  // Every generated/uploaded model funnels through here, so this is the one place that
+  // guarantees nothing oversized reaches storage — including assets from paths that don't
+  // go through our Meshy request params at all (direct uploads, animated exports).
+  let buffer: Buffer = downloaded;
+  const compressionMetadata: Record<string, string> = {};
+  if (fileName.toLowerCase().endsWith('.glb')) {
+    const result = await compressGlb(downloaded);
+    if (result.changed) {
+      buffer = result.buffer;
+      compressionMetadata.compressedVersion = GLB_COMPRESSION_VERSION;
+      compressionMetadata.originalBytes = String(result.originalBytes);
+      compressionMetadata.texturesRewritten = String(result.texturesRewritten);
+      console.log(
+        `[meshyAssetStorage] Compressed ${fileName}: ` +
+          `${(result.originalBytes / 1048576).toFixed(1)}MB -> ${(result.compressedBytes / 1048576).toFixed(1)}MB, ` +
+          `${result.texturesRewritten} textures rewritten`
+      );
+    } else if (result.skippedReason) {
+      console.log(`[meshyAssetStorage] Compression skipped for ${fileName}: ${result.skippedReason}`);
+    }
+  }
+
   const bucket = getBucket();
   await bucket.file(storagePath).save(buffer, {
     resumable: false,
@@ -232,6 +256,7 @@ async function uploadRemoteFile(url: string, storagePath: string, fileName: stri
       metadata: {
         sourceUrl: url.slice(0, 500),
         storedAt: new Date().toISOString(),
+        ...compressionMetadata,
       },
     },
   });
@@ -817,6 +842,132 @@ export async function backfillAssets(
     skipped,
     failed,
     createdMeshyAssets,
+    status: failed > 0 ? 'completed_with_errors' : 'completed',
+  };
+}
+
+/**
+ * Re-compresses GLBs that were stored before compression existed.
+ *
+ * Only touches textures — see services/glbCompression.ts for why geometry can't be
+ * safely reduced after the fact on a Meshy export. A legacy 110MB asset comes down to
+ * ~69MB here; getting it near the ~10MB a fresh generation now produces requires
+ * regenerating it (POST /meshy/regeneration/jobs), which redoes the mesh properly.
+ *
+ * Safe to re-run: assets already carrying the current `compressedVersion` are skipped,
+ * and the untouched original is kept alongside as `<name>.original.glb` so a bad pass
+ * can always be reverted.
+ */
+export async function compressStoredAssets(
+  limit: number,
+  options: { dryRun?: boolean } = {}
+): Promise<Record<string, unknown>> {
+  const db = getDb();
+  const bucket = getBucket();
+  const boundedLimit = Math.max(1, Math.min(limit, 200));
+  const dryRun = options.dryRun === true;
+
+  let examined = 0;
+  let compressed = 0;
+  let skipped = 0;
+  let failed = 0;
+  let bytesBefore = 0;
+  let bytesAfter = 0;
+  const details: Array<Record<string, unknown>> = [];
+
+  const snap = await db.collection(MESHY_ASSETS_COLLECTION).limit(boundedLimit).get();
+
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    const storagePath = String(data.storage_path || data.storagePath || '').trim();
+    if (!storagePath || !storagePath.toLowerCase().endsWith('.glb')) {
+      skipped++;
+      continue;
+    }
+
+    examined++;
+
+    try {
+      const file = bucket.file(storagePath);
+      const [exists] = await file.exists();
+      if (!exists) {
+        skipped++;
+        continue;
+      }
+
+      const [metadata] = await file.getMetadata();
+      if (metadata?.metadata?.compressedVersion === GLB_COMPRESSION_VERSION) {
+        skipped++;
+        continue;
+      }
+
+      const [buffer] = await file.download();
+      const result = await compressGlb(buffer, { force: true });
+
+      bytesBefore += result.originalBytes;
+      bytesAfter += result.compressedBytes;
+
+      if (!result.changed) {
+        skipped++;
+        details.push({ assetId: doc.id, storagePath, skipped: result.skippedReason });
+        continue;
+      }
+
+      if (!dryRun) {
+        // Keep the untouched original exactly once — never overwrite a previously saved
+        // one, or a second run would archive the already-compressed version over it.
+        const originalPath = storagePath.replace(/\.glb$/i, '.original.glb');
+        const originalFile = bucket.file(originalPath);
+        const [originalExists] = await originalFile.exists();
+        if (!originalExists) {
+          await file.copy(originalFile);
+        }
+
+        await file.save(result.buffer, {
+          resumable: false,
+          metadata: {
+            contentType: 'model/gltf-binary',
+            cacheControl: 'public, max-age=31536000, immutable',
+            metadata: {
+              ...(metadata?.metadata || {}),
+              compressedVersion: GLB_COMPRESSION_VERSION,
+              originalBytes: String(result.originalBytes),
+              texturesRewritten: String(result.texturesRewritten),
+              originalPath,
+              compressedAt: new Date().toISOString(),
+            },
+          },
+        });
+      }
+
+      compressed++;
+      details.push({
+        assetId: doc.id,
+        storagePath,
+        beforeMB: Number((result.originalBytes / 1048576).toFixed(2)),
+        afterMB: Number((result.compressedBytes / 1048576).toFixed(2)),
+        texturesRewritten: result.texturesRewritten,
+      });
+    } catch (error) {
+      failed++;
+      console.error(`[compressStoredAssets] Failed for ${doc.id}:`, error);
+      details.push({
+        assetId: doc.id,
+        storagePath,
+        error: error instanceof Error ? error.message : 'unknown error',
+      });
+    }
+  }
+
+  return {
+    limit: boundedLimit,
+    dryRun,
+    examined,
+    compressed,
+    skipped,
+    failed,
+    savedMB: Number(((bytesBefore - bytesAfter) / 1048576).toFixed(2)),
+    details,
     status: failed > 0 ? 'completed_with_errors' : 'completed',
   };
 }

@@ -1,0 +1,98 @@
+{
+  "_comment": "Backup/reference copy only. Source of truth is the live workflow in n8n (https://n8n.altiereality.com), id ufeStzCUrKkshJ0z, name 'LearnXR - Detect 3D Assets (Custom LLM Fallback)'. Production webhook: POST https://n8n.altiereality.com/webhook/detect-3d-assets. Set that URL as the N8N_3D_DETECTION_WEBHOOK_URL Firebase secret (see functions/src/index.ts).",
+  "name": "LearnXR - Detect 3D Assets (Custom LLM Fallback)",
+  "active": true,
+  "nodes": [
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-400, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "detect-3d-assets",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-160, 0],
+      "parameters": {
+        "jsCode": "const prompt = ($json.body && $json.body.prompt) || $json.prompt || '';\n\nconst systemPrompt = `You are an expert at analyzing AVATAR EXPLANATION SCRIPTS (educational lesson narratives) and producing prompts for Meshy.ai text-to-3D API.\n\nINPUT: The user will provide an explanation script: one or more paragraphs of educational narrative (e.g. what a teacher says in a lesson). Objects may be mentioned indirectly (\"imagine a globe\", \"we have a telescope\", \"a model of the solar system\").\n\nYOUR TASK:\n1. Identify 3D objects that are mentioned or clearly implied in the script. Prefer objects that are educational (tools, models, instruments, artifacts, specimens).\n2. Return between 2 and 4 objects when the script supports it. Minimum 2, maximum 4. If the script clearly has only one relevant object, return 1; if none, return [].\n3. For EACH object, output a MESHY-OPTIMIZED prompt: one short sentence (under 100 chars) that will produce a high-quality 3D model when sent to Meshy. Do NOT output raw phrases like \"globe\" or \"telescope\"—output full descriptive prompts.\n\nMESHY BEST PRACTICES (follow these for each asset string):\n- Start with the subject: \"High-quality 3D model of a ...\" or \"Detailed 3D model of ...\"\n- Add one or two descriptive details (material, style, or key feature).\n- Use \"educational\", \"realistic\", or \"clean topology\" when appropriate.\n- One object per prompt; no environments (no \"in a room\", \"on a table\").\n- Keep each prompt under 100 characters when possible.\n\nOBJECTS TO DETECT (infer from script context): globe, map, compass, telescope, microscope, ruler, models (solar system, cell, organ, atom, DNA), artifacts, sculptures, statues, lab equipment (beaker, flask, test tube), geometric shapes, furniture (table, chair, desk), tools, specimens, fossils, and ANIMALS (frog, hen, duck, sheep, cow, dog, cat, bird, horse, pig, etc.—when the script is about animal sounds, behavior, or identification, extract 2–4 of the animals mentioned).\n\nNEVER EXTRACT: environments (classroom, lab, pond, forest), people (teacher, student, children), or abstract concepts without a physical object.\n\nRespond with JSON only:\n{\n  \"assets\": [\"Meshy prompt 1\", \"Meshy prompt 2\", ...]\n}\nUse 2-4 items when the script describes or implies that many objects. If no 3D objects found, return: {\"assets\": []}`;\n\nconst userPrompt = `Analyze this avatar explanation script and output 2-4 Meshy-optimized 3D asset prompts (min 2, max 4 when possible):\\n\\n${prompt}`;\n\nconst combinedPrompt = `${systemPrompt}\\n\\n${userPrompt}`;\nreturn [{ json: { systemPrompt, userPrompt, combinedPrompt, originalPrompt: prompt } }];"
+      }
+    },
+    {
+      "id": "custom-llm-call-v2",
+      "name": "Altie Local LLM (LiteLLM)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [80, 0],
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            { "content": "={{ $json.combinedPrompt }}" }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "DNFveftEi2H3LKgG",
+          "name": "Altie Local LiteLLM OpenAI"
+        }
+      },
+      "notes": "Same node type/credential already proven in the active 'Follow Up' workflow (id avTRrvkv714jTOWI). The legacy n8n-nodes-base.openAi node was tried first and reproducibly broke workflow activation on this n8n version (server error: 'propertyValues[itemName] is not iterable') — do not switch back to it. Change modelId.value if 'gpt-4o-mini' isn't the alias your LiteLLM proxy exposes."
+    },
+    {
+      "id": "parse-response",
+      "name": "Parse Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 0],
+      "parameters": {
+        "jsCode": "const raw = $json.output?.[0]?.content?.[0]?.text || $json.output?.[0]?.content || $json.text || $json.message?.content || $json.choices?.[0]?.message?.content || '';\n\nfunction extractJson(text) {\n  let c = String(text).trim();\n  if (c.startsWith('```')) c = c.replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim();\n  const m = c.match(/\\{[\\s\\S]*\\}/);\n  return m ? m[0] : c;\n}\n\nlet parsed = { assets: [] };\ntry {\n  parsed = JSON.parse(extractJson(raw));\n} catch (e) {\n  parsed = { assets: [] };\n}\n\nconst assets = Array.isArray(parsed.assets)\n  ? parsed.assets.filter((a) => typeof a === 'string' && a.trim().length > 0).slice(0, 4)\n  : [];\n\nreturn [{ json: { assets } }];"
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [560, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { assets: $json.assets } }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Build Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build Prompt": {
+      "main": [[{ "node": "Altie Local LLM (LiteLLM)", "type": "main", "index": 0 }]]
+    },
+    "Altie Local LLM (LiteLLM)": {
+      "main": [[{ "node": "Parse Response", "type": "main", "index": 0 }]]
+    },
+    "Parse Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -73,7 +73,18 @@ async function getProxyAuthHeaders(): Promise<HeadersInit> {
   return { Authorization: `Bearer ${token}` };
 }
 
-if (!WEBHOOK_URL) {
+/**
+ * Warn once, and only when the automation is actually invoked.
+ *
+ * This used to run at module scope, so every page that transitively imported this service
+ * logged the warning on load — including the VR lesson player, which never triggers an n8n
+ * workflow. Importing a module isn't using the feature, so the warning belonged at the call
+ * site rather than in the console of unrelated screens.
+ */
+let warnedMissingWebhook = false;
+function warnIfWebhookMissing(): void {
+  if (WEBHOOK_URL || warnedMissingWebhook) return;
+  warnedMissingWebhook = true;
   console.warn(
     'VITE_N8N_WEBHOOK_URL is not set. Configure it in a .env file to connect the UI to your n8n workflow.',
   );
@@ -88,6 +99,7 @@ export async function triggerAutomation(params: {
   subject: string;
 }): Promise<RunResult> {
   if (!WEBHOOK_URL) {
+    warnIfWebhookMissing();
     return {
       ok: false,
       httpStatus: 0,

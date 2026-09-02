@@ -29,36 +29,6 @@ function parseRenderAssetPath(req: Request): { assetId: string; token: string; f
   };
 }
 
-function parseByteRange(rangeHeader: string | undefined, fileSize: number): { start: number; end: number } | 'invalid' | null {
-  if (!rangeHeader) return null;
-  const match = String(rangeHeader).match(/^bytes=(\d*)-(\d*)$/);
-  if (!match || !Number.isFinite(fileSize) || fileSize <= 0) return 'invalid';
-
-  const [, rawStart, rawEnd] = match;
-  let start: number;
-  let end: number;
-
-  if (rawStart === '' && rawEnd === '') return 'invalid';
-  if (rawStart === '') {
-    const suffixLength = Number(rawEnd);
-    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return 'invalid';
-    start = Math.max(fileSize - suffixLength, 0);
-    end = fileSize - 1;
-  } else {
-    start = Number(rawStart);
-    end = rawEnd === '' ? fileSize - 1 : Number(rawEnd);
-  }
-
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= fileSize) {
-    return 'invalid';
-  }
-
-  return {
-    start,
-    end: Math.min(end, fileSize - 1),
-  };
-}
-
 function getAssetStoragePath(asset: any, isAnimated: boolean): string {
   if (isAnimated) {
     return String(
@@ -163,59 +133,15 @@ router.get(renderAssetRegex, async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    const [metadata] = await file.getMetadata();
-    const fileSize = Number(metadata.size || 0);
-    res.setHeader('Content-Type', 'model/gltf-binary');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('Accept-Ranges', 'bytes');
-
-    const byteRange = parseByteRange(req.headers.range, fileSize);
-    if (byteRange === 'invalid') {
-      if (fileSize > 0) res.setHeader('Content-Range', `bytes */${fileSize}`);
-      res.status(416).end();
-      return;
-    }
-
-    if (byteRange) {
-      const chunkLength = byteRange.end - byteRange.start + 1;
-      res.status(206);
-      res.setHeader('Content-Length', String(chunkLength));
-      res.setHeader('Content-Range', `bytes ${byteRange.start}-${byteRange.end}/${fileSize}`);
-      if (req.method === 'HEAD') {
-        res.end();
-        return;
-      }
-      const stream = file.createReadStream({ start: byteRange.start, end: byteRange.end });
-      stream.on('error', (error: Error) => {
-        console.error(`[${requestId}] Render asset range stream error:`, error.message);
-        if (!res.headersSent) {
-          res.status(502).json({ error: 'Failed to stream asset', requestId });
-        } else {
-          res.destroy(error);
-        }
-      });
-      stream.pipe(res);
-      return;
-    }
-
-    if (fileSize > 0) {
-      res.setHeader('Content-Length', String(fileSize));
-    }
-    if (req.method === 'HEAD') {
-      res.status(200).end();
-      return;
-    }
-
-    const stream = file.createReadStream();
-    stream.on('error', (error: Error) => {
-      console.error(`[${requestId}] Render asset stream error:`, error.message);
-      if (!res.headersSent) {
-        res.status(502).json({ error: 'Failed to stream asset', requestId });
-      } else {
-        res.destroy(error);
-      }
+    // Redirect to a short-lived signed URL instead of streaming the file through this
+    // Cloud Function. Cloud Functions (2nd gen) hard-caps HTTP responses at 32MB, which
+    // silently breaks any GLB larger than that (common for HD-texture Meshy exports).
+    // The browser downloads directly from Cloud Storage, which has no such limit.
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 15 * 60 * 1000,
     });
-    stream.pipe(res);
+    res.redirect(302, signedUrl);
     return;
   } catch (error: any) {
     console.error(`[${requestId}] Render asset error:`, error?.message || error);

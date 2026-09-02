@@ -222,6 +222,16 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   // 3D model hotspots (type="threejs"). When an author-specified placement (ath/atv/depth)
   // is provided (Street View Tour floating assets), position on the sphere directly;
   // otherwise fall back to the default spaced-out grid so assets don't overlap (Quest + Web).
+  //
+  // NOTE: no `convertmaterials` attribute here, deliberately. A glTF PBR material already
+  // deserialises to a THREE.MeshStandardMaterial, so "all-to-standard" was a semantic no-op
+  // that could only lose information — and it did: Meshy assets rendered pure flat white.
+  // Inspecting a live GLB confirmed the maps are present and correctly wired
+  // (baseColor/normal/metallicRoughness/emissive, all valid baseline JPEGs), so the white
+  // came from the converter dropping the map slots while keeping the scalar factors:
+  // baseColorFactor falls back to white and emissiveFactor stays [1,1,1] with no emissiveMap,
+  // which self-illuminates the mesh pure white and makes it ignore scene lighting entirely.
+  // Lighting is not involved — <threejs ambientlight> and the threejslight sun are both set above.
   const threeJsHotspotBlocks = safe3dEntries
     .map(({ url, placement, interactionId }, i) => {
       const safeUrl = escapeXml(url);
@@ -234,18 +244,21 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
       const roty =
         ` rx="0" ry="${placement?.rotationY !== undefined ? placement.rotationY : 0}" rz="0"`;
       const interaction = ` dataassetid="${safeInteractionId}" onclick="js(window.__krpanoLicensedModelAction &amp;&amp; window.__krpanoLicensedModelAction(get(caller.dataassetid)));" onup="js(window.__krpanoLicensedModelTransform &amp;&amp; window.__krpanoLicensedModelTransform(get(caller.dataassetid), get(caller.tx), get(caller.ty), get(caller.tz), get(caller.rx), get(caller.ry), get(caller.rz), get(caller.scale)));"`;
+      // Reports load completion back to React so the loading overlay can track "N of M
+      // 3D objects ready" instead of guessing — see __krpanoOnAssetLoaded in VRLessonPlayerKrpano.tsx.
+      const onloaded = ` onloaded="js(window.__krpanoOnAssetLoaded &amp;&amp; window.__krpanoOnAssetLoaded('${name}'));"`;
       if (placement && (placement.ath !== undefined || placement.atv !== undefined)) {
         const ath = placement.ath ?? 0;
         const atv = placement.atv ?? 0;
         const depth = placement.depth ?? 500;
-        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty}${interaction} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
       }
       const col = i % 3;
       const row = Math.floor(i / 3);
       const tx = 40 + (col - 1) * 90;
       const ty = -20 - row * 25;
       const tz = 180 + row * 90;
-      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty}${interaction} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" convertmaterials="all-to-standard" ondown="drag3d();" />`;
+      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
     })
     .join('\n');
   // Teacher avatar: center, standing (feet near floor, head near eye level).

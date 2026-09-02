@@ -17,9 +17,10 @@ import { extractMcqOptions, resolveCorrectAnswerIndex } from '../lib/mcq/answerI
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Html } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Asset3DLoadingOverlay } from '../Components/Asset3DLoadingOverlay';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { db } from '../config/firebase';
@@ -432,7 +433,9 @@ function AssetModel({
   const modelRef = useRef<THREE.Group>(null);
   const [model, setModel] = useState<THREE.Group | null>(null);
   const [loading, setLoading] = useState(true);
-  
+  const [downloadProgress, setDownloadProgress] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+  const [loadPhase, setLoadPhase] = useState<'downloading' | 'processing'>('downloading');
+
   useEffect(() => {
     if (!url) {
       log('⚠️', 'No 3D asset URL provided');
@@ -455,27 +458,34 @@ function AssetModel({
     }
 
     log('📦', 'Loading 3D model:', loadUrl.substring(0, 80));
+    setLoadPhase('downloading');
+    setDownloadProgress({ loaded: 0, total: 0 });
 
     const loader = new GLTFLoader();
     loader.load(
       loadUrl,
       (gltf) => {
         log('✅', '3D model loaded successfully');
-        
+
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
         const modelScale = maxDim > 0 ? 2 / maxDim : 1;
-        
+
         gltf.scene.position.set(-center.x * modelScale, -center.y * modelScale, -center.z * modelScale);
         gltf.scene.scale.setScalar(modelScale * scale);
-        
+
         setModel(gltf.scene);
         setLoading(false);
         onLoad?.();
       },
-      undefined,
+      (progress) => {
+        setDownloadProgress({ loaded: progress.loaded, total: progress.total });
+        if (progress.total > 0 && progress.loaded >= progress.total) {
+          setLoadPhase('processing');
+        }
+      },
       (error) => {
         console.error('Failed to load 3D model:', error);
         setLoading(false);
@@ -492,12 +502,11 @@ function AssetModel({
 
   if (loading) {
     return (
-      <Html center>
-        <div className="flex items-center gap-2 text-white bg-black/50 px-4 py-2 rounded-lg">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading 3D Asset...
-        </div>
-      </Html>
+      <Asset3DLoadingOverlay
+        loaded={downloadProgress.loaded}
+        total={downloadProgress.total}
+        phase={loadPhase}
+      />
     );
   }
 

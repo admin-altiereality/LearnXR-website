@@ -16,6 +16,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { getProxyAssetUrl } from '../utils/apiConfig';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
+import { Asset3DLoadingOverlay } from './Asset3DLoadingOverlay';
 
 interface AssetViewerWithSkyboxProps {
   assetUrl: string;
@@ -592,6 +593,8 @@ function AssetModel({
   const [gltf, setGltf] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
+  const [loadPhase, setLoadPhase] = useState<'downloading' | 'processing'>('downloading');
   const loaderRef = useRef<{ gltfLoader: GLTFLoader; dracoLoader: DRACOLoader } | null>(null);
   
   // Suppress unused warning - wireframeLineWidth reserved for future use
@@ -688,6 +691,8 @@ function AssetModel({
       setIsLoading(true);
       setError(null);
       setGltf(null);
+      setLoadPhase('downloading');
+      setDownloadProgress({ loaded: 0, total: 0 });
 
       try {
         // Validate that we have a URL
@@ -837,8 +842,12 @@ function AssetModel({
             },
             (progress) => {
               // Update progress
+              setDownloadProgress({ loaded: progress.loaded, total: progress.total });
               if (progress.total > 0) {
                 const percent = Math.round((progress.loaded / progress.total) * 100);
+                if (percent >= 100) {
+                  setLoadPhase('processing');
+                }
                 if (percent !== lastProgress && percent % 10 === 0) {
                   console.log(`📥 Loading progress: ${percent}% (${(progress.loaded / 1024 / 1024).toFixed(2)} MB / ${(progress.total / 1024 / 1024).toFixed(2)} MB)`);
                   lastProgress = percent;
@@ -998,7 +1007,13 @@ function AssetModel({
   }, []);
 
   if (isLoading) {
-    return <Loader />;
+    return (
+      <Asset3DLoadingOverlay
+        loaded={downloadProgress.loaded}
+        total={downloadProgress.total}
+        phase={loadPhase}
+      />
+    );
   }
 
   if (error || !gltf) {

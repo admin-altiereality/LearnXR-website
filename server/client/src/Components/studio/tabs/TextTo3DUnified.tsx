@@ -129,6 +129,13 @@ export const TextTo3DUnified = ({
   const [detecting, setDetecting] = useState(false);
   const [detectionProgress, setDetectionProgress] = useState(0);
   const [detectionMessage, setDetectionMessage] = useState('');
+  const [detectionProvider, setDetectionProvider] = useState<'openai' | 'n8n'>(() => {
+    try {
+      return localStorage.getItem('studio.detectionProvider') === 'n8n' ? 'n8n' : 'openai';
+    } catch {
+      return 'openai';
+    }
+  });
   const [manualPromptRows, setManualPromptRows] = useState<ManualPromptRow[]>(() => [
     createManualPromptRow(),
   ]);
@@ -478,10 +485,22 @@ export const TextTo3DUnified = ({
     setDetectionMessage('Analyzing script...');
 
     try {
-      const result = await avatarTo3dService.detect3DObjects(chapterId, topicId, language, explanationScript);
+      const result = await avatarTo3dService.detect3DObjects(chapterId, topicId, language, explanationScript, detectionProvider);
       setDetectionProgress(60);
 
-      if (!result.success || result.assets.length === 0) {
+      if (!result.success) {
+        setDetectionProgress(100);
+        setDetectionMessage('Detection failed');
+        const isQuotaIssue = /quota|rate limit|credits/i.test(result.error || '');
+        toast.error(
+          isQuotaIssue && detectionProvider === 'openai'
+            ? `${result.error} Try switching to the Custom LLM (n8n) provider above.`
+            : (result.error || 'Detection failed')
+        );
+        return;
+      }
+
+      if (result.assets.length === 0) {
         setDetectionProgress(100);
         setDetectionMessage('No 3D objects detected');
         toast.info('No 3D objects found. You can add them manually.');
@@ -1391,10 +1410,47 @@ export const TextTo3DUnified = ({
         <div className="space-y-4">
           {/* Script Input */}
           <div className="p-4 rounded-lg border border-purple-500/20 bg-purple-500/5">
-            <h3 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-              <Search className="w-4 h-4 text-purple-400" />
-              Detect 3D Objects from Script
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Search className="w-4 h-4 text-purple-400" />
+                Detect 3D Objects from Script
+              </h3>
+              <div className="flex items-center gap-1.5 rounded-lg border border-border bg-background/70 p-1" title="Which model detects objects in the script. Switch to Custom LLM if OpenAI credits are exhausted.">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetectionProvider('openai');
+                    try { localStorage.setItem('studio.detectionProvider', 'openai'); } catch { /* ignore */ }
+                  }}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    detectionProvider === 'openai'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  OpenAI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetectionProvider('n8n');
+                    try { localStorage.setItem('studio.detectionProvider', 'n8n'); } catch { /* ignore */ }
+                  }}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    detectionProvider === 'n8n'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  Custom LLM (n8n)
+                </button>
+              </div>
+            </div>
+            {detectionProvider === 'n8n' && (
+              <p className="text-xs text-muted-foreground mb-2">
+                Using the self-hosted model configured in n8n instead of OpenAI — useful when OpenAI credits are exhausted.
+              </p>
+            )}
             <textarea
               value={explanationScript}
               onChange={(e) => setExplanationScript(e.target.value)}

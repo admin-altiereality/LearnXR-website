@@ -111,8 +111,48 @@ router.post('/create-thread', validateFullAccess, async (req: Request, res: Resp
     const threadId = await service.createThread();
     res.json({ threadId });
   } catch (error: any) {
-    console.error(`[${requestId}] Error creating thread:`, error);
-    res.status(500).json({ error: error.message || 'Failed to create thread' });
+    // A bare 500 with the SDK's message told us nothing about WHY OpenAI refused, which made
+    // this endpoint's failures undiagnosable from the browser console alone. Surface the
+    // provider's own status/code/type, and distinguish "OpenAI is unavailable to us right now"
+    // (quota, rate limit, bad key — all operational, not bugs) from a genuine server fault,
+    // so the client can degrade quietly instead of reporting a hard error.
+    const status = Number(error?.status ?? error?.response?.status ?? 0);
+    const code = error?.code ?? error?.error?.code ?? null;
+    const type = error?.type ?? error?.error?.type ?? null;
+
+    console.error(`[${requestId}] Error creating thread:`, {
+      status,
+      code,
+      type,
+      message: error?.message,
+    });
+
+    // 404 is included deliberately. OpenAI now answers POST /v1/threads with a bodyless 404
+    // while chat.completions on the same key keeps working elsewhere in this codebase, which
+    // is the signature of the Assistants API (beta.threads / beta.assistants) having been
+    // retired rather than of anything wrong on our side. Either way it is a provider-side
+    // condition, so it must not be reported as a 500 from us.
+    const isUpstreamUnavailable =
+      status === 401 ||
+      status === 403 ||
+      status === 404 ||
+      status === 429 ||
+      status >= 500 ||
+      code === 'insufficient_quota' ||
+      type === 'insufficient_quota';
+
+    if (isUpstreamUnavailable) {
+      const reason =
+        code || type || (status === 404 ? 'assistants_api_unavailable' : `upstream_${status || 'error'}`);
+      res.status(503).json({
+        error: 'Assistant service unavailable',
+        reason,
+        message: error?.message || 'The assistant provider rejected the request.',
+      });
+      return;
+    }
+
+    res.status(500).json({ error: error?.message || 'Failed to create thread' });
   }
 });
 
