@@ -22,6 +22,7 @@ import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '..
 import { loadKrpanoScript, embedKrpano, removeKrpano } from '../lib/krpano/embedKrpano';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
 import { getKrpanoAssetScale, getCachedKrpanoAssetScale } from '../lib/krpano/measureGlbScale';
+import { ASSET_ANGULAR_SIZE_DEG, ASSET_DISTANCE_CM, angularSizeForCount } from '../lib/krpano/assetLayout';
 import { applyTeacherViewToImmersiveKrpano, applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
@@ -340,6 +341,16 @@ const toKrpanoThreeJsAssetUrl = (url: string): string => {
   if (url.startsWith('/assets/') || url.startsWith('blob:') || isRenderAssetUrl(url)) return url;
   return getProxyAssetUrlForThreejs(url);
 };
+
+/**
+ * How far from the viewer an asset will end up, which is what its scale must be computed
+ * against. An author placement (Street View tour stop) carries its own `depth`; anything else
+ * lands on the default arc built by assetLayout.computeAssetArcPlacements.
+ */
+function assetDistanceFor(placement?: { depth?: number }): number {
+  const depth = placement?.depth;
+  return typeof depth === 'number' && Number.isFinite(depth) && depth > 0 ? depth : ASSET_DISTANCE_CM;
+}
 
 function pickBestGlbUrl(asset: any): string {
   if (isRetiredMeshyAsset(asset)) return '';
@@ -1952,9 +1963,24 @@ const VRLessonPlayerInner = () => {
         // anything uncached embeds at scale=1 for now and gets live-corrected via
         // krpano's scripting API once measurement resolves, however long that takes
         // (see the measureUnscaledAssetsInBackground call after embedKrpano's onready).
+        // Assets sharing the default arc shrink once the arc gets crowded, so they must be
+        // scaled to that adjusted size rather than the nominal one. Author-placed assets sit
+        // off the arc and always get the full size.
+        const arcAngularSize = angularSizeForCount(
+          validEntries.filter((e) => e.placement?.ath === undefined && e.placement?.atv === undefined).length
+        );
         const assetPlacements = validEntries.map((e) => {
           if (e.placement?.scale !== undefined) return e.placement;
-          const cachedScale = getCachedKrpanoAssetScale(e.id);
+          const onArc = e.placement?.ath === undefined && e.placement?.atv === undefined;
+          // Scale against the distance this asset will actually sit at. An author-placed asset
+          // carries its own depth; everything else lands on the default arc. Sizing against a
+          // fixed linear target instead meant an asset authored at depth 500 rendered the same
+          // number of centimetres as one at 280 and so appeared far smaller.
+          const cachedScale = getCachedKrpanoAssetScale(
+            e.id,
+            assetDistanceFor(e.placement),
+            onArc ? arcAngularSize : ASSET_ANGULAR_SIZE_DEG
+          );
           return cachedScale !== null ? { ...e.placement, scale: cachedScale } : e.placement;
         });
         const assetInteractionIds = validEntries.map((e) => e.id);
@@ -2018,7 +2044,13 @@ const VRLessonPlayerInner = () => {
               // delaying the embed itself.
               validEntries.forEach((entry, i) => {
                 if (assetPlacements[i]?.scale !== undefined) return;
-                getKrpanoAssetScale(entry.url, entry.id).then((scale) => {
+                const onArc = entry.placement?.ath === undefined && entry.placement?.atv === undefined;
+                getKrpanoAssetScale(
+                  entry.url,
+                  entry.id,
+                  assetDistanceFor(entry.placement),
+                  onArc ? arcAngularSize : ASSET_ANGULAR_SIZE_DEG
+                ).then((scale) => {
                   if (cancelled) return;
                   try {
                     krpanoViewerRef.current?.call?.(`set(hotspot[asset_${i}].scale, ${scale});`);

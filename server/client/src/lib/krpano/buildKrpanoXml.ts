@@ -5,6 +5,8 @@
  * @see https://krpano.com/docu/xml/
  */
 
+import { ASSET_DISTANCE_CM, computeAssetArcPlacements } from './assetLayout';
+
 /** Look-at target in degrees (hlookat, vlookat) and optional FOV */
 export interface LookatTarget {
   h: number;
@@ -142,7 +144,11 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
     origin,
     webvr = true,
     hlookat: optH = 0,
-    vlookat: optV = -5,
+    // Level by default. This was -5, i.e. tilted 5° UP, which happened to bring the
+    // (incorrectly) overhead assets back toward centre and so masked the sign error in their
+    // placement. With assets now correctly biased below the view axis, a level horizon is the
+    // honest default; lessons that author their own intro lookat still win via lookatByPhase.
+    vlookat: optV = 0,
     fov: optFov = 90,
     lookatByPhase,
     hotspots = [],
@@ -232,6 +238,9 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   // baseColorFactor falls back to white and emissiveFactor stays [1,1,1] with no emissiveMap,
   // which self-illuminates the mesh pure white and makes it ignore scene lighting entirely.
   // Lighting is not involved — <threejs ambientlight> and the threejslight sun are both set above.
+  // Computed once for the whole set, because each asset's angle depends on how many there are.
+  const arcPlacements = computeAssetArcPlacements(safe3dEntries.length, { hlookat, vlookat });
+
   const threeJsHotspotBlocks = safe3dEntries
     .map(({ url, placement, interactionId }, i) => {
       const safeUrl = escapeXml(url);
@@ -253,11 +262,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
         const depth = placement.depth ?? 500;
         return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
       }
-      const col = i % 3;
-      const row = Math.floor(i / 3);
-      const tx = 40 + (col - 1) * 90;
-      const ty = -20 - row * 25;
-      const tz = 180 + row * 90;
+      // Arc placement, anchored to the entrance view — see assetLayout.ts. This replaces a
+      // 3-wide grid (`tx = 40 + (col-1)*90`, `tz = 180 + row*90`) with three defects: it was
+      // centred on tx=40 so a lone asset sat 15.5° left of where the learner was looking;
+      // stepping tz per row made row 1 both further and smaller, overlapping row 0 in azimuth
+      // AND elevation; and negative ty put every asset ABOVE eye level, floating overhead,
+      // because krpano's +y points down.
+      const { tx, ty, tz } = arcPlacements[i] ?? { tx: 0, ty: 0, tz: ASSET_DISTANCE_CM };
       return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
     })
     .join('\n');
