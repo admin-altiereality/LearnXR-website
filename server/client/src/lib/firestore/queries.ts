@@ -23,6 +23,8 @@ import {
 } from 'firebase/firestore';
 import { extractMcqOptions, resolveCorrectAnswerIndex } from '../mcq/answerIndex';
 import { db } from '../../config/firebase';
+import { cachedLookup } from '../cache/persistentCache';
+import { CATALOG_CACHE_TTL_MS } from '../firebase/queries/curriculumChapters';
 import {
   Chapter,
   ChapterVersion,
@@ -64,8 +66,19 @@ const COLLECTION_NAME = 'curriculum_chapters';
 // Works with existing flat curriculum_chapters collection
 // ============================================
 
-// Get unique curriculums from existing chapters
-export const getCurriculums = async (): Promise<Curriculum[]> => {
+/**
+ * Get unique curriculums from existing chapters.
+ *
+ * Cached for an hour on disk. Deriving distinct values means reading documents —
+ * here the whole of curriculum_chapters, the largest documents in the database —
+ * and this runs on every /studio/content mount. The list changes only when a chapter
+ * is created or re-tagged, so an hour of staleness is a fair trade for not rescanning
+ * the collection on every visit.
+ */
+export const getCurriculums = async (): Promise<Curriculum[]> =>
+  cachedLookup('catalog:curriculumOptions', CATALOG_CACHE_TTL_MS, getCurriculumsUncached);
+
+const getCurriculumsUncached = async (): Promise<Curriculum[]> => {
   try {
     const chaptersRef = collection(db, COLLECTION_NAME);
     const snapshot = await getDocs(chaptersRef);

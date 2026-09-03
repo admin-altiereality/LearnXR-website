@@ -33,7 +33,7 @@ import {
 import { db } from '../../../config/firebase';
 import type { CurriculumChapter } from '../../../types/firebase';
 import { invalidateLessonBundleCache } from '../../../services/firestore/getLessonBundle';
-import { persistentGet, persistentSet } from '../../cache/persistentCache';
+import { cachedLookup } from '../../cache/persistentCache';
 import type {
   LanguageCode,
   NormalizedChapter,
@@ -430,16 +430,10 @@ export async function fetchUnapprovedChapters(
  * An hour of staleness is the trade: a newly added curriculum shows up within the
  * hour, or immediately in a new session on a device that has not cached it.
  */
-const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
+export const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
 
-async function withCatalogCache<T>(key: string, load: () => Promise<T>): Promise<T> {
-  const cached = await persistentGet<T>(key);
-  if (cached !== null) return cached;
-
-  const value = await load();
-  void persistentSet(key, value, CATALOG_CACHE_TTL_MS);
-  return value;
-}
+const withCatalogCache = <T,>(key: string, load: () => Promise<T>): Promise<T> =>
+  cachedLookup(key, CATALOG_CACHE_TTL_MS, load);
 
 /**
  * Get unique curriculums from existing chapters

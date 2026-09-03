@@ -176,6 +176,23 @@ export async function persistentSet(key: string, value: unknown, ttlMs: number):
   );
 }
 
+/**
+ * Read-through cache for a derived lookup that is expensive to recompute.
+ *
+ * Intended for the "distinct values across a collection" queries: Firestore has no
+ * DISTINCT, so answering them means reading documents — in the worst case the whole
+ * of curriculum_chapters, whose documents are the largest in the database. The
+ * answers change only when a chapter is created or re-tagged.
+ */
+export async function cachedLookup<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  const cached = await persistentGet<T>(key);
+  if (cached !== null) return cached;
+
+  const value = await load();
+  void persistentSet(key, value, ttlMs);
+  return value;
+}
+
 export async function persistentDelete(key: string): Promise<void> {
   await runTransaction('readwrite', (store) => store.delete(key) as unknown as IDBRequest<undefined>);
 }
