@@ -15,6 +15,7 @@ import {
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { DRACO_DECODER_PATH } from '../lib/three/dracoDecoder';
 import { getProxyAssetUrl } from '../utils/apiConfig';
 
 // ============================================
@@ -111,7 +112,7 @@ function InteractiveAsset({ asset, isSelected, onSelect, transformMode, onTransf
 
     const loader = new GLTFLoader();
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('/draco/');
+    dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
     loader.setDRACOLoader(dracoLoader);
 
     setIsLoading(true);

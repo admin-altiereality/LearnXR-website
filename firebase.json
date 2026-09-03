@@ -59,6 +59,16 @@
         ]
       },
       {
+        "_comment": "3D models under public/ (avatar3.glb is 14MB). Deliberately a day rather than a year with immutable: these filenames are stable and are replaced in place, so immutable would pin a stale avatar on every returning device for a year. Hosting still serves ETags, so an unchanged model revalidates as a 304 and the bytes are not re-sent.",
+        "source": "**/*.@(glb|gltf|bin)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400"
+          }
+        ]
+      },
+      {
         "source": "/",
         "headers": [
           {

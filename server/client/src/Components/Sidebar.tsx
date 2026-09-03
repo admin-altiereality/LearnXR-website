@@ -127,17 +127,19 @@ const Sidebar = () => {
   const isPartner = userRole === 'partner';
   const [schoolCode, setSchoolCode] = useState<string | null>(null);
 
-  // Fetch school code for School Admin and Teacher
+  // Fetch school code for School Admin and Teacher.
+  // Keyed on the two ids actually read rather than on `profile`, which is a fresh
+  // object on every users/{uid} snapshot — so this re-read the school document on
+  // every unrelated profile change, on a component that renders on nearly every route.
+  const schoolId = profile?.school_id || profile?.managed_school_id;
   useEffect(() => {
-    if (!profile || (userRole !== 'school' && userRole !== 'teacher')) return;
-    const schoolId = profile.school_id || profile.managed_school_id;
-    if (!schoolId) return;
+    if (!schoolId || (userRole !== 'school' && userRole !== 'teacher')) return;
     getDoc(doc(db, 'schools', schoolId))
       .then((snap) => {
         if (snap.exists()) setSchoolCode(snap.data()?.schoolCode || null);
       })
       .catch(() => {});
-  }, [profile, userRole]);
+  }, [schoolId, userRole]);
   const isAdmin = userRole === 'admin';
   const isSuperadmin = userRole === 'superadmin';
   const isAdminOrSuperadmin = isAdmin || isSuperadmin;

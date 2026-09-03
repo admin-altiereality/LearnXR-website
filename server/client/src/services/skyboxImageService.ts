@@ -6,6 +6,7 @@
 
 import { storage, db } from '../config/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { immutableUploadMetadata } from '../utils/firebaseStorage';
 import { collection, doc, updateDoc, setDoc, serverTimestamp, getDoc, query, where, getDocs } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -108,7 +109,7 @@ export async function uploadSkyboxImage(
 
     // Upload to Firebase Storage
     console.log('📤 Uploading skybox image to:', storagePath);
-    await uploadBytes(storageRef, file);
+    await uploadBytes(storageRef, file, immutableUploadMetadata(file.type));
     const downloadUrl = await getDownloadURL(storageRef);
     console.log('✅ Skybox image uploaded:', downloadUrl);
 

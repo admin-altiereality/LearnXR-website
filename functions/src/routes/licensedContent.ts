@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import express, { Request, Response } from 'express';
 import * as admin from 'firebase-admin';
 import { getUserProfile, normalizeUserRole, UserProfile } from '../middleware/rbac.js';
+import { cacheable } from '../utils/cacheHeaders';
 import {
   buildLicensedContentDocument,
   canSetMappingReviewStatus,
@@ -232,7 +233,7 @@ async function loadAccessibleContent(
   return { profile, id, content };
 }
 
-router.get('/catalog', async (req, res) => {
+router.get('/catalog', cacheable({ maxAge: 300 }), async (req, res) => {
   try {
     const profile = await requireProfile(req, res);
     if (!profile) return;
@@ -320,7 +321,7 @@ router.get('/catalog', async (req, res) => {
   }
 });
 
-router.get('/lesson-links', async (req, res) => {
+router.get('/lesson-links', cacheable({ maxAge: 60, staleWhileRevalidate: 300 }), async (req, res) => {
   try {
     const profile = await requireProfile(req, res);
     if (!profile) return;
@@ -381,7 +382,7 @@ async function createLaunchManifest(id: string, content: Record<string, unknown>
   };
 }
 
-router.get('/:id/manifest', async (req, res) => {
+router.get('/:id/manifest', cacheable({ maxAge: 300 }), async (req, res) => {
   try {
     const loaded = await loadAccessibleContent(req, res);
     if (!loaded) return;

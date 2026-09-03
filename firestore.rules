@@ -6,18 +6,47 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    // ============================================
+    // Identity helpers
+    //
+    // These read the ID token first and only fall back to the user document.
+    //
+    // A get() inside a rule is billed as a document read, and these helpers run on
+    // essentially every request the app makes, so the old implementation added a
+    // read of users/{uid} to almost every operation. The mirrored fields now live in
+    // Auth custom claims (functions/src/utils/syncUserRoleClaim.ts), kept current by
+    // the syncUserClaimsOnWrite trigger.
+    //
+    // The Firestore fallback is deliberate and temporary: it keeps users whose token
+    // predates the claims backfill from being locked out. Remove it once
+    // functions/scripts/backfillUserClaims.ts has run and tokens have rotated
+    // (custom claims reach a client on its next token refresh, about an hour).
+    //
+    // Genuinely relational checks below — partnerOwnsSchool, canTeacherApproveStudent,
+    // studentInClass — still use get(), because they read OTHER documents and cannot
+    // be answered from a token.
+    // ============================================
+
+    function userDocField(field) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data[field]
+        : null;
+    }
+
+    function claimOrUserDoc(field) {
+      return request.auth == null
+        ? null
+        : (field in request.auth.token ? request.auth.token[field] : userDocField(field));
+    }
+
     // Helper function to check if user is admin (safe - handles missing user doc)
     function isAdmin() {
-      return request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return getUserRole() == 'admin';
     }
     
     // Helper function to check if user is superadmin (safe - handles missing user doc)
     function isSuperadmin() {
-      return request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+      return getUserRole() == 'superadmin';
     }
     
     // Helper function to check if user is admin or superadmin
@@ -27,9 +56,7 @@ service cloud.firestore {
     
     // Helper function to check if user is associate (lesson refinement role)
     function isAssociate() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'associate';
+      return getUserRole() == 'associate';
     }
     
     // Helper: admin, superadmin, or associate (for lesson edit access)
@@ -39,15 +66,11 @@ service cloud.firestore {
 
     // Channel partner operator (demo schools / teacher approvals; no deletes)
     function isPartner() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'partner';
+      return getUserRole() == 'partner';
     }
 
     function getUserPartnerId() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ?
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.partner_id :
-        null;
+      return claimOrUserDoc('partner_id');
     }
 
     function partnerOwnsSchool(schoolId) {
@@ -77,16 +100,17 @@ service cloud.firestore {
     
     // Get user's school_id (safe - returns null if missing)
     function getUserSchoolId() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id : 
-        null;
+      return claimOrUserDoc('school_id');
     }
     
     // Get user's role (safe - returns null if user doc missing)
     function getUserRole() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : 
-        null;
+      return claimOrUserDoc('role');
+    }
+
+    // For principals: the school they administer.
+    function getUserManagedSchoolId() {
+      return claimOrUserDoc('managed_school_id');
     }
     
     // Check if user can access school data (expression-only: no if/else in rules functions)
@@ -94,7 +118,7 @@ service cloud.firestore {
     function canAccessSchool(schoolId) {
       return isAuthenticated() && (
         (getUserRole() == 'superadmin' || getUserRole() == 'admin') ||
-        (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == schoolId) ||
+        (getUserRole() == 'principal' && getUserManagedSchoolId() == schoolId) ||
         (getUserSchoolId() == schoolId) ||
         partnerOwnsSchool(schoolId)
       );
@@ -105,7 +129,7 @@ service cloud.firestore {
       return isAuthenticated() && (
         studentId == request.auth.uid ||
         (getUserRole() == 'superadmin' || getUserRole() == 'admin') ||
-        (getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == studentSchoolId) ||
+        (getUserRole() == 'principal' && getUserManagedSchoolId() == studentSchoolId) ||
         (getUserRole() == 'teacher' && getUserSchoolId() == studentSchoolId &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_class_ids != null &&
          get(/databases/$(database)/documents/users/$(studentId)).data.class_ids != null &&
@@ -119,9 +143,9 @@ service cloud.firestore {
     // Expression-only: no if/else or let statements
     function canTeacherApproveStudent(studentId) {
       return getUserRole() == 'teacher' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+        getUserSchoolId() != null &&
         get(/databases/$(database)/documents/users/$(studentId)).data.school_id != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(studentId)).data.school_id &&
+        getUserSchoolId() == get(/databases/$(database)/documents/users/$(studentId)).data.school_id &&
         (
           // For PENDING students: Allow approval (they don't have classes yet)
           get(/databases/$(database)/documents/users/$(studentId)).data.approvalStatus == 'pending' ||
@@ -146,10 +170,10 @@ service cloud.firestore {
       return isAuthenticated() &&
         (getUserRole() == 'school' || getUserRole() == 'principal') &&
         // Get approver's school_id (principal uses managed_school_id, school uses school_id)
-        ((getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == get(/databases/$(database)/documents/users/$(studentId)).data.school_id) ||
-         (getUserRole() == 'school' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(studentId)).data.school_id)) &&
+        ((getUserRole() == 'principal' && getUserManagedSchoolId() != null &&
+          getUserManagedSchoolId() == get(/databases/$(database)/documents/users/$(studentId)).data.school_id) ||
+         (getUserRole() == 'school' && getUserSchoolId() != null &&
+          getUserSchoolId() == get(/databases/$(database)/documents/users/$(studentId)).data.school_id)) &&
         get(/databases/$(database)/documents/users/$(studentId)).data.school_id != null;
     }
     
@@ -165,13 +189,13 @@ service cloud.firestore {
         (teacherApprovalStatus == 'pending' ||
          // For APPROVED teachers: Only allow if school_id matches approver's school
          (getUserRole() == 'principal' && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null &&
+          getUserManagedSchoolId() != null &&
           teacherSchoolId != null &&
-          teacherSchoolId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id) ||
+          teacherSchoolId == getUserManagedSchoolId()) ||
          (getUserRole() == 'school' && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+          getUserSchoolId() != null &&
           teacherSchoolId != null &&
-          teacherSchoolId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id));
+          teacherSchoolId == getUserSchoolId()));
     }
     
     // Helper function to check if school admin/principal can approve teacher (hierarchical approval)
@@ -182,18 +206,18 @@ service cloud.firestore {
       return isAuthenticated() &&
         (getUserRole() == 'school' || getUserRole() == 'principal') &&
         // Get approver's school_id (principal uses managed_school_id, school uses school_id)
-        ((getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null) ||
-         (getUserRole() == 'school' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null)) &&
+        ((getUserRole() == 'principal' && getUserManagedSchoolId() != null) ||
+         (getUserRole() == 'school' && getUserSchoolId() != null)) &&
         (
           // For PENDING teachers: Allow approval (they might not have school_id yet, or it might be different)
           get(/databases/$(database)/documents/users/$(teacherId)).data.approvalStatus == 'pending' ||
           // For APPROVED teachers: Check if teacher's school_id matches approver's school_id
           (getUserRole() == 'principal' && 
            get(/databases/$(database)/documents/users/$(teacherId)).data.school_id != null &&
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id) ||
+           getUserManagedSchoolId() == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id) ||
           (getUserRole() == 'school' && 
            get(/databases/$(database)/documents/users/$(teacherId)).data.school_id != null &&
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id)
+           getUserSchoolId() == get(/databases/$(database)/documents/users/$(teacherId)).data.school_id)
         );
     }
     
@@ -218,17 +242,17 @@ service cloud.firestore {
                      (getUserRole() == 'teacher' && resource.data.role == 'teacher' && 
                       resource.data.school_id != null &&
                       exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id) ||
+                      getUserSchoolId() == resource.data.school_id) ||
                      // School admin/principal can read students in their school (simplified for collection queries)
                      // For collection queries: Firestore can validate this at query time
                      (resource.data.role == 'student' && 
                       resource.data.school_id != null &&
                       isAuthenticated() &&
                       exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-                      ((get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'principal' && 
-                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
-                       (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'school' && 
-                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id))) ||
+                      ((getUserRole() == 'principal' && 
+                        getUserManagedSchoolId() == resource.data.school_id) ||
+                       (getUserRole() == 'school' && 
+                        getUserSchoolId() == resource.data.school_id))) ||
                      // School admin/principal can read teachers in their school
                      // Use simplified helper function for better collection query performance
                      ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
@@ -266,9 +290,9 @@ service cloud.firestore {
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
                        // Teacher can update class_ids for students in their school (for assigning students to their classes)
                        (getUserRole() == 'teacher' && resource.data.role == 'student' && 
-                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+                        getUserSchoolId() != null &&
                         resource.data.school_id != null &&
-                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
+                        getUserSchoolId() == resource.data.school_id &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['class_ids', 'updatedAt'])) ||
                        // School admin/principal can approve/reject students in their school (allows school_id update too)
                        ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'student' && canSchoolApproveStudent(userId) && 
@@ -285,12 +309,12 @@ service cloud.firestore {
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'rejectedBy', 'rejectedAt', 'school_id', 'updatedAt'])) ||
                        // School admin/principal can update managed_class_ids for teachers in their school (for class assignment)
                        ((getUserRole() == 'school' || getUserRole() == 'principal') && resource.data.role == 'teacher' && 
-                        ((getUserRole() == 'principal' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id != null &&
+                        ((getUserRole() == 'principal' && getUserManagedSchoolId() != null &&
                           resource.data.school_id != null &&
-                          resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id) ||
-                         (getUserRole() == 'school' && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
+                          resource.data.school_id == getUserManagedSchoolId()) ||
+                         (getUserRole() == 'school' && getUserSchoolId() != null &&
                           resource.data.school_id != null &&
-                          resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id)) &&
+                          resource.data.school_id == getUserSchoolId())) &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['managed_class_ids', 'updatedAt']));
       
       allow delete: if isSuperadmin();
@@ -626,8 +650,8 @@ service cloud.firestore {
          resource.data.school_id != null && 
          getUserRole() == 'teacher' &&
          // Teacher must be in the same school as the class
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
+         getUserSchoolId() != null &&
+         getUserSchoolId() == resource.data.school_id &&
          request.resource.data.school_id == resource.data.school_id &&
          // Teacher must be managing the class (in teacher_ids) to update it
          resource.data.teacher_ids != null &&
@@ -682,7 +706,7 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/classes/$(classId)) &&
         get(/databases/$(database)/documents/classes/$(classId)).data.school_id == schoolId &&
         (
-          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == schoolId &&
+          (getUserSchoolId() == schoolId &&
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids != null &&
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.class_ids.hasAny([classId])) ||
           (get(/databases/$(database)/documents/classes/$(classId)).data.student_ids != null &&
@@ -691,11 +715,14 @@ service cloud.firestore {
     }
     // Helper: authenticated student in same school (session code is the secret; client still checks class membership)
     function studentSameSchool(sessionSchoolId) {
+      // No exists() guard: getUserRole() already returns null for a caller with
+      // neither a role claim nor a user document, so the role check below fails
+      // closed. Keeping the guard would re-read users/{uid} and undo the point of
+      // reading the role from the token.
       return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         getUserRole() == 'student' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == sessionSchoolId;
+        getUserSchoolId() != null &&
+        getUserSchoolId() == sessionSchoolId;
     }
     // Host roles for an existing class session (owner, class teacher, school/principal, admin)
     function canHostClassSession(sessionData) {
@@ -705,7 +732,7 @@ service cloud.firestore {
         (teacherManagesClass(sessionData.class_id) && getUserSchoolId() == sessionData.school_id) ||
         (getUserRole() == 'school' && getUserSchoolId() == sessionData.school_id) ||
         (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == sessionData.school_id) ||
+          getUserManagedSchoolId() == sessionData.school_id) ||
         partnerOwnsSchool(sessionData.school_id)
       );
     }
@@ -733,7 +760,7 @@ service cloud.firestore {
           (teacherManagesClass(request.resource.data.class_id) && getUserSchoolId() == request.resource.data.school_id) ||
           (isAdminOrSuperadmin() && canAccessSchool(request.resource.data.school_id)) ||
           (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == request.resource.data.school_id) ||
+            getUserManagedSchoolId() == request.resource.data.school_id) ||
           (getUserRole() == 'school' && getUserSchoolId() == request.resource.data.school_id)
         );
       // Owner, managing teacher, school/principal hosts, students in class/school, admins,
@@ -758,7 +785,7 @@ service cloud.firestore {
         isAdminOrSuperadmin() ||
         (getUserRole() == 'school' && getUserSchoolId() == resource.data.school_id) ||
         (getUserRole() == 'principal' && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id)
+          getUserManagedSchoolId() == resource.data.school_id)
       );
       // Progress subcollection: each student writes their own doc; hosts read all
       match /progress/{studentUid} {
@@ -795,7 +822,7 @@ service cloud.firestore {
          resource.data.school_id != null &&
          resource.data.class_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
+         getUserSchoolId() == resource.data.school_id &&
          exists(/databases/$(database)/documents/classes/$(resource.data.class_id)) &&
          (
            // Check if teacher manages the class
@@ -809,12 +836,12 @@ service cloud.firestore {
         (getUserRole() == 'principal' && 
          resource.data.school_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
+         getUserManagedSchoolId() == resource.data.school_id) ||
         // School admins can read launches for students in their school
         (getUserRole() == 'school' && 
          resource.data.school_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id) ||
+         getUserSchoolId() == resource.data.school_id) ||
         // Fallback: use canAccessStudent for other cases
         canAccessStudent(resource.data.student_id, resource.data.school_id)
       );
@@ -836,7 +863,7 @@ service cloud.firestore {
          resource.data.school_id != null &&
          resource.data.class_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id &&
+         getUserSchoolId() == resource.data.school_id &&
          exists(/databases/$(database)/documents/classes/$(resource.data.class_id)) &&
          (
            // Check if teacher manages the class
@@ -850,12 +877,12 @@ service cloud.firestore {
         (getUserRole() == 'principal' && 
          resource.data.school_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
+         getUserManagedSchoolId() == resource.data.school_id) ||
         // School admins can read scores for students in their school
         (getUserRole() == 'school' && 
          resource.data.school_id != null &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id == resource.data.school_id) ||
+         getUserSchoolId() == resource.data.school_id) ||
         // Fallback: use canAccessStudent for other cases
         canAccessStudent(resource.data.student_id, resource.data.school_id)
       );
@@ -894,15 +921,15 @@ service cloud.firestore {
       // School/principal can read requests for their school; admin/superadmin can read all
       allow read: if isAuthenticated() && (
         isAdminOrSuperadmin() ||
-        (getUserRole() == 'school' && resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id) ||
-        (getUserRole() == 'principal' && resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id)
+        (getUserRole() == 'school' && resource.data.school_id == getUserSchoolId()) ||
+        (getUserRole() == 'principal' && resource.data.school_id == getUserManagedSchoolId())
       );
       // School/principal can create requests for their school
       allow create: if isAuthenticated() && 
         (getUserRole() == 'school' || getUserRole() == 'principal') &&
         request.resource.data.school_id != null &&
-        ((getUserRole() == 'school' && request.resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school_id) ||
-         (getUserRole() == 'principal' && request.resource.data.school_id == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id)) &&
+        ((getUserRole() == 'school' && request.resource.data.school_id == getUserSchoolId()) ||
+         (getUserRole() == 'principal' && request.resource.data.school_id == getUserManagedSchoolId())) &&
         request.resource.data.requested_by == request.auth.uid;
       // Only admin/superadmin can update (approve/reject)
       allow update: if isAdminOrSuperadmin();
@@ -1014,7 +1041,7 @@ service cloud.firestore {
             (getUserRole() == 'school' && getUserSchoolId() == resource.data.school_id) ||
             (getUserRole() == 'principal' &&
               exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.managed_school_id == resource.data.school_id) ||
+              getUserManagedSchoolId() == resource.data.school_id) ||
             (getUserRole() == 'teacher' && getUserSchoolId() == resource.data.school_id) ||
             partnerOwnsSchool(resource.data.school_id)
           );

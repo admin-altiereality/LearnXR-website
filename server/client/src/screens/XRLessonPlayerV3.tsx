@@ -22,6 +22,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { DRACO_DECODER_PATH } from '../lib/three/dracoDecoder';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
@@ -1853,7 +1854,7 @@ const XRLessonPlayerV3: React.FC = () => {
         // Setup loaders
         const gltfLoader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+        dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
         gltfLoader.setDRACOLoader(dracoLoader);
         
         // Helper to load as equirectangular image
@@ -2377,7 +2378,7 @@ const XRLessonPlayerV3: React.FC = () => {
     
     // DRACO loader for compressed geometry (optional, but improves performance)
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
     dracoLoader.preload(); // Preload decoder for faster loading
     gltfLoader.setDRACOLoader(dracoLoader);
     

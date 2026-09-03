@@ -5,6 +5,7 @@
  */
 
 import { ref, uploadBytes } from 'firebase/storage';
+import { IMMUTABLE_ASSET_CACHE_CONTROL } from '../../utils/firebaseStorage';
 import { storage, db } from '../../config/firebase';
 import { collection, doc } from 'firebase/firestore';
 import { validateFile } from './validators';
@@ -60,6 +61,7 @@ export class AssetUploadService {
       await retryOperation(
         async () => {
           const metadata = {
+            cacheControl: IMMUTABLE_ASSET_CACHE_CONTROL,
             contentType: file.type || this.getContentType(file.name),
             customMetadata: {
               originalFileName: file.name,

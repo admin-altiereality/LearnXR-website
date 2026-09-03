@@ -16,6 +16,7 @@ import { toast } from 'react-toastify';
 import { getChapterImages } from '../../../lib/firestore/queries';
 import { ChapterImage } from '../../../types/curriculum';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { immutableUploadMetadata } from '../../../utils/firebaseStorage';
 import { storage, db } from '../../../config/firebase';
 import { collection, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -278,7 +279,7 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
         const storagePath = `chapter_images/${chapterId}/${topicId}/${fileName}`;
         const storageRef = ref(storage, storagePath);
         
-        await uploadBytes(storageRef, file);
+        await uploadBytes(storageRef, file, immutableUploadMetadata(file.type));
         const downloadUrl = await getDownloadURL(storageRef);
         
         // Save to chapter_images collection

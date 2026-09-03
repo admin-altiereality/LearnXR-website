@@ -7,6 +7,7 @@
 
 import { Router, Request, Response } from 'express';
 import * as admin from 'firebase-admin';
+import { cacheable } from '../utils/cacheHeaders';
 
 const router = Router();
 const COLLECTION_CHAPTERS = 'curriculum_chapters';
@@ -160,7 +161,7 @@ function extractIds(chapterData: any, topicId: string | undefined, lang: string)
   };
 }
 
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', cacheable({ maxAge: 60, staleWhileRevalidate: 300 }), async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const chapterId = (req.query.chapterId as string)?.trim();
   const topicId = (req.query.topicId as string)?.trim();
@@ -204,25 +205,18 @@ router.get('/', async (req: Request, res: Response) => {
         .where('chapter_id', '==', chapterId)
         .where('topic_id', '==', effectiveTopicIdForQuery)
         .get(),
+      // getAll fetches every document in one round trip. Issuing up to 30 separate
+      // .get() calls cost the same in reads but paid the latency 30 times over, and
+      // this endpoint is what the mobile WebView player blocks on.
       safeTtsIds.length > 0
-        ? Promise.all(
-            safeTtsIds.map((id) =>
-              db
-                .collection(COLLECTION_CHAPTER_TTS)
-                .doc(id)
-                .get()
-            )
-          ).then((snaps) => snaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() })))
+        ? db
+            .getAll(...safeTtsIds.map((id) => db.collection(COLLECTION_CHAPTER_TTS).doc(id)))
+            .then((snaps) => snaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() })))
         : Promise.resolve([]),
       safeMcqIds.length > 0
-        ? Promise.all(
-            safeMcqIds.map((id) =>
-              db
-                .collection(COLLECTION_CHAPTER_MCQS)
-                .doc(id)
-                .get()
-            )
-          ).then((snaps) => snaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() })))
+        ? db
+            .getAll(...safeMcqIds.map((id) => db.collection(COLLECTION_CHAPTER_MCQS).doc(id)))
+            .then((snaps) => snaps.filter((s) => s.exists).map((s) => ({ id: s.id, ...s.data() })))
         : Promise.resolve([]),
     ]);
 

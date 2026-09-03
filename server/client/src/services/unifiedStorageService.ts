@@ -27,7 +27,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { getStorageWithFallback } from '../utils/firebaseStorage';
+import { getStorageWithFallback, immutableUploadMetadata } from '../utils/firebaseStorage';
 import { v4 as uuidv4 } from 'uuid';
 import type { 
   Job, 
@@ -319,7 +319,9 @@ export class UnifiedStorageService {
       const storageRef = ref(this.storage, `${jobPath}/${filename}`);
 
       // Upload with progress tracking
-      const uploadTask = uploadBytesResumable(storageRef, skyboxData);
+      // No contentType override: the Blob already carries one, and 'hdr' has no
+      // image/* type to synthesise. Only the cache lifetime is being added here.
+      const uploadTask = uploadBytesResumable(storageRef, skyboxData, immutableUploadMetadata());
       
       // Wait for upload to complete
       await new Promise<void>((resolve, reject) => {
@@ -364,7 +366,7 @@ export class UnifiedStorageService {
       const storageRef = ref(this.storage, `${jobPath}/${filename}`);
 
       // Upload with progress tracking
-      const uploadTask = uploadBytesResumable(storageRef, meshData);
+      const uploadTask = uploadBytesResumable(storageRef, meshData, immutableUploadMetadata());
       
       // Wait for upload to complete
       await new Promise<void>((resolve, reject) => {

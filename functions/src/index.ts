@@ -4,12 +4,14 @@
  * All routes are in separate modules loaded lazily
  */
 
+import compression from 'compression';
 import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import * as admin from 'firebase-admin';
 import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
+import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { authenticateUser } from './middleware/auth';
 import { requestLogging } from './middleware/logging';
@@ -17,6 +19,7 @@ import { pathNormalization } from './middleware/pathNormalization';
 import { initializeAdmin } from './utils/services';
 import { syncAllQueues } from './services/n8nLessonBuilderQueue';
 import { enforceLicensedProviderExpiry } from './services/licensedContentExpiry';
+import { claimFieldsChanged, syncUserRoleClaims } from './utils/syncUserRoleClaim';
 
 // Define secrets for Firebase Functions v2
 // Note: These must match the secret names set via firebase functions:secrets:set
@@ -98,6 +101,24 @@ const getApp = (): express.Application => {
       res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
       next();
     });
+
+    // gzip/brotli responses. Lesson bundles are large, highly repetitive JSON (the
+    // chapter document alone carries every topic with its full id arrays), so this
+    // is most of the bytes on the wire for the read paths. The Express server at
+    // server/src/server.ts has always had this; the Functions app never did.
+    // `filter` keeps the default (skips already-compressed types) but also honours
+    // an explicit `x-no-compression` request header for debugging.
+    app.use(
+      compression({
+        filter: (req: Request, res: Response) =>
+          req.headers['x-no-compression'] ? false : compression.filter(req, res),
+      })
+    );
+
+    // Weak ETags on JSON responses so a revalidation can answer 304 instead of
+    // re-sending the body. This is Express's default; it is set explicitly so that
+    // the read paths below can rely on it rather than on a default staying put.
+    app.set('etag', 'weak');
 
     app.use(express.json({ limit: '1mb' }));
 
@@ -533,5 +554,46 @@ export const enforceLicensedContentExpiry = onSchedule(
     initializeAdmin();
     const result = await enforceLicensedProviderExpiry();
     console.log('Licensed provider expiry lifecycle complete:', result);
+  },
+);
+
+/**
+ * Keep Auth custom claims in step with the user document.
+ *
+ * Security rules read `request.auth.token.role` and friends instead of reading
+ * users/{uid} on every request, which removes a billed document read from nearly
+ * every operation the app performs. That only holds if the token is kept current, so
+ * any write that changes a mirrored field re-issues the claims here.
+ *
+ * The client notices via `claims_updated_at` and forces a token refresh; without that
+ * a role change would not take effect until the ID token rotated on its own (~1h).
+ */
+export const syncUserClaimsOnWrite = onDocumentUpdated(
+  {
+    document: 'users/{uid}',
+    region: 'us-central1',
+    memory: '256MiB',
+    timeoutSeconds: 60,
+  },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after || !claimFieldsChanged(before, after)) return;
+
+    initializeAdmin();
+    const uid = event.params.uid;
+    try {
+      const claims = await syncUserRoleClaims(uid);
+      console.log(`[syncUserClaimsOnWrite] Updated claims for ${uid}:`, claims);
+      // Record the write on the document so the client can compare it against its
+      // own token and refresh. Written with merge so nothing else is disturbed.
+      await admin
+        .firestore()
+        .collection('users')
+        .doc(uid)
+        .set({ claims_updated_at: claims.claims_updated_at }, { merge: true });
+    } catch (error) {
+      console.error(`[syncUserClaimsOnWrite] Failed for ${uid}:`, error);
+    }
   },
 );

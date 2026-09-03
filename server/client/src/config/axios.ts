@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { auth } from './firebase';
 import { productionLogger } from '../services/productionLogger';
+import { resolveProductionApiBase } from '../utils/apiConfig';
 
 // Debug helper — development only
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
@@ -39,10 +40,9 @@ const getApiBaseUrl = () => {
     // If we're not on localhost but the URL is localhost, use production instead
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
-      const region = 'us-central1';
-      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-      const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
-      console.log('🌐 Using production Firebase Functions:', productionUrl);
+      const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
+      const productionUrl = resolveProductionApiBase(projectId);
+      console.log('🌐 Using production API base:', productionUrl);
       return productionUrl;
     }
     console.log('🌐 Using explicit API base URL from VITE_API_BASE_URL:', explicitUrl);
@@ -56,11 +56,12 @@ const getApiBaseUrl = () => {
     return localUrl;
   }
   
-  // Use Firebase Functions in production/preview (default)
-  const region = 'us-central1';
+  // Production/preview: same-origin through the Hosting CDN where the rewrite exists,
+  // otherwise straight to the function (see resolveProductionApiBase).
   const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-  const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
-  console.log('🌐 Using production Firebase Functions:', productionUrl, {
+  const productionUrl = resolveProductionApiBase(projectId);
+  console.log('🌐 Using production API base:', productionUrl, {
+    sameOrigin: productionUrl.startsWith(window.location.origin),
     hostname: typeof window !== 'undefined' ? window.location.hostname : 'server',
     isLocalhost,
     isDev: import.meta.env.DEV,

@@ -1,4 +1,6 @@
-const RENDER_ASSET_SW_VERSION = '20260706-bridge-4';
+// Bumped whenever render-asset-sw.js changes; the query string is what forces an
+// update, since the worker is registered with updateViaCache: 'none'.
+const RENDER_ASSET_SW_VERSION = '20260903-cache-1';
 const RENDER_ASSET_BRIDGE_PREFIX = '/__learnxr_render_asset__';
 
 let serviceWorkerReadyPromise: Promise<boolean> | null = null;
@@ -52,11 +54,20 @@ export async function ensureRenderAssetBridgeReady(): Promise<boolean> {
   return serviceWorkerReadyPromise;
 }
 
+/**
+ * Wrap a render-asset URL in the same-origin bridge path the service worker intercepts.
+ *
+ * The whole absolute URL is encoded into one path segment, rather than being split
+ * into {assetId}/{token} for the worker to reassemble. Reassembly required the worker
+ * to know the API base, and a service worker has no access to the Vite env — it was
+ * guessing from the hostname, which is wrong on any Firebase site whose config lacks
+ * the /api rewrite (firebase.lexrn1.json has only the SPA catch-all, so /api would
+ * have resolved to index.html and served HTML as a GLB). The URL stored in Firestore
+ * is already correct for its environment, so carrying it verbatim removes the guess.
+ *
+ * The trailing `/model.glb` is literal and must stay: krpano's utils.spliturl() reads
+ * the extension off the end of the path to decide the loader.
+ */
 export function toRenderAssetBridgeUrl(renderUrl: string): string {
-  const match = renderUrl.match(/\/render-asset\/([^/]+)\/([^/]+)\/(model|animated_model)\.glb\/?$/i);
-  if (match) {
-    return `${RENDER_ASSET_BRIDGE_PREFIX}/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}/${match[3]}.glb`;
-  }
-
   return `${RENDER_ASSET_BRIDGE_PREFIX}/${encodeURIComponent(renderUrl)}/model.glb`;
 }

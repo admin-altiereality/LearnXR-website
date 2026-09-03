@@ -87,6 +87,56 @@ export const useModal = () => {
   return context;
 };
 
+/**
+ * Map a `users/{uid}` document onto UserProfile.
+ *
+ * This used to be written out three times — in fetchProfile, in the
+ * onAuthStateChanged handler, and in the realtime listener — and the copies had
+ * drifted: the listener's version omitted `partner_id`, so a partner's id was
+ * present right after sign-in and then silently dropped the moment the snapshot
+ * re-emitted. One mapping means that cannot happen again.
+ *
+ * `authFallback` supplies the Firebase Auth values used when the document has no
+ * email/displayName of its own.
+ */
+function mapUserProfile(
+  uid: string,
+  data: Record<string, any>,
+  authFallback: { email?: string | null; displayName?: string | null } = {}
+): UserProfile {
+  return {
+    uid,
+    email: data.email || authFallback.email || '',
+    displayName: data.displayName || data.name || authFallback.displayName || '',
+    name: data.name || data.displayName || authFallback.displayName || '',
+    firstName: data.firstName,
+    role: normalizeUserRole(data.role),
+    approvalStatus: data.approvalStatus || null,
+    createdAt: data.createdAt || new Date().toISOString(),
+    updatedAt: data.updatedAt,
+    age: data.age,
+    class: data.class,
+    curriculum: data.curriculum,
+    school: data.school,
+    onboardingCompleted: data.onboardingCompleted || false,
+    onboardingCompletedAt: data.onboardingCompletedAt,
+    userType: data.userType,
+    teamSize: data.teamSize,
+    usageType: data.usageType,
+    newsletterSubscription: data.newsletterSubscription,
+    // LMS-specific fields
+    school_id: data.school_id,
+    class_ids: data.class_ids,
+    teacher_id: data.teacher_id,
+    managed_class_ids: data.managed_class_ids,
+    managed_school_id: data.managed_school_id,
+    partner_id: data.partner_id,
+    isGuest: data.isGuest || false,
+    isDemo: data.isDemo || false,
+    demoLocation: data.demoLocation,
+  };
+}
+
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -135,37 +185,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const userDoc = await getDoc(userDocRef);
       
       if (userDoc.exists()) {
-        const data = userDoc.data();
-        return {
-          uid,
-          email: data.email || '',
-          displayName: data.displayName || data.name || '',
-          name: data.name || data.displayName || '',
-          role: normalizeUserRole(data.role),
-          approvalStatus: data.approvalStatus || null,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt,
-          age: data.age,
-          class: data.class,
-          curriculum: data.curriculum,
-          school: data.school,
-          onboardingCompleted: data.onboardingCompleted || false,
-          onboardingCompletedAt: data.onboardingCompletedAt,
-          userType: data.userType,
-          teamSize: data.teamSize,
-          usageType: data.usageType,
-          newsletterSubscription: data.newsletterSubscription,
-          // LMS-specific fields
-          school_id: data.school_id,
-          class_ids: data.class_ids,
-          teacher_id: data.teacher_id,
-          managed_class_ids: data.managed_class_ids,
-          managed_school_id: data.managed_school_id,
-          partner_id: data.partner_id,
-          isGuest: data.isGuest || false,
-          isDemo: data.isDemo || false,
-          demoLocation: data.demoLocation,
-        };
+        return mapUserProfile(uid, userDoc.data());
       }
       return null;
     } catch (error) {
@@ -225,59 +245,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       async (firebaseUser) => {
         if (firebaseUser) {
           setUser(firebaseUser);
+          // The profile itself is delivered by the realtime listener below, which
+          // fires with the document immediately. Fetching it here as well meant two
+          // network reads of users/{uid} on every single page load for the same data.
+          // profileLoading stays true until that first snapshot lands, so RoleGuard
+          // and the login screens still wait for a profile exactly as before.
           setProfileLoading(true);
-          
-          try {
-            const userDocRef = doc(db, 'users', firebaseUser.uid);
-            const userDoc = await getDoc(userDocRef);
-            
-            if (userDoc.exists()) {
-              const data = userDoc.data();
-              const profileData: UserProfile = {
-                uid: firebaseUser.uid,
-                email: data.email || firebaseUser.email || '',
-                displayName: data.displayName || data.name || firebaseUser.displayName || '',
-                name: data.name || data.displayName || firebaseUser.displayName || '',
-                role: normalizeUserRole(data.role),
-                approvalStatus: data.approvalStatus || null,
-                createdAt: data.createdAt || new Date().toISOString(),
-                updatedAt: data.updatedAt,
-                age: data.age,
-                class: data.class,
-                curriculum: data.curriculum,
-                school: data.school,
-                onboardingCompleted: data.onboardingCompleted || false,
-                onboardingCompletedAt: data.onboardingCompletedAt,
-                userType: data.userType,
-                teamSize: data.teamSize,
-                usageType: data.usageType,
-                newsletterSubscription: data.newsletterSubscription,
-                // LMS-specific fields
-                school_id: data.school_id,
-                class_ids: data.class_ids,
-                teacher_id: data.teacher_id,
-                managed_class_ids: data.managed_class_ids,
-                managed_school_id: data.managed_school_id,
-                partner_id: data.partner_id,
-                isGuest: data.isGuest || false,
-                isDemo: data.isDemo || false,
-                demoLocation: data.demoLocation,
-              };
-              setProfile(profileData);
-              void syncRoleClaimsForCurrentUser();
-            } else {
-              // New user - profile will be created during signup
-              setProfile(null);
-            }
-          } catch (error) {
-            console.error("Error fetching user data:", error);
-            setProfile(null);
-          }
-          
-          setProfileLoading(false);
         } else {
           setUser(null);
           setProfile(null);
+          setProfileLoading(false);
         }
         setLoading(false);
       },
@@ -292,51 +269,50 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     return unsubscribe;
   }, []);
 
-  // Subscribe to profile changes in real-time
+  // Sole source of profile state: one realtime listener on users/{uid}.
+  // Keyed on user?.uid rather than the user object so a new FirebaseUser identity
+  // for the same account does not tear the listener down and re-read the document.
   useEffect(() => {
-    if (!user?.uid) return;
+    const uid = user?.uid;
+    if (!uid) return;
 
-    const userDocRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        const profileData: UserProfile = {
-          uid: user.uid,
-          email: data.email || user.email || '',
-          displayName: data.displayName || data.name || user.displayName || '',
-          name: data.name || data.displayName || user.displayName || '',
-          role: normalizeUserRole(data.role),
-          approvalStatus: data.approvalStatus || null,
-          createdAt: data.createdAt || new Date().toISOString(),
-          updatedAt: data.updatedAt,
-          age: data.age,
-          class: data.class,
-          curriculum: data.curriculum,
-          school: data.school,
-          onboardingCompleted: data.onboardingCompleted || false,
-          onboardingCompletedAt: data.onboardingCompletedAt,
-          userType: data.userType,
-          teamSize: data.teamSize,
-          usageType: data.usageType,
-          newsletterSubscription: data.newsletterSubscription,
-          // LMS-specific fields
-          school_id: data.school_id,
-          class_ids: data.class_ids,
-          teacher_id: data.teacher_id,
-          managed_class_ids: data.managed_class_ids,
-        managed_school_id: data.managed_school_id,
-        isGuest: data.isGuest || false,
-        isDemo: data.isDemo || false,
-        demoLocation: data.demoLocation,
-      };
-      setProfile(profileData);
-    }
-    }, (error) => {
-      console.error('Profile snapshot error:', error);
-    });
+    const authFallback = { email: user?.email, displayName: user?.displayName };
+    let settled = false;
 
+    // Clearing profileLoading is what releases the route guards, so it has to happen
+    // on the first emission whatever that emission is — document, no document, or error.
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      setProfileLoading(false);
+    };
+
+    const userDocRef = doc(db, 'users', uid);
+    const unsubscribe = onSnapshot(
+      userDocRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setProfile(mapUserProfile(uid, snapshot.data(), authFallback));
+          if (!settled) void syncRoleClaimsForCurrentUser();
+        } else {
+          // New user — the profile is created during signup.
+          setProfile(null);
+        }
+        settle();
+      },
+      (error) => {
+        console.error('Profile snapshot error:', error);
+        setProfile(null);
+        settle();
+      }
+    );
+
+    // Deliberately does NOT settle: on an account switch this cleanup runs after
+    // onAuthStateChanged has already set profileLoading back to true for the new
+    // uid, so settling here would release the guards against a stale profile.
+    // Sign-out is settled by the auth handler instead.
     return unsubscribe;
-  }, [user]);
+  }, [user?.uid, user?.email, user?.displayName]);
 
   const signup = async (email: string, password: string, name: string, _role: UserRole = 'student') => {
     if (!auth) {
@@ -581,6 +557,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       throw new Error('Authentication service is not available');
     }
     try {
+      // Release the generation-job listeners before the credential goes away.
+      // The service is a module-level singleton, so without this the next user in
+      // the same tab would inherit listeners on the previous user's jobs.
+      try {
+        const { backgroundGenerationService } = await import('../services/backgroundGenerationService');
+        backgroundGenerationService.cleanup();
+      } catch (cleanupError) {
+        console.warn('Background generation cleanup failed during logout:', cleanupError);
+      }
+
       await signOut(auth);
       setProfile(null);
       setSelectedRole(null);

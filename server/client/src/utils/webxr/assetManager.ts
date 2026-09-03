@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
+import { DRACO_DECODER_PATH } from '../../lib/three/dracoDecoder';
 import { LayoutEngine, AssetArrangement } from './layoutEngine';
 
 // ============================================================================
@@ -75,7 +76,7 @@ export interface AssetManagerConfig {
 }
 
 const DEFAULT_CONFIG: AssetManagerConfig = {
-  dracoPath: 'https://www.gstatic.com/draco/versioned/decoders/1.5.5/',
+  dracoPath: DRACO_DECODER_PATH,
   defaultScale: 1.0,
   maxScale: 3.0,
   minScale: 0.2,

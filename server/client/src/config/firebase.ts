@@ -1,7 +1,12 @@
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, initializeFirestore } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 
@@ -43,11 +48,44 @@ if (!app.options.apiKey) {
 
 // Initialize core services immediately
 export const auth = getAuth(app);
-// Use WebView-friendly Firestore settings (long polling, no fetch streams)
-export const db = initializeFirestore(app, {
+// WebView-friendly transport settings (long polling, no fetch streams).
+const FIRESTORE_TRANSPORT_SETTINGS = {
   experimentalAutoDetectLongPolling: true,
   useFetchStreams: false,
-});
+} as const;
+
+/**
+ * Persist the Firestore cache to IndexedDB.
+ *
+ * Without this the SDK runs memory-only, so every reload, every new tab and every
+ * browser restart re-reads every document from the server. Since a lesson open fans
+ * out across a dozen collections, that cold-start cost was being paid on each
+ * navigation. `persistentMultipleTabManager` lets several tabs share one cache
+ * instead of fighting over an exclusive lease.
+ *
+ * The SDK falls back to memory internally when IndexedDB is unavailable (private
+ * browsing, some WebViews). The try/catch here guards the other failure mode —
+ * a second `initializeFirestore` on an already-started app — by handing back the
+ * running instance rather than letting boot fail.
+ */
+const FIRESTORE_CACHE_SIZE_BYTES = 100 * 1024 * 1024;
+
+function createFirestore() {
+  try {
+    return initializeFirestore(app, {
+      ...FIRESTORE_TRANSPORT_SETTINGS,
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+        cacheSizeBytes: FIRESTORE_CACHE_SIZE_BYTES,
+      }),
+    });
+  } catch (error) {
+    console.warn('⚠️ Firestore persistent cache unavailable, using memory-only cache:', error);
+    return getFirestore(app);
+  }
+}
+
+export const db = createFirestore();
 
 // Initialize Storage with error handling
 let storage: ReturnType<typeof getStorage> | null = null;

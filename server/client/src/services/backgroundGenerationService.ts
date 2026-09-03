@@ -59,6 +59,13 @@ interface GenerationProgressCallback {
   }): void;
 }
 
+/** A job in one of these states will never emit again, so its listener can go. */
+const TERMINAL_JOB_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+function isTerminalJobStatus(status: string | undefined): boolean {
+  return !!status && TERMINAL_JOB_STATUSES.has(status);
+}
+
 class BackgroundGenerationService {
   private tasks: Map<string, GenerationTask> = new Map();
   private pollingIntervals: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -293,15 +300,47 @@ class BackgroundGenerationService {
    */
   private setupJobListener(jobId: string, _userId: string) {
     const jobRef = doc(db, this.JOBS_COLLECTION, jobId);
-    
-    const unsubscribe = onSnapshot(jobRef, (doc) => {
-      if (doc.exists()) {
-        const job = { id: doc.id, ...doc.data() } as Job;
+    this.registerJobListener(jobId, (onTerminal) =>
+      onSnapshot(jobRef, (snapshot) => {
+        if (!snapshot.exists()) return;
+        const job = { id: snapshot.id, ...snapshot.data() } as Job;
         this.updateTaskFromJob(job);
-      }
+        if (isTerminalJobStatus(job.status)) onTerminal();
+      })
+    );
+  }
+
+  /**
+   * Attach a job listener that detaches itself once the job reaches a terminal state.
+   *
+   * These listeners used to live for the lifetime of the tab. The service is a
+   * module-level singleton and `cleanup()` had no callers anywhere, so every
+   * generation a user started left a permanent per-document listener behind —
+   * each one billing a read on every subsequent write to that job.
+   *
+   * The `released` flag covers the case where the first snapshot already reports a
+   * finished job and fires before `onSnapshot` has returned its unsubscribe.
+   */
+  private registerJobListener(jobId: string, subscribe: (onTerminal: () => void) => () => void) {
+    let released = false;
+    const unsubscribe = subscribe(() => {
+      released = true;
+      this.releaseJobListener(jobId);
     });
 
+    if (released) {
+      unsubscribe();
+      this.firestoreListeners.delete(jobId);
+      return;
+    }
     this.firestoreListeners.set(jobId, unsubscribe);
+  }
+
+  private releaseJobListener(jobId: string) {
+    const unsubscribe = this.firestoreListeners.get(jobId);
+    if (!unsubscribe) return;
+    unsubscribe();
+    this.firestoreListeners.delete(jobId);
   }
 
   /**
@@ -309,15 +348,14 @@ class BackgroundGenerationService {
    */
   private setupMeshyJobListener(jobId: string, _userId: string) {
     const jobRef = doc(db, this.MESHY_JOBS_COLLECTION, jobId);
-    
-    const unsubscribe = onSnapshot(jobRef, (doc) => {
-      if (doc.exists()) {
-        const jobData = { id: doc.id, ...doc.data() };
+    this.registerJobListener(jobId, (onTerminal) =>
+      onSnapshot(jobRef, (snapshot) => {
+        if (!snapshot.exists()) return;
+        const jobData = { id: snapshot.id, ...snapshot.data() };
         this.updateTaskFromMeshyJob(jobData);
-      }
-    });
-
-    this.firestoreListeners.set(jobId, unsubscribe);
+        if (isTerminalJobStatus((jobData as { status?: string }).status)) onTerminal();
+      })
+    );
   }
 
   /**

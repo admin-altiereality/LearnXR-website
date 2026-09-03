@@ -7,18 +7,19 @@
  * - Clean minimal aesthetic matching the Create page
  */
 
-import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from 'react-toastify';
-import { db } from '../config/firebase';
 import { useAuth, useModal } from '../contexts/AuthContext';
 import { useCreateGeneration } from '../contexts/CreateGenerationContext';
 import Logo from "./Logo";
 // Subscription removed
 
 const Header = () => {
-  const { user, logout } = useAuth();
+  // AuthContext already holds a live listener on users/{uid}; this component used to
+  // fetch the same document again on every mount, which was a third read of it per
+  // page load (the context did a getDoc and an onSnapshot of its own).
+  const { user, logout, profile } = useAuth();
   const { openModal } = useModal();
   const navigate = useNavigate();
   const location = useLocation();
@@ -28,28 +29,9 @@ const Header = () => {
   const dropdownRef = useRef(null);
   const mobileMenuRef = useRef(null);
   // Subscription removed
-  const [profile, setProfile] = useState(null);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const lastScrollY = useRef(0);
-
-  useEffect(() => {
-    const fetchProfile = async () => {
-      if (user?.uid) {
-        try {
-          const profileRef = doc(db, 'users', user.uid);
-          const profileSnap = await getDoc(profileRef);
-          if (profileSnap.exists()) {
-            setProfile(profileSnap.data());
-          }
-        } catch (error) {
-          console.error('Error fetching profile:', error);
-        }
-      }
-    };
-
-    fetchProfile();
-  }, [user?.uid]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {

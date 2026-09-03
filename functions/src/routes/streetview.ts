@@ -8,6 +8,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import * as admin from 'firebase-admin';
 import { fetchAndStitchStreetView, TILE_SIZE } from '../services/streetViewImagery';
+import { cacheable } from '../utils/cacheHeaders';
 
 const router = Router();
 
@@ -216,7 +217,7 @@ router.post('/generate-skybox', async (req: Request, res: Response) => {
 /**
  * Places Autocomplete proxy — returns general place suggestions (any Street View).
  */
-router.get('/places-autocomplete', async (req: Request, res: Response) => {
+router.get('/places-autocomplete', cacheable({ maxAge: 86400 }), async (req: Request, res: Response) => {
   try {
     const input = (req.query.input || '').toString().trim();
     const apiKey = (process.env.GOOGLE_STREETVIEW_API_KEY || '').trim();
@@ -273,7 +274,7 @@ router.get('/places-autocomplete', async (req: Request, res: Response) => {
 /**
  * Place Details proxy — returns geometry for any place (no walkable/rating gate).
  */
-router.get('/place-details', async (req: Request, res: Response) => {
+router.get('/place-details', cacheable({ maxAge: 86400 }), async (req: Request, res: Response) => {
   try {
     const placeId = (req.query.place_id || '').toString().trim();
     const apiKey = (process.env.GOOGLE_STREETVIEW_API_KEY || '').trim();

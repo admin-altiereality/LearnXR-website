@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { ref, getDownloadURL, uploadBytes } from 'firebase/storage';
+import { immutableUploadMetadata } from '../../../utils/firebaseStorage';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { storage, db } from '../../../config/firebase';
 import { invalidateLessonBundleCache } from '../../../services/firestore/getLessonBundle';
@@ -168,7 +169,7 @@ export const SourceTab = ({ bundle, chapterId, topicId, onPdfUploaded }: SourceT
 
       try {
         const storageRef = ref(storage, storagePath);
-        await uploadBytes(storageRef, file, { contentType: 'application/pdf' });
+        await uploadBytes(storageRef, file, immutableUploadMetadata('application/pdf'));
         const downloadUrl = await getDownloadURL(storageRef);
 
         const chapterRef = doc(db, 'curriculum_chapters', chapterId);

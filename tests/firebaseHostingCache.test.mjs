@@ -38,3 +38,19 @@ test('fingerprinted application assets remain immutable', () => {
     'public, max-age=31536000, immutable',
   );
 });
+
+test('3D models are cached but stay replaceable', () => {
+  const value = cacheControlFor('**/*.@(glb|gltf|bin)');
+
+  assert.equal(
+    value,
+    'public, max-age=86400',
+    'models under public/ should be cached for a day',
+  );
+  // These filenames are stable and are replaced in place, so `immutable` would pin a
+  // stale avatar on every returning device until the max-age elapsed.
+  assert.ok(
+    !value.includes('immutable'),
+    'non-fingerprinted models must stay revalidatable',
+  );
+});

@@ -13,12 +13,13 @@ import { validateReadAccess, validateFullAccess } from '../middleware/validateIn
 import { requireRole } from '../middleware/rbac';
 import { successResponse, errorResponse, ErrorCode, HTTP_STATUS } from '../utils/apiResponse';
 import { timingSafeEqualString } from '../utils/crypto';
+import { cacheable } from '../utils/cacheHeaders';
 
 const router = Router();
 const requireSuperadmin = requireRole(['superadmin']);
 
 // Skybox Styles API - Read access (API key READ or FULL scope, or Firebase Auth)
-router.get('/styles', validateReadAccess, async (req: Request, res: Response) => {
+router.get('/styles', validateReadAccess, cacheable({ maxAge: 3600 }), async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 100; // Increased default limit

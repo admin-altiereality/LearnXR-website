@@ -12,7 +12,9 @@
     "deploy:preview": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy testing",
     "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav",
     "deploy:preview:lexrn1": "bash firebase-build.sh deploy preview",
-    "deploy:production:lexrn1": "bash firebase-build.sh deploy live"
+    "deploy:production:lexrn1": "bash firebase-build.sh deploy live",
+    "test": "node --test tests/firebaseHostingCache.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestoreRules.test.mjs\""
   },
   "dependencies": {
     "@blockadelabs/sdk": "^1.1.1",
@@ -31,6 +33,7 @@
     "three": "^0.177.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.5",

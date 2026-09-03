@@ -28,10 +28,12 @@ import {
   QueryConstraint,
   onSnapshot,
   Unsubscribe,
+  getCountFromServer,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import type { CurriculumChapter } from '../../../types/firebase';
 import { invalidateLessonBundleCache } from '../../../services/firestore/getLessonBundle';
+import { persistentGet, persistentSet } from '../../cache/persistentCache';
 import type {
   LanguageCode,
   NormalizedChapter,
@@ -417,9 +419,36 @@ export async function fetchUnapprovedChapters(
 // ============================================
 
 /**
+ * Distinct-value lookups over curriculum_chapters, cached on disk.
+ *
+ * Firestore has no DISTINCT, so deriving "which curriculums exist" means reading
+ * documents — and `getAvailableCurriculums` read the *entire* collection, whose
+ * documents are the largest in the database (each carries every topic with its full
+ * id arrays). These lists change only when a chapter is created or re-tagged, so
+ * paying that on every picker mount was the expensive part, not the query itself.
+ *
+ * An hour of staleness is the trade: a newly added curriculum shows up within the
+ * hour, or immediately in a new session on a device that has not cached it.
+ */
+const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000;
+
+async function withCatalogCache<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const cached = await persistentGet<T>(key);
+  if (cached !== null) return cached;
+
+  const value = await load();
+  void persistentSet(key, value, CATALOG_CACHE_TTL_MS);
+  return value;
+}
+
+/**
  * Get unique curriculums from existing chapters
  */
 export async function getAvailableCurriculums(): Promise<string[]> {
+  return withCatalogCache('catalog:curriculums', getAvailableCurriculumsUncached);
+}
+
+async function getAvailableCurriculumsUncached(): Promise<string[]> {
   try {
     const chaptersRef = collection(db, COLLECTION_NAME);
     const snapshot = await getDocs(chaptersRef);
@@ -449,6 +478,12 @@ export async function getAvailableCurriculums(): Promise<string[]> {
  * Get unique classes for a curriculum
  */
 export async function getAvailableClasses(curriculum: string): Promise<number[]> {
+  return withCatalogCache(`catalog:classes:${curriculum.toUpperCase()}`, () =>
+    getAvailableClassesUncached(curriculum)
+  );
+}
+
+async function getAvailableClassesUncached(curriculum: string): Promise<number[]> {
   try {
     const chaptersRef = collection(db, COLLECTION_NAME);
     const q = query(
@@ -482,6 +517,15 @@ export async function getAvailableClasses(curriculum: string): Promise<number[]>
  * Get unique subjects for a curriculum and class
  */
 export async function getAvailableSubjects(
+  curriculum: string,
+  classNumber: number
+): Promise<string[]> {
+  return withCatalogCache(`catalog:subjects:${curriculum.toUpperCase()}:${classNumber}`, () =>
+    getAvailableSubjectsUncached(curriculum, classNumber)
+  );
+}
+
+async function getAvailableSubjectsUncached(
   curriculum: string,
   classNumber: number
 ): Promise<string[]> {
@@ -529,23 +573,27 @@ export async function getChapterStats(): Promise<{
   byCurriculum: Record<string, number>;
 }> {
   try {
+    // Counted server-side rather than by reading every chapter. An aggregation query
+    // is billed at one read per 1000 documents matched, so this is a handful of reads
+    // where the old implementation downloaded the entire collection — the heaviest
+    // documents in the database — purely to increment three counters.
     const chaptersRef = collection(db, COLLECTION_NAME);
-    const snapshot = await getDocs(chaptersRef);
+    const curriculums = await getAvailableCurriculums();
 
-    let total = 0;
-    let approved = 0;
+    const [totalSnap, approvedSnap, ...curriculumSnaps] = await Promise.all([
+      getCountFromServer(chaptersRef),
+      getCountFromServer(query(chaptersRef, where('approved', '==', true))),
+      ...curriculums.map((curriculum) =>
+        getCountFromServer(query(chaptersRef, where('curriculum', '==', curriculum)))
+      ),
+    ]);
+
+    const total = totalSnap.data().count;
+    const approved = approvedSnap.data().count;
+
     const byCurriculum: Record<string, number> = {};
-
-    snapshot.docs.forEach((doc) => {
-      const data = doc.data() as CurriculumChapter;
-      total++;
-      
-      if (data.approved === true) {
-        approved++;
-      }
-      
-      const curr = data.curriculum?.toUpperCase() || 'Unknown';
-      byCurriculum[curr] = (byCurriculum[curr] || 0) + 1;
+    curriculums.forEach((curriculum, index) => {
+      byCurriculum[curriculum] = curriculumSnaps[index]?.data().count ?? 0;
     });
 
     return {

@@ -9,7 +9,7 @@
  * - Memoized components to prevent flickering
  */
 
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, limit, onSnapshot, query, where } from 'firebase/firestore';
 import {
     AlertCircle,
     BookOpen,
@@ -63,6 +63,9 @@ import { launchPartnerDemoLesson } from '../services/partnerService';
 
 // Guest student: only lessons marked as demo by superadmin appear; first demo lesson is unlocked
 const GUEST_DEMO_CHAPTERS_LIMIT = 200; // Max chapters to scan for demo topics (client-side filter)
+// Ceiling for the no-filters-selected listener, so it can never become a full
+// collection scan. Generous enough that the picker still shows a real spread.
+const UNFILTERED_CHAPTERS_LIMIT = 200;
 
 // Content indicators (simple badges) - Memoized; theme tokens
 const ContentBadges = memo(({ chapter }) => (
@@ -774,7 +777,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
     } else if (constraints.length > 0) {
       chaptersQuery = query(chaptersRef, ...constraints);
     } else {
-      chaptersQuery = query(chaptersRef);
+      // No filters selected yet. This used to be an unbounded realtime listener over
+      // the whole curriculum_chapters collection — the largest documents in the
+      // database — billing a read per chapter every time it re-attached. Bound it:
+      // the UI cannot render a useful list before a curriculum is chosen anyway.
+      chaptersQuery = query(chaptersRef, limit(UNFILTERED_CHAPTERS_LIMIT));
     }
     
     const unsubscribe = onSnapshot(
@@ -841,35 +848,9 @@ const Lessons = ({ setBackgroundSkybox }) => {
   useEffect(() => {
     if (!user?.uid || !db) return;
     
-    const fetchCompletedLessons = async () => {
-      try {
-        const progressRef = collection(db, 'user_lesson_progress');
-        const q = query(progressRef, where('userId', '==', user.uid), where('completed', '==', true));
-        const snapshot = await getDocs(q);
-        
-        const completed = {};
-        snapshot.forEach(doc => {
-          const data = doc.data();
-          if (data.chapterId) {
-            completed[data.chapterId] = {
-              completed: true,
-              quizCompleted: data.quizCompleted || false,
-              quizScore: data.quizScore || null,
-              completedAt: data.completedAt,
-            };
-          }
-        });
-        
-        setCompletedLessons(completed);
-        console.log('📚 Loaded completed lessons:', Object.keys(completed).length);
-      } catch (err) {
-        console.warn('Failed to fetch completed lessons:', err);
-      }
-    };
-    
-    fetchCompletedLessons();
-    
-    // Also subscribe to real-time updates
+    // The listener below is a superset of the one-shot fetch that used to run here
+    // (same user, without the completed==true filter) and delivers its first snapshot
+    // immediately, so the extra read bought nothing but a duplicate query.
     const progressRef = collection(db, 'user_lesson_progress');
     const q = query(progressRef, where('userId', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {

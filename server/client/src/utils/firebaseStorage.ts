@@ -1,6 +1,27 @@
 import { getStorage, ref } from 'firebase/storage';
 import app, { storage as preInitializedStorage } from '../config/firebase';
 
+/**
+ * Cache metadata for lesson assets uploaded from the browser.
+ *
+ * Storage objects written without a `cacheControl` are served with no freshness
+ * lifetime, so a skybox panorama or a teacher-uploaded model was re-downloaded on
+ * every view. The Cloud Functions upload paths have always set this; the client ones
+ * never did, which meant Meshy-generated assets were cacheable and teacher-uploaded
+ * ones were not.
+ *
+ * `immutable` is accurate here because every one of these call sites writes to a
+ * path that includes a timestamp or a generated id and is never overwritten in place.
+ */
+export const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+/** Upload metadata for an immutable asset, preserving any content type the caller knows. */
+export function immutableUploadMetadata(contentType?: string) {
+  return contentType
+    ? { cacheControl: IMMUTABLE_ASSET_CACHE_CONTROL, contentType }
+    : { cacheControl: IMMUTABLE_ASSET_CACHE_CONTROL };
+}
+
 let storageInstance: ReturnType<typeof getStorage> | null = null;
 let storageInitialized = false;
 let storageInitPromise: Promise<ReturnType<typeof getStorage> | null> | null = null;

@@ -2,9 +2,17 @@ import './config/viteEnv';
 import React, { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
+import { Cache as ThreeCache } from 'three';
 import App from './App.jsx';
 import './index.css';
 import { productionLogger } from './services/productionLogger';
+
+// three.js keeps an in-memory FileLoader cache keyed by URL, but it ships disabled.
+// Several viewers build a fresh GLTFLoader/TextureLoader inside an effect body, so
+// without this every remount re-fetched a model or panorama the tab had already
+// downloaded. The service worker handles the cross-session case; this covers the
+// same session, before a request is even made.
+ThreeCache.enabled = true;
 
 // Apply theme before first paint to avoid flash
 (function applyInitialTheme() {

@@ -25,6 +25,7 @@ import {
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { DRACO_DECODER_PATH } from '../lib/three/dracoDecoder';
 import { useAuth } from '../contexts/AuthContext';
 import { unifiedStorageService } from '../services/unifiedStorageService';
 import { useGenerate } from '../hooks/useGenerate';
@@ -44,7 +45,7 @@ class ModelLoader {
   constructor() {
     this.gltfLoader = new GLTFLoader();
     this.dracoLoader = new DRACOLoader();
-    this.dracoLoader.setDecoderPath('/draco/');
+    this.dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
     this.gltfLoader.setDRACOLoader(this.dracoLoader);
   }
 

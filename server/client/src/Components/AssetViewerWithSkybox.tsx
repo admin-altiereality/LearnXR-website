@@ -14,6 +14,7 @@ import {
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { DRACO_DECODER_PATH } from '../lib/three/dracoDecoder';
 import { getProxyAssetUrl } from '../utils/apiConfig';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
 import { Asset3DLoadingOverlay } from './Asset3DLoadingOverlay';
@@ -703,7 +704,7 @@ function AssetModel({
         if (!loaderRef.current) {
           const gltfLoader = new GLTFLoader();
           const dracoLoader = new DRACOLoader();
-          dracoLoader.setDecoderPath('/draco/');
+          dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
           gltfLoader.setDRACOLoader(dracoLoader);
           loaderRef.current = { gltfLoader, dracoLoader };
         }

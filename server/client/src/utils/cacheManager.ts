@@ -88,9 +88,27 @@ export class CacheManager {
   /**
    * Get cache key for lesson bundle (getLessonBundle).
    * Use topicId || 'first' when no specific topic.
+   *
+   * `source` is part of the identity because a curriculum chapter and a
+   * user-generated lesson are different documents in different collections that can
+   * share an id, and they build materially different bundles.
+   *
+   * The viewer's role deliberately is NOT part of the key: the cached bundle is the
+   * published one, and an Associate's draft is overlaid onto a copy at read time
+   * (see cloneBundleForOverlay in getLessonBundle.ts) rather than being cached.
    */
-  static getBundleKey(chapterId: string, topicId: string | undefined, lang: string): string {
-    return `bundle:${chapterId}:${topicId || 'first'}:${lang}`;
+  static getBundleKey(
+    chapterId: string,
+    topicId: string | undefined,
+    lang: string,
+    source: string = 'curriculum'
+  ): string {
+    return `bundle:${chapterId}:${topicId || 'first'}:${lang}:${source}`;
+  }
+
+  /** Cache key for the licensed-content links attached to a lesson. */
+  static getLicensedLinksKey(chapterId: string, topicId: string): string {
+    return `licensed:${chapterId}:${topicId}`;
   }
 }
 

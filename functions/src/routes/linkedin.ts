@@ -5,11 +5,14 @@
 
 import { Request, Response, Router } from 'express';
 import { getLinkedInPosts } from '../services/linkedinService';
+import { cacheable } from '../utils/cacheHeaders';
 
 const router = Router();
 
 // LinkedIn posts endpoint for company activity
-router.get('/posts', async (req: Request, res: Response) => {
+// Public route (mounted before authenticateUser), identical for every caller, and
+// backed by a slow RSS fetch — the one place here where a shared cache is correct.
+router.get('/posts', cacheable({ scope: 'public', maxAge: 300, sMaxAge: 900 }), async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {

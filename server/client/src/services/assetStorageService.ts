@@ -8,6 +8,7 @@ import {
   deleteObject,
   listAll
 } from 'firebase/storage';
+import { immutableUploadMetadata } from '../utils/firebaseStorage';
 import { 
   collection, 
   addDoc, 
@@ -306,7 +307,7 @@ export class AssetStorageService {
       const storageRef = ref(this.storage, `${this.STORAGE_FOLDER}/${assetId}/${filename}`);
       
       // Upload the file
-      const snapshot = await uploadBytes(storageRef, file);
+      const snapshot = await uploadBytes(storageRef, file, immutableUploadMetadata(file.type));
       
       // Get the download URL
       const downloadUrl = await getDownloadURL(snapshot.ref);

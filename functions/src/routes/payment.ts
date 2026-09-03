@@ -8,6 +8,7 @@ import * as admin from 'firebase-admin';
 import { initializeServices, razorpay } from '../utils/services';
 import { getSecret } from '../utils/config';
 import { verifyRazorpayPaymentSignature } from '../utils/razorpaySignature';
+import { cacheable } from '../utils/cacheHeaders';
 
 const router = Router();
 
@@ -140,7 +141,7 @@ router.post('/verify', async (req: Request, res: Response) => {
 });
 
 // Detect country endpoint (for payment provider selection)
-router.get('/detect-country', async (req: Request, res: Response) => {
+router.get('/detect-country', cacheable({ maxAge: 3600 }), async (req: Request, res: Response) => {
   const requestId = (req as any).requestId;
   
   try {

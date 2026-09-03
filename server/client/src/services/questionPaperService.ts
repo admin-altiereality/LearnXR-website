@@ -24,6 +24,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { immutableUploadMetadata } from '../utils/firebaseStorage';
 import api from '../config/axios';
 import { auth, db, storage } from '../config/firebase';
 import type {
@@ -96,7 +97,7 @@ export async function uploadSourcePdf(file: File): Promise<UploadedSource> {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
   const storagePath = `question_papers/${uid}/source/${Date.now()}_${safeName}`;
   const storageRef = ref(storage, storagePath);
-  await uploadBytes(storageRef, file, { contentType: 'application/pdf' });
+  await uploadBytes(storageRef, file, immutableUploadMetadata('application/pdf'));
   const pdfUrl = await getDownloadURL(storageRef);
   return { storagePath, pdfUrl, fileName: safeName };
 }

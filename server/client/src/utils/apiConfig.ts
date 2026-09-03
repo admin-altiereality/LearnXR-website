@@ -18,6 +18,40 @@ declare global {
  */
 let _cachedApiBaseUrl: string | null = null;
 
+/**
+ * Production API base: same-origin when explicitly opted in, the direct function URL
+ * otherwise.
+ *
+ * Routing through the site's own origin is worth having — responses pass through the
+ * Hosting CDN so a cacheable GET can be answered at an edge instead of re-invoking the
+ * function, there is no cross-origin preflight, and the request stops round-tripping
+ * to us-central1 just to be routed.
+ *
+ * But it is only correct where that hosting config actually rewrites `/api` to the
+ * function. Only firebase.json does; firebase.lexrn1.json and
+ * firebase.preview.testing.json have just the SPA catch-all, so on those sites `/api`
+ * resolves to index.html and every API call would receive HTML with a 200 status.
+ *
+ * Inferring this from the hostname is therefore unsafe — `.web.app` covers both the
+ * site that has the rewrite and the ones that do not. It has to be a deliberate,
+ * per-build choice, so it is an opt-in env flag that defaults off.
+ *
+ * Absolute (`{origin}/api`) rather than a bare `/api` because consumers such as the
+ * krpano XML builder resolve URLs against their own document base, not the page.
+ */
+const sameOriginApiEnabled = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const flag = window.VITE_ENV?.VITE_API_SAME_ORIGIN;
+  return flag === 'true' || flag === true;
+};
+
+export const resolveProductionApiBase = (projectId: string): string => {
+  if (sameOriginApiEnabled()) {
+    return `${window.location.origin}/api`;
+  }
+  return `https://us-central1-${projectId}.cloudfunctions.net/api`;
+};
+
 export const getApiBaseUrl = (): string => {
   if (_cachedApiBaseUrl) return _cachedApiBaseUrl;
 
@@ -38,9 +72,8 @@ export const getApiBaseUrl = (): string => {
     // If we're not on localhost but the URL is localhost, use production instead
     if (!isLocalhost && explicitUrl.includes('localhost')) {
       console.warn('⚠️ VITE_API_BASE_URL is set to localhost but app is not running on localhost. Using production URL instead.');
-      const region = 'us-central1';
       const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-      const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
+      const productionUrl = resolveProductionApiBase(projectId);
       _cachedApiBaseUrl = productionUrl;
       return productionUrl;
     }
@@ -57,11 +90,11 @@ export const getApiBaseUrl = (): string => {
     return expressUrl;
   }
   
-  // Use Firebase Functions in production/preview (default)
-  const region = 'us-central1';
+  // Production/preview: same-origin through the Hosting CDN where the rewrite exists,
+  // otherwise straight to the function (see resolveProductionApiBase).
   const projectId = window.VITE_ENV.VITE_FIREBASE_PROJECT_ID || 'learnxr-evoneuralai';
-  const productionUrl = `https://${region}-${projectId}.cloudfunctions.net/api`;
-  console.log('🌐 Using production Firebase Functions:', productionUrl);
+  const productionUrl = resolveProductionApiBase(projectId);
+  console.log('🌐 Using production API base:', productionUrl);
   _cachedApiBaseUrl = productionUrl;
   return productionUrl;
 };

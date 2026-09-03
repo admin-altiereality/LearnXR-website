@@ -22,6 +22,11 @@ import {
 import { db } from '../../config/firebase';
 import type { LanguageCode } from '../../types/curriculum';
 import { cacheManager, CacheManager, LESSON_BUNDLE_CACHE_TTL_MS } from '../../utils/cacheManager';
+import {
+  persistentGet,
+  persistentSet,
+  persistentDeleteByPrefix,
+} from '../../lib/cache/persistentCache';
 import { extractTopicScriptsForLanguage } from '../../lib/firestore/queries';
 import { extractMcqOptions, resolveCorrectAnswerIndex } from '../../lib/mcq/answerIndex';
 import {
@@ -42,6 +47,25 @@ const COLLECTION_PDFS = 'pdfs';
 const COLLECTION_TEXT_TO_3D_ASSETS = 'text_to_3d_assets';
 const COLLECTION_TEXT_TO_3D = 'text_to_3d'; // Alternative collection name
 const COLLECTION_MESHY_ASSETS = 'meshy_assets';
+
+/**
+ * Which of the two text-to-3D collection names this project actually uses.
+ *
+ * Both names are tried because the data has historically lived under either. Every
+ * probe of the name that turns out to be empty still bills a document read (an empty
+ * query result costs one), and the old code re-probed both on every single lesson
+ * open. Remembering the winner for the session means only the first lesson pays for
+ * the discovery. Deliberately not persisted: it is cheap to re-learn, and pinning it
+ * across sessions would hide a migration between the two.
+ */
+let resolvedTextTo3dCollection: string | null = null;
+
+/** Try the collection that answered last time first, then the other. */
+function textTo3dCollectionsToTry(): string[] {
+  const all = [COLLECTION_TEXT_TO_3D_ASSETS, COLLECTION_TEXT_TO_3D];
+  if (!resolvedTextTo3dCollection) return all;
+  return [resolvedTextTo3dCollection, ...all.filter((name) => name !== resolvedTextTo3dCollection)];
+}
 
 /**
  * Lesson Bundle - Complete lesson data for a specific language
@@ -85,6 +109,27 @@ export interface LessonBundle {
   };
 }
 
+/** Licensed links change only when an admin re-curates a lesson; a minute of staleness is fine. */
+const LICENSED_LINKS_CACHE_TTL_MS = 60 * 1000;
+
+/**
+ * Fetch the licensed-content links for a topic, memoised.
+ *
+ * This runs on every getLessonBundle call including cache hits, so without a cache
+ * of its own a "cached" bundle still cost an HTTP round trip to the API — and the
+ * player asks for the same bundle two or three times per lesson open.
+ */
+async function fetchLicensedLinks(chapterId: string, topicId: string): Promise<any[]> {
+  const key = CacheManager.getLicensedLinksKey(chapterId, topicId);
+  const cached = cacheManager.get<any[]>(key);
+  if (cached) return cached;
+
+  const { getLicensedLessonContent } = await import('../licensedContentService');
+  const linked = await getLicensedLessonContent(chapterId, topicId);
+  cacheManager.set(key, linked, LICENSED_LINKS_CACHE_TTL_MS);
+  return linked;
+}
+
 async function attachLicensedContent(
   bundle: LessonBundle,
   chapterId: string,
@@ -93,8 +138,7 @@ async function attachLicensedContent(
   const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
   if (!effectiveTopicId) return bundle;
   try {
-    const { getLicensedLessonContent } = await import('../licensedContentService');
-    const linked = await getLicensedLessonContent(chapterId, effectiveTopicId);
+    const linked = await fetchLicensedLinks(chapterId, effectiveTopicId);
     if (linked.length === 0) return bundle;
     const licensedAssets = linked
       .filter((item) => item.delivery_mode === 'krpano_native' && item.artifact_url)
@@ -448,7 +492,19 @@ async function fetchDocsByIds(collectionName: string, ids: string[]): Promise<an
       });
     } catch (error) {
       console.warn(`[getLessonBundle] Error fetching ${collectionName} chunk:`, error);
-      // Try individual fetches as fallback
+
+      // Fall back to individual reads only when retrying could plausibly succeed.
+      // A rules rejection or a signed-out client fails identically for every document
+      // in the chunk, so the old unconditional loop turned one refused read into
+      // thirty — the read amplification was worst exactly when nothing would load.
+      const code = (error as { code?: string } | null)?.code ?? '';
+      if (code === 'permission-denied' || code === 'unauthenticated') {
+        console.warn(
+          `[getLessonBundle] Skipping per-document retry for ${collectionName}: ${code} applies to the whole chunk.`
+        );
+        continue;
+      }
+
       for (const id of chunk) {
         try {
           const docRef = doc(db, collectionName, id);
@@ -641,9 +697,114 @@ function mergeDraftIntoBundle(
 }
 
 /**
- * Get complete lesson bundle for a chapter and language.
- * When userId + userRole='associate' are passed, overlays the Associate's latest unapproved draft.
+ * Copy the parts of a bundle that `mergeDraftIntoBundle` writes to.
+ *
+ * The overlay mutates in place, and the object it was handed is the one sitting in
+ * the cache — so an Associate's unapproved draft used to leak into the bundle that
+ * every later reader of that chapter received, for as long as the entry lived.
+ *
+ * This is a targeted copy rather than a deep clone on purpose: a Firestore Timestamp
+ * is a class instance, and structuredClone would strip its prototype and break
+ * `.toDate()` on any caller downstream. Everything not listed here is shared by
+ * reference, which is safe precisely because nothing writes to it.
  */
+function cloneBundleForOverlay(bundle: LessonBundle): LessonBundle {
+  return {
+    ...bundle,
+    chapter: bundle.chapter
+      ? {
+          ...bundle.chapter,
+          topics: Array.isArray(bundle.chapter.topics)
+            ? bundle.chapter.topics.map((topic: any) => ({
+                ...topic,
+                sharedAssets: topic?.sharedAssets ? { ...topic.sharedAssets } : topic?.sharedAssets,
+              }))
+            : bundle.chapter.topics,
+        }
+      : bundle.chapter,
+    mcqs: [...bundle.mcqs],
+    tts: [...bundle.tts],
+    images: [...bundle.images],
+    assets3d: [...bundle.assets3d],
+    avatarScripts: bundle.avatarScripts ? { ...bundle.avatarScripts } : bundle.avatarScripts,
+    skybox: bundle.skybox ? { ...bundle.skybox } : bundle.skybox,
+  };
+}
+
+/**
+ * Overlay an Associate's latest unapproved draft onto a copy of the published bundle.
+ * Returns the bundle untouched when the viewer is not an Associate or has no draft.
+ */
+async function withAssociateDraft(
+  bundle: LessonBundle,
+  chapterId: string,
+  topicId: string | undefined,
+  userId: string | undefined,
+  userRole: string | undefined
+): Promise<LessonBundle> {
+  if (userRole !== 'associate' || !userId) return bundle;
+
+  const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
+  if (!effectiveTopicId) return bundle;
+
+  try {
+    const version = await getLatestUnapprovedVersionForUser(chapterId, effectiveTopicId, userId);
+    if (!version?.snapshot_ref) return bundle;
+
+    const draft = await getChapterSnapshot(version.snapshot_ref);
+    if (!draft) return bundle;
+
+    const overlaid = cloneBundleForOverlay(bundle);
+    mergeDraftIntoBundle(overlaid, draft, effectiveTopicId);
+    console.log('[getLessonBundle] Overlaid Associate draft for topic', effectiveTopicId);
+    return overlaid;
+  } catch (err) {
+    console.warn('[getLessonBundle] Associate draft overlay failed:', err);
+    return bundle;
+  }
+}
+
+/** Bump when the persisted bundle shape changes, so old entries are ignored rather than misread. */
+const PERSISTED_BUNDLE_VERSION = 'v1';
+
+/** A week. An entry is only ever used while it still matches the chapter's updatedAt. */
+const PERSISTED_BUNDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+interface PersistedBundle {
+  bundle: LessonBundle;
+  /** The chapter's updatedAt at the time the bundle was assembled. */
+  chapterVersion: string;
+}
+
+function persistedBundleKeyPrefix(chapterId: string): string {
+  return `bundle:${PERSISTED_BUNDLE_VERSION}:${chapterId}:`;
+}
+
+function persistedBundleKey(
+  chapterId: string,
+  topicId: string | undefined,
+  lang: string,
+  source: string
+): string {
+  return `${persistedBundleKeyPrefix(chapterId)}${topicId || 'first'}:${lang}:${source}`;
+}
+
+/**
+ * A comparable version string for the chapter document.
+ *
+ * Returns null when the chapter carries no usable timestamp. In that case there is
+ * nothing cheap to revalidate against, so the persisted bundle is simply not used
+ * rather than risk serving an edited lesson from a week-old copy.
+ */
+function readChapterVersion(chapterData: any): string | null {
+  const raw = chapterData?.updatedAt ?? chapterData?.updated_at ?? null;
+  if (!raw) return null;
+  if (typeof raw === 'string') return raw;
+  if (typeof raw?.toMillis === 'function') return String(raw.toMillis());
+  if (typeof raw?.seconds === 'number') return `${raw.seconds}.${raw.nanoseconds ?? 0}`;
+  return null;
+}
+
 /**
  * Invalidate cached lesson bundles for a chapter (call after chapter/topic updates).
  * Reduces stale reads after curriculum edits.
@@ -651,9 +812,12 @@ function mergeDraftIntoBundle(
 export function invalidateLessonBundleCache(chapterId: string): void {
   const escaped = chapterId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   cacheManager.invalidatePattern(`^bundle:${escaped}:`);
+  // The on-disk copy has to go too, or a curriculum edit would keep being papered
+  // over by a bundle that outlives the tab.
+  void persistentDeleteByPrefix(persistedBundleKeyPrefix(chapterId));
 }
 
-export async function getLessonBundle(params: {
+export interface GetLessonBundleParams {
   chapterId: string;
   lang: LanguageCode;
   topicId?: string; // Optional: specific topic to extract data from
@@ -661,31 +825,48 @@ export async function getLessonBundle(params: {
   userRole?: string; // Optional: must be 'associate' to overlay draft
   /** 'user_generated' fetches from user_generated_lessons instead of curriculum_chapters (Street View / Create-scene / Spiral-scene drafts). */
   source?: 'curriculum' | 'user_generated';
-}): Promise<LessonBundle> {
+}
+
+/**
+ * Bundles currently being built, so concurrent callers share one fan-out.
+ *
+ * Opening a lesson asks for the same bundle from up to three places — the /lessons
+ * prefetch, the player's URL-param path and the player's preparation effect. They
+ * overlap, so the 10-minute cache below could not absorb them: each one missed, and
+ * each one ran the full multi-collection fan-out. Joining the in-flight promise
+ * collapses those into a single set of reads.
+ *
+ * Keyed on the same identity as the cache, plus the viewer where that changes the
+ * result (only an Associate, whose draft is overlaid on top).
+ */
+const inFlightBundles = new Map<string, Promise<LessonBundle>>();
+
+export function getLessonBundle(params: GetLessonBundleParams): Promise<LessonBundle> {
+  const { chapterId, lang, topicId, userId, userRole, source = 'curriculum' } = params;
+  const viewer = userRole === 'associate' ? `associate:${userId ?? ''}` : 'published';
+  const inFlightKey = `${CacheManager.getBundleKey(chapterId, topicId, lang, source)}|${viewer}`;
+
+  const existing = inFlightBundles.get(inFlightKey);
+  if (existing) {
+    console.log(`[getLessonBundle] Joining in-flight request for ${inFlightKey}`);
+    return existing;
+  }
+
+  const pending = buildLessonBundle(params).finally(() => {
+    inFlightBundles.delete(inFlightKey);
+  });
+  inFlightBundles.set(inFlightKey, pending);
+  return pending;
+}
+
+async function buildLessonBundle(params: GetLessonBundleParams): Promise<LessonBundle> {
   const { chapterId, lang, topicId, userId, userRole, source = 'curriculum' } = params;
 
-  const cacheKey = CacheManager.getBundleKey(chapterId, topicId, lang);
+  const cacheKey = CacheManager.getBundleKey(chapterId, topicId, lang, source);
   const cached = cacheManager.get<LessonBundle>(cacheKey);
   if (cached) {
     console.log(`[getLessonBundle] Cache hit for ${cacheKey}`);
-    const bundle = cached;
-    if (userRole === 'associate' && userId) {
-      const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
-      if (effectiveTopicId) {
-        try {
-          const version = await getLatestUnapprovedVersionForUser(chapterId, effectiveTopicId, userId);
-          if (version?.snapshot_ref) {
-            const draft = await getChapterSnapshot(version.snapshot_ref);
-            if (draft) {
-              mergeDraftIntoBundle(bundle, draft, effectiveTopicId);
-              console.log('[getLessonBundle] Overlaid Associate draft for topic', effectiveTopicId);
-            }
-          }
-        } catch (err) {
-          console.warn('[getLessonBundle] Associate draft overlay failed:', err);
-        }
-      }
-    }
+    const bundle = await withAssociateDraft(cached, chapterId, topicId, userId, userRole);
     return attachLicensedContent(bundle, chapterId, topicId);
   }
 
@@ -751,6 +932,30 @@ export async function getLessonBundle(params: {
       name: chapterData.chapter_name,
       topicsCount: chapterData.topics?.length || 0,
     });
+
+    // Step 1b: If a previously assembled bundle is on disk and the chapter has not
+    // been edited since, reuse it. The chapter document above is the only read this
+    // path costs; the ten-or-so collection reads below are skipped entirely. That is
+    // what makes a repeat lesson open cheap on a cold page load, where the in-memory
+    // cache is always empty.
+    const persistKey = persistedBundleKey(chapterId, topicId, lang, source);
+    const chapterVersion = readChapterVersion(chapterData);
+
+    if (chapterVersion) {
+      const persisted = await persistentGet<PersistedBundle>(persistKey);
+      if (persisted?.chapterVersion === chapterVersion && persisted.bundle) {
+        console.log(`[getLessonBundle] Reusing persisted bundle for ${persistKey} (chapter unchanged)`);
+        cacheManager.set(cacheKey, persisted.bundle, LESSON_BUNDLE_CACHE_TTL_MS);
+        const viewerBundle = await withAssociateDraft(
+          persisted.bundle,
+          chapterId,
+          topicId,
+          userId,
+          userRole
+        );
+        return attachLicensedContent(viewerBundle, chapterId, topicId);
+      }
+    }
 
     // Step 2: Extract linked IDs (from specific topic if provided)
     const extractedIds = extractLinkedIds(chapterData, lang, topicId);
@@ -839,36 +1044,43 @@ export async function getLessonBundle(params: {
             ? chapterData.topics?.find((t: any) => t.topic_id === topicId)
             : chapterData.topics?.[0];
           
-          // Method 1: Fetch by IDs (if available)
-          let imagesByIds: any[] = [];
-          if (extractedIds.imageIds.length > 0) {
-            imagesByIds = await fetchDocsByIds(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds);
-            console.log(`[getLessonBundle] Found ${imagesByIds.length} images by IDs`);
-          }
-          
-          // Method 2: Query by chapter_id/topic_id (always try as fallback)
-          let imagesByQuery: any[] = [];
-          if (topic) {
-            try {
-              const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
-              const q = query(
-                imagesRef,
-                where('chapter_id', '==', chapterId),
-                where('topic_id', '==', topic.topic_id || '')
-              );
-              const snapshot = await getDocs(q);
-              imagesByQuery = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-              }));
-              if (imagesByQuery.length > 0) {
-                console.log(`[getLessonBundle] Found ${imagesByQuery.length} images via chapter_id/topic_id query`);
-              }
-            } catch (err) {
-              console.warn(`[getLessonBundle] Error querying images by chapter_id/topic_id:`, err);
-            }
-          }
-          
+          // Both lookups are kept — an image can be linked by id on the topic OR
+          // carry chapter_id/topic_id without being in any id array, and the union is
+          // what the studio expects to see. They now run concurrently instead of one
+          // after the other, which halves the wall time of this branch.
+          const [imagesByIds, imagesByQuery] = await Promise.all([
+            extractedIds.imageIds.length > 0
+              ? fetchDocsByIds(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds).then((docs) => {
+                  console.log(`[getLessonBundle] Found ${docs.length} images by IDs`);
+                  return docs;
+                })
+              : Promise.resolve([] as any[]),
+            topic
+              ? (async () => {
+                  try {
+                    const imagesRef = collection(db, COLLECTION_CHAPTER_IMAGES);
+                    const q = query(
+                      imagesRef,
+                      where('chapter_id', '==', chapterId),
+                      where('topic_id', '==', topic.topic_id || '')
+                    );
+                    const snapshot = await getDocs(q);
+                    const docs = snapshot.docs.map((docSnap) => ({
+                      id: docSnap.id,
+                      ...docSnap.data(),
+                    }));
+                    if (docs.length > 0) {
+                      console.log(`[getLessonBundle] Found ${docs.length} images via chapter_id/topic_id query`);
+                    }
+                    return docs;
+                  } catch (err) {
+                    console.warn(`[getLessonBundle] Error querying images by chapter_id/topic_id:`, err);
+                    return [] as any[];
+                  }
+                })()
+              : Promise.resolve([] as any[]),
+          ]);
+
           // Merge both results and remove duplicates by ID
           const imageMap = new Map<string, any>();
           
@@ -910,24 +1122,24 @@ export async function getLessonBundle(params: {
           // First try by IDs if available (try both collection names)
           let textTo3dAssets: any[] = [];
           if (extractedIds.textTo3dAssetIds.length > 0) {
-            try {
-              textTo3dAssets = await fetchDocsByIds(COLLECTION_TEXT_TO_3D_ASSETS, extractedIds.textTo3dAssetIds);
-              console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets by IDs from ${COLLECTION_TEXT_TO_3D_ASSETS}`);
-            } catch (err) {
-              // Try alternative collection name
+            for (const collectionName of textTo3dCollectionsToTry()) {
               try {
-                textTo3dAssets = await fetchDocsByIds(COLLECTION_TEXT_TO_3D, extractedIds.textTo3dAssetIds);
-                console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets by IDs from ${COLLECTION_TEXT_TO_3D}`);
-              } catch (err2) {
-                console.warn(`[getLessonBundle] Failed to fetch by IDs from both collections:`, err2);
+                textTo3dAssets = await fetchDocsByIds(collectionName, extractedIds.textTo3dAssetIds);
+                if (textTo3dAssets.length > 0) {
+                  resolvedTextTo3dCollection = collectionName;
+                  console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets by IDs from ${collectionName}`);
+                  break;
+                }
+              } catch (err) {
+                // Try the other collection name.
               }
             }
           }
           
           // Also check if any assetIds are actually text_to_3d_assets
           if (extractedIds.assetIds.length > 0 && textTo3dAssets.length === 0) {
-            // Try fetching by IDs to see if they're text_to_3d_assets (try both collections)
-            for (const collectionName of [COLLECTION_TEXT_TO_3D_ASSETS, COLLECTION_TEXT_TO_3D]) {
+            // Try fetching by IDs to see if they're text_to_3d_assets
+            for (const collectionName of textTo3dCollectionsToTry()) {
               try {
                 const potentialAssets = await fetchDocsByIds(collectionName, extractedIds.assetIds);
                 // Filter to only include those that have text_to_3d_asset specific fields
@@ -936,6 +1148,7 @@ export async function getLessonBundle(params: {
                 );
                 if (textTo3dOnly.length > 0) {
                   textTo3dAssets = textTo3dOnly;
+                  resolvedTextTo3dCollection = collectionName;
                   console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets from assetIds in ${collectionName}`);
                   break;
                 }
@@ -945,9 +1158,9 @@ export async function getLessonBundle(params: {
             }
           }
           
-          // Fallback: Query by chapter_id/topic_id (try both collections)
+          // Fallback: Query by chapter_id/topic_id, most-recently-successful collection first.
           if (textTo3dAssets.length === 0) {
-            for (const collectionName of [COLLECTION_TEXT_TO_3D_ASSETS, COLLECTION_TEXT_TO_3D]) {
+            for (const collectionName of textTo3dCollectionsToTry()) {
               try {
                 const textTo3dRef = collection(db, collectionName);
                 const q = query(
@@ -962,6 +1175,7 @@ export async function getLessonBundle(params: {
                 }));
                 
                 if (textTo3dAssets.length > 0) {
+                  resolvedTextTo3dCollection = collectionName;
                   console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets via chapter_id/topic_id query from ${collectionName}`);
                   break;
                 }
@@ -1255,26 +1469,22 @@ export async function getLessonBundle(params: {
     // Cache bundle to reduce Firebase reads (invalidated on chapter/topic save)
     cacheManager.set(cacheKey, bundle, LESSON_BUNDLE_CACHE_TTL_MS);
 
-    // Associate draft overlay: when user is Associate, fetch their latest unapproved version and overlay
-    if (userRole === 'associate' && userId) {
-      const effectiveTopicId = topicId || bundle.chapter?.topics?.[0]?.topic_id;
-      if (effectiveTopicId) {
-        try {
-          const version = await getLatestUnapprovedVersionForUser(chapterId, effectiveTopicId, userId);
-          if (version?.snapshot_ref) {
-            const draft = await getChapterSnapshot(version.snapshot_ref);
-            if (draft) {
-              mergeDraftIntoBundle(bundle, draft, effectiveTopicId);
-              console.log('[getLessonBundle] Overlaid Associate draft for topic', effectiveTopicId);
-            }
-          }
-        } catch (err) {
-          console.warn('[getLessonBundle] Associate draft overlay failed:', err);
-        }
-      }
+    // And keep a copy on disk, tagged with the chapter version it was built from, so
+    // the next cold load can revalidate with one read instead of rebuilding. Not
+    // awaited: persistence is an optimisation and must never delay the lesson.
+    if (chapterVersion) {
+      void persistentSet(
+        persistKey,
+        { bundle, chapterVersion } satisfies PersistedBundle,
+        PERSISTED_BUNDLE_TTL_MS
+      );
     }
 
-    return attachLicensedContent(bundle, chapterId, topicId);
+    // The bundle just cached is the published one. The Associate overlay is applied
+    // to a copy so the cached entry stays clean for every other reader.
+    const viewerBundle = await withAssociateDraft(bundle, chapterId, topicId, userId, userRole);
+
+    return attachLicensedContent(viewerBundle, chapterId, topicId);
   } catch (error) {
     console.error(`[getLessonBundle] Error building bundle:`, error);
     throw error;

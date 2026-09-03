@@ -17,6 +17,8 @@ export interface UserProfile {
   email: string;
   displayName?: string;
   name?: string;
+  /** Legacy field on older user documents; the app writes `name` now. Header still reads it. */
+  firstName?: string;
   role: UserRole;
   approvalStatus?: ApprovalStatus;
   createdAt: string;
