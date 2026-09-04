@@ -197,6 +197,10 @@ test('the arc is laid out for the assets actually on it', () => {
   });
 
   assert.match(xml, /name="asset_0"[^>]*ath="30"[^>]*depth="500"/);
+  // A Street View tour stop supplies ath/atv/depth but leaves scale undefined
+  // (TourStopAsset.scale is optional and passed through untouched), so it takes the
+  // auto-scale path and must be hidden until measured just like an arc asset.
+  assert.match(xml, /name="asset_0"[^>]*visible="false"/);
   const arc = xml.match(/name="asset_1"[^>]*tx="(-?[0-9.]+)"/);
   assert.ok(arc, 'expected asset_1 to be arc-placed with a tx');
   assert.ok(Math.abs(Number(arc![1])) < 1e-6, `lone arc asset should be centred, tx=${arc![1]}`);
