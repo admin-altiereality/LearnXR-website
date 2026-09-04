@@ -18,11 +18,17 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Asset3DLoadingOverlay, Asset3DLoadingCard } from '../Components/Asset3DLoadingOverlay';
 import { LessonLoadProgress } from '../Components/LessonLoadProgress';
-import { buildKrpanoXml, type LookatByPhase, type KrpanoHotspotOption } from '../lib/krpano/buildKrpanoXml';
+import {
+  buildKrpanoXml,
+  krpanoAssetHotspotName,
+  selectKrpano3dEntries,
+  type LookatByPhase,
+  type KrpanoHotspotOption,
+} from '../lib/krpano/buildKrpanoXml';
 import { loadKrpanoScript, embedKrpano, removeKrpano } from '../lib/krpano/embedKrpano';
 import { ensureRenderAssetBridgeReady, toRenderAssetBridgeUrl } from '../lib/krpano/renderAssetBridge';
-import { getKrpanoAssetScale, getCachedKrpanoAssetScale } from '../lib/krpano/measureGlbScale';
-import { ASSET_ANGULAR_SIZE_DEG, ASSET_DISTANCE_CM, angularSizeForCount } from '../lib/krpano/assetLayout';
+import { normalizeAssetHotspot, revealAssetHotspot } from '../lib/krpano/normalizeAssetHotspot';
+import { ASSET_ANGULAR_SIZE_DEG, angularSizeForCount } from '../lib/krpano/assetLayout';
 import { applyTeacherViewToImmersiveKrpano, applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
@@ -342,15 +348,6 @@ const toKrpanoThreeJsAssetUrl = (url: string): string => {
   return getProxyAssetUrlForThreejs(url);
 };
 
-/**
- * How far from the viewer an asset will end up, which is what its scale must be computed
- * against. An author placement (Street View tour stop) carries its own `depth`; anything else
- * lands on the default arc built by assetLayout.computeAssetArcPlacements.
- */
-function assetDistanceFor(placement?: { depth?: number }): number {
-  const depth = placement?.depth;
-  return typeof depth === 'number' && Number.isFinite(depth) && depth > 0 ? depth : ASSET_DISTANCE_CM;
-}
 
 function pickBestGlbUrl(asset: any): string {
   if (isRetiredMeshyAsset(asset)) return '';
@@ -1951,38 +1948,33 @@ const VRLessonPlayerInner = () => {
           }
         }
 
-        const validEntries = preparedEntries.filter((e) => !!e.url);
+        // Address hotspots by the index the XML builder will actually use. It applies its own
+        // GLB filter, so deriving indices from a differently-filtered list meant a later
+        // scale correction could land on the wrong model.
+        const validEntries = selectKrpano3dEntries(preparedEntries.filter((e) => !!e.url));
         const threeJsAssetUrls = validEntries.map((e) => e.url);
-        // Auto-scale any asset without an author-specified placement.scale: krpano's
-        // threejs plugin has no built-in normalization (unlike the React fallback
-        // renderers), so an unscaled model can render as an invisible speck or an
-        // oversized blob depending on its native export scale. See measureGlbScale.ts.
-        // Never block the embed on a fresh measurement — that previously raced against
-        // a fixed timeout and silently fell back to the broken scale=1 default on a
-        // slow connection. Apply a cached scale immediately (synchronous, no wait);
-        // anything uncached embeds at scale=1 for now and gets live-corrected via
-        // krpano's scripting API once measurement resolves, however long that takes
-        // (see the measureUnscaledAssetsInBackground call after embedKrpano's onready).
-        // Assets sharing the default arc shrink once the arc gets crowded, so they must be
-        // scaled to that adjusted size rather than the nominal one. Author-placed assets sit
-        // off the arc and always get the full size.
+        // No scale is computed here any more.
+        //
+        // Predicting one before the model existed is what produced the "assets render huge"
+        // bug: the prediction divided a centimetre target by a metre dimension, so every
+        // measured asset came out 100x too large, and an unmeasured one fell back to scale=1
+        // (raw glTF units — a 23,380-unit asset became a ~23 km object).
+        //
+        // Instead each hotspot is measured from the geometry krpano actually loaded and fitted
+        // in that same space, by normalizeAssetHotspot in the load poll below — which is what
+        // XRLessonPlayerV3 and AssetViewerWithSkybox have always done. An author-specified
+        // scale still wins and is passed straight through.
+        //
+        // Assets sharing the default arc shrink once the arc gets crowded, so they are fitted
+        // to that adjusted angle. Author-placed assets sit off the arc and get the full size.
         const arcAngularSize = angularSizeForCount(
           validEntries.filter((e) => e.placement?.ath === undefined && e.placement?.atv === undefined).length
         );
-        const assetPlacements = validEntries.map((e) => {
-          if (e.placement?.scale !== undefined) return e.placement;
-          const onArc = e.placement?.ath === undefined && e.placement?.atv === undefined;
-          // Scale against the distance this asset will actually sit at. An author-placed asset
-          // carries its own depth; everything else lands on the default arc. Sizing against a
-          // fixed linear target instead meant an asset authored at depth 500 rendered the same
-          // number of centimetres as one at 280 and so appeared far smaller.
-          const cachedScale = getCachedKrpanoAssetScale(
-            e.id,
-            assetDistanceFor(e.placement),
-            onArc ? arcAngularSize : ASSET_ANGULAR_SIZE_DEG
-          );
-          return cachedScale !== null ? { ...e.placement, scale: cachedScale } : e.placement;
-        });
+        const angularSizeForEntry = (entry: { placement?: { ath?: number; atv?: number } }) =>
+          entry.placement?.ath === undefined && entry.placement?.atv === undefined
+            ? arcAngularSize
+            : ASSET_ANGULAR_SIZE_DEG;
+        const assetPlacements = validEntries.map((e) => e.placement);
         const assetInteractionIds = validEntries.map((e) => e.id);
         licensedAssetIndexRef.current = new Map(assetInteractionIds.map((id, index) => [id, index]));
         krpanoAssetLoadTotalRef.current = threeJsAssetUrls.length;
@@ -2037,28 +2029,8 @@ const VRLessonPlayerInner = () => {
                 clearTimeout(krpanoFallbackTimerRef.current);
                 krpanoFallbackTimerRef.current = null;
               }
-              // Live-correct scale for any asset hotspot that embedded at the scale=1
-              // default because no cached measurement was available yet. Fire-and-forget:
-              // whenever each measurement resolves (fast or slow network), patch the
-              // already-rendered hotspot directly via krpano's scripting API rather than
-              // delaying the embed itself.
-              validEntries.forEach((entry, i) => {
-                if (assetPlacements[i]?.scale !== undefined) return;
-                const onArc = entry.placement?.ath === undefined && entry.placement?.atv === undefined;
-                getKrpanoAssetScale(
-                  entry.url,
-                  entry.id,
-                  assetDistanceFor(entry.placement),
-                  onArc ? arcAngularSize : ASSET_ANGULAR_SIZE_DEG
-                ).then((scale) => {
-                  if (cancelled) return;
-                  try {
-                    krpanoViewerRef.current?.call?.(`set(hotspot[asset_${i}].scale, ${scale});`);
-                  } catch (err) {
-                    console.warn('[VRPlayer] Failed to apply auto-measured scale:', entry.id, err);
-                  }
-                });
-              });
+              // Sizing happens in the load poll below, once the model exists and can be
+              // measured. Nothing to pre-correct here any more.
               if (threeJsAssetUrls.length > 0) {
                 // Confirmed via diagnostic instrumentation: this plugin's `onloaded` XML
                 // attribute does not fire for real-GLB type="threejs" hotspots (only
@@ -2067,8 +2039,15 @@ const VRLessonPlayerInner = () => {
                 // krpano's get() API instead — confirmed reliable by that same diagnostic.
                 // assetLoadedBridge/__krpanoOnAssetLoaded stays wired as a harmless
                 // no-cost fallback in case a future plugin build does fire it.
-                const pendingHotspotNames = new Set(validEntries.map((_, i) => `asset_${i}`));
+                const nameToEntryIndex = new Map(
+                  validEntries.map((_, i) => [krpanoAssetHotspotName(i), i] as const)
+                );
+                const pendingHotspotNames = new Set(nameToEntryIndex.keys());
                 const pollStart = Date.now();
+                // How many polls to keep waiting for threejsobject to appear before giving up
+                // on an asset. At 1.5s a tick this is ~9s after the hotspot reports loaded.
+                const MAX_NORMALIZE_ATTEMPTS = 6;
+                const normalizeAttempts = new Map<string, number>();
                 const pollLoadedHotspots = () => {
                   if (cancelled || pendingHotspotNames.size === 0) return;
                   const viewer = krpanoViewerRef.current;
@@ -2081,6 +2060,52 @@ const VRLessonPlayerInner = () => {
                         loaded = undefined;
                       }
                       if (loaded === true || loaded === 'true') {
+                        // Size and centre it from the geometry that just loaded, then reveal.
+                        // The hotspot was emitted hidden precisely so this happens first and
+                        // an unnormalised model is never on screen. Author-scaled assets skip
+                        // sizing but must still be revealed.
+                        const entryIndex = nameToEntryIndex.get(name);
+                        const entry = entryIndex !== undefined ? validEntries[entryIndex] : undefined;
+                        if (entry && entry.placement?.scale === undefined) {
+                          try {
+                            const result = normalizeAssetHotspot(
+                              viewer as never,
+                              name,
+                              angularSizeForEntry(entry)
+                            );
+                            if (result) {
+                              console.log('[VRPlayer] Normalized 3D asset', name, result);
+                            } else {
+                              // threejsobject is not exposed yet. Try again on the next tick
+                              // rather than revealing something unsized — but do not wait
+                              // forever, or one unmeasurable asset holds the lesson gate shut.
+                              const attempts = (normalizeAttempts.get(name) ?? 0) + 1;
+                              normalizeAttempts.set(name, attempts);
+                              if (attempts < MAX_NORMALIZE_ATTEMPTS) continue;
+
+                              // Give up: leave it hidden and let the lesson proceed. A missing
+                              // asset is a far better outcome than one rendered at native glTF
+                              // units, which is what filled the scene before.
+                              console.warn(
+                                '[VRPlayer] Could not measure 3D asset after',
+                                attempts,
+                                'attempts; leaving it hidden:',
+                                name
+                              );
+                              pendingHotspotNames.delete(name);
+                              assetLoadedBridge(name);
+                              continue;
+                            }
+                          } catch (err) {
+                            console.warn('[VRPlayer] Failed to normalize 3D asset:', name, err);
+                          }
+                        }
+                        try {
+                          revealAssetHotspot(viewer as never, name);
+                        } catch (err) {
+                          console.warn('[VRPlayer] Failed to reveal 3D asset:', name, err);
+                        }
+
                         pendingHotspotNames.delete(name);
                         console.log('[VRPlayer] krpano hotspot confirmed loaded (polled):', name);
                         assetLoadedBridge(name);

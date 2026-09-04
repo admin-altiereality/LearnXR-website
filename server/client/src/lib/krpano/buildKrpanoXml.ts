@@ -136,6 +136,23 @@ function isProxyToGlb(url: string): boolean {
  * Build krpano XML string for embedding.
  * Plugin includes are relative to basePath (e.g. plugins/webvr.xml).
  */
+/**
+ * The entries buildKrpanoXml will actually emit, in emission order.
+ *
+ * Hotspots are named `asset_${i}` by index into THIS list, not into the caller's list. The
+ * builder used to apply this filter privately, so a caller that addressed `asset_${i}` by its
+ * own index would silently target the wrong model the moment the builder dropped a URL the
+ * caller had kept. Exporting the selection makes the two agree by construction.
+ */
+export function selectKrpano3dEntries<T extends { url: string }>(entries: T[]): T[] {
+  return entries.filter((e) => isGlbOrGltfUrl(e.url) || isProxyToGlb(e.url) || isBlobModelUrl(e.url));
+}
+
+/** The hotspot name buildKrpanoXml gives the i-th emitted 3D asset. */
+export function krpanoAssetHotspotName(index: number): string {
+  return `asset_${index}`;
+}
+
 export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   const {
     sphereUrl,
@@ -160,9 +177,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
 
   // Include direct .glb/.gltf URLs and proxy URLs that point to GLB (proxy-asset?url=...).
   // `assetPlacements` (when provided) is kept aligned index-for-index with `threeJsAssetUrls`.
-  const safe3dEntries = threeJsAssetUrls
-    .map((url, i) => ({ url, placement: assetPlacements[i], interactionId: assetInteractionIds[i] || `asset_${i}` }))
-    .filter((e) => isGlbOrGltfUrl(e.url) || isProxyToGlb(e.url) || isBlobModelUrl(e.url));
+  const safe3dEntries = selectKrpano3dEntries(
+    threeJsAssetUrls.map((url, i) => ({
+      url,
+      placement: assetPlacements[i],
+      interactionId: assetInteractionIds[i] || `asset_${i}`,
+    }))
+  );
   const safe3dUrls = safe3dEntries.map((e) => e.url);
   const has3dAssets = safe3dUrls.length > 0;
   const hasAvatar = !!(avatarModelUrl && (isGlbOrGltfUrl(avatarModelUrl) || avatarModelUrl.endsWith('.glb') || avatarModelUrl.endsWith('.gltf')));
@@ -239,14 +260,34 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
   // which self-illuminates the mesh pure white and makes it ignore scene lighting entirely.
   // Lighting is not involved — <threejs ambientlight> and the threejslight sun are both set above.
   // Computed once for the whole set, because each asset's angle depends on how many there are.
-  const arcPlacements = computeAssetArcPlacements(safe3dEntries.length, { hlookat, vlookat });
+  // Only assets WITHOUT an author placement share the default arc, so the arc must be laid out
+  // for that subset. Passing the full count spaced the arc for more assets than were on it,
+  // and left the angular size the player scaled to disagreeing with the spacing used here.
+  const isArcPlaced = (e: { placement?: { ath?: number; atv?: number } }) =>
+    !(e.placement && (e.placement.ath !== undefined || e.placement.atv !== undefined));
+  const arcSlotByEntryIndex = new Map<number, number>();
+  safe3dEntries.forEach((entry, i) => {
+    if (isArcPlaced(entry)) arcSlotByEntryIndex.set(i, arcSlotByEntryIndex.size);
+  });
+  const arcPlacements = computeAssetArcPlacements(arcSlotByEntryIndex.size, { hlookat, vlookat });
 
   const threeJsHotspotBlocks = safe3dEntries
     .map(({ url, placement, interactionId }, i) => {
       const safeUrl = escapeXml(url);
-      const name = `asset_${i}`;
+      const name = krpanoAssetHotspotName(i);
       const safeInteractionId = escapeXml(interactionId);
+      // An author-specified scale is honoured as-is. Everything else is measured from the
+      // loaded geometry and applied by normalizeAssetHotspot once krpano reports the hotspot
+      // loaded, so no scale is guessed here.
+      //
+      // Unmeasured assets are emitted HIDDEN rather than at scale=1. scale=1 means "render at
+      // native glTF units", and a real lesson asset measuring 23,380 units then filled the
+      // scene until an async correction arrived. Hidden-until-sized makes that impossible
+      // instead of merely brief; the reveal happens inside the existing loading gate, so the
+      // learner never sees either state.
+      const hasAuthoredScale = placement?.scale !== undefined;
       const scale = placement?.scale ?? 1;
+      const visibility = hasAuthoredScale ? '' : ' visible="false"';
       // rx/ry/rz are emitted explicitly. The onup handler below already reads caller.rx and
       // caller.rz, but nothing ever declared those attributes, so they read as 0 and a
       // teacher's rotation could never survive a round-trip through the session document.
@@ -260,7 +301,7 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
         const ath = placement.ath ?? 0;
         const atv = placement.atv ?? 0;
         const depth = placement.depth ?? 500;
-        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
+        return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" ath="${ath}" atv="${atv}" depth="${depth}" scale="${scale}"${visibility}${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
       }
       // Arc placement, anchored to the entrance view — see assetLayout.ts. This replaces a
       // 3-wide grid (`tx = 40 + (col-1)*90`, `tz = 180 + row*90`) with three defects: it was
@@ -268,8 +309,13 @@ export function buildKrpanoXml(options: KrpanoXmlOptions): string {
       // stepping tz per row made row 1 both further and smaller, overlapping row 0 in azimuth
       // AND elevation; and negative ty put every asset ABOVE eye level, floating overhead,
       // because krpano's +y points down.
-      const { tx, ty, tz } = arcPlacements[i] ?? { tx: 0, ty: 0, tz: ASSET_DISTANCE_CM };
-      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
+      const arcSlot = arcSlotByEntryIndex.get(i);
+      const { tx, ty, tz } = (arcSlot !== undefined ? arcPlacements[arcSlot] : undefined) ?? {
+        tx: 0,
+        ty: 0,
+        tz: ASSET_DISTANCE_CM,
+      };
+      return `  <hotspot name="${name}" type="threejs" url="${safeUrl}" depth="0" scale="${scale}" tx="${tx}" ty="${ty}" tz="${tz}"${visibility}${roty}${interaction}${onloaded} hittest="true" capture="true" handcursor="true" castshadow="true" receiveshadow="true" ondown="drag3d();" />`;
     })
     .join('\n');
   // Teacher avatar: center, standing (feet near floor, head near eye level).

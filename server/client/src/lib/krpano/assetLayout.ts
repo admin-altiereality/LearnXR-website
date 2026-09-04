@@ -2,13 +2,17 @@
  * Placement and sizing policy for 3D lesson assets in the krpano scene.
  *
  * All the spatial constants live here rather than as inlined arithmetic, because they were
- * previously spread across a hand-rolled grid in buildKrpanoXml and a fixed target size in
- * measureGlbScale, and the two had no relationship to each other.
+ * previously spread across a hand-rolled grid in buildKrpanoXml and a fixed target size in a
+ * separate measurement module, and the two had no relationship to each other.
  *
- * ## krpano's coordinate space
+ * ## Two coordinate spaces, and the boundary between them
  *
- * Units are CENTIMETRES and the origin is the viewer's eye:
+ * Hotspot POSITIONS are CENTIMETRES, with the origin at the viewer's eye:
  *   +x right, +y DOWN, +z forward (away from the viewer)
+ *
+ * A model's GEOMETRY, and anything `hotspot.scale` multiplies, is in three.js world units,
+ * which are METRES — see KRPANO_CM_PER_WORLD_UNIT. Conflating the two is what rendered every
+ * auto-scaled asset 100x too large; targetSizeInWorldUnits exists to make the crossing explicit.
  *
  * The downward +y is the part that is easy to get wrong, and was: every asset used to be
  * emitted with a negative ty ("ty = -20 - row * 25"), which put it ABOVE eye level, floating
@@ -95,13 +99,42 @@ export function linearSizeForAngularSize(distance: number, angleDeg = ASSET_ANGU
  * accommodate both and exist purely to reject NaN/zero. A narrow range silently mangles
  * assets: MAX_SCALE = 50 was crushing the 0.06 model to a 1-degree speck.
  */
+/**
+ * Centimetres per krpano three.js world unit.
+ *
+ * Hotspot coordinates (tx/ty/tz/depth, and controls3d's eyelevel = 160.0) are centimetres,
+ * but the three.js scene a model's geometry lives in is metres. Every other three.js object
+ * in this codebase crosses that boundary explicitly — annotation_layer.xml does
+ * `radius = RADIUS_CM / ws`, immersive_ui.xml does `panelW = PANEL_WIDTH_CM / ws` — and the
+ * asset scale was the one place that did not, which rendered every auto-scaled model exactly
+ * 100x too large.
+ *
+ * krpano exposes the live value as display.hotspotworldscale; it is never overridden in this
+ * repo, so 100 is both the krpano default and what we get. Prefer the runtime value where a
+ * viewer is in hand (see normalizeAssetHotspot).
+ */
+export const KRPANO_CM_PER_WORLD_UNIT = 100;
+
+/**
+ * The size, in three.js world units, that an object must be to subtend `angleDeg` at
+ * `distanceCm`. This is the number to compare a model's bounding box against.
+ */
+export function targetSizeInWorldUnits(
+  distanceCm = ASSET_DISTANCE_CM,
+  angleDeg = ASSET_ANGULAR_SIZE_DEG,
+  cmPerWorldUnit = KRPANO_CM_PER_WORLD_UNIT
+): number {
+  return linearSizeForAngularSize(distanceCm, angleDeg) / (cmPerWorldUnit || KRPANO_CM_PER_WORLD_UNIT);
+}
+
 export function scaleForAsset(
   maxDim: number,
   distance = ASSET_DISTANCE_CM,
-  angularSizeDeg = ASSET_ANGULAR_SIZE_DEG
+  angularSizeDeg = ASSET_ANGULAR_SIZE_DEG,
+  cmPerWorldUnit = KRPANO_CM_PER_WORLD_UNIT
 ): number {
   if (!Number.isFinite(maxDim) || maxDim <= 0) return 1;
-  const target = linearSizeForAngularSize(distance, angularSizeDeg);
+  const target = targetSizeInWorldUnits(distance, angularSizeDeg, cmPerWorldUnit);
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, target / maxDim));
 }
 
