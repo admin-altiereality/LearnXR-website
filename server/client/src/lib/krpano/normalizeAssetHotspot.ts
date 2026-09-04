@@ -131,14 +131,25 @@ export function normalizeAssetHotspot(
 
   const THREE = resolveThree(viewer);
 
-  // The box reflects whatever scale is currently applied, so divide it back out to recover the
-  // model's own dimensions. Normally that scale is 1, but re-normalising must be idempotent.
-  const currentScale = toFiniteNumber(hotspot.scale) ?? 1;
-  const appliedScale = currentScale > 0 ? currentScale : 1;
-
   root.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(root);
   if (box.isEmpty()) return null;
+
+  // The box is in world space, so it already includes whatever scale is applied to the object
+  // and its ancestors. Divide that back out to recover the model's own dimensions.
+  //
+  // Taken from the object rather than from `hotspot.scale`: those are only equal once krpano
+  // has propagated a scale it was told to set, and reading the attribute instead made a second
+  // normalisation pass divide a native-sized box by an already-applied scale — which shrank the
+  // model by that factor again. Measuring what is actually in the scene is idempotent by
+  // construction.
+  const worldScaleVec = root.getWorldScale(new THREE.Vector3());
+  const observedScale = Math.max(
+    Math.abs(worldScaleVec.x),
+    Math.abs(worldScaleVec.y),
+    Math.abs(worldScaleVec.z)
+  );
+  const appliedScale = Number.isFinite(observedScale) && observedScale > 0 ? observedScale : 1;
 
   const size = box.getSize(new THREE.Vector3());
   const nativeMaxDim = Math.max(size.x, size.y, size.z) / appliedScale;
