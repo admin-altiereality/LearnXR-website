@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { openLessonInPlayer } from '../../lib/classroom/resolvePlayerRoute';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Loader2 } from 'lucide-react';
 import { FaHandshake, FaSchool, FaCopy, FaChalkboardTeacher, FaPlay, FaLocationArrow, FaUsers, FaUserTimes, FaEye } from 'react-icons/fa';
@@ -453,7 +454,7 @@ const PartnerDashboard = () => {
         }
       );
       sessionStorage.setItem('learnxr_class_session_id', activeSessionId);
-      navigate('/vrlessonplayer-krpano');
+      openLessonInPlayer(navigate, { launched: liveSession?.launched_lesson ?? null });
     } catch (error: any) {
       toast.error(error?.message || 'Could not open the class view controls.');
     } finally {

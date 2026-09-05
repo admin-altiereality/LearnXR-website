@@ -278,6 +278,21 @@ export class AvatarTo3dService {
   }
 
   /**
+   * Edit a detected asset before it is generated.
+   *
+   * The detector's prompt is a starting point, not a verdict — an admin who
+   * knows the lesson can usually write a better one, and that choice has to be
+   * made before generation rather than after.
+   */
+  async updateAsset(assetId: string, updates: { prompt?: string }): Promise<void> {
+    const payload: Record<string, ReturnType<typeof serverTimestamp> | string> = {
+      updated_at: serverTimestamp(),
+    };
+    if (typeof updates.prompt === 'string') payload.prompt = updates.prompt;
+    await updateDoc(doc(db, 'avatar_to_3d_assets', assetId), payload);
+  }
+
+  /**
    * Manually create a 3D asset entry
    */
   async createManualAsset(

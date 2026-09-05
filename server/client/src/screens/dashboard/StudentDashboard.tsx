@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClassSession } from '../../contexts/ClassSessionContext';
+import { openLessonInPlayer } from '../../lib/classroom/resolvePlayerRoute';
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { LessonLaunch, StudentScore, Class, UserProfile } from '../../types/lms';
@@ -62,7 +63,10 @@ const StudentDashboard = () => {
 
   useEffect(() => {
     if (!isWaitingForApproval || !joinedSessionId) return;
-    navigate('/vrlessonplayer-krpano', { replace: true });
+    openLessonInPlayer(navigate, {
+      launched: joinedSession?.launched_lesson ?? null,
+      replace: true,
+    });
   }, [isWaitingForApproval, joinedSessionId, navigate]);
 
   useEffect(() => {

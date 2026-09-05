@@ -19,6 +19,7 @@ import { useClassSession } from '../../contexts/ClassSessionContext';
 import { useLesson } from '../../contexts/LessonContext';
 import { buildCreateSceneActiveLesson } from '../../utils/buildCreateSceneActiveLesson';
 import { getVr360TourById, VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
+import { resolvePlayerRoute } from '../../lib/classroom/resolvePlayerRoute';
 import type { LanguageCode } from '../../types/curriculum';
 import type { LessonChapter, LessonTopic } from '../../contexts/LessonContext';
 
@@ -45,15 +46,23 @@ function writeHandled(key: string) {
 export const ClassLaunchRouter = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { joinedSession, joinedSessionId } = useClassSession();
+  const { joinedSession, joinedSessionId, isAdmitted } = useClassSession();
   const { startLesson: contextStartLesson } = useLesson();
   const inFlightRef = useRef<string | null>(null);
 
   const launched = joinedSession?.launched_lesson ?? null;
   const scene = joinedSession?.launched_scene ?? null;
   // Hosts drive the class from their own player; never redirect them.
+  //
+  // `isAdmitted` is the access check. A student the teacher removed keeps their
+  // joined session while a rejoin request is pending — without this they were
+  // pulled straight back into the lesson the moment they asked, with no
+  // approval from anyone.
   const isStudentInSession =
-    Boolean(joinedSessionId) && Boolean(user?.uid) && joinedSession?.teacher_uid !== user?.uid;
+    Boolean(joinedSessionId) &&
+    Boolean(user?.uid) &&
+    joinedSession?.teacher_uid !== user?.uid &&
+    isAdmitted;
 
   // ---- Launched lesson -----------------------------------------------------
   useEffect(() => {
@@ -113,7 +122,8 @@ export const ClassLaunchRouter = () => {
       return;
     }
 
-    // Curriculum / user-generated lessons: fetch the bundle, then open krpano.
+    // Curriculum / user-generated lessons: fetch the bundle, then open the
+    // player the teacher chose at launch.
     inFlightRef.current = key;
     const effectiveLang = (launched.lang ?? 'en') as LanguageCode;
     let cancelled = false;
@@ -235,7 +245,7 @@ export const ClassLaunchRouter = () => {
           );
         }
         // Small delay so third-party iframes (Firebase Auth) settle first.
-        setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
+        setTimeout(() => navigate(resolvePlayerRoute(launched)), 200);
       } catch (err) {
         console.error('ClassLaunchRouter: failed to open launched lesson:', err);
         inFlightRef.current = null;
@@ -267,12 +277,14 @@ export const ClassLaunchRouter = () => {
           fullLessonData.topic as unknown as LessonTopic
         );
       }
-      setTimeout(() => navigate('/vrlessonplayer-krpano'), 200);
+      // A launched scene carries no player of its own; follow the lesson the
+      // teacher last launched so the class does not split between players.
+      setTimeout(() => navigate(resolvePlayerRoute(joinedSession?.launched_lesson)), 200);
     } catch (err) {
       console.error('ClassLaunchRouter: failed to open launched scene:', err);
       inFlightRef.current = null;
     }
-  }, [scene, joinedSessionId, isStudentInSession, navigate, contextStartLesson]);
+  }, [scene, joinedSessionId, isStudentInSession, navigate, contextStartLesson, joinedSession?.launched_lesson]);
 
   return null;
 };

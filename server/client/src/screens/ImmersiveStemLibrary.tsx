@@ -110,6 +110,8 @@ export default function ImmersiveStemLibrary() {
       sessionStorage.setItem('activeLesson', JSON.stringify(lesson));
       sessionStorage.setItem('learnxr_licensed_content_id', item.id);
       startLesson(lesson.chapter, lesson.topic);
+      // Deliberately not resolvePlayerRoute: krpano_native licensed content is
+      // authored for krpano and will not render in the Three.js player.
       navigate('/vrlessonplayer-krpano');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not launch this content.');

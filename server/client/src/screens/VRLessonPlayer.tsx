@@ -32,6 +32,7 @@ import api from '../config/axios';
 import { getChapterTTS, getMeshyAssets, getChapterMCQs } from '../lib/firestore/queries';
 import { getLessonBundle } from '../services/firestore/getLessonBundle';
 import { getVRCapabilities } from '../utils/vrDetection';
+import { PLAYER_ROUTES, DEFAULT_PLAYER } from '../lib/classroom/resolvePlayerRoute';
 import type { ChapterTTS, MeshyAsset, ChapterMCQ } from '../types/curriculum';
 import {
   Play,
@@ -3377,9 +3378,11 @@ const SafeVRLessonPlayer = () => {
 
 const VRLessonPlayer = () => {
   // This player has no class-session awareness: a student here cannot be held or
-  // controlled by the teacher. Send anyone in a live session to the krpano player.
+  // controlled by the teacher. This runs at render time, before the session doc
+  // is readable, so it sends them to the default player — whose
+  // useEnforcedPlayerRoute moves them again if the class is using the other one.
   if (typeof window !== 'undefined' && sessionStorage.getItem('learnxr_joined_session_id')) {
-    return <Navigate to="/vrlessonplayer-krpano" replace />;
+    return <Navigate to={PLAYER_ROUTES[DEFAULT_PLAYER]} replace />;
   }
   return (
     <VRPlayerErrorBoundary onReset={() => {

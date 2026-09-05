@@ -170,7 +170,19 @@ export interface LaunchedLesson {
   title?: string;
   /** Unique dispatch ID so relaunching the same licensed item is not de-duplicated. */
   launch_id?: string;
+  /**
+   * Which player the class opens the lesson in. Chosen by the teacher at launch
+   * and followed by every student, so the whole class stays in one player.
+   *
+   * Absent on any session launched before this field existed, which is why
+   * `resolvePlayerRoute` treats undefined as krpano rather than defaulting to
+   * the newer player.
+   */
+  player?: LessonPlayerChoice;
 }
+
+/** The lesson players a class can be launched into. */
+export type LessonPlayerChoice = 'krpano' | 'xr_v3';
 
 export interface TeacherContentState {
   /**

@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { openLessonInPlayer } from '../../lib/classroom/resolvePlayerRoute';
 import { toast } from 'react-toastify';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -487,7 +488,7 @@ export default function StreetViewLessonCreator() {
       if (sessionId) sessionStorage.setItem('learnxr_class_session_id', sessionId);
       contextStartLesson(cleanChapter, cleanTopic);
       toast.success('Tour launched to your class.');
-      navigate('/vrlessonplayer-krpano');
+      openLessonInPlayer(navigate, { launched: null });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to launch tour.');
     } finally {

@@ -16,7 +16,7 @@
  * Skybox source: stored_glb_url from skyboxes collection
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { extractMcqOptions, resolveCorrectAnswerIndex } from '../lib/mcq/answerIndex';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as THREE from 'three';
@@ -31,10 +31,65 @@ import { StableLayoutSystem } from '../utils/webxr/stableLayoutSystem';
 import { SceneLayoutSystem, PlacementStrategy, AssetPlacement } from '../utils/webxr/sceneLayoutSystem';
 import { db } from '../config/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { ArrowLeft, Loader2, AlertTriangle, Glasses, SkipForward, Award, Home, Play } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Glasses, Award, Home, Play, Hand } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { useAuth } from '../contexts/AuthContext';
-import { reportSessionProgress, type ReportSessionQuizPayload } from '../services/classSessionService';
-import type { SessionLessonPhase } from '../types/lms';
+import { useEnforcedPlayerRoute } from '../hooks/useEnforcedPlayerRoute';
+import { useComfortBreak } from '../hooks/useComfortBreak';
+import { type ReportSessionQuizPayload } from '../services/classSessionService';
+// Scores have to land in student_scores as well as on the class session: the
+// session progress doc is live teaching data and is thrown away with the class,
+// while student_scores is the durable record the dashboards and reports read.
+import { saveQuizScore } from '../services/lessonTrackingService';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+
+// Live-class support. The classroom logic is shared with the krpano player so the
+// two cannot drift; this player only supplies its phase vocabulary and camera I/O.
+import { useClassroomSession, type ClassroomViewAdapter } from '../hooks/useClassroomSession';
+// The lesson panel is drawn by the same renderer the krpano player uses, so the
+// two players show an identical UI rather than two hand-maintained versions.
+import {
+  actionAtUv,
+  drawLessonPanel,
+  ensureLessonPanelFont,
+  parseLessonUiAction,
+  EMPTY_LESSON_UI_STATE,
+  PANEL_H,
+  PANEL_W,
+} from '../lib/lessonUi';
+import type { ButtonRegion, LessonUiState } from '../lib/lessonUi';
+import { createLookControls, type LookControls } from '../lib/three/lookControls';
+// A headset draws two eyes on a mobile GPU; the flat view draws one on a desktop
+// GPU. Same scene, very different budget — see lib/three/renderBudget.
+import {
+  applyRenderBudget,
+  requestShadowRefresh,
+  FLAT_BUDGET,
+  IMMERSIVE_BUDGET,
+} from '../lib/three/renderBudget';
+// In a headset the device owns the camera pose, so a teacher's Direct has to
+// move the reference space instead of the camera.
+import { faceXrViewerTowards, resetXrReorientation } from '../lib/three/xrReorient';
+import { cameraRotationToHV } from '../lib/classroom/viewSync';
+import { createNarrationController, type NarrationController } from '../lib/lesson/narration';
+// The teacher marker draws real geometry rather than an SVG overlay, so a
+// student wearing a headset sees the ink too.
+import { createInkLayer, type InkLayer } from '../lib/annotations/inkLayer';
+import {
+  annotationNow,
+  capPoints,
+  MAX_INK_STROKES,
+  simplifyStroke,
+  STROKE_TTL_MS,
+} from '../lib/annotations/sphereGeometry';
+import { MARKER_COLORS } from '../Components/player/MarkerToolbar';
+import { appendStroke, publishAnnotations } from '../services/classSessionService';
+import type { AnnotationPoint, AnnotationStroke, SessionLessonPhase } from '../types/lms';
+import { LiveClassHostOverlay } from '../Components/classSession/LiveClassHostOverlay';
+import { PlayerChrome } from '../Components/player/PlayerChrome';
+import { PlayerTopBar } from '../Components/player/PlayerTopBar';
+import { PlayerBottomBar } from '../Components/player/PlayerBottomBar';
+import { usePlayerViewport } from '../hooks/usePlayerViewport';
 
 // WebXR Utilities
 import {
@@ -99,7 +154,16 @@ interface MeshyAsset {
 }
 
 type LoadingState = 'loading' | 'ready' | 'error' | 'no-vr' | 'in-vr';
-type LessonPhase = 'waiting' | 'intro' | 'content' | 'outro' | 'mcq' | 'complete';
+/**
+ * The lesson phase vocabulary is now the SAME one the session, Firestore and
+ * the krpano player use. This player used to have its own names (waiting /
+ * content / mcq / complete) with an adapter translating on every read and
+ * write; that translation layer is gone.
+ */
+type LessonPhase = Extract<
+  SessionLessonPhase,
+  'idle' | 'intro' | 'explanation' | 'outro' | 'quiz' | 'completed'
+>;
 
 // ============================================================================
 // Error Boundary Component
@@ -155,17 +219,14 @@ class XRPlayerErrorBoundary extends React.Component<
 // ============================================================================
 
 const XRLessonPlayerV3: React.FC = () => {
-  // No class-session awareness here — students in a live session must use the
-  // krpano player so the teacher's lockstep controls apply.
-  const inClassSession =
-    typeof window !== 'undefined' && Boolean(sessionStorage.getItem('learnxr_joined_session_id'));
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // profile carries the school/class context saveQuizScore attributes on.
   const { user, profile } = useAuth();
 
-  useEffect(() => {
-    if (inClassSession) navigate('/vrlessonplayer-krpano', { replace: true });
-  }, [inClassSession, navigate]);
+  // If the class was launched into the other player, move there rather than
+  // splitting the class across two.
+  useEnforcedPlayerRoute('xr_v3');
 
   // Refs
   const containerRef = useRef<HTMLDivElement>(null);
@@ -173,7 +234,17 @@ const XRLessonPlayerV3: React.FC = () => {
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const vrButtonRef = useRef<HTMLElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  /**
+   * Narration is owned by a controller, not a bare Audio element. See
+   * lib/lesson/narration.ts: dropping an element with `pause(); ref = null` did
+   * not reliably stop it, which is how intro and explanation ended up playing
+   * over each other.
+   */
+  const narrationRef = useRef<NarrationController | null>(null);
+  /** Pending "advance after a silent phase" timer, so it can be cancelled. */
+  const phaseAdvanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Read inside advancePhase, which must not re-create itself when quiz data loads. */
+  const mcqDataRef = useRef<MCQData[]>([]);
   const assetsGroupRef = useRef<THREE.Group | null>(null);
   const primaryAssetRef = useRef<THREE.Group | null>(null);
   const groundPlaneRef = useRef<THREE.Mesh | null>(null);
@@ -198,8 +269,6 @@ const XRLessonPlayerV3: React.FC = () => {
   // Ground plane constants
   const GROUND_LEVEL = 0;        // Y coordinate of the ground plane
   const TABLE_HEIGHT = 1.0;      // Height for placing objects (1m above ground)
-  const ASSET_DISTANCE = 2.5;    // Distance from user to asset (closer for better view)
-  const ASSET_RIGHT_OFFSET = 1.2; // How far right of center
   
   // Normalized asset sizing - ALL assets scaled to this size
   const NORMALIZED_SIZE = 1.0;   // All assets fit within 1.0m bounding box for better viewing
@@ -216,12 +285,43 @@ const XRLessonPlayerV3: React.FC = () => {
   const inputSourcesRef = useRef<(XRInputSource | null)[]>([null, null]); // Store input sources for haptic feedback
   
   // VR UI refs
-  const scriptPanelRef = useRef<THREE.Mesh | null>(null);
-  const mcqPanelRef = useRef<THREE.Mesh | null>(null);
-  const startPanelRef = useRef<THREE.Mesh | null>(null);
-  const lastScriptPanelUpdateRef = useRef<number>(0);
+  /**
+   * The one lesson panel. Replaces the separate script / MCQ / start / class
+   * meshes; the shared renderer draws all of those states onto this surface.
+   */
+  const lessonPanelRef = useRef<{
+    mesh: THREE.Mesh;
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D;
+    texture: THREE.CanvasTexture;
+    bornAt: number;
+  } | null>(null);
+  /** Clickable regions from the last draw, in 2048x1280 canvas space. */
+  const lessonPanelRegionsRef = useRef<ButtonRegion[]>([]);
+  /** Latest panel state, read by the draw call outside React's render. */
+  const lessonUiStateRef = useRef<LessonUiState>(EMPTY_LESSON_UI_STATE);
+  const lessonPanelFontRef = useRef<string | undefined>(undefined);
+  const lessonPanelHoverRef = useRef<string | null>(null);
+  /**
+   * Panel click handler, reached through a ref.
+   *
+   * The two call sites (the canvas pointer handler and the VR controller ray)
+   * are created inside the scene-init effect, which runs once when the skybox
+   * resolves. Calling the useCallback directly from there captured the FIRST
+   * version of it — closed over an empty mcqData — so every quiz tap hit the
+   * `currentMcqIndex >= mcqData.length` guard and returned silently. That is
+   * why the quiz looked unresponsive rather than hidden.
+   */
+  const lessonPanelUvRef = useRef<(u: number, v: number) => boolean>(() => false);
+  /** When the learner actually began, for the score's time-taken field. */
+  const lessonStartTimeRef = useRef<number | null>(null);
+
+  /** Teacher marker: the 3D ink layer, plus the stroke being drawn right now. */
+  const inkLayerRef = useRef<InkLayer | null>(null);
+  const activeStrokeRef = useRef<AnnotationStroke | null>(null);
+  const markerActiveRef = useRef(false);
+  const markerColorRef = useRef<string>(MARKER_COLORS[0]);
   const lastProgressPercentRef = useRef<number>(-1);
-  const lastMcqPanelStateRef = useRef<string>(''); // Track MCQ panel state to avoid redundant recreations
   
   // WebXR Systems refs
   const layoutEngineRef = useRef<LayoutEngine | null>(null);
@@ -240,11 +340,11 @@ const XRLessonPlayerV3: React.FC = () => {
   const [ttsData, setTtsData] = useState<TTSData[]>([]);
   const [mcqData, setMcqData] = useState<MCQData[]>([]);
   const [meshyAssets, setMeshyAssets] = useState<MeshyAsset[]>([]);
-  const [lessonPhase, setLessonPhase] = useState<LessonPhase>('waiting');
+  const [lessonPhase, setLessonPhase] = useState<LessonPhase>('idle');
   const [lessonStarted, setLessonStarted] = useState(false);
   const [currentTtsIndex, setCurrentTtsIndex] = useState(0);
   const [currentMcqIndex, setCurrentMcqIndex] = useState(0);
-  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [, setIsAudioPlaying] = useState(false);
   const [assetsLoaded, setAssetsLoaded] = useState(0);
   const [selectedMcqOption, setSelectedMcqOption] = useState<number | null>(null);
   const [mcqAnswered, setMcqAnswered] = useState(false);
@@ -255,35 +355,67 @@ const XRLessonPlayerV3: React.FC = () => {
   // TTS State Machine
   type TTSState = 'idle' | 'playing' | 'paused' | 'ended';
   const [ttsState, setTtsState] = useState<TTSState>('idle');
-  const [audioProgress, setAudioProgress] = useState(0); // 0-1
-  const [audioDuration, setAudioDuration] = useState(0);
-  const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   
-  // Debug state - expanded for comprehensive logging
-  const [debugInfo, setDebugInfo] = useState<string[]>([]);
-  const [debugExpanded, setDebugExpanded] = useState(true);
-  
-  // Asset dock state
-  const [assetsVisible, setAssetsVisible] = useState(true);
-  const [assetDockExpanded, setAssetDockExpanded] = useState(false);
   
   // Asset references map for dock control
   const assetRefs = useRef<Map<string, THREE.Object3D>>(new Map());
   
   // Scene Layout System (production-grade, scalable layout)
   const sceneLayoutRef = useRef<SceneLayoutSystem | null>(null);
+  /** Drives the scene layout; rotated at lesson start. */
   const [placementStrategy, setPlacementStrategy] = useState<PlacementStrategy>('curved-arc');
   const assetPlacementsRef = useRef<AssetPlacement[]>([]);
   const animationMixersRef = useRef<THREE.AnimationMixer[]>([]);
   const lastAnimationTimeRef = useRef<number>(0);
+
+  // --- Live class -----------------------------------------------------------
+  // Drag-to-look for flat screens. The camera used to be immovable outside a
+  // headset, which also left view sync with nothing to read or write.
+  const lookControlsRef = useRef<LookControls | null>(null);
+  /** Subscribers to local view changes (host broadcast, student view reporting). */
+  const viewListenersRef = useRef<Set<(h: number, v: number, fov: number) => void>>(new Set());
+  /** Set by the classroom hook below so effects defined earlier can reach it. */
+  const classroomRef = useRef<{
+    blockStudentPhaseControl: (label: string) => boolean;
+    markStudentLooking: () => void;
+    showImmersiveUiForThisViewer: boolean;
+    directClassToCurrentView: () => Promise<boolean>;
+    /** Class the lesson is being taught in, for score attribution. */
+    classId: string | null;
+  }>({
+    blockStudentPhaseControl: () => false,
+    markStudentLooking: () => {},
+    showImmersiveUiForThisViewer: true,
+    directClassToCurrentView: async () => false,
+    classId: null,
+  });
+  /**
+   * Gates the phase autoplay effect. Under lockstep the teacher owns playback, so
+   * a student's audio must not start on its own.
+   */
+  const [autoplayEnabled, setAutoplayEnabled] = useState(true);
+  /** Last phase the autoplay effect actually played, so it fires once per phase. */
+  const lastPlayedPhaseRef = useRef<LessonPhase | null>(null);
+  const [hostDrawer, setHostDrawer] = useState<null | 'roster' | 'approvals' | 'preview'>(null);
+  /**
+   * Comfort break. Students only — a teacher driving the class does not need
+   * their own lesson interrupted, and they can see the prompt land for the room.
+   */
+  const [isPresentingXR, setIsPresentingXR] = useState(false);
+  const [markerActive, setMarkerActive] = useState(false);
+  const [markerColor, setMarkerColor] = useState<string>(MARKER_COLORS[0]);
+  const [endSessionConfirming, setEndSessionConfirming] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const playerViewport = usePlayerViewport();
   
   // Debug logger with category support - enhanced with timestamps and structured output
   const addDebug = useCallback((msg: string, category?: keyof typeof DEBUG_CATEGORIES) => {
     const prefix = category ? DEBUG_CATEGORIES[category] : '[V3]';
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
     const fullMsg = `${prefix} ${msg}`;
+    // Console only. This used to also feed an on-screen panel that was
+    // rendered unconditionally, so it shipped to every class.
     console.log(`[${timestamp}] ${fullMsg}`);
-    setDebugInfo(prev => [...prev.slice(-30), `${timestamp}: ${msg}`]); // Increased log retention
   }, []);
   
   // Structured debug helpers with enhanced context
@@ -316,23 +448,6 @@ const XRLessonPlayerV3: React.FC = () => {
   }, [addDebug]);
   
   // Comprehensive state logger - logs current state summary
-  const logStateSummary = useCallback(() => {
-    const summary = {
-      loadingState,
-      lessonPhase,
-      lessonStarted,
-      ttsCount: ttsData.length,
-      mcqCount: mcqData.length,
-      currentMcqIndex,
-      mcqScore,
-      assetsLoaded,
-      isAudioPlaying,
-      ttsState,
-      layoutEngineReady: layoutEngineRef.current?.isReady() || false,
-    };
-    console.log('[STATE SUMMARY]', summary);
-    addDebug(`State: phase=${lessonPhase}, started=${lessonStarted}, tts=${ttsData.length}, mcq=${mcqData.length}, score=${mcqScore}/${mcqData.length}`);
-  }, [loadingState, lessonPhase, lessonStarted, ttsData.length, mcqData.length, currentMcqIndex, mcqScore, assetsLoaded, isAudioPlaying, ttsState, addDebug]);
   
   // ============================================================================
   // Load Lesson Data from SessionStorage
@@ -363,47 +478,10 @@ const XRLessonPlayerV3: React.FC = () => {
     loadLessonData();
   }, [addDebug]);
 
-  // Report phase to class session for teacher live progress (when launched from class session)
-  useEffect(() => {
-    const sessionId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('learnxr_class_session_id') : null;
-    if (!sessionId || !user?.uid) return;
-    const map: Record<LessonPhase, SessionLessonPhase> = {
-      waiting: 'idle',
-      intro: 'intro',
-      content: 'explanation',
-      outro: 'outro',
-      mcq: 'quiz',
-      complete: 'completed',
-    };
-    const phase = map[lessonPhase];
-    if (phase === 'completed' && pendingQuizReportRef.current) {
-      const quiz = pendingQuizReportRef.current;
-      pendingQuizReportRef.current = null;
-      reportSessionProgress(
-        sessionId,
-        user.uid,
-        profile?.displayName ?? profile?.name ?? undefined,
-        'completed',
-        undefined,
-        quiz,
-        profile?.email ?? user?.email ?? undefined
-      ).catch(() => {});
-    } else {
-      reportSessionProgress(
-        sessionId,
-        user.uid,
-        profile?.displayName ?? profile?.name ?? undefined,
-        phase,
-        undefined,
-        undefined,
-        profile?.email ?? user?.email ?? undefined
-      ).catch(() => {});
-    }
-  }, [lessonPhase, user?.uid, user?.email, profile?.displayName, profile?.name, profile?.email]);
 
   // Reset quiz answer history when entering MCQ phase
   useEffect(() => {
-    if (lessonPhase === 'mcq') mcqAnswerHistoryRef.current = [];
+    if (lessonPhase === 'quiz') mcqAnswerHistoryRef.current = [];
   }, [lessonPhase]);
   
   // ============================================================================
@@ -1048,6 +1126,15 @@ const XRLessonPlayerV3: React.FC = () => {
           // Listen for session start/end
           rendererRef.current.xr.addEventListener('sessionstart', () => {
             console.log(`${DEBUG_CATEGORIES.XR} VR session started`);
+            setIsPresentingXR(true);
+            resetXrReorientation();
+            // Cut the render budget for the headset. Without this a lesson with
+            // more than one 3D asset drops frames badly: the shadow pass is
+            // re-rendered every frame at 2048 across two eyes, and its cost
+            // scales with the number of casters.
+            if (rendererRef.current && sceneRef.current) {
+              applyRenderBudget(rendererRef.current, sceneRef.current, IMMERSIVE_BUDGET);
+            }
             
             // Store input sources for haptic feedback
             const session = rendererRef.current.xr.getSession();
@@ -1175,23 +1262,22 @@ const XRLessonPlayerV3: React.FC = () => {
                 
                 console.log(`🎯 [VR START] ════════════════════════════════════════\n`);
                 
-                // Create START panel if lesson hasn't started
-                if (!lessonStarted) {
-                  createStartPanel();
-                }
+                // The lesson panel shows the start state itself.
+                ensureLessonPanel();
               }
             }, 500);
           });
           
           rendererRef.current.xr.addEventListener('sessionend', () => {
             console.log(`${DEBUG_CATEGORIES.XR} VR session ended`);
+            setIsPresentingXR(false);
+            resetXrReorientation();
+            // Back to full fidelity on the flat screen.
+            if (rendererRef.current && sceneRef.current) {
+              applyRenderBudget(rendererRef.current, sceneRef.current, FLAT_BUDGET);
+            }
             setLoadingState('ready');
             
-            // Remove start panel if exists
-            if (startPanelRef.current && sceneRef.current) {
-              sceneRef.current.remove(startPanelRef.current);
-              startPanelRef.current = null;
-            }
           });
         } catch (vrErr: any) {
           console.error('[XRLessonPlayerV3] VR button creation error:', vrErr);
@@ -1202,75 +1288,54 @@ const XRLessonPlayerV3: React.FC = () => {
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       setIsSceneReady(true);
 
-      // If WebXR is not supported, enable a 2D/desktop fallback UI flow:
-      // - mark scene as ready
-      // - set loading state to 'ready'
-      // - create the start panel so users can click to begin without a headset
-      // - attach a pointer event listener that raycasts from the camera to UI panels
-      if (!isVRSupported) {
-        try {
-          setLoadingState('ready');
-          // Create the start panel (will be a clickable canvas texture)
-          createStartPanel();
+      // Screen input for the lesson panel.
+      //
+      // This used to be inside `if (!isVRSupported)`, so on a desktop browser
+      // that reports immersive-vr support but is not presenting, NO handler was
+      // attached at all and the panel was completely unclickable. Whether the
+      // device could enter VR has nothing to do with whether a mouse is being
+      // used, so it is now always attached — the raycast simply finds nothing
+      // while a headset session owns the view.
+      try {
+        setLoadingState('ready');
+        ensureLessonPanel();
 
-          // Pointer handler: translate screen pointer to a ray and detect UI button clicks
-          const handlePointerDown = (event: PointerEvent) => {
-            try {
-              if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !raycasterRef.current) return;
-              const rect = rendererRef.current.domElement.getBoundingClientRect();
-              const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-              const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-              const mouse = new THREE.Vector2(x, y);
-              raycasterRef.current.setFromCamera(mouse, cameraRef.current);
+        const canvas = rendererRef.current.domElement;
+        const handlePointerUp = (event: PointerEvent) => {
+          try {
+            if (event.button !== 0) return;
+            if (rendererRef.current?.xr?.isPresenting) return;
+            // A drag is a look-around, not a click. lookControls already applies
+            // a 3px threshold, so this is the same gesture distinction the
+            // controls use rather than a second, competing one.
+            if (lookControlsRef.current?.isDragging()) return;
+            if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !raycasterRef.current) return;
 
-              const uiPanels = [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].filter(Boolean) as THREE.Mesh[];
-              const intersects = raycasterRef.current.intersectObjects(uiPanels, false);
-              if (intersects.length === 0) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouse = new THREE.Vector2(
+              ((event.clientX - rect.left) / rect.width) * 2 - 1,
+              -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
+            raycasterRef.current.setFromCamera(mouse, cameraRef.current);
 
-              const intersect = intersects[0];
-              const panel = intersect.object as THREE.Mesh;
-              if (!panel.userData.hasButtons || !panel.userData.buttons) return;
+            const panelMesh = lessonPanelRef.current?.mesh;
+            if (!panelMesh) return;
+            const uv = raycasterRef.current.intersectObject(panelMesh, false)[0]?.uv;
+            if (!uv) return;
+            // Regions come back from the shared renderer in canvas space, so the
+            // UV is all this needs — no per-panel size guessing.
+            lessonPanelUvRef.current(uv.x, uv.y);
+          } catch (err: any) {
+            console.error('[XRLessonPlayerV3] Panel pointer handler error:', err);
+          }
+        };
 
-              // Convert world hit point to local panel coordinates, then to canvas pixels
-              const localPoint = new THREE.Vector3();
-              panel.worldToLocal(localPoint.copy(intersect.point));
-
-              const canvasWidth = panel.userData.canvasWidth || 1000;
-              const canvasHeight = panel.userData.canvasHeight || 700;
-
-              // Panel geometry assumed to be width=2.0, height=1.4 (see createStartPanel)
-              const canvasX = ((localPoint.x + 1.0) / 2.0) * canvasWidth;
-              const canvasY = ((1.0 - localPoint.y) / 1.4) * canvasHeight;
-
-              for (const button of panel.userData.buttons) {
-                const { bounds, action } = button;
-                if (
-                  canvasX >= bounds.x &&
-                  canvasX <= bounds.x + bounds.width &&
-                  canvasY >= bounds.y &&
-                  canvasY <= bounds.y + bounds.height
-                ) {
-                  try {
-                    if (action && typeof action === 'function') {
-                      action();
-                    }
-                  } catch (err: any) {
-                    console.error('[XRLessonPlayerV3] Desktop UI action error:', err);
-                  }
-                  return;
-                }
-              }
-            } catch (err: any) {
-              console.error('[XRLessonPlayerV3] Desktop pointer handler error:', err);
-            }
-          };
-
-          // Store handlers on renderer ref so cleanup can access same references
-          (rendererRef as any)._desktopPointerDown = handlePointerDown;
-          window.addEventListener('pointerdown', handlePointerDown);
-        } catch (err: any) {
-          console.error('[XRLessonPlayerV3] Desktop fallback init error:', err);
-        }
+        // pointerup, not pointerdown: a click is only a click once we know the
+        // gesture did not turn into a drag.
+        (rendererRef as any)._panelPointerUp = handlePointerUp;
+        canvas.addEventListener('pointerup', handlePointerUp);
+      } catch (err: any) {
+        console.error('[XRLessonPlayerV3] Panel input init error:', err);
       }
     }
 
@@ -1528,95 +1593,22 @@ const XRLessonPlayerV3: React.FC = () => {
         
         raycaster.set(origin, direction);
         
-        // Check panels first (for button clicks) - include start panel
-        const panels = [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].filter(Boolean) as THREE.Mesh[];
-        const panelIntersects = raycaster.intersectObjects(panels, false);
-        
-        if (panelIntersects.length > 0) {
-          const intersect = panelIntersects[0];
-          const panel = intersect.object as THREE.Mesh;
-          
-          if (panel.userData.hasButtons && panel.userData.buttons && intersect.uv) {
-            // Convert UV to canvas coordinates
-            const uv = intersect.uv;
-            // Use actual canvas dimensions from panel userData or defaults
-            const canvasWidth = panel.userData.canvasWidth || (
-              panel.userData.panelType === 'start' ? 1000 :
-              panel.userData.panelType === 'strategy' ? 400 :
-              1400
-            );
-            const canvasHeight = panel.userData.canvasHeight || (
-              panel.userData.panelType === 'mcq' ? 1000 :
-              panel.userData.panelType === 'start' ? 700 :
-              panel.userData.panelType === 'strategy' ? 120 :
-              800
-            );
-            const pixelX = uv.x * canvasWidth;
-            const pixelY = (1 - uv.y) * canvasHeight;
-            
-            // Find clicked button
-            for (const button of panel.userData.buttons) {
-              const { bounds, action } = button;
-              if (pixelX >= bounds.x && pixelX <= bounds.x + bounds.width &&
-                  pixelY >= bounds.y && pixelY <= bounds.y + bounds.height) {
-                // Debounce button clicks - reduced from 300ms to 100ms for more responsive clicks
-                const buttonId = `${panel.name}_${bounds.x}_${bounds.y}`;
-                const now = Date.now();
-                const lastClick = lastGrabTimeRef.current.get(buttonId) || 0;
-                if (now - lastClick < 100) {
-                  console.log('[START BUTTON] Click debounced');
-                  return;
-                }
-                lastGrabTimeRef.current.set(buttonId, now);
-                
-                // CRITICAL: Trigger haptic feedback for ALL button clicks
-                if (controller1Ref.current) {
-                  triggerHapticFeedback(controller1Ref.current);
-                } else if (controller2Ref.current) {
-                  triggerHapticFeedback(controller2Ref.current);
-                }
-                
-                // Add explicit logging
-                const buttonType = panel.userData.panelType === 'strategy' ? 'STRATEGY' : 'START';
-                console.log(`[${buttonType} BUTTON] Click detected:`, {
-                  buttonId,
-                  pixelX: pixelX.toFixed(1),
-                  pixelY: pixelY.toFixed(1),
-                  bounds: {
-                    x: bounds.x,
-                    y: bounds.y,
-                    width: bounds.width,
-                    height: bounds.height
-                  },
-                  uv: { x: uv.x.toFixed(3), y: uv.y.toFixed(3) },
-                  canvasSize: { width: canvasWidth, height: canvasHeight }
-                });
-                
-                // Execute immediately with error handling
-                try {
-                  if (action && typeof action === 'function') {
-                    const buttonType = panel.userData.panelType === 'strategy' ? 'STRATEGY' : 'START';
-                    console.log(`[${buttonType} BUTTON] Executing action`);
-                    action();
-                    // Trigger haptic feedback for button clicks
-                    triggerHapticFeedback(controller);
-                    if (panel.userData.panelType === 'strategy') {
-                      addDebug(`✅ Strategy button clicked - changing layout`);
-                    } else {
-                      addDebug(`✅ START button clicked - lesson starting`);
-                    }
-                  } else {
-                    console.warn(`[BUTTON] Action is not a function:`, action);
-                    addDebug(`⚠️ Button action invalid`);
-                  }
-                } catch (err: any) {
-                  console.error(`[BUTTON] Action error:`, err);
-                  addDebug(`❌ Button error: ${err?.message || err}`);
-                }
-                return;
-              }
-            }
+        // Check the lesson panel first, so a button press is never stolen by an
+        // asset behind it.
+        const panelMesh = lessonPanelRef.current?.mesh;
+        const panelIntersects = panelMesh ? raycaster.intersectObject(panelMesh, false) : [];
+
+        if (panelIntersects.length > 0 && panelIntersects[0].uv) {
+          const uv = panelIntersects[0].uv;
+          const buttonId = `lessonPanel_${Math.round(uv.x * 100)}_${Math.round(uv.y * 100)}`;
+          const now = Date.now();
+          const lastClick = lastGrabTimeRef.current.get(buttonId) || 0;
+          if (now - lastClick > 100) {
+            lastGrabTimeRef.current.set(buttonId, now);
+            triggerHapticFeedback(controller);
+            lessonPanelUvRef.current(uv.x, uv.y);
           }
+          return;
         }
         
         // ═══════════════════════════════════════════════════════════════
@@ -1653,11 +1645,8 @@ const XRLessonPlayerV3: React.FC = () => {
           const assetObjects: THREE.Object3D[] = [];
           
           // Collect UI panels first (priority)
-          [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].forEach(panel => {
-            if (panel && panel.userData.layer === 'ui' && panel.visible) {
-              uiPanels.push(panel);
-            }
-          });
+          const lessonMesh = lessonPanelRef.current?.mesh;
+          if (lessonMesh && lessonMesh.visible) uiPanels.push(lessonMesh);
           
           // Collect asset objects (only if not hitting UI)
           // CRITICAL FIX: Use getAllInteractableMeshes() for reliable raycast hit detection
@@ -1971,6 +1960,28 @@ const XRLessonPlayerV3: React.FC = () => {
       }
     })();
     
+    // Drag-to-look. Without this the camera is immovable on a flat screen, and
+    // view sync has nothing to read from or write to.
+    if (rendererRef.current && cameraRef.current) {
+      lookControlsRef.current?.dispose();
+      lookControlsRef.current = createLookControls({
+        camera: cameraRef.current,
+        domElement: rendererRef.current.domElement,
+        // Stand down entirely in a headset — the device owns the pose there.
+        isPresenting: () => rendererRef.current?.xr?.isPresenting === true,
+        onChange: (h, v, fov) => {
+          // ONLY a real drag suspends teacher-view follow. onChange also fires
+          // while the teacher's own view is being applied, and marking that as
+          // "the student is looking around" would make follow block itself for
+          // the whole grace window on every update.
+          if (lookControlsRef.current?.isDragging()) {
+            classroomRef.current.markStudentLooking();
+          }
+          viewListenersRef.current.forEach((listener) => listener(h, v, fov));
+        },
+      });
+    }
+
     // Animation loop (XR-compatible) - only if renderer exists
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       lastAnimationTimeRef.current = performance.now() / 1000;
@@ -1980,16 +1991,12 @@ const XRLessonPlayerV3: React.FC = () => {
           const delta = lastAnimationTimeRef.current ? Math.min(now - lastAnimationTimeRef.current, 0.1) : 0;
           lastAnimationTimeRef.current = now;
           animationMixersRef.current.forEach((mixer) => mixer.update(delta));
+          lookControlsRef.current?.update();
+          inkLayerRef.current?.update();
 
           // Update billboards to face camera
-          if (scriptPanelRef.current && cameraRef.current) {
-            scriptPanelRef.current.lookAt(cameraRef.current.position);
-          }
-          if (mcqPanelRef.current && cameraRef.current) {
-            mcqPanelRef.current.lookAt(cameraRef.current.position);
-          }
-          if (startPanelRef.current && cameraRef.current) {
-            startPanelRef.current.lookAt(cameraRef.current.position);
+          if (lessonPanelRef.current && cameraRef.current) {
+            lessonPanelRef.current.mesh.lookAt(cameraRef.current.position);
           }
           
           // Gravity simulation: Make assets rest on dock when not grabbed
@@ -2049,11 +2056,8 @@ const XRLessonPlayerV3: React.FC = () => {
               const assetObjects: THREE.Object3D[] = [];
               
               // Collect UI panels (layer: 'ui')
-              [scriptPanelRef.current, mcqPanelRef.current, startPanelRef.current].forEach(panel => {
-                if (panel && panel.userData.layer === 'ui') {
-                  uiPanels.push(panel);
-                }
-              });
+              const lessonMesh = lessonPanelRef.current?.mesh;
+              if (lessonMesh) uiPanels.push(lessonMesh);
               
               // Collect asset objects (layer: 'asset')
               if (sceneRef.current) {
@@ -2200,14 +2204,16 @@ const XRLessonPlayerV3: React.FC = () => {
           window.removeEventListener('resize', handleResize);
           // Remove desktop pointer handler if we attached one
           try {
-            const desktopHandler = (rendererRef as any)?._desktopPointerDown;
-            if (desktopHandler) {
-              window.removeEventListener('pointerdown', desktopHandler);
-              (rendererRef as any)._desktopPointerDown = null;
+            const panelHandler = (rendererRef as any)?._panelPointerUp;
+            if (panelHandler) {
+              rendererRef.current?.domElement?.removeEventListener('pointerup', panelHandler);
+              (rendererRef as any)._panelPointerUp = null;
             }
           } catch (e) {
             // ignore
           }
+          lookControlsRef.current?.dispose();
+          lookControlsRef.current = null;
           if (rendererRef.current) {
             rendererRef.current.setAnimationLoop(null);
             rendererRef.current.dispose();
@@ -2749,6 +2755,9 @@ const XRLessonPlayerV3: React.FC = () => {
           
           const newCount = i + 1;
           setAssetsLoaded(newCount);
+          // The immersive budget stops redrawing the shadow map every frame, so a
+          // newly placed asset needs one explicit refresh to cast at all.
+          requestShadowRefresh(rendererRef.current);
           
           console.log(`[XRLessonPlayerV3] ✅ Asset ${newCount}/${meshyAssets.length} added to assetsGroup:`, {
             name: asset.name || asset.id,
@@ -3137,24 +3146,6 @@ const XRLessonPlayerV3: React.FC = () => {
   // TTS Audio Controls with State Machine
   // ============================================================================
   
-  // Update audio progress
-  useEffect(() => {
-    if (!audioRef.current || ttsState !== 'playing') return;
-    
-    const updateProgress = () => {
-      if (audioRef.current) {
-        const current = audioRef.current.currentTime;
-        const duration = audioRef.current.duration || 0;
-        setAudioCurrentTime(current);
-        setAudioDuration(duration);
-        setAudioProgress(duration > 0 ? current / duration : 0);
-      }
-    };
-    
-    const interval = setInterval(updateProgress, 100);
-    return () => clearInterval(interval);
-  }, [ttsState]);
-  
   // Get TTS for current phase
   const getTTSForPhase = useCallback((phase: LessonPhase): TTSData | null => {
     if (ttsData.length === 0) {
@@ -3166,7 +3157,7 @@ const XRLessonPlayerV3: React.FC = () => {
     let targetSections: string[] = ['full'];
     if (phase === 'intro') {
       targetSections = ['intro', 'introduction', 'avatar_intro'];
-    } else if (phase === 'content') {
+    } else if (phase === 'explanation') {
       targetSections = ['explanation', 'content', 'avatar_explanation', 'main'];
     } else if (phase === 'outro') {
       targetSections = ['outro', 'conclusion', 'avatar_outro', 'summary'];
@@ -3193,7 +3184,7 @@ const XRLessonPlayerV3: React.FC = () => {
     const idMatch = ttsData.find(tts => {
       const idLower = (tts.id || '').toLowerCase();
       if (phase === 'intro' && (idLower.includes('_intro_') || idLower.endsWith('_intro'))) return true;
-      if ((phase === 'content' || phase === 'explanation') && (idLower.includes('_explanation_') || idLower.includes('_content_'))) return true;
+      if (phase === 'explanation' && (idLower.includes('_explanation_') || idLower.includes('_content_'))) return true;
       if (phase === 'outro' && (idLower.includes('_outro_') || idLower.includes('_conclusion_'))) return true;
       return false;
     });
@@ -3209,168 +3200,327 @@ const XRLessonPlayerV3: React.FC = () => {
     return ttsData[0] || null;
   }, [ttsData, addDebug]);
   
+  /**
+   * The ONE place a lesson phase moves forward.
+   *
+   * This used to be duplicated in three branches of playTTSForPhase (no audio,
+   * ended, error), each with its own setTimeout, so a missing or failed clip
+   * could queue several advances and skip a phase.
+   */
+  const advancePhase = useCallback((from: LessonPhase) => {
+    setLessonPhase((current) => {
+      // Only advance if we are still on the phase this call was made for. A late
+      // callback from a superseded clip cannot drag the class forwards.
+      if (current !== from) return current;
+      if (from === 'intro') return 'explanation';
+      if (from === 'explanation') return 'outro';
+      if (from === 'outro') return mcqDataRef.current.length > 0 ? 'quiz' : 'completed';
+      return current;
+    });
+  }, []);
+
   const playTTSForPhase = useCallback((phase: LessonPhase) => {
+    const narration = narrationRef.current;
     const tts = getTTSForPhase(phase);
-    if (!tts || !tts.audioUrl) {
+
+    if (!narration || !tts?.audioUrl) {
       addDebug(`No TTS audio for phase: ${phase}`);
       setTtsState('idle');
-      // Auto-advance to next phase if no audio
-      if (phase === 'intro') {
-        setTimeout(() => setLessonPhase('content'), 1000);
-      } else if (phase === 'content') {
-        setTimeout(() => setLessonPhase('outro'), 1000);
-      } else if (phase === 'outro') {
-        if (mcqData.length > 0) {
-          setTimeout(() => setLessonPhase('mcq'), 1000);
-        } else {
-          setTimeout(() => setLessonPhase('complete'), 1000);
-        }
-      }
+      // Give the panel a beat to show the phase before moving on.
+      const timer = setTimeout(() => advancePhase(phase), 1000);
+      phaseAdvanceTimerRef.current = timer;
       return;
     }
-    
-    // Comprehensive TTS playback debug logging
-    console.log('[TTS PLAYBACK] ========================================');
-    console.log('[TTS PLAYBACK] Phase:', phase);
-    console.log('[TTS PLAYBACK] TTS ID:', tts.id);
-    console.log('[TTS PLAYBACK] Section:', (tts as any).script_type || tts.section);
-    console.log('[TTS PLAYBACK] Audio URL:', tts.audioUrl?.substring(0, 80) + '...');
-    console.log('[TTS PLAYBACK] Has text:', !!tts.text);
-    console.log('[TTS PLAYBACK] ========================================');
-    
+
     debugTTS(`Playing TTS for ${phase}: ${(tts as any).script_type || tts.section}`);
-    
-    // Clean up previous audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.removeEventListener('timeupdate', () => {});
-      audioRef.current = null;
-    }
-    
-    const audio = new Audio(tts.audioUrl);
-    audioRef.current = audio;
-    
-    audio.onplay = () => {
-      setIsAudioPlaying(true);
-      setTtsState('playing');
-      addDebug(`Audio started: ${phase}`);
-    };
-    
-    audio.onpause = () => {
-      setIsAudioPlaying(false);
-      setTtsState('paused');
-    };
-    
-    audio.onended = () => {
-      setIsAudioPlaying(false);
-      setTtsState('ended');
-      setAudioProgress(0);
-      setAudioCurrentTime(0);
-      addDebug(`Audio ended: ${phase}`);
-      
-      // Auto-advance to next phase
-      if (phase === 'intro') {
-        setLessonPhase('content');
-      } else if (phase === 'content') {
-        setLessonPhase('outro');
-      } else if (phase === 'outro') {
-        if (mcqData.length > 0) {
-          setLessonPhase('mcq');
-        } else {
-          setLessonPhase('complete');
-        }
-      }
-    };
-    
-    audio.onerror = (e) => {
-      addDebug(`Audio error for ${phase}: ${e}`);
-      setIsAudioPlaying(false);
-      setTtsState('idle');
-      // Still advance phase even if audio fails
-      if (phase === 'intro') {
-        setTimeout(() => setLessonPhase('content'), 1000);
-      } else if (phase === 'content') {
-        setTimeout(() => setLessonPhase('outro'), 1000);
-      } else if (phase === 'outro') {
-        if (mcqData.length > 0) {
-          setTimeout(() => setLessonPhase('mcq'), 1000);
-        } else {
-          setTimeout(() => setLessonPhase('complete'), 1000);
-        }
-      }
-    };
-    
-    audio.play().catch(err => {
-      addDebug(`Audio autoplay blocked: ${err}`);
-      setTtsState('idle');
-      console.warn('[XRLessonPlayerV3] Audio autoplay blocked:', err);
+    narration.play(tts.audioUrl, {
+      onEnded: () => advancePhase(phase),
+      onError: (reason) => {
+        addDebug(`Audio error for ${phase}: ${reason}`);
+        phaseAdvanceTimerRef.current = setTimeout(() => advancePhase(phase), 1000);
+      },
     });
-  }, [getTTSForPhase, mcqData.length, addDebug]);
-  
+  }, [getTTSForPhase, addDebug, debugTTS, advancePhase]);
+
   const toggleAudio = useCallback(() => {
-    if (!audioRef.current) {
+    if (classroomRef.current.blockStudentPhaseControl('Play/Pause')) return;
+    const narration = narrationRef.current;
+    if (!narration || !narration.getUrl()) {
       playTTSForPhase(lessonPhase);
       return;
     }
-    
-    if (audioRef.current.paused) {
-      audioRef.current.play();
-      setTtsState('playing');
-    } else {
-      audioRef.current.pause();
-      setTtsState('paused');
-    }
+    if (narration.getState() === 'playing') narration.pause();
+    else if (!narration.resume()) playTTSForPhase(lessonPhase);
   }, [lessonPhase, playTTSForPhase]);
   
   const stopAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      setIsAudioPlaying(false);
-      setTtsState('idle');
-      setAudioProgress(0);
-      setAudioCurrentTime(0);
+    if (phaseAdvanceTimerRef.current) {
+      clearTimeout(phaseAdvanceTimerRef.current);
+      phaseAdvanceTimerRef.current = null;
     }
+    narrationRef.current?.stop();
+    setIsAudioPlaying(false);
+    setTtsState('idle');
   }, []);
   
   const skipNext = useCallback(() => {
+    if (classroomRef.current.blockStudentPhaseControl('Skip')) return;
     stopAudio();
     if (lessonPhase === 'intro') {
-      setLessonPhase('content');
-    } else if (lessonPhase === 'content') {
+      setLessonPhase('explanation');
+    } else if (lessonPhase === 'explanation') {
       setLessonPhase('outro');
     } else if (lessonPhase === 'outro') {
       if (mcqData.length > 0) {
-        setLessonPhase('mcq');
+        setLessonPhase('quiz');
       } else {
-        setLessonPhase('complete');
+        setLessonPhase('completed');
       }
     }
   }, [lessonPhase, mcqData.length, stopAudio]);
   
-  const skipPrev = useCallback(() => {
-    stopAudio();
-    if (lessonPhase === 'content') {
-      setLessonPhase('intro');
-    } else if (lessonPhase === 'outro') {
-      setLessonPhase('content');
-    } else if (lessonPhase === 'mcq') {
-      setLessonPhase('outro');
-    }
-  }, [lessonPhase, stopAudio]);
   
   // Skip directly to Quiz - for users who want to skip all TTS phases
   const skipToQuiz = useCallback(() => {
+    if (classroomRef.current.blockStudentPhaseControl('Skip to quiz')) return;
     stopAudio();
     if (mcqData.length > 0) {
-      setLessonPhase('mcq');
+      setLessonPhase('quiz');
       debugQuiz('⏭️ Skipped to Quiz');
     } else {
-      setLessonPhase('complete');
+      setLessonPhase('completed');
       debugQuiz('⏭️ No quiz available - completing lesson');
     }
   }, [mcqData.length, stopAudio, addDebug]);
-  
+
+  // ============================================================================
+  // Live class
+  //
+  // All of the teacher-control behaviour lives in useClassroomSession, shared
+  // with the krpano player. This player supplies two things it cannot know:
+  // its phase vocabulary, and how to read and write its own camera.
+  // ============================================================================
+
+  /** Camera I/O for view sync, backed by the drag-to-look controls. */
+  const classroomView = useMemo<ClassroomViewAdapter>(
+    () => ({
+      read: () => lookControlsRef.current?.read() ?? null,
+      apply: (view, { isDirect }) => {
+        const renderer = rendererRef.current;
+        const camera = cameraRef.current;
+        if (renderer?.xr?.isPresenting && camera) {
+          // Only an explicit Direct realigns a headset. Continuous follow is
+          // suppressed in VR on purpose — applying it would fight the student's
+          // own head movement, which is instant motion sickness.
+          if (!isDirect) return;
+          // Read where they are actually looking now, so a student who has
+          // turned since the last Direct still ends up facing the teacher.
+          const heading = cameraRotationToHV(camera).h;
+          faceXrViewerTowards(renderer, heading, view.h);
+          return;
+        }
+        // A Direct snaps; continuous follow eases, so it reads as the teacher
+        // moving rather than the camera being seized.
+        lookControlsRef.current?.apply(view.h, view.v, view.fov, isDirect);
+      },
+      subscribe: (listener) => {
+        viewListenersRef.current.add(listener);
+        return () => viewListenersRef.current.delete(listener);
+      },
+      isImmersive: () => rendererRef.current?.xr?.isPresenting === true,
+    }),
+    []
+  );
+
+  /**
+   * Playback commands from the teacher. Deliberately declarative: it resets the
+   * played-phase marker and flips autoplay rather than calling playTTSForPhase
+   * directly, so the autoplay effect fires once with the phase that has actually
+   * committed. Calling TTS here reads the phase through a stale closure and
+   * double-plays the clip.
+   */
+  const handleClassPlaybackCommand = useCallback(
+    (cmd: 'play' | 'pause' | 'replay') => {
+      if (cmd === 'pause') {
+        setAutoplayEnabled(false);
+        narrationRef.current?.pause();
+        return;
+      }
+      stopAudio();
+      lastPlayedPhaseRef.current = null;
+      setLessonStarted(true);
+      setAutoplayEnabled(true);
+    },
+    [stopAudio]
+  );
+
+  const classroom = useClassroomSession({
+    playerPhase: lessonPhase,
+    setPlayerPhase: setLessonPhase,
+    lessonReady: isSceneReady,
+    allReady: isSceneReady && loadingState !== 'loading',
+    view: classroomView,
+    onPlaybackCommand: handleClassPlaybackCommand,
+    pendingQuizRef: pendingQuizReportRef,
+    dragGraceTarget: rendererRef.current?.domElement ?? null,
+    // Always true for this player: unlike the krpano HUD, V3's in-scene panels
+    // are the only lesson UI and render the same flat as they do in a headset.
+    immersiveUiDeviceCapable: true,
+  });
+
+  /**
+   * Removed mid-lesson: leave immediately.
+   *
+   * The dashboard route in ClassSessionContext handles the plain removal case,
+   * but a student sitting inside the player should not wait on a route change
+   * elsewhere to notice, and a rejoin request must not keep them in the lesson.
+   */
+  useEffect(() => {
+    if (!classroom.isStudentInSession) return;
+    if (classroom.isStudentRemoved || !classroom.isAdmitted) {
+      toast.info('Your teacher removed you from this class.');
+      navigate('/dashboard/student', { replace: true });
+    }
+  }, [classroom.isStudentInSession, classroom.isStudentRemoved, classroom.isAdmitted, navigate]);
+
+  // ============================================================================
+  // Teacher marker
+  //
+  // Strokes are stored in sphere coordinates, the same format the krpano player
+  // publishes, so a lesson drawn in one player renders in the other. Published
+  // on pointer-up only: the teacher sees their own stroke locally at full frame
+  // rate and the class receives it complete, which is roughly a 50x reduction in
+  // writes compared with publishing during the drag.
+  // ============================================================================
+
+  useEffect(() => {
+    markerActiveRef.current = markerActive;
+    markerColorRef.current = markerColor;
+    // Dragging must not also swing the camera while the marker is down.
+    lookControlsRef.current?.setEnabled(!markerActive);
+  }, [markerActive, markerColor]);
+
+  const comfortBreak = useComfortBreak({
+    isImmersive: isPresentingXR,
+    enabled: !classroom.isClassHost,
+  });
+
+  const annotationSessionId = classroom.hostSessionId;
+
+  const publishStroke = useCallback(
+    (stroke: AnnotationStroke) => {
+      if (!annotationSessionId || !classroom.isClassHost) return;
+      const next = appendStroke(
+        classroom.activeSession?.teacher_annotations ?? null,
+        stroke,
+        MAX_INK_STROKES
+      );
+      void publishAnnotations(annotationSessionId, next);
+    },
+    [annotationSessionId, classroom.isClassHost, classroom.activeSession?.teacher_annotations]
+  );
+
+  // Pointer drawing. Bound to the canvas so it never competes with the bars.
+  useEffect(() => {
+    const canvas = rendererRef.current?.domElement;
+    if (!canvas || !markerActive || !classroom.isClassHost) return;
+
+    const toSphere = (event: PointerEvent): AnnotationPoint | null => {
+      const camera = cameraRef.current;
+      const ink = inkLayerRef.current;
+      if (!camera || !ink) return null;
+      const rect = canvas.getBoundingClientRect();
+      const point = ink.pointerToSphere(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+        camera
+      );
+      return point ? { a: point.a, v: point.v } : null;
+    };
+
+    const onDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const point = toSphere(event);
+      if (!point) return;
+      canvas.setPointerCapture(event.pointerId);
+      activeStrokeRef.current = {
+        id: `s_${Date.now()}_${Math.round(performance.now() % 1000)}`,
+        mode: 'laser',
+        color: markerColorRef.current,
+        width: 6,
+        points: [point],
+        created_ms: annotationNow(),
+        ttl_ms: STROKE_TTL_MS,
+      };
+      inkLayerRef.current?.setLocalStroke(activeStrokeRef.current);
+    };
+
+    const onMove = (event: PointerEvent) => {
+      const stroke = activeStrokeRef.current;
+      if (!stroke) return;
+      const point = toSphere(event);
+      if (!point) return;
+      stroke.points = capPoints([...stroke.points, point]);
+      inkLayerRef.current?.setLocalStroke({ ...stroke });
+    };
+
+    const onUp = (event: PointerEvent) => {
+      const stroke = activeStrokeRef.current;
+      activeStrokeRef.current = null;
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch {
+        /* capture is best-effort */
+      }
+      if (!stroke || stroke.points.length < 2) {
+        inkLayerRef.current?.setLocalStroke(null);
+        return;
+      }
+      const finished: AnnotationStroke = {
+        ...stroke,
+        points: simplifyStroke(stroke.points),
+        created_ms: annotationNow(),
+      };
+      inkLayerRef.current?.setLocalStroke(null);
+      publishStroke(finished);
+    };
+
+    canvas.addEventListener('pointerdown', onDown);
+    canvas.addEventListener('pointermove', onMove);
+    canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('pointercancel', onUp);
+    return () => {
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onUp);
+    };
+  }, [markerActive, classroom.isClassHost, isSceneReady, publishStroke]);
+
+  // Everyone renders whatever the session holds — the teacher included, so their
+  // own ink is confirmed to have reached the class rather than only drawn locally.
+  const liveAnnotations =
+    (classroom.isStudentInSession
+      ? classroom.joinedSession?.teacher_annotations
+      : classroom.activeSession?.teacher_annotations) ?? null;
+
+  useEffect(() => {
+    inkLayerRef.current?.setAnnotations(liveAnnotations);
+  }, [liveAnnotations]);
+
+  /** Captured so the End-session closure below sees a defined function. */
+  const endClassSession = classroom.endSession;
+
+  // Bridge for effects declared above this point (the render loop, the raycast
+  // UI handler) which are created before the hook runs.
+  classroomRef.current = {
+    blockStudentPhaseControl: classroom.blockStudentPhaseControl,
+    markStudentLooking: classroom.markStudentLooking,
+    showImmersiveUiForThisViewer: classroom.showImmersiveUiForThisViewer,
+    directClassToCurrentView: classroom.directClassToCurrentView,
+    classId: classroom.joinedSession?.class_id ?? classroom.activeSession?.class_id ?? null,
+  };
+
   // ============================================================================
   // Haptic Feedback Helper
   // ============================================================================
@@ -3420,6 +3570,7 @@ const XRLessonPlayerV3: React.FC = () => {
   // ============================================================================
   
   const handleLessonStart = useCallback(() => {
+    if (lessonStartTimeRef.current === null) lessonStartTimeRef.current = Date.now();
     console.log('[LESSON START] ========================================');
     console.log('[LESSON START] User pressed START button');
     console.log('[LESSON START] Current state before start:', {
@@ -3433,12 +3584,7 @@ const XRLessonPlayerV3: React.FC = () => {
     debugXR('Lesson START button pressed');
     addDebug('🚀 Lesson started by user');
     
-    // Remove start panel
-    if (startPanelRef.current && sceneRef.current) {
-      sceneRef.current.remove(startPanelRef.current);
-      startPanelRef.current = null;
-      debugUI('Start panel removed');
-    }
+    // The panel stays; it simply stops drawing the start state.
     
     // Strategy rotation: Select a random strategy for this lesson (only 3 remaining strategies)
     const strategies: PlacementStrategy[] = [
@@ -3474,449 +3620,30 @@ const XRLessonPlayerV3: React.FC = () => {
   // Change Placement Strategy - MUST be defined BEFORE createStartPanel
   // ============================================================================
   
-  // Change placement strategy and reposition assets
-  const changePlacementStrategy = useCallback((newStrategy: PlacementStrategy) => {
-    if (!sceneLayoutRef.current || !cameraRef.current || !assetsGroupRef.current || !sceneRef.current) {
-      console.warn('[STRATEGY] Cannot change strategy: missing refs');
-      addDebug(`⚠️ Cannot change strategy: missing refs`);
-      return;
-    }
-    
-    console.log(`[STRATEGY] Changing placement strategy to: ${newStrategy}`);
-    addDebug(`🔄 Changing strategy to: ${newStrategy}`);
-    
-    // Update state and system strategy
-    setPlacementStrategy(newStrategy);
-    sceneLayoutRef.current.setStrategy(newStrategy);
-    
-    const assetCount = assetsGroupRef.current.children.length;
-    
-    // Recalculate dynamic N placements with new strategy
-    const placements = sceneLayoutRef.current.calculatePlacements(
-      assetCount,
-      cameraRef.current,
-      GROUND_LEVEL
-    );
-    
-    // Store placements
-    assetPlacementsRef.current = placements;
-    
-    console.log(`[STRATEGY] Recalculated ${placements.length} placements for ${assetCount} assets`);
-    addDebug(`📐 Placements: ${placements.length} for ${assetCount} assets`);
-    
-    // CRITICAL: Force immediate repositioning of all assets
-    // Reposition all assets with fit-to-dock scaling, passing total count for proper sizing
-    const totalAssets = assetsGroupRef.current.children.length;
-    
-    assetsGroupRef.current.children.forEach((assetGroup, index) => {
-      if (index < placements.length) {
-        const placement = placements[index];
-        const asset = assetGroup as THREE.Object3D;
-        
-        console.log(`[STRATEGY] Repositioning asset ${index + 1}/${totalAssets} to slot ${placement.slotIndex}:`, {
-          oldPosition: `(${asset.position.x.toFixed(2)}, ${asset.position.y.toFixed(2)}, ${asset.position.z.toFixed(2)})`,
-          newPosition: `(${placement.position.x.toFixed(2)}, ${placement.position.y.toFixed(2)}, ${placement.position.z.toFixed(2)})`,
-        });
-        
-        // Place asset on dock with fit-to-dock scaling, passing total count
-        sceneLayoutRef.current!.placeAssetOnDock(
-          asset,
-          placement,
-          cameraRef.current!,
-          GROUND_LEVEL,
-          totalAssets
-        );
-        
-        // Update placement reference
-        asset.userData.placementIndex = index;
-        asset.userData.slotIndex = placement.slotIndex;
-        asset.userData.placementPosition = new THREE.Vector3().copy(placement.position);
-        asset.userData.placementRotation = new THREE.Euler().copy(placement.rotation);
-        asset.userData.dockSurfaceY = placement.dockSurfaceY;
-        
-        // Store original position
-        asset.userData.originalPosition = new THREE.Vector3().copy(asset.position);
-        
-        // CRITICAL: Force update matrix to ensure position is applied
-        asset.updateMatrixWorld(true);
-        
-        // Verify placement on dock
-        const finalPos = asset.position;
-        const distanceFromTarget = finalPos.distanceTo(placement.position);
-        const heightOnDock = finalPos.y - placement.dockSurfaceY;
-        
-        console.log(`[STRATEGY] Asset ${index + 1} repositioned:`, {
-          finalPosition: `(${finalPos.x.toFixed(2)}, ${finalPos.y.toFixed(2)}, ${finalPos.z.toFixed(2)})`,
-          targetPosition: `(${placement.position.x.toFixed(2)}, ${placement.position.y.toFixed(2)}, ${placement.position.z.toFixed(2)})`,
-          distanceFromTarget: distanceFromTarget.toFixed(3) + 'm',
-          heightOnDock: heightOnDock.toFixed(3) + 'm',
-        });
-        
-        if (distanceFromTarget > 0.1) {
-          console.warn(`[STRATEGY] ⚠️ Asset ${index} is ${distanceFromTarget.toFixed(2)}m from target - forcing position`);
-          asset.position.copy(placement.position);
-          const box = new THREE.Box3().setFromObject(asset);
-          const size = box.getSize(new THREE.Vector3());
-          asset.position.y = placement.dockSurfaceY + size.y / 2;
-          asset.updateMatrixWorld(true);
-        }
-      } else {
-        console.warn(`[STRATEGY] ⚠️ Asset ${index} has no placement (${assetCount} assets, ${placements.length} placements)`);
-        addDebug(`⚠️ Asset ${index}: No placement`);
-      }
-    });
-    
-    // Force render to show changes immediately
-    if (rendererRef.current && sceneRef.current && cameraRef.current) {
-      rendererRef.current.render(sceneRef.current, cameraRef.current);
-    }
-    
-    // Re-stage assets for interaction
-    if (stableLayoutRef.current && stableLayoutRef.current.isReady()) {
-      stableLayoutRef.current.unlockLayout();
-      const modelsToStage = assetsGroupRef.current.children as THREE.Object3D[];
-      stableLayoutRef.current.stageModels(modelsToStage);
-      addDebug(`✅ Assets re-staged for interaction: ${modelsToStage.length} models`);
-    }
-    
-    addDebug(`✅ Strategy changed to: ${newStrategy} (${placements.length} placements)`);
-    console.log(`[STRATEGY] Strategy changed to ${newStrategy}, ${placements.length} placements, assets repositioned`);
-  }, [addDebug, loadingState, lessonStarted]);
   
-  // ============================================================================
-  // START Panel Creation
-  // ============================================================================
-  
-  const createStartPanel = useCallback(() => {
-    try {
-      if (!sceneRef.current || !cameraRef.current || !layoutEngineRef.current) {
-        console.warn('[XRLessonPlayerV3] Cannot create start panel: scene, camera, or layout engine not ready');
-        return null;
-      }
-      
-      const scene = sceneRef.current;
-      const camera = cameraRef.current;
-      
-      // Remove existing start panel
-      const existing = scene.getObjectByName('startPanel');
-      if (existing) {
-        scene.remove(existing);
-      }
-      
-      // Create canvas for start screen
-      const canvas = document.createElement('canvas');
-      canvas.width = 1000;
-      canvas.height = 700;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      
-      // Glassmorphism background with gradient
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, 'rgba(15, 23, 42, 0.95)');
-      gradient.addColorStop(0.5, 'rgba(30, 41, 59, 0.92)');
-      gradient.addColorStop(1, 'rgba(51, 65, 85, 0.90)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // Cyan glow border
-      ctx.shadowColor = 'rgba(6, 182, 212, 0.6)';
-      ctx.shadowBlur = 40;
-      ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = 10;
-      ctx.strokeRect(15, 15, canvas.width - 30, canvas.height - 30);
-      
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      
-      // Title - Lesson Name
-      const lessonTitle = lessonData?.topic?.topic_name || 'Lesson';
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 56px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(lessonTitle.substring(0, 30), canvas.width / 2, 120);
-      
-      // Subtitle - Subject
-      const subtitle = `${lessonData?.chapter?.subject || ''} • ${lessonData?.chapter?.class_name || ''}`;
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '32px Arial';
-      ctx.fillText(subtitle, canvas.width / 2, 175);
-      
-      // Divider line
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(100, 220);
-      ctx.lineTo(canvas.width - 100, 220);
-      ctx.stroke();
-      
-      // Content info
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '28px Arial';
-      ctx.textAlign = 'left';
-      
-      const hasIntro = !!(lessonData as any)?.topic?.avatar_intro;
-      const hasContent = !!(lessonData as any)?.topic?.avatar_explanation;
-      const hasOutro = !!(lessonData as any)?.topic?.avatar_outro;
-      const hasMCQ = mcqData.length > 0;
-      const hasAssets = meshyAssets.length > 0;
-      
-      let infoY = 280;
-      const infoX = 120;
-      
-      ctx.fillText(`📖 Sections: ${[hasIntro && 'Intro', hasContent && 'Explanation', hasOutro && 'Conclusion'].filter(Boolean).join(', ') || 'None'}`, infoX, infoY);
-      infoY += 45;
-      
-      if (hasMCQ) {
-        ctx.fillText(`❓ Quiz: ${mcqData.length} questions`, infoX, infoY);
-        infoY += 45;
-      }
-      
-      if (hasAssets) {
-        ctx.fillText(`📦 3D Assets: ${meshyAssets.length} models`, infoX, infoY);
-        infoY += 45;
-      }
-      
-      if (ttsData.length > 0) {
-        ctx.fillText(`🔊 Audio narration included`, infoX, infoY);
-      }
-      
-      // Initialize buttons array for this panel
-      const panelButtons: Array<{ bounds: { x: number; y: number; width: number; height: number }; action: () => void }> = [];
-      
-      // Placement Strategy Toggle (always visible in panel when assets exist)
-      if (hasAssets && meshyAssets.length > 0) {
-        infoY += 50;
-        ctx.fillStyle = '#a78bfa';
-        ctx.font = 'bold 24px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText('🎯 Asset Layout:', infoX, infoY);
-        
-        // Strategy buttons
-        const strategyNames: Record<PlacementStrategy, string> = {
-          'curved-arc': 'Curved Arc',
-          'focus-secondary': 'Focus + Secondary',
-          'carousel': 'Carousel',
-          'grid': 'Grid'
-        };
-        
-        const buttonWidth = 200;
-        const buttonHeight = 40;
-        const buttonSpacing = 20;
-        const startX = infoX;
-        let currentX = startX;
-        const strategyButtonY = infoY + 15;
-        
-        // Show all strategies including grid (dynamic N placements)
-        const strategies: PlacementStrategy[] = ['curved-arc', 'focus-secondary', 'carousel', 'grid'];
-        strategies.forEach((strategy, idx) => {
-          const isActive = placementStrategy === strategy;
-          
-          // Button background
-          ctx.fillStyle = isActive ? '#8b5cf6' : 'rgba(51, 65, 85, 0.8)';
-          ctx.fillRect(currentX, strategyButtonY, buttonWidth, buttonHeight);
-          
-          // Button border
-          ctx.strokeStyle = isActive ? '#a78bfa' : 'rgba(139, 92, 246, 0.3)';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(currentX, strategyButtonY, buttonWidth, buttonHeight);
-          
-          // Button text
-          ctx.fillStyle = isActive ? '#ffffff' : '#94a3b8';
-          ctx.font = isActive ? 'bold 18px Arial' : '18px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText(strategyNames[strategy] || strategy, currentX + buttonWidth / 2, strategyButtonY + 28);
-          
-          // Store button bounds for click detection
-          panelButtons.push({
-            bounds: {
-              x: currentX,
-              y: strategyButtonY,
-              width: buttonWidth,
-              height: buttonHeight
-            },
-            action: () => {
-              changePlacementStrategy(strategy);
-              addDebug(`Strategy changed to: ${strategyNames[strategy] || strategy}`);
-            }
-          });
-          
-          currentX += buttonWidth + buttonSpacing;
-        });
-        
-        // Show placement count info
-        const placementCount = assetPlacementsRef.current.length;
-        const assetCount = meshyAssets.length;
-        ctx.fillStyle = '#64748b';
-        ctx.font = '16px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Placements: ${placementCount}/${assetCount}`, infoX, strategyButtonY + buttonHeight + 25);
-        
-        infoY += 70; // Space for strategy buttons
-      }
-      
-      // START Button
-      const buttonWidth = 300;
-      const buttonHeight = 90;
-      const buttonX = (canvas.width - buttonWidth) / 2;
-      const buttonY = canvas.height - 160;
-      
-      // Button gradient background
-      const btnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonHeight);
-      btnGradient.addColorStop(0, '#06b6d4');
-      btnGradient.addColorStop(1, '#0891b2');
-      ctx.fillStyle = btnGradient;
-      
-      // Rounded rectangle
-      const radius = 20;
-      ctx.beginPath();
-      ctx.moveTo(buttonX + radius, buttonY);
-      ctx.lineTo(buttonX + buttonWidth - radius, buttonY);
-      ctx.quadraticCurveTo(buttonX + buttonWidth, buttonY, buttonX + buttonWidth, buttonY + radius);
-      ctx.lineTo(buttonX + buttonWidth, buttonY + buttonHeight - radius);
-      ctx.quadraticCurveTo(buttonX + buttonWidth, buttonY + buttonHeight, buttonX + buttonWidth - radius, buttonY + buttonHeight);
-      ctx.lineTo(buttonX + radius, buttonY + buttonHeight);
-      ctx.quadraticCurveTo(buttonX, buttonY + buttonHeight, buttonX, buttonY + buttonHeight - radius);
-      ctx.lineTo(buttonX, buttonY + radius);
-      ctx.quadraticCurveTo(buttonX, buttonY, buttonX + radius, buttonY);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Button text
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 48px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('▶ START', canvas.width / 2, buttonY + 58);
-      
-      // Instruction text
-      ctx.fillStyle = '#64748b';
-      ctx.font = '24px Arial';
-      ctx.fillText('Point and click to begin', canvas.width / 2, canvas.height - 40);
-      
-      // CRITICAL: Add START button to panelButtons for click detection
-      panelButtons.push({
-        bounds: {
-          x: buttonX,
-          y: buttonY,
-          width: buttonWidth,
-          height: buttonHeight
-        },
-        action: () => {
-          console.log('[START_BUTTON] START button clicked!');
-          handleLessonStart();
-        }
-      });
-      
-      console.log(`[START_PANEL] Button bounds registered: ${panelButtons.length} buttons total`);
-      panelButtons.forEach((btn, idx) => {
-        console.log(`  [${idx}] Bounds: x=${btn.bounds.x}, y=${btn.bounds.y}, w=${btn.bounds.width}, h=${btn.bounds.height}`);
-      });
-      
-      // Create texture from canvas
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      
-      // Create plane mesh
-      const geometry = new THREE.PlaneGeometry(2.0, 1.4);
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        transparent: true,
-        side: THREE.DoubleSide,
-        emissive: new THREE.Color(0x06b6d4),
-        emissiveIntensity: 0.1,
-        roughness: 0.2,
-        metalness: 0.2,
-      });
-      
-      const panel = new THREE.Mesh(geometry, material);
-      panel.name = 'startPanel';
-      
-      // Get camera position for reference
-      const cameraPos = new THREE.Vector3();
-      camera.getWorldPosition(cameraPos);
-      
-      // Get camera forward direction (flattened to horizontal)
-      const rawForward = new THREE.Vector3(0, 0, -1);
-      rawForward.applyQuaternion(camera.quaternion);
-      const flatForward = new THREE.Vector3(rawForward.x, 0, rawForward.z).normalize();
-      
-      // Position START panel using Scene Layout System (Introduction Dock Zone)
-      let panelPosition: THREE.Vector3;
-      if (sceneLayoutRef.current) {
-        panelPosition = sceneLayoutRef.current.getIntroDockPosition(camera, GROUND_LEVEL);
-        // Ensure panel is at eye level
-        panelPosition.y = cameraPos.y;
-      } else {
-        // Fallback: 2.5m in front
-        panelPosition = new THREE.Vector3();
-        panelPosition.copy(cameraPos);
-        panelPosition.add(flatForward.clone().multiplyScalar(2.5));
-        panelPosition.y = cameraPos.y;
-      }
-      
-      // CRITICAL FIX: Ensure panel is centered horizontally
-      const rightDir = new THREE.Vector3();
-      rightDir.crossVectors(flatForward, new THREE.Vector3(0, 1, 0)).normalize();
-      const horizontalOffset = panelPosition.clone().sub(cameraPos).dot(rightDir);
-      panelPosition.sub(rightDir.clone().multiplyScalar(horizontalOffset));
-      
-      // Mark panel as UI layer for raycast filtering
-      panel.userData.layer = 'ui';
-      
-      console.log(`🎯 [START PANEL] ════════════════════════════════════════`);
-      console.log(`🎯 [START PANEL] Camera Position: (${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)})`);
-      console.log(`🎯 [START PANEL] Forward Direction: (${flatForward.x.toFixed(2)}, ${flatForward.y.toFixed(2)}, ${flatForward.z.toFixed(2)})`);
-      console.log(`🎯 [START PANEL] Right Direction: (${rightDir.x.toFixed(2)}, ${rightDir.y.toFixed(2)}, ${rightDir.z.toFixed(2)})`);
-      console.log(`🎯 [START PANEL] Horizontal Offset (before fix): ${horizontalOffset.toFixed(3)}`);
-      console.log(`🎯 [START PANEL] Panel Position: (${panelPosition.x.toFixed(2)}, ${panelPosition.y.toFixed(2)}, ${panelPosition.z.toFixed(2)})`);
-      console.log(`🎯 [START PANEL] ════════════════════════════════════════`);
-      
-      addDebug(`[START PANEL] Position: (${panelPosition.x.toFixed(2)}, ${panelPosition.y.toFixed(2)}, ${panelPosition.z.toFixed(2)})`);
-      addDebug(`[START PANEL] Horizontal offset corrected: ${horizontalOffset.toFixed(3)}`);
-      
-      panel.position.copy(panelPosition);
-      panel.userData.isInteractable = true;
-      panel.userData.panelType = 'start';
-      panel.userData.hasButtons = true;
-      panel.userData.canvasWidth = canvas.width;
-      panel.userData.canvasHeight = canvas.height;
-      panel.userData.layer = 'ui'; // Mark as UI layer for raycast filtering
-      
-      // Store all buttons (strategy buttons + START button)
-      panel.userData.buttons = panelButtons;
-      
-      // Make it face camera
-      panel.lookAt(cameraPos);
-      
-      scene.add(panel);
-      startPanelRef.current = panel;
-      
-      console.log(`${DEBUG_CATEGORIES.UI} Start panel created`);
-      addDebug('Start panel ready - click START to begin');
-      return panel;
-    } catch (error: any) {
-      console.error('[XRLessonPlayerV3] Error creating start panel:', error);
-      addDebug(`ERROR creating start panel: ${error?.message || error}`);
-      return null;
-    }
-  }, [sceneRef, cameraRef, lessonData, mcqData.length, meshyAssets.length, ttsData.length, handleLessonStart, addDebug, placementStrategy, changePlacementStrategy]);
   
   // Auto-play TTS when phase changes (intro/content/outro) - ONLY if lesson has started
   useEffect(() => {
     // Don't auto-play if lesson hasn't started yet
     if (!lessonStarted) return;
-    
-    if (['intro', 'content', 'outro'].includes(lessonPhase) && ttsData.length > 0) {
+    // Under lockstep the teacher owns playback; their Play command clears
+    // lastPlayedPhaseRef and re-enables autoplay.
+    if (!autoplayEnabled) return;
+
+    if (['intro', 'explanation', 'outro'].includes(lessonPhase) && ttsData.length > 0) {
+      // Fire once per phase. mcqData / currentMcqIndex / mcqScore are in this
+      // effect's deps, so without the marker a quiz state change restarts the
+      // narration from the top mid-phase.
+      if (lastPlayedPhaseRef.current === lessonPhase) return;
       // Small delay to ensure UI is ready
       const timer = setTimeout(() => {
+        lastPlayedPhaseRef.current = lessonPhase;
         playTTSForPhase(lessonPhase);
       }, 500);
       return () => clearTimeout(timer);
-    } else if (lessonPhase === 'mcq') {
+    } else if (lessonPhase === 'quiz') {
       // Auto-pause audio when entering quiz
-      if (audioRef.current && !audioRef.current.paused) {
-        audioRef.current.pause();
-        setTtsState('paused');
-      }
+      narrationRef.current?.pause();
       
       // Comprehensive quiz phase transition logging
       console.log('[QUIZ PHASE] ========================================');
@@ -3931,371 +3658,324 @@ const XRLessonPlayerV3: React.FC = () => {
       
       debugQuiz(`Entered quiz phase with ${mcqData.length} questions`);
     }
-  }, [lessonPhase, ttsData, playTTSForPhase, lessonStarted, mcqData, currentMcqIndex, mcqScore, debugQuiz]);
+  }, [lessonPhase, ttsData, playTTSForPhase, lessonStarted, autoplayEnabled, mcqData, currentMcqIndex, mcqScore, debugQuiz]);
   
+  // Mute applies to the narration element, which is recreated per phase.
+  useEffect(() => {
+    narrationRef.current?.setMuted(isMuted);
+  }, [isMuted, ttsState, lessonPhase]);
+
   // Cleanup audio on unmount
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      narrationRef.current?.dispose();
+      narrationRef.current = null;
     };
   }, []);
   
-  // Auto-start intro when entering VR - ONLY if lesson has been started by user
+  // One narration controller for the life of the player.
   useEffect(() => {
-    if (loadingState === 'in-vr' && lessonPhase === 'intro' && ttsData.length > 0 && lessonStarted) {
-      // Wait a moment for user to orient themselves
-      const timer = setTimeout(() => {
-        playTTSForPhase('intro');
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [loadingState, lessonPhase, ttsData, playTTSForPhase, lessonStarted]);
+    narrationRef.current = createNarrationController({
+      onStateChange: (next) => {
+        setTtsState(next);
+        setIsAudioPlaying(next === 'playing');
+      },
+    });
+    return () => {
+      narrationRef.current?.dispose();
+      narrationRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    mcqDataRef.current = mcqData;
+  }, [mcqData]);
+
+  // NOTE: the VR-entry auto-start effect that used to sit here has gone. It
+  // raced the main autoplay effect below for the intro phase; both are keyed on
+  // lastPlayedPhaseRef, so whichever timer fired second was a no-op at best and
+  // a second clip at worst.
   
   
   // ============================================================================
   // Create VR Script Panel UI (3D Billboard)
   // ============================================================================
   
-  // Store last panel update time to prevent spam
-  const lastPanelCreateTimeRef = useRef<number>(0);
-  
-  const createScriptPanel = useCallback((text: string, phase: LessonPhase) => {
-    // Throttle panel creation to max once per 500ms
-    const now = Date.now();
-    if (now - lastPanelCreateTimeRef.current < 500) {
-      return scriptPanelRef.current; // Return existing panel if throttled
-    }
-    lastPanelCreateTimeRef.current = now;
+  /** Narration text for a phase, falling back to a friendly default. */
+  const getScriptForPhase = useCallback(
+    (phase: LessonPhase): string => {
+      const topic = (lessonData as any)?.topic;
+      if (phase === 'intro') return topic?.avatar_intro || 'Welcome to this lesson. Let us begin!';
+      if (phase === 'explanation') return topic?.avatar_explanation || 'This is the explanation phase.';
+      if (phase === 'outro') return topic?.avatar_outro || 'Thank you for completing this lesson!';
+      return '';
+    },
+    [lessonData]
+  );
+
+  // ============================================================================
+  // Lesson panel
+  //
+  // One 2048x1280 canvas plane rendered by the SHARED renderer in
+  // src/lib/lessonUi — the same code that draws the krpano player's immersive
+  // panel. This replaces four separate hand-drawn panels (start, script, MCQ,
+  // class status) that were much plainer than krpano's and drifted from it.
+  //
+  // The mesh is built once and only its texture is redrawn, so the throttles
+  // the old rebuild-per-change panels needed are gone.
+  // ============================================================================
+
+  /** Rebuild the panel texture from the current state and store its hit regions. */
+  const redrawLessonPanel = useCallback(() => {
+    const panel = lessonPanelRef.current;
+    if (!panel) return;
     try {
-      if (!sceneRef.current || !cameraRef.current) {
-        console.warn('[XRLessonPlayerV3] Cannot create script panel: scene or camera not ready');
-        return null;
-      }
-      
-      const scene = sceneRef.current;
-      const camera = cameraRef.current;
-      
-      // Remove existing script panel
-      const existing = scene.getObjectByName('scriptPanel');
-      if (existing) {
-        scene.remove(existing);
-      }
-      
-      // Create canvas for text rendering
-      const canvas = document.createElement('canvas');
-      canvas.width = 1400;
-      canvas.height = 800;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      
-      // Glassmorphism background with gradient
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, 'rgba(15, 23, 42, 0.92)');
-      gradient.addColorStop(0.5, 'rgba(30, 41, 59, 0.88)');
-      gradient.addColorStop(1, 'rgba(51, 65, 85, 0.85)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // Cyan glow effect
-      ctx.shadowColor = 'rgba(6, 182, 212, 0.4)';
-      ctx.shadowBlur = 30;
-      
-      // Border with glow
-      ctx.strokeStyle = '#06b6d4';
-      ctx.lineWidth = 8;
-      ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
-      
-      // Inner border for depth
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.6)';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
-      
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      
-      // Top section: Title + Phase Badge
-      const phaseTitles: Record<string, string> = {
-        intro: 'Introduction',
-        content: 'Explanation',
-        explanation: 'Explanation',
-        outro: 'Conclusion',
-      };
-      const phaseColors: Record<string, string> = {
-        intro: '#06b6d4',
-        content: '#8b5cf6',
-        explanation: '#8b5cf6',
-        outro: '#10b981',
-      };
-      
-      // Phase badge
-      ctx.fillStyle = phaseColors[phase] || '#06b6d4';
-      ctx.fillRect(30, 30, 200, 50);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 36px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(phaseTitles[phase] || 'Lesson', 50, 65);
-      
-      // Lesson title
-      const lessonTitle = lessonData?.topic?.topic_name || 'Lesson';
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 42px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(lessonTitle.substring(0, 40), 250, 65);
-      
-      // Middle section: Script text
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = '36px Arial';
-      ctx.textAlign = 'left';
-      const maxWidth = canvas.width - 100;
-      const lineHeight = 45;
-      const words = text.split(' ');
-      let line = '';
-      let textY = 140;
-      
-      for (let i = 0; i < words.length; i++) {
-        const testLine = line + words[i] + ' ';
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && i > 0) {
-          ctx.fillText(line, 50, textY);
-          line = words[i] + ' ';
-          textY += lineHeight;
-          if (textY > canvas.height - 200) break;
-        } else {
-          line = testLine;
-        }
-      }
-      if (line && textY < canvas.height - 200) {
-        ctx.fillText(line, 50, textY);
-      }
-      
-      // Bottom section: TTS Controls
-      const controlsY = canvas.height - 150;
-      const buttonSize = 60;
-      const buttonSpacing = 80;
-      const startX = (canvas.width - (buttonSpacing * 4)) / 2;
-      
-      // Progress bar background
-      ctx.fillStyle = 'rgba(30, 41, 59, 0.8)';
-      ctx.fillRect(50, controlsY - 40, canvas.width - 100, 8);
-      
-      // Progress bar fill
-      ctx.fillStyle = '#06b6d4';
-      ctx.fillRect(50, controlsY - 40, (canvas.width - 100) * audioProgress, 8);
-      
-      // Time display
-      const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-      };
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '28px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(formatTime(audioCurrentTime), 50, controlsY - 50);
-      ctx.textAlign = 'right';
-      ctx.fillText(formatTime(audioDuration), canvas.width - 50, controlsY - 50);
-      
-      // Control buttons (visual representation)
-      const buttons = [
-        { icon: '⏮', x: startX, action: skipPrev },
-        { icon: ttsState === 'playing' ? '⏸' : '▶', x: startX + buttonSpacing, action: toggleAudio },
-        { icon: '⏹', x: startX + buttonSpacing * 2, action: stopAudio },
-        { icon: '⏭', x: startX + buttonSpacing * 3, action: skipNext },
-      ];
-      
-      buttons.forEach((btn) => {
-        // Button background
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.3)';
-        ctx.fillRect(btn.x - buttonSize/2, controlsY, buttonSize, buttonSize);
-        
-        // Button border
-        ctx.strokeStyle = '#06b6d4';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(btn.x - buttonSize/2, controlsY, buttonSize, buttonSize);
-        
-        // Button icon
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 32px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(btn.icon, btn.x, controlsY + 40);
+      lessonPanelRegionsRef.current = drawLessonPanel(panel.ctx, lessonUiStateRef.current, {
+        font: lessonPanelFontRef.current,
+        animTime: (performance.now() - panel.bornAt) / 1000,
+        hoverAction: lessonPanelHoverRef.current,
       });
-      
-      // Create texture from canvas
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      
-      // Create plane mesh
-      const geometry = new THREE.PlaneGeometry(2.8, 1.6);
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        transparent: true,
-        side: THREE.DoubleSide,
-        emissive: new THREE.Color(0x06b6d4),
-        emissiveIntensity: 0.15,
-        roughness: 0.2,
-        metalness: 0.2,
-      });
-      
-      const panel = new THREE.Mesh(geometry, material);
-      panel.name = 'scriptPanel';
-      
-      // Position using layout engine (left of forward view)
-      let panelX: number, panelY: number, panelZ: number;
-      
-      if (layoutEngineRef.current && layoutEngineRef.current.isReady()) {
-        const panelPos = layoutEngineRef.current.positionUIPanel();
-        panelX = panelPos.x;
-        panelY = panelPos.y;
-        panelZ = panelPos.z;
-        console.log(`${DEBUG_CATEGORIES.LAYOUT} Script panel positioned by layout engine`);
-      } else {
-        // Fallback: Position at 30° to the left (negative angle)
-        const angle = -Math.PI / 9; // -20 degrees (left side)
-        const distance = 2.0;
-        panelX = Math.sin(angle) * distance;
-        panelZ = -Math.cos(angle) * distance;
-        panelY = 1.6; // Eye level
-        console.log(`${DEBUG_CATEGORIES.LAYOUT} Script panel using fallback position`);
-      }
-      
-      panel.position.set(panelX, panelY, panelZ);
-      panel.userData.isInteractable = true;
-      panel.userData.panelType = 'script';
-      panel.userData.hasButtons = true;
-      panel.userData.layer = 'ui'; // Mark as UI layer for raycast filtering
-      panel.userData.buttons = buttons.map(btn => ({
-        bounds: { x: btn.x - buttonSize/2, y: controlsY, width: buttonSize, height: buttonSize },
-        action: () => {
-          // CRITICAL: Trigger haptic feedback for script panel button clicks
-          if (controller1Ref.current) {
-            triggerHapticFeedback(controller1Ref.current);
-          } else if (controller2Ref.current) {
-            triggerHapticFeedback(controller2Ref.current);
-          }
-          btn.action();
-        },
-      }));
-      
-      // Make it face camera (billboard)
-      panel.lookAt(camera.position);
-      
-      scene.add(panel);
-      scriptPanelRef.current = panel;
-      
-      // Only log creation, not every update
-      console.log(`[XRLessonPlayerV3] Script panel created for ${phase}`);
-      // Don't spam debug panel with every creation
-      return panel;
-    } catch (error: any) {
-      console.error('[XRLessonPlayerV3] Error creating script panel:', error);
-      addDebug(`ERROR creating script panel: ${error?.message || error}`);
-      return null;
+      panel.texture.needsUpdate = true;
+    } catch (err) {
+      console.error('[XRLessonPlayerV3] Lesson panel draw failed:', err);
     }
-  }, [sceneRef, cameraRef, addDebug, lessonData, audioProgress, audioCurrentTime, audioDuration, ttsState, toggleAudio, stopAudio, skipNext, skipPrev]);
-  
-  // Update script panel when phase/text changes
+  }, []);
+
+  /** Create the panel mesh once the scene exists. Safe to call repeatedly. */
+  const ensureLessonPanel = useCallback(() => {
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    if (!scene || !camera) return null;
+    if (lessonPanelRef.current) return lessonPanelRef.current;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = PANEL_W;
+    canvas.height = PANEL_H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    try {
+      const maxAniso = rendererRef.current?.capabilities?.getMaxAnisotropy?.();
+      if (maxAniso) texture.anisotropy = maxAniso;
+    } catch {
+      /* anisotropy is a nicety */
+    }
+
+    // 16:10, matching the canvas, so nothing is stretched.
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.4, 1.5),
+      new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
+    );
+    mesh.name = 'lessonPanel';
+    mesh.userData.isInteractable = true;
+    mesh.userData.layer = 'ui';
+    mesh.userData.panelType = 'lesson';
+
+    if (layoutEngineRef.current?.isReady()) {
+      const pos = layoutEngineRef.current.positionUIPanel();
+      mesh.position.set(pos.x, pos.y, pos.z);
+    } else {
+      // Slightly left of centre at eye level, as the script panel used to sit.
+      const angle = -Math.PI / 9;
+      const distance = 2.2;
+      mesh.position.set(Math.sin(angle) * distance, 1.6, -Math.cos(angle) * distance);
+    }
+    mesh.lookAt(camera.position);
+    scene.add(mesh);
+
+    lessonPanelRef.current = { mesh, canvas, ctx, texture, bornAt: performance.now() };
+    lessonPanelFontRef.current = ensureLessonPanelFont();
+    redrawLessonPanel();
+    return lessonPanelRef.current;
+  }, [redrawLessonPanel]);
+
+
+  // Ink layer lives as long as the scene does.
   useEffect(() => {
-    if (!['intro', 'content', 'outro'].includes(lessonPhase)) {
-      // Remove script panel for non-script phases
-      if (scriptPanelRef.current && sceneRef.current) {
-        sceneRef.current.remove(scriptPanelRef.current);
-        scriptPanelRef.current = null;
-      }
-      return;
-    }
-    
-    // Get script text for current phase
-    const scriptText = (() => {
-      if (lessonPhase === 'intro') {
-        return (lessonData as any)?.topic?.avatar_intro || 'Welcome to this lesson. Let\'s begin!';
-      } else if (lessonPhase === 'content') {
-        return (lessonData as any)?.topic?.avatar_explanation || 'This is the explanation phase.';
-      } else if (lessonPhase === 'outro') {
-        return (lessonData as any)?.topic?.avatar_outro || 'Thank you for completing this lesson!';
-      }
-      return '';
-    })();
-    
-    if (scriptText && sceneRef.current && cameraRef.current) {
-      try {
-        createScriptPanel(scriptText, lessonPhase);
-      } catch (error: any) {
-        console.error('[XRLessonPlayerV3] Error updating script panel:', error);
-        addDebug(`ERROR updating script panel: ${error?.message || error}`);
-      }
-    }
-  }, [lessonPhase, lessonData, createScriptPanel, sceneRef, cameraRef, addDebug]);
-  
-  // Update script panel ONLY on phase/state changes (NOT on progress updates)
-  // This prevents spam - progress updates happen every 100ms which causes 16+ recreations
+    if (!isSceneReady || !sceneRef.current) return;
+    inkLayerRef.current = createInkLayer({
+      scene: sceneRef.current,
+      getFov: () => cameraRef.current?.fov ?? 90,
+    });
+    return () => {
+      inkLayerRef.current?.dispose();
+      inkLayerRef.current = null;
+    };
+  }, [isSceneReady]);
+
+  // Build the panel as soon as the scene is up, and tear it down with the scene.
   useEffect(() => {
-    if (!['intro', 'content', 'outro'].includes(lessonPhase)) {
-      return;
-    }
-    
-    const scriptText = (() => {
-      if (lessonPhase === 'intro') {
-        return (lessonData as any)?.topic?.avatar_intro || 'Welcome to this lesson. Let\'s begin!';
-      } else if (lessonPhase === 'content') {
-        return (lessonData as any)?.topic?.avatar_explanation || 'This is the explanation phase.';
-      } else if (lessonPhase === 'outro') {
-        return (lessonData as any)?.topic?.avatar_outro || 'Thank you for completing this lesson!';
-      }
-      return '';
-    })();
-    
-    if (scriptText && sceneRef.current && cameraRef.current) {
-      try {
-        createScriptPanel(scriptText, lessonPhase);
-      } catch (error: any) {
-        console.error('[XRLessonPlayerV3] Error creating script panel:', error);
-      }
-    }
-  }, [lessonPhase, lessonData, createScriptPanel, sceneRef, cameraRef]);
-  
-  // Separate effect for TTS state changes (paused/ended) - update panel to show correct button state
+    if (!isSceneReady) return;
+    ensureLessonPanel();
+    return () => {
+      const panel = lessonPanelRef.current;
+      if (panel && sceneRef.current) sceneRef.current.remove(panel.mesh);
+      panel?.texture.dispose();
+      lessonPanelRef.current = null;
+      lessonPanelRegionsRef.current = [];
+    };
+  }, [isSceneReady, ensureLessonPanel]);
+
+  /**
+   * Describe the lesson to the shared renderer.
+   *
+   * The panel speaks the session vocabulary directly now, so there is no
+   * translation step. The state stays truthful whatever the class is doing;
+   * whether a held student SEES it is a visibility question, handled below.
+   */
+  const currentMcq = lessonPhase === 'quiz' ? mcqData[currentMcqIndex] : undefined;
+  const lessonUiState = useMemo<LessonUiState>(() => {
+    return {
+      ...EMPTY_LESSON_UI_STATE,
+      phase: lessonPhase,
+      // Deliberately NOT rewritten for a held student. This used to blank the
+      // script and force showQuiz off, which meant the quiz was never drawn at
+      // all — there were no regions to press, so it read as "the buttons do not
+      // work". krpano keeps this state truthful and hides the panel instead;
+      // visibility is handled where the mesh is, below.
+      script: getScriptForPhase(lessonPhase),
+      ttsStatus: ttsState,
+      question: currentMcq?.question ?? '',
+      options: currentMcq?.options ?? [],
+      showQuiz: lessonPhase === 'quiz' && !!currentMcq,
+      showResult: mcqAnswered,
+      scoreLabel:
+        lessonPhase === 'completed' && mcqData.length > 0
+          ? `${mcqScore} / ${mcqData.length} correct`
+          : '',
+      selectedAnswer: selectedMcqOption ?? -1,
+      // In krpano this means "waiting for the user to press Continue", and it
+      // drives a pulsing prompt. This player auto-advances when narration ends,
+      // so it never waits — mapping it to `!lessonStarted` left a student under
+      // teacher control staring at that pulse for the whole lesson.
+      waitingForUser: false,
+      isPlayingAudio: ttsState === 'playing',
+      currentMcqIndex,
+      totalMcqs: mcqData.length,
+      correctAnswer: mcqAnswered ? currentMcq?.correctAnswer ?? -1 : -1,
+      explanation: mcqAnswered ? currentMcq?.explanation ?? '' : '',
+      controlStudentsEnabled: classroom.controlStudentsEnabled,
+      isStudent: classroom.isStudentInSession,
+      isHost: classroom.isClassHost,
+    };
+  }, [
+    lessonPhase,
+    lessonStarted,
+    ttsState,
+    currentMcq,
+    currentMcqIndex,
+    mcqAnswered,
+    mcqScore,
+    mcqData.length,
+    selectedMcqOption,
+    getScriptForPhase,
+    classroom.controlStudentsEnabled,
+    classroom.isStudentInSession,
+    classroom.isClassHost,
+    classroom.showImmersiveUiForThisViewer,
+  ]);
+
   useEffect(() => {
-    if (!['intro', 'content', 'outro'].includes(lessonPhase) || !scriptPanelRef.current) {
-      return;
-    }
-    
-    const now = Date.now();
-    const timeSinceLastUpdate = now - lastScriptPanelUpdateRef.current;
-    
-    // Only update on state changes (paused/ended) and throttle to max once per 3 seconds
-    if ((ttsState === 'paused' || ttsState === 'ended') && timeSinceLastUpdate > 3000) {
-      lastScriptPanelUpdateRef.current = now;
-      
-      const scriptText = (() => {
-        if (lessonPhase === 'intro') {
-          return (lessonData as any)?.topic?.avatar_intro || 'Welcome to this lesson. Let\'s begin!';
-        } else if (lessonPhase === 'content') {
-          return (lessonData as any)?.topic?.avatar_explanation || 'This is the explanation phase.';
-        } else if (lessonPhase === 'outro') {
-          return (lessonData as any)?.topic?.avatar_outro || 'Thank you for completing this lesson!';
-        }
-        return '';
-      })();
-      
-      if (scriptText && sceneRef.current && cameraRef.current) {
-        try {
-          createScriptPanel(scriptText, lessonPhase);
-        } catch (error: any) {
-          console.error('[XRLessonPlayerV3] Error updating script panel:', error);
-        }
-      }
-    }
-  }, [ttsState, lessonPhase, lessonData, createScriptPanel, sceneRef, cameraRef]);
+    lessonUiStateRef.current = lessonUiState;
+    redrawLessonPanel();
+  }, [lessonUiState, redrawLessonPanel]);
+
+  /**
+   * Panel visibility, matching krpano.
+   *
+   * There, `__showImmersiveUI` is ANDed with `webvr.isenabled`, so a held
+   * student loses the in-headset HUD and nothing else. The equivalent here has
+   * to keep the flat panel: it is this player's only lesson UI, and hiding it
+   * on a laptop would leave a student looking at an empty room. On a flat
+   * screen the DOM waiting card already explains the hold.
+   */
+  useEffect(() => {
+    const mesh = lessonPanelRef.current?.mesh;
+    if (!mesh) return;
+    mesh.visible = classroom.showImmersiveUiForThisViewer || !isPresentingXR;
+  }, [classroom.showImmersiveUiForThisViewer, isPresentingXR, lessonUiState]);
+
+  
+  
+  
   
   // ============================================================================
   // MCQ Interaction Handlers
   // ============================================================================
   
+  /**
+   * Record a finished quiz in the durable score collection.
+   *
+   * This player reported quiz results to the live class session but never wrote
+   * them to student_scores, so a student's result vanished when the class ended
+   * and never reached the reports. The krpano player has always written both;
+   * this brings V3 level with it.
+   */
+  const persistQuizScore = useCallback(
+    async (correct: number, total: number, answers: Record<string, number>) => {
+      if (!user || !profile || total <= 0) return;
+      const chapter = (lessonData as any)?.chapter;
+      const topic = (lessonData as any)?.topic;
+      const chapterId = chapter?.chapter_id;
+      const topicId = topic?.topic_id;
+      if (!chapterId || !topicId) {
+        console.warn('[XRLessonPlayerV3] Cannot save quiz score: missing chapter or topic id');
+        return;
+      }
+
+      try {
+        // Attempt number is the count of prior scores for this lesson.
+        let attemptNumber = 1;
+        try {
+          const existing = await getDocs(
+            query(
+              collection(db, 'student_scores'),
+              where('student_uid', '==', user.uid),
+              where('chapter_id', '==', chapterId),
+              where('topic_id', '==', topicId)
+            )
+          );
+          attemptNumber = existing.size + 1;
+        } catch {
+          // A failed count must not cost the student their score.
+        }
+
+        const durationSeconds = lessonStartTimeRef.current
+          ? Math.round((Date.now() - lessonStartTimeRef.current) / 1000)
+          : undefined;
+
+        const scoreId = await saveQuizScore(
+          profile,
+          chapterId,
+          topicId,
+          chapter?.curriculum || 'CBSE',
+          String(chapter?.class_name ?? ''),
+          chapter?.subject || '',
+          { correct, total, percentage: Math.round((correct / total) * 100) },
+          answers,
+          attemptNumber,
+          durationSeconds,
+          undefined,
+          topic?.learning_objective,
+          'web',
+          // Attribute to the class the lesson was actually taught in, not the
+          // student's first enrolment.
+          classroomRef.current.classId
+        );
+        if (scoreId) addDebug(`Quiz score saved: ${correct}/${total}`);
+      } catch (error) {
+        console.error('[XRLessonPlayerV3] Failed to save quiz score:', error);
+      }
+    },
+    [user, profile, lessonData, addDebug]
+  );
+
   const handleMCQOptionSelect = useCallback((optionIndex: number) => {
-    if (mcqAnswered || lessonPhase !== 'mcq' || currentMcqIndex >= mcqData.length) {
+    if (mcqAnswered || lessonPhase !== 'quiz' || currentMcqIndex >= mcqData.length) {
       console.log('[MCQ INTERACTION] Selection blocked:', { mcqAnswered, lessonPhase, currentMcqIndex, mcqDataLength: mcqData.length });
       return;
     }
@@ -4357,385 +4037,118 @@ const XRLessonPlayerV3: React.FC = () => {
             selected_option_index: a.selectedOptionIndex,
           })),
         };
+        // Durable record, separate from the live class report above.
+        const answersByQuestion: Record<string, number> = {};
+        history.forEach((a) => {
+          const id = mcqData[a.questionIndex]?.id ?? String(a.questionIndex);
+          answersByQuestion[id] = a.selectedOptionIndex;
+        });
+        void persistQuizScore(score, total, answersByQuestion);
       }
-      setLessonPhase('complete');
+      setLessonPhase('completed');
       debugQuiz(`Quiz complete! Score: ${score}/${total}`);
     }
-  }, [mcqAnswered, currentMcqIndex, mcqData, addDebug, debugQuiz]);
+  }, [mcqAnswered, currentMcqIndex, mcqData, addDebug, debugQuiz, persistQuizScore]);
+
+  /**
+   * Handle a click on the panel, given the raycast UV.
+   *
+   * The action vocabulary is shared with krpano, so both players answer the same
+   * button names and neither can quietly grow a control the other lacks.
+   */
+  const handleLessonPanelUv = useCallback(
+    (u: number, v: number): boolean => {
+      const raw = actionAtUv(lessonPanelRegionsRef.current, u, v);
+      const action = parseLessonUiAction(raw);
+      if (!action) return false;
+
+      switch (action.kind) {
+        case 'phaseGo': {
+          if (classroomRef.current.blockStudentPhaseControl('Jumping ahead')) return true;
+          const local = action.phase as LessonPhase;
+          if (local) {
+            stopAudio();
+            lastPlayedPhaseRef.current = null;
+            setLessonStarted(true);
+            setLessonPhase(local);
+          }
+          return true;
+        }
+        case 'ttsPlay':
+        case 'ttsPause':
+          toggleAudio();
+          return true;
+        case 'replay':
+          if (classroomRef.current.blockStudentPhaseControl('Replay')) return true;
+          stopAudio();
+          lastPlayedPhaseRef.current = null;
+          setLessonStarted(true);
+          setAutoplayEnabled(true);
+          return true;
+        case 'skipToQuiz':
+          skipToQuiz();
+          return true;
+        case 'continue':
+          // Before the lesson starts, Continue is the START button.
+          if (!lessonStarted) {
+            handleLessonStart();
+            return true;
+          }
+          skipNext();
+          return true;
+        case 'mcqSelect':
+          handleMCQOptionSelect(action.index);
+          return true;
+        case 'mcqSubmit':
+        case 'mcqNext':
+          handleMCQNext();
+          return true;
+        case 'directClassView':
+          void classroomRef.current.directClassToCurrentView();
+          return true;
+        case 'model':
+        case 'panelGrab':
+        case 'panelResize':
+          // Model tools and panel manipulation are krpano-only for now; the
+          // renderer only draws them when modelPartCount says there is
+          // separable geometry, which this player reports as 0.
+          return true;
+        default:
+          return false;
+      }
+    },
+    [
+      stopAudio,
+      toggleAudio,
+      skipToQuiz,
+      skipNext,
+      lessonStarted,
+      handleLessonStart,
+      handleMCQOptionSelect,
+      handleMCQNext,
+    ]
+  );
+
+  // Same reason as classroomRef: the canvas pointer handler and the VR
+  // controller ray are wired up in the scene-init effect, long before the
+  // lesson data arrives. They read this ref so they always call the CURRENT
+  // handler rather than the one that existed when they were created.
+  lessonPanelUvRef.current = handleLessonPanelUv;
   
   // ============================================================================
   // Create VR MCQ Quiz Panel UI
   // ============================================================================
   
-  const createMCQPanel = useCallback((mcq: MCQData, questionIndex: number, totalQuestions: number) => {
-    try {
-      if (!sceneRef.current || !cameraRef.current) {
-        console.warn('[XRLessonPlayerV3] Cannot create MCQ panel: scene or camera not ready');
-        return null;
-      }
-      
-      if (!mcq || !mcq.options || mcq.options.length === 0) {
-        console.warn('[XRLessonPlayerV3] Invalid MCQ data:', mcq);
-        return null;
-      }
-      
-      const scene = sceneRef.current;
-      const camera = cameraRef.current;
-      
-      // Remove existing MCQ panel
-      const existing = scene.getObjectByName('mcqPanel');
-      if (existing) {
-        scene.remove(existing);
-      }
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = 1400;
-      canvas.height = 1000;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      
-      // Glassmorphism background with gradient
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      gradient.addColorStop(0, 'rgba(15, 23, 42, 0.92)');
-      gradient.addColorStop(0.5, 'rgba(30, 41, 59, 0.88)');
-      gradient.addColorStop(1, 'rgba(51, 65, 85, 0.85)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // Purple glow effect
-      ctx.shadowColor = 'rgba(139, 92, 246, 0.4)';
-      ctx.shadowBlur = 30;
-      
-      // Border with glow
-      ctx.strokeStyle = '#8b5cf6';
-      ctx.lineWidth = 8;
-      ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
-      
-      // Inner border for depth
-      ctx.strokeStyle = 'rgba(139, 92, 246, 0.6)';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
-      
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      
-      // Title
-      ctx.fillStyle = '#8b5cf6';
-      ctx.font = 'bold 56px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('Quiz', canvas.width / 2, 70);
-      
-      // Progress indicator
-      ctx.fillStyle = '#a78bfa';
-      ctx.font = '36px Arial';
-      ctx.fillText(`Question ${questionIndex + 1} of ${totalQuestions}`, canvas.width / 2, 120);
-      
-      // Score display
-      ctx.fillStyle = '#fbbf24';
-      ctx.font = 'bold 32px Arial';
-      ctx.fillText(`Score: ${mcqScore}/${totalQuestions}`, canvas.width / 2, 160);
-      
-      // Question text
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 40px Arial';
-      ctx.textAlign = 'left';
-      const questionY = 220;
-      const maxQuestionWidth = canvas.width - 100;
-      const questionWords = mcq.question.split(' ');
-      let questionLine = '';
-      let questionLineY = questionY;
-      
-      for (let i = 0; i < questionWords.length; i++) {
-        const testLine = questionLine + questionWords[i] + ' ';
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxQuestionWidth && i > 0) {
-          ctx.fillText(questionLine, 50, questionLineY);
-          questionLine = questionWords[i] + ' ';
-          questionLineY += 50;
-        } else {
-          questionLine = testLine;
-        }
-      }
-      if (questionLine) {
-        ctx.fillText(questionLine, 50, questionLineY);
-      }
-      
-      // Options
-      const optionStartY = questionLineY + 80;
-      const optionSpacing = 90;
-      const optionHeight = 70;
-      const optionWidth = canvas.width - 200;
-      const optionX = 100;
-      
-      // Store button bounds for raycast interaction
-      const buttonBounds: Array<{ bounds: { x: number; y: number; width: number; height: number }; action: () => void }> = [];
-      
-      // correctAnswer is now already 0-based (converted in fetchMCQData)
-      const correctIndex = mcq.correctAnswer;
-      
-      mcq.options.forEach((option, index) => {
-        const optionY = optionStartY + (index * optionSpacing);
-        
-        // Option background
-        let bgColor = 'rgba(30, 41, 59, 0.8)';
-        let borderColor = '#475569';
-        
-        if (selectedMcqOption === index) {
-          if (mcqAnswered) {
-            if (index === correctIndex) {
-              bgColor = 'rgba(34, 197, 94, 0.4)';
-              borderColor = '#22c55e';
-            } else {
-              bgColor = 'rgba(239, 68, 68, 0.4)';
-              borderColor = '#ef4444';
-            }
-          } else {
-            bgColor = 'rgba(59, 130, 246, 0.4)';
-            borderColor = '#3b82f6';
-          }
-        }
-        
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(optionX, optionY, optionWidth, optionHeight);
-        
-        ctx.strokeStyle = borderColor;
-        ctx.lineWidth = 4;
-        ctx.strokeRect(optionX, optionY, optionWidth, optionHeight);
-        
-        // Option label and text
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 32px Arial';
-        const label = String.fromCharCode(65 + index); // A, B, C, D
-        ctx.fillText(`${label}.`, optionX + 20, optionY + 45);
-        
-        ctx.font = '32px Arial';
-        ctx.fillText(option, optionX + 80, optionY + 45);
-        
-        // Checkmark or X if answered
-        if (mcqAnswered && index === correctIndex) {
-          ctx.fillStyle = '#22c55e';
-          ctx.font = 'bold 40px Arial';
-          ctx.fillText('✓', optionX + optionWidth - 50, optionY + 45);
-        } else if (mcqAnswered && selectedMcqOption === index && index !== correctIndex) {
-          ctx.fillStyle = '#ef4444';
-          ctx.font = 'bold 40px Arial';
-          ctx.fillText('✗', optionX + optionWidth - 50, optionY + 45);
-        }
-        
-        // Store button bounds for raycast (only if not answered)
-        if (!mcqAnswered) {
-          buttonBounds.push({
-            bounds: { x: optionX, y: optionY, width: optionWidth, height: optionHeight },
-            action: () => {
-              // CRITICAL: Trigger haptic feedback for quiz button click
-              if (controller1Ref.current) {
-                triggerHapticFeedback(controller1Ref.current);
-              } else if (controller2Ref.current) {
-                triggerHapticFeedback(controller2Ref.current);
-              }
-              handleMCQOptionSelect(index);
-            },
-          });
-        }
-      });
-      
-      // Explanation (if answered)
-      if (mcqAnswered && mcq.explanation) {
-        const explanationY = optionStartY + (mcq.options.length * optionSpacing) + 40;
-        ctx.fillStyle = '#fbbf24';
-        ctx.font = 'bold 36px Arial';
-        ctx.fillText('Explanation:', 50, explanationY);
-        
-        ctx.fillStyle = '#fcd34d';
-        ctx.font = '28px Arial';
-        const explanationWords = mcq.explanation.split(' ');
-        let explanationLine = '';
-        let explanationLineY = explanationY + 50;
-        
-        for (let i = 0; i < explanationWords.length; i++) {
-          const testLine = explanationLine + explanationWords[i] + ' ';
-          const metrics = ctx.measureText(testLine);
-          if (metrics.width > maxQuestionWidth && i > 0) {
-            ctx.fillText(explanationLine, 50, explanationLineY);
-            explanationLine = explanationWords[i] + ' ';
-            explanationLineY += 40;
-          } else {
-            explanationLine = testLine;
-          }
-        }
-        if (explanationLine) {
-          ctx.fillText(explanationLine, 50, explanationLineY);
-        }
-      }
-      
-      // Next button (if answered)
-      if (mcqAnswered) {
-        const nextButtonX = canvas.width / 2;
-        const nextButtonY = canvas.height - 60;
-        const nextButtonWidth = 250;
-        const nextButtonHeight = 60;
-        
-        ctx.fillStyle = 'rgba(139, 92, 246, 0.6)';
-        ctx.fillRect(nextButtonX - nextButtonWidth/2, nextButtonY - nextButtonHeight/2, nextButtonWidth, nextButtonHeight);
-        ctx.strokeStyle = '#8b5cf6';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(nextButtonX - nextButtonWidth/2, nextButtonY - nextButtonHeight/2, nextButtonWidth, nextButtonHeight);
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 32px Arial';
-        ctx.textAlign = 'center';
-        const nextText = currentMcqIndex < mcqData.length - 1 ? 'Next Question' : 'View Results';
-        ctx.fillText(nextText, nextButtonX, nextButtonY + 10);
-        
-        buttonBounds.push({
-          bounds: { x: nextButtonX - nextButtonWidth/2, y: nextButtonY - nextButtonHeight/2, width: nextButtonWidth, height: nextButtonHeight },
-          action: () => {
-            // CRITICAL: Trigger haptic feedback for Next button click
-            if (controller1Ref.current) {
-              triggerHapticFeedback(controller1Ref.current);
-            } else if (controller2Ref.current) {
-              triggerHapticFeedback(controller2Ref.current);
-            }
-            handleMCQNext();
-          },
-        });
-      }
-      
-      // Create texture
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      
-      // Create plane
-      const geometry = new THREE.PlaneGeometry(2.8, 2.0);
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        transparent: true,
-        side: THREE.DoubleSide,
-        emissive: new THREE.Color(0x8b5cf6),
-        emissiveIntensity: 0.15,
-        roughness: 0.2,
-        metalness: 0.2,
-      });
-      
-      const panel = new THREE.Mesh(geometry, material);
-      panel.name = 'mcqPanel';
-      
-      // Position using layout engine (left of forward view, same as script panel)
-      let panelX: number, panelY: number, panelZ: number;
-      
-      if (layoutEngineRef.current && layoutEngineRef.current.isReady()) {
-        const panelPos = layoutEngineRef.current.positionUIPanel();
-        panelX = panelPos.x;
-        panelY = panelPos.y;
-        panelZ = panelPos.z;
-        console.log(`${DEBUG_CATEGORIES.LAYOUT} MCQ panel positioned by layout engine`);
-      } else {
-        // Fallback: Position at 20° to the left
-        const angle = -Math.PI / 9;
-        const distance = 2.0;
-        panelX = Math.sin(angle) * distance;
-        panelZ = -Math.cos(angle) * distance;
-        panelY = 1.6;
-        console.log(`${DEBUG_CATEGORIES.LAYOUT} MCQ panel using fallback position`);
-      }
-      
-      panel.position.set(panelX, panelY, panelZ);
-      panel.lookAt(camera.position);
-      panel.userData.isInteractable = true;
-      panel.userData.panelType = 'mcq';
-      panel.userData.hasButtons = true;
-      panel.userData.buttons = buttonBounds;
-      panel.userData.layer = 'ui'; // Mark as UI layer for raycast filtering
-      
-      scene.add(panel);
-      mcqPanelRef.current = panel;
-      
-      debugQuiz(`MCQ panel created: Question ${questionIndex + 1} (${buttonBounds.length} clickable buttons)`);
-      return panel;
-    } catch (error: any) {
-      console.error('[XRLessonPlayerV3] Error creating MCQ panel:', error);
-      addDebug(`ERROR creating MCQ panel: ${error?.message || error}`);
-      return null;
-    }
-  }, [sceneRef, cameraRef, selectedMcqOption, mcqAnswered, mcqScore, currentMcqIndex, mcqData, handleMCQOptionSelect, handleMCQNext, addDebug]);
+
+
   
-  // Update MCQ panel when question/selection changes
-  useEffect(() => {
-    if (lessonPhase !== 'mcq' || mcqData.length === 0) {
-      // Remove MCQ panel for non-quiz phases
-      if (mcqPanelRef.current && sceneRef.current) {
-        sceneRef.current.remove(mcqPanelRef.current);
-        mcqPanelRef.current = null;
-        lastMcqPanelStateRef.current = '';
-      }
-      return;
-    }
-    
-    // Create a state key to detect actual changes and avoid redundant recreation
-    const currentStateKey = `${currentMcqIndex}-${selectedMcqOption}-${mcqAnswered}`;
-    
-    // Skip if state hasn't changed (prevents double recreation)
-    if (lastMcqPanelStateRef.current === currentStateKey && mcqPanelRef.current) {
-      console.log('[MCQ PANEL] Skipping redundant recreation - state unchanged');
-      return;
-    }
-    
-    if (currentMcqIndex < mcqData.length && sceneRef.current && cameraRef.current && mcqData[currentMcqIndex]) {
-      try {
-        console.log(`[MCQ PANEL] Creating panel for state: ${currentStateKey}`);
-        createMCQPanel(mcqData[currentMcqIndex], currentMcqIndex, mcqData.length);
-        lastMcqPanelStateRef.current = currentStateKey;
-      } catch (error: any) {
-        console.error('[XRLessonPlayerV3] Error updating MCQ panel:', error);
-        addDebug(`ERROR updating MCQ panel: ${error?.message || error}`);
-      }
-    }
-  }, [lessonPhase, currentMcqIndex, mcqData, selectedMcqOption, mcqAnswered, createMCQPanel, sceneRef, cameraRef, addDebug]);
   
   // ============================================================================
   // 3D Model Reset & Focus Functions
   // ============================================================================
   
-  const toggleAssetsVisibility = useCallback(() => {
-    const assetsGroup = sceneRef.current?.getObjectByName('assetsGroup');
-    if (assetsGroup) {
-      const newVisibility = !assetsVisible;
-      assetsGroup.traverse((obj) => {
-        obj.visible = newVisibility;
-      });
-      setAssetsVisible(newVisibility);
-      addDebug(`Assets ${newVisibility ? 'shown' : 'hidden'}`);
-    }
-  }, [assetsVisible, addDebug]);
   
-  const resetModel = useCallback(() => {
-    if (primaryAssetRef.current && primaryAssetRef.current.userData.originalPosition) {
-      const asset = primaryAssetRef.current;
-      asset.position.copy(asset.userData.originalPosition);
-      asset.rotation.copy(asset.userData.originalRotation);
-      asset.scale.copy(asset.userData.originalScale);
-      addDebug('Model reset to original position');
-    }
-  }, [addDebug]);
   
-  const focusModel = useCallback(() => {
-    if (primaryAssetRef.current && cameraRef.current) {
-      const asset = primaryAssetRef.current;
-      const camera = cameraRef.current;
-      
-      // Bring model in front of user
-      const cameraPos = new THREE.Vector3();
-      camera.getWorldPosition(cameraPos);
-      const forward = new THREE.Vector3(0, 0, -1);
-      forward.applyQuaternion(camera.quaternion);
-      
-      const newPos = new THREE.Vector3().copy(cameraPos).add(forward.multiplyScalar(2.0));
-      newPos.y = 1.2; // Eye level
-      
-      asset.position.copy(newPos);
-      addDebug('Model focused in front of user');
-    }
-  }, [cameraRef, addDebug]);
   
   // ============================================================================
   // Render
@@ -4764,39 +4177,60 @@ const XRLessonPlayerV3: React.FC = () => {
     );
   }
   
-  // No VR support
-  if (isVRSupported === false) {
-    return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-card rounded-2xl border border-border p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/20 flex items-center justify-center">
-            <Glasses className="w-8 h-8 text-primary" />
-          </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">VR Device Required</h2>
-          <p className="text-slate-400 text-sm mb-2">
-            This immersive lesson requires a VR headset.
-          </p>
-          <p className="text-slate-500 text-xs mb-4">
-            Please open this page on Meta Quest Browser for the full VR experience.
-          </p>
-          <button
-            onClick={() => navigate('/lessons')}
-            className="flex items-center justify-center gap-2 px-6 py-3 mx-auto
-                     text-primary-foreground bg-primary hover:bg-primary/90 rounded-lg font-medium"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Lessons
-          </button>
-        </div>
-      </div>
-    );
-  }
-  
+  // NOTE: there is deliberately no "VR required" dead end here any more.
+  //
+  // This used to return early whenever immersive-vr was unsupported, which
+  // unmounted the canvas container — so containerRef stayed null, the scene
+  // never initialised, and the log filled with "Waiting for container ref...".
+  // It also made it impossible for a teacher to drive a V3 class from a desktop,
+  // which is where teachers actually are. The scene renders perfectly well flat,
+  // and drag-to-look now gives a mouse and touch user a real camera, so a
+  // headset is an upgrade rather than a requirement. The banner below says so.
+
+  // PlayerChrome reads these from the player ROOT (inline custom properties do
+  // not reach siblings). Without them both bars collapse to zero height and
+  // every control on them becomes unclickable.
+  const hudMetrics = {
+    '--hud-top': `calc(${playerViewport.isCompact ? '3.25rem' : '3.5rem'} + env(safe-area-inset-top, 0px))`,
+    '--hud-bottom': `calc(${playerViewport.isCompact ? '3.75rem' : '4rem'} + env(safe-area-inset-bottom, 0px))`,
+  } as React.CSSProperties;
+
   return (
-    <div className="fixed inset-0 bg-black">
+    <div className="fixed inset-0 bg-black" style={hudMetrics}>
       {/* Three.js Canvas Container */}
       <div ref={containerRef} className="w-full h-full" />
       
+      {/* Comfort break. Dismissible, never blocking: a student can carry on, but
+          the prompt is there, which is the point of the published guidance. */}
+      {comfortBreak.due && (
+        <div className="pointer-events-none absolute inset-x-0 top-[calc(var(--hud-top)+1rem)] z-gate flex justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-amber-300/30 bg-slate-950/90 p-4 text-white shadow-2xl backdrop-blur-xl">
+            <p className="text-sm font-semibold">Time for a short break</p>
+            <p className="mt-1 text-xs leading-snug text-white/60">
+              You have been in the headset for about {comfortBreak.immersedMinutes} minutes.
+              Take it off for a moment, look at something far away, then carry on.
+            </p>
+            <button
+              type="button"
+              onClick={comfortBreak.acknowledge}
+              className="mt-3 w-full rounded-lg border border-white/12 bg-white/[0.06] px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/10"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Flat-mode notice. Informational only: the lesson is fully usable here. */}
+      {isVRSupported === false && !classroom.isClassHost && !classroom.isStudentInSession && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-6 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-border bg-card/85 px-4 py-2 text-xs text-muted-foreground backdrop-blur-sm">
+            <Glasses className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span>Drag to look around. Open on a Meta Quest headset for the immersive version.</span>
+          </div>
+        </div>
+      )}
+
       {/* Loading Overlay */}
       {loadingState === 'loading' && (
         <div className="absolute inset-0 bg-background/90 flex items-center justify-center z-50">
@@ -4812,19 +4246,6 @@ const XRLessonPlayerV3: React.FC = () => {
         </div>
       )}
       
-      {/* Ready Overlay (before entering VR) */}
-      {loadingState === 'ready' && (
-        <div className="absolute top-4 left-4 z-40">
-          <button
-            onClick={() => navigate('/lessons')}
-            className="flex items-center gap-2 px-4 py-2 bg-card/80 hover:bg-card 
-                     text-foreground rounded-lg backdrop-blur-sm border border-border"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Exit
-          </button>
-        </div>
-      )}
       
       {/* In VR Indicator (shown on 2D screen while in VR) */}
       {loadingState === 'in-vr' && (
@@ -4839,36 +4260,10 @@ const XRLessonPlayerV3: React.FC = () => {
         </div>
       )}
       
-      {/* Lesson Info (top right) */}
-      {loadingState === 'ready' && lessonData && (
-        <div className="absolute top-4 right-4 z-40 max-w-xs">
-          <div className="bg-card/80 backdrop-blur-sm rounded-lg p-4 border border-border">
-            <p className="text-primary text-xs font-medium mb-1">
-              {lessonData.chapter.curriculum} • Class {lessonData.chapter.class_name}
-            </p>
-            <h3 className="text-white font-semibold text-sm">
-              {lessonData.topic.topic_name}
-            </h3>
-          </div>
-        </div>
-      )}
       
-      {/* Instructions */}
-      {loadingState === 'ready' && (
-        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-40">
-          <div className="bg-card/80 backdrop-blur-sm rounded-lg px-6 py-3 border border-primary/30">
-            <p className="text-cyan-300 text-sm text-center">
-              Click "Enter VR" below to start the immersive experience
-            </p>
-            <p className="text-slate-400 text-xs text-center mt-1">
-              In VR, point at the START button to begin the lesson
-            </p>
-          </div>
-        </div>
-      )}
       
       {/* Waiting for START indicator in VR */}
-      {loadingState === 'in-vr' && lessonPhase === 'waiting' && !lessonStarted && (
+      {loadingState === 'in-vr' && lessonPhase === 'idle' && !lessonStarted && (
         <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50">
           <div className="bg-cyan-600/90 backdrop-blur-sm rounded-lg px-6 py-3 border border-cyan-400/50 shadow-lg">
             <div className="flex items-center gap-3">
@@ -4881,24 +4276,9 @@ const XRLessonPlayerV3: React.FC = () => {
         </div>
       )}
       
-      {/* Skip to Quiz Button - Show during TTS phases ONLY when lesson has started */}
-      {(loadingState === 'ready' || loadingState === 'in-vr') && lessonStarted &&
-       ['intro', 'content', 'outro'].includes(lessonPhase) && mcqData.length > 0 && (
-        <div className="absolute top-20 right-4 z-40">
-          <button
-            onClick={skipToQuiz}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 
-                     hover:from-amber-500 hover:to-orange-500 text-primary-foreground rounded-lg font-medium 
-                     shadow-lg shadow-amber-500/20 border border-amber-500/50 transition-all"
-          >
-            <SkipForward className="w-4 h-4" />
-            Skip to Quiz
-          </button>
-        </div>
-      )}
       
       {/* Lesson Completion Screen */}
-      {lessonPhase === 'complete' && (
+      {lessonPhase === 'completed' && (
         <div className="absolute inset-0 bg-background/95 flex items-center justify-center z-50 backdrop-blur-sm">
           <div className="max-w-md w-full mx-4 bg-card rounded-2xl 
                         border border-emerald-500/30 p-8 text-center shadow-2xl">
@@ -4941,286 +4321,178 @@ const XRLessonPlayerV3: React.FC = () => {
       {/* Audio Controls (shown when ready or in VR) - Now in VR panel */}
       {/* Audio controls are now in the 3D VR script panel */}
       
-      {/* Model Control Buttons (3D Asset) */}
-      {primaryAssetRef.current && (loadingState === 'ready' || loadingState === 'in-vr') && (
-        <div className="absolute bottom-4 right-4 z-40">
-          <div className="bg-card/90 backdrop-blur-sm rounded-lg p-3 border border-border">
-            <p className="text-slate-400 text-xs mb-2 font-medium">3D Model:</p>
-            <div className="flex gap-2">
-              <button
-                onClick={resetModel}
-                className="px-3 py-1.5 bg-muted hover:bg-muted/80 text-foreground text-xs rounded transition-colors"
-                title="Reset model to original position"
-              >
-                Reset
-              </button>
-              <button
-                onClick={focusModel}
-                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs rounded transition-colors"
-                title="Focus model in front of you"
-              >
-                Focus
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       
-      {/* Asset Dock - Similar to panel dock */}
-      <div className="fixed bottom-4 right-4 z-50">
-        <button
-          onClick={() => setAssetDockExpanded(!assetDockExpanded)}
-          className="bg-slate-800/90 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 flex items-center gap-2"
-        >
-          <span>3D Assets</span>
-          <span className={`text-xs transition-transform ${assetDockExpanded ? 'rotate-180' : ''}`}>▼</span>
-        </button>
-        
-        {assetDockExpanded && (
-          <div className="mt-2 bg-slate-900/95 border border-slate-600 rounded-lg p-3 min-w-[200px]">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-slate-300">Asset Controls</span>
+      
+
+      {/* ------------------------------------------------------------------
+          Live class. Every one of these components is player-agnostic and is
+          already used by the krpano player; only the wiring is new here.
+          Hidden while presenting in a headset, where DOM overlays cannot be
+          seen and the in-scene panels take over.
+          ------------------------------------------------------------------ */}
+      {classroom.isClassHost && (
+        <LiveClassHostOverlay
+          session={classroom.activeSession}
+          sessionId={classroom.hostSessionId}
+          hostUid={user?.uid ?? null}
+          progressList={classroom.progressList}
+          sessionCode={classroom.hostSessionCode}
+          skyboxUrlOverride={skyboxUrl}
+          openDrawer={hostDrawer}
+          onDrawerChange={setHostDrawer}
+        />
+      )}
+
+      {/* Waiting room: the scene is loaded and silent until the teacher starts. */}
+      {classroom.isStudentInSession &&
+        classroom.controlStudentsEnabled &&
+        isSceneReady &&
+        !classroom.classStarted && (
+          <div className="pointer-events-none absolute inset-x-0 top-4 z-[45] flex justify-center px-4">
+            <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-cyan-400/25 bg-slate-950/85 p-4 text-white shadow-2xl backdrop-blur-xl">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-400" />
+                <p className="text-sm font-semibold">Waiting for your teacher</p>
+              </div>
+              <p className="mt-1 text-xs leading-snug text-white/55">
+                The lesson will begin when your teacher starts the class.
+              </p>
+
+              {Array.isArray(classroom.joinedSession?.lobby_roster) &&
+                classroom.joinedSession.lobby_roster.length > 0 && (
+                  <div className="mt-3 border-t border-white/10 pt-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
+                      In the class ({classroom.joinedSession.lobby_roster.length})
+                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {classroom.joinedSession.lobby_roster.slice(0, 12).map((member) => (
+                        <span
+                          key={member.uid}
+                          className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                            member.ready
+                              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+                              : 'border-white/10 bg-white/[0.05] text-white/50'
+                          }`}
+                        >
+                          {member.name}
+                        </span>
+                      ))}
+                      {classroom.joinedSession.lobby_roster.length > 12 && (
+                        <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-white/50">
+                          +{classroom.joinedSession.lobby_roster.length - 12} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
               <button
-                onClick={toggleAssetsVisibility}
-                className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded"
+                type="button"
+                onClick={classroom.toggleHandRaised}
+                className={`mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  classroom.handRaised
+                    ? 'border-amber-300/40 bg-amber-400/20 text-amber-100'
+                    : 'border-white/12 bg-white/[0.05] text-white/70 hover:bg-white/10'
+                }`}
               >
-                {assetsVisible ? 'Hide' : 'Show'}
+                <Hand className="h-3.5 w-3.5" />
+                {classroom.handRaised ? 'Lower hand' : 'Raise hand'}
               </button>
             </div>
-            <div className="text-xs text-slate-400">
-              Loaded: {assetsLoaded}/{meshyAssets.length}
-            </div>
-            {meshyAssets.map((asset, idx) => (
-              <div key={asset.id} className="text-xs text-slate-300 mt-1">
-                {idx + 1}. {asset.name || asset.id}
-              </div>
-            ))}
           </div>
         )}
-      </div>
-      
-      {/* COMPREHENSIVE DEBUG PANEL */}
-      <div className="absolute bottom-4 left-4 z-50 max-w-xl">
-        <div className="bg-black/95 backdrop-blur-sm rounded-lg p-3 border border-yellow-500/50 text-xs font-mono">
-          {/* Header with toggle and controls */}
-          <div className="flex items-center justify-between mb-2">
-            <button 
-              onClick={() => setDebugExpanded(!debugExpanded)}
-              className="text-yellow-400 font-bold hover:text-yellow-300 flex items-center gap-1"
-            >
-              🐛 Debug Panel {debugExpanded ? '▼' : '▶'}
-            </button>
-            <div className="flex items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                loadingState === 'in-vr' ? 'bg-purple-600 text-white' :
-                loadingState === 'ready' ? 'bg-green-600 text-white' :
-                loadingState === 'error' ? 'bg-red-600 text-white' :
-                'bg-slate-600 text-white'
-              }`}>
-                {loadingState}
-              </span>
-              <button
-                onClick={() => logStateSummary()}
-                className="px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs"
-                title="Log state summary to console"
-              >
-                📊 Log State
-              </button>
-              <button
-                onClick={() => {
-                  const fullLog = [
-                    `=== XRLessonPlayerV3 COMPREHENSIVE Debug Log ===`,
-                    `Time: ${new Date().toISOString()}`,
-                    ``,
-                    `=== CURRENT STATE ===`,
-                    `Loading State: ${loadingState}`,
-                    `Lesson Phase: ${lessonPhase}`,
-                    `Lesson Started: ${lessonStarted}`,
-                    `VR Supported: ${isVRSupported}`,
-                    `Layout Engine Ready: ${layoutEngineRef.current?.isReady() || false}`,
-                    ``,
-                    `=== TTS DATA ===`,
-                    `Total TTS entries: ${ttsData.length}`,
-                    `TTS State: ${ttsState}`,
-                    `Audio Playing: ${isAudioPlaying}`,
-                    `Audio Progress: ${(audioProgress * 100).toFixed(1)}%`,
-                    ...ttsData.map((t, i) => `TTS #${i + 1}: id=${t.id}, section=${t.section}`),
-                    ``,
-                    `=== MCQ DATA ===`,
-                    `Total MCQs: ${mcqData.length}`,
-                    `Current Question: ${currentMcqIndex + 1}`,
-                    `Score: ${mcqScore}/${mcqData.length}`,
-                    `MCQ Answered: ${mcqAnswered}`,
-                    `Selected Option: ${selectedMcqOption}`,
-                    ...mcqData.map((m, i) => `MCQ #${i + 1}: correctAnswer=${m.correctAnswer} (${m.options?.[m.correctAnswer]})`),
-                    ``,
-                    `=== 3D ASSETS ===`,
-                    `Total Assets: ${meshyAssets.length}`,
-                    `Loaded: ${assetsLoaded}`,
-                    ``,
-                    `=== GROUND PLANE CONFIG ===`,
-                    `Ground Level (Y): ${GROUND_LEVEL}m`,
-                    `Table Height: ${TABLE_HEIGHT}m`,
-                    `Asset Distance: ${ASSET_DISTANCE}m`,
-                    `Asset Right Offset: ${ASSET_RIGHT_OFFSET}m`,
-                    `Target Asset Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`,
-                    `Ground Plane Ref: ${groundPlaneRef.current ? 'EXISTS' : 'NULL'}`,
-                    ``,
-                    `=== NORMALIZED SCALING ===`,
-                    `All assets scaled to: ${NORMALIZED_SIZE}m max dimension`,
-                    `This ensures consistent sizing regardless of original model size`,
-                    ``,
-                    `=== SIMPLE ASSET PLACER SYSTEM ===`,
-                    `Placement Strategy: ${placementStrategy}`,
-                    `Total Assets: ${meshyAssets.length}`,
-                    `Placements Calculated: ${assetPlacementsRef.current.length}`,
-                    ...(assetPlacementsRef.current.map((p, i) => 
-                      `Placement ${i + 1}: (${p.position.x.toFixed(2)}, ${p.position.y.toFixed(2)}, ${p.position.z.toFixed(2)}) scale ${p.scale.toFixed(2)}`
-                    )),
-                    ``,
-                    `=== DEBUG MESSAGES ===`,
-                    ...debugInfo,
-                    ``,
-                    `=== RAW LESSON DATA ===`,
-                    JSON.stringify(lessonData, null, 2)
-                  ].join('\n');
-                  navigator.clipboard.writeText(fullLog);
-                  alert('Comprehensive debug log copied to clipboard!');
-                }}
-                className="px-2 py-0.5 bg-yellow-600 hover:bg-yellow-500 text-black rounded text-xs"
-              >
-                📋 Copy All
-              </button>
-            </div>
-          </div>
-          
-          {debugExpanded && (
-            <>
-              {/* Status Grid - Always visible */}
-              <div className="mb-2 p-2 bg-slate-800/50 rounded grid grid-cols-3 gap-2 text-xs">
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${skyboxUrl ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}></span>
-                  <span className="text-slate-300">Skybox</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${isVRSupported ? 'bg-green-500' : isVRSupported === false ? 'bg-red-500' : 'bg-yellow-500 animate-pulse'}`}></span>
-                  <span className="text-slate-300">VR</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${layoutEngineRef.current?.isReady() ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
-                  <span className="text-slate-300">Layout</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${ttsData.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`}></span>
-                  <span className="text-slate-300">TTS: {ttsData.length} {isAudioPlaying ? '▶' : ''}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${mcqData.length > 0 ? 'bg-green-500' : 'bg-gray-500'}`}></span>
-                  <span className="text-slate-300">MCQ: {mcqData.length}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${assetsLoaded > 0 ? 'bg-green-500' : meshyAssets.length > 0 ? 'bg-yellow-500 animate-pulse' : 'bg-gray-500'}`}></span>
-                  <span className="text-slate-300">Assets: {assetsLoaded}/{meshyAssets.length}</span>
-                </div>
-              </div>
-              
-              {/* Phase indicator */}
-              <div className="mb-2 p-2 bg-slate-800/50 rounded">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Phase:</span>
-                  <span className={`px-2 py-0.5 rounded font-bold text-xs ${
-                    lessonPhase === 'waiting' ? 'bg-gray-600 text-gray-200' :
-                    lessonPhase === 'intro' ? 'bg-cyan-600 text-white' :
-                    lessonPhase === 'content' ? 'bg-purple-600 text-white' :
-                    lessonPhase === 'outro' ? 'bg-emerald-600 text-white' :
-                    lessonPhase === 'mcq' ? 'bg-amber-600 text-white' :
-                    lessonPhase === 'complete' ? 'bg-green-600 text-white' :
-                    'bg-slate-600 text-white'
-                  }`}>
-                    {lessonPhase.toUpperCase()} {lessonStarted ? '✓' : '⏳'}
-                  </span>
-                </div>
-                {lessonPhase === 'mcq' && (
-                  <div className="mt-1 text-xs text-amber-300">
-                    Quiz: Q{currentMcqIndex + 1}/{mcqData.length} | Score: {mcqScore}/{mcqData.length}
-                  </div>
-                )}
-              </div>
-              
-              {/* Asset Placement System Controls - IN PANEL (not floating) */}
-              <div className="mb-2 p-2 bg-slate-800/50 rounded border border-purple-500/30">
-                <div className="text-xs font-bold text-purple-400 mb-2">🎯 Asset Placement Strategy</div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-slate-300 text-xs">Current Strategy:</span>
-                  <span className="px-2 py-0.5 bg-purple-600/50 text-purple-200 rounded text-xs font-bold">
-                    {placementStrategy === 'curved-arc' ? 'Curved Arc' :
-                     placementStrategy === 'focus-secondary' ? 'Focus + Secondary' :
-                     'Carousel'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mb-2">
-                  <button
-                    onClick={() => changePlacementStrategy('curved-arc')}
-                    className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
-                      placementStrategy === 'curved-arc' 
-                        ? 'bg-purple-600 text-white font-bold' 
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    Curved Arc
-                  </button>
-                  <button
-                    onClick={() => changePlacementStrategy('focus-secondary')}
-                    className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
-                      placementStrategy === 'focus-secondary' 
-                        ? 'bg-purple-600 text-white font-bold' 
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    Focus + Secondary
-                  </button>
-                  <button
-                    onClick={() => changePlacementStrategy('carousel')}
-                    className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${
-                      placementStrategy === 'carousel' 
-                        ? 'bg-purple-600 text-white font-bold' 
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
-                  >
-                    Carousel
-                  </button>
-                </div>
-                <div className="text-xs text-slate-400 mt-1">
-                  Assets: {assetsLoaded}/{meshyAssets.length} | Placements: {assetPlacementsRef.current.length}
-                </div>
-              </div>
-              
-              {/* Log Messages */}
-              <div className="max-h-40 overflow-y-auto space-y-0.5 p-2 bg-slate-900/50 rounded">
-                {debugInfo.slice(-20).map((msg, i) => (
-                  <div key={i} className={`text-xs ${
-                    msg.includes('ERROR') || msg.includes('❌') ? 'text-red-400' : 
-                    msg.includes('✅') ? 'text-green-400' : 
-                    msg.includes('⚠') || msg.includes('⏳') ? 'text-yellow-400' :
-                    msg.includes('🥽') ? 'text-purple-400' :
-                    msg.includes('🔊') ? 'text-cyan-400' :
-                    msg.includes('❓') ? 'text-amber-400' :
-                    msg.includes('📐') ? 'text-blue-400' :
-                    msg.includes('📦') ? 'text-orange-400' :
-                    msg.includes('👆') ? 'text-pink-400' :
-                    'text-slate-300'
-                  }`}>
-                    {msg}
-                  </div>
-                ))}
-                {debugInfo.length === 0 && (
-                  <div className="text-slate-500 text-center py-2">Waiting for debug messages...</div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+
+      {/* The only chrome. Exit, title, progress, narration controls and the class
+          controls all live in these two bars, which is why the seven overlays
+          that used to sit on top of them are gone. */}
+      {loadingState !== 'in-vr' && (
+        <PlayerChrome
+          topBar={
+            <PlayerTopBar
+              onExit={() => navigate('/lessons')}
+              title={lessonData?.topic?.topic_name || 'Lesson'}
+              subtitle={`${lessonData?.chapter?.subject || ''} · ${lessonPhase}`}
+              isMuted={isMuted}
+              onToggleMute={() => setIsMuted((m) => !m)}
+              showChat={false}
+              onToggleChat={() => {}}
+              chatAvailable={false}
+              compact={playerViewport.isCompact}
+              isHost={classroom.isClassHost}
+              sessionCode={classroom.hostSessionCode}
+              liveCount={classroom.rosterCounts.inLesson}
+              joinedCount={classroom.rosterCounts.joined}
+              classCount={classroom.enrolledCount}
+              pendingCount={classroom.pendingJoinCount}
+              onCopyCode={async () => {
+                if (!classroom.hostSessionCode) return;
+                try {
+                  await navigator.clipboard.writeText(classroom.hostSessionCode);
+                  toast.success('Class code copied');
+                } catch {
+                  toast.error('Could not copy class code');
+                }
+              }}
+              onOpenApprovals={() =>
+                setHostDrawer((d) => (d === 'approvals' ? null : 'approvals'))
+              }
+              endSessionConfirming={endSessionConfirming}
+              onEndSession={
+                classroom.isClassHost && endClassSession
+                  ? async () => {
+                      // Two-step, in-app. window.confirm() returns false outright
+                      // in browsers that suppress dialogs, which would make End
+                      // silently do nothing.
+                      if (!endSessionConfirming) {
+                        setEndSessionConfirming(true);
+                        window.setTimeout(() => setEndSessionConfirming(false), 4000);
+                        return;
+                      }
+                      setEndSessionConfirming(false);
+                      const endedSessionId = classroom.hostSessionId;
+                      const ok = await endClassSession(endedSessionId ?? undefined);
+                      if (ok) {
+                        if (endedSessionId) navigate(`/class-session/${endedSessionId}/results`);
+                        else navigate('/lessons');
+                      } else {
+                        toast.error('Could not end the session, it is still live.');
+                      }
+                    }
+                  : undefined
+              }
+            />
+          }
+          bottomBar={
+            <PlayerBottomBar
+              isHost={classroom.isClassHost}
+              compact={playerViewport.isCompact}
+              playbackState={classroom.teacherPlayback?.state ?? 'idle'}
+              currentPhase={lessonPhase}
+              onPlaybackCommand={classroom.handleTeacherPlaybackCommand}
+              onLocalPlayToggle={toggleAudio}
+              isPlayingAudio={ttsState === 'playing'}
+              playbackLocked={classroom.isStudentInSession && classroom.controlStudentsEnabled}
+              controlStudentsEnabled={classroom.controlStudentsEnabled}
+              onToggleControl={(next) => void classroom.toggleControl(next)}
+              classStarted={classroom.classStarted}
+              studentUiVisible={classroom.studentUiVisible}
+              onToggleStudentUi={(visible) => void classroom.toggleStudentUi(visible)}
+              onForceStudentsIn={() => void classroom.forceStudentsIn()}
+              canForce={Boolean(
+                classroom.activeSession?.launched_lesson || classroom.activeSession?.launched_scene
+              )}
+              onDirectView={() => void classroom.directClassToCurrentView()}
+              liveCount={classroom.rosterCounts.joined}
+              onOpenRoster={() => setHostDrawer((d) => (d === 'roster' ? null : 'roster'))}
+              raisedHands={classroom.raisedHandCount}
+              markerActive={markerActive}
+              markerColor={markerColor}
+              onToggleMarker={() => setMarkerActive((v) => !v)}
+              onMarkerColorChange={setMarkerColor}
+            />
+          }
+        />
+      )}
     </div>
   );
 };

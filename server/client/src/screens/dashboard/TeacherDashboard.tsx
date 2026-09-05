@@ -11,6 +11,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useClassSession } from '../../contexts/ClassSessionContext';
+import { DEFAULT_PLAYER, playerLabel, resolvePlayerRoute } from '../../lib/classroom/resolvePlayerRoute';
+import type { LessonPlayerChoice } from '../../types/lms';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, getDocs, getDoc, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { getClassEvaluation, type ClassEvaluation } from '../../services/evaluationService';
@@ -171,6 +173,8 @@ const TeacherDashboard = () => {
   const [chaptersForLaunch, setChaptersForLaunch] = useState<any[]>([]);
   const [selectedLaunchChapterId, setSelectedLaunchChapterId] = useState<string>('');
   const [selectedLaunchTopicId, setSelectedLaunchTopicId] = useState<string>('');
+  /** Which player the whole class opens the lesson in. Rides on launched_lesson. */
+  const [selectedLaunchPlayer, setSelectedLaunchPlayer] = useState<LessonPlayerChoice>(DEFAULT_PLAYER);
   const [launchLessonModalLoading, setLaunchLessonModalLoading] = useState(false);
   const [removingStudentUid, setRemovingStudentUid] = useState<string | null>(null);
   const [studentScreensSkyboxUrl, setStudentScreensSkyboxUrl] = useState<string | null>(null);
@@ -626,12 +630,13 @@ const TeacherDashboard = () => {
       curriculum: ch.curriculum || '',
       class_name: String(ch.class_name ?? ch.class ?? ''),
       subject: ch.subject || '',
+      player: selectedLaunchPlayer,
     });
     if (ok) {
       toast.success('Lesson launched to class');
       setLaunchLessonModalOpen(false);
     }
-  }, [selectedLaunchChapterId, selectedLaunchTopicId, chaptersForLaunch, launchLessonToClass]);
+  }, [selectedLaunchChapterId, selectedLaunchTopicId, selectedLaunchPlayer, chaptersForLaunch, launchLessonToClass]);
 
   const handleEndSession = useCallback(async () => {
     const ok = await endSession();
@@ -821,7 +826,8 @@ const TeacherDashboard = () => {
         ttsAudio,
       };
       sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));
-      navigate('/vrlessonplayer-krpano');
+      // The teacher must land in the same player as the class they are driving.
+      navigate(resolvePlayerRoute(launched));
     } catch (err) {
       console.error('Failed to open lesson for view control:', err);
       toast.error('Could not open lesson. Try again.');
@@ -2054,6 +2060,33 @@ const TeacherDashboard = () => {
                   </div>
                 );
               })()}
+              {/* Player choice. The whole class follows this, so it is set once
+                  here rather than per student. */}
+              <div className="rounded-lg border border-border p-3 space-y-2 flex-shrink-0">
+                <p className="text-xs font-medium text-muted-foreground">Open the lesson in</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['krpano', 'xr_v3'] as LessonPlayerChoice[]).map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      onClick={() => setSelectedLaunchPlayer(choice)}
+                      className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                        selectedLaunchPlayer === choice
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      <span className="block font-semibold">{playerLabel(choice)}</span>
+                      <span className="block text-[11px] opacity-70">
+                        {choice === 'krpano'
+                          ? 'Proven 360 panoramas and WebVR'
+                          : 'Three.js scene with richer 3D interaction'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Summary */}
               {selectedLaunchChapterId && selectedLaunchTopicId && (() => {
                 const ch = chaptersForLaunch.find((c: any) => c.id === selectedLaunchChapterId);

@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { openLessonInPlayer } from '../lib/classroom/resolvePlayerRoute';
 import { toast } from 'react-toastify';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 
@@ -878,7 +879,7 @@ const Spiral = () => {
       if (sessionId) {
         sessionStorage.setItem('learnxr_class_session_id', sessionId);
       }
-      navigate('/vrlessonplayer-krpano');
+      openLessonInPlayer(navigate, { launched: activeSession?.launched_lesson ?? null });
     },
     [navigate, startLocalLesson]
   );

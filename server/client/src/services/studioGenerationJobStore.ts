@@ -5,6 +5,8 @@
  * and restores UI state from sessionStorage when the panel remounts.
  */
 
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { db } from '../config/firebase';
 import { textTo3dGenerationService, type GenerationProgress } from '../services/textTo3dGenerationService';
 import {
   trellisImageTo3dService,
@@ -91,6 +93,44 @@ function writeStorage(key: string, value: unknown): void {
     sessionStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Ignore quota / private mode failures
+  }
+}
+
+type AssetCollection = 'text_to_3d_assets' | 'avatar_to_3d_assets';
+
+/**
+ * Record a generation outcome on the asset itself.
+ *
+ * This has to happen here rather than in the component that started the job.
+ * A component unmounts the moment someone switches tab; the generation does
+ * not, and an asset whose model was built but whose record still says
+ * "generating" is invisible to every downstream consumer.
+ */
+async function writeAssetOutcome(
+  collectionName: AssetCollection,
+  assetId: string,
+  outcome:
+    | { status: 'ready'; meshyAssetId?: string }
+    | { status: 'failed'; error: string }
+): Promise<void> {
+  try {
+    const payload: Record<string, ReturnType<typeof serverTimestamp> | string | number | null> = {
+      status: outcome.status,
+      updated_at: serverTimestamp(),
+    };
+    if (outcome.status === 'ready') {
+      payload.generation_progress = 100;
+      payload.generation_message = 'Asset generated and ready!';
+      payload.generation_error = null;
+      if (outcome.meshyAssetId) payload.meshy_asset_id = outcome.meshyAssetId;
+    } else {
+      payload.generation_message = 'Generation failed';
+      payload.generation_error = outcome.error;
+    }
+    await updateDoc(doc(db, collectionName, assetId), payload);
+  } catch (err) {
+    // Never let a bookkeeping write take down a generation that succeeded.
+    console.error('[StudioGenerationJobs] Failed to record asset outcome:', err);
   }
 }
 
@@ -416,12 +456,20 @@ class StudioGenerationJobManager {
             meshyAssetId: result.meshyAssetId,
             error: undefined,
           });
+          void writeAssetOutcome(input.collectionName, input.assetId, {
+            status: 'ready',
+            meshyAssetId: result.meshyAssetId,
+          });
         } else {
           this.setJob({
             ...latest,
             phase: 'failed',
             progress: latest.progress,
             message: 'Generation failed',
+            error: result.error || 'Generation failed',
+          });
+          void writeAssetOutcome(input.collectionName, input.assetId, {
+            status: 'failed',
             error: result.error || 'Generation failed',
           });
         }
@@ -439,6 +487,10 @@ class StudioGenerationJobManager {
           error: message,
         });
       }
+      void writeAssetOutcome(input.collectionName, input.assetId, {
+        status: 'failed',
+        error: message,
+      });
       return { success: false, error: message };
     } finally {
       this.running.delete(key);

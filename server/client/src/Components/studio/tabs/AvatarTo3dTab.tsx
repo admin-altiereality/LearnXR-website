@@ -13,13 +13,11 @@
  */
 
 import { useState, useEffect } from 'react';
+import { studioGenerationJobManager } from '../../../services/studioGenerationJobStore';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../../contexts/AuthContext';
 import { canEditLesson } from '../../../utils/rbac';
-import { db } from '../../../config/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { avatarTo3dService } from '../../../services/avatarTo3dService';
-import { textTo3dGenerationService } from '../../../services/textTo3dGenerationService';
 import type { GenerationProgress } from '../../../services/textTo3dGenerationService';
 import { getLessonBundle } from '../../../services/firestore/getLessonBundle';
 import type { LanguageCode } from '../../../types/curriculum';
@@ -91,6 +89,10 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
   const [filterStatus, setFilterStatus] = useState<'all' | 'approved' | 'pending'>('all');
   const [updatingApproval, setUpdatingApproval] = useState<string | null>(null);
   const [generatingAssetId, setGeneratingAssetId] = useState<string | null>(null);
+  /** Assets the scan flagged as stuck or missing their model. */
+  const [brokenAssetIds, setBrokenAssetIds] = useState<string[]>([]);
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null);
+  const [assetDraft, setAssetDraft] = useState<{ prompt: string } | null>(null);
   const [generationProgress, setGenerationProgress] = useState<{ [assetId: string]: GenerationProgress }>({});
   
   // Detection state
@@ -221,6 +223,46 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
     }
   };
 
+  // Mirror live job state into the rows. Without this a job that completed
+  // while the tab was unmounted would not show until a manual refresh.
+  useEffect(() => {
+    if (!chapterId || !topicId) return;
+    const jobs = studioGenerationJobManager.listMeshyJobs(chapterId, topicId);
+    const unsubscribers = jobs.map((job) =>
+      studioGenerationJobManager.subscribe(job.key, (updated) => {
+        if (!updated || updated.provider !== 'meshy') return;
+        setGenerationProgress((prev) => ({
+          ...prev,
+          [updated.assetId]: {
+            stage: updated.phase,
+            progress: updated.progress,
+            message: updated.message,
+            error: updated.error,
+          } as GenerationProgress,
+        }));
+        setAssets((prev) =>
+          prev.map((a) =>
+            a.id === updated.assetId
+              ? {
+                  ...a,
+                  status:
+                    updated.phase === 'completed'
+                      ? 'ready'
+                      : updated.phase === 'failed'
+                        ? 'failed'
+                        : 'generating',
+                  meshy_asset_id: updated.meshyAssetId ?? a.meshy_asset_id,
+                  generation_progress: updated.progress,
+                  generation_message: updated.message,
+                }
+              : a
+          )
+        );
+      })
+    );
+    return () => unsubscribers.forEach((off) => off());
+  }, [chapterId, topicId, assets.length]);
+
   const handleApproveAsset = async (assetId: string, approve: boolean) => {
     if (!canEdit) {
       toast.error('Only admins can approve assets');
@@ -304,145 +346,133 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
     }
   };
 
+  /**
+   * Start generation for one detected asset.
+   *
+   * Handed to studioGenerationJobManager rather than awaited here. That store
+   * survives this component unmounting, which is the whole point: generation
+   * used to be awaited inline and the terminal `status: 'ready'` written from
+   * this component, so switching tab mid-generation left the record stuck on
+   * "generating" forever even though the model had been built.
+   *
+   * Generation parameters are unchanged — the manager passes the same
+   * artStyle and aiModel — so output quality is exactly as before.
+   */
   const handleGenerate3DAsset = async (assetId: string, asset: AvatarTo3dAsset) => {
     if (!asset.prompt || !chapterId || !topicId || !user?.uid) {
       toast.error('Missing required information for generation');
       return;
     }
+    if (studioGenerationJobManager.isMeshyRunning(chapterId, topicId, assetId)) {
+      toast.info('That asset is already generating.');
+      return;
+    }
 
+    // Optimistic local state; Firestore is written by the job manager.
     setGeneratingAssetId(assetId);
-    setGenerationProgress(prev => ({
-      ...prev,
-      [assetId]: {
-        stage: 'generating',
-        progress: 0,
-        message: 'Starting generation...'
-      }
-    }));
+    setAssets((prev) =>
+      prev.map((a) => (a.id === assetId ? { ...a, status: 'generating' } : a))
+    );
 
+    const result = await studioGenerationJobManager.startMeshyJob({
+      assetId,
+      chapterId,
+      topicId,
+      source: 'avatar_to_3d',
+      prompt: asset.prompt,
+      userId: user.uid,
+      collectionName: 'avatar_to_3d_assets',
+    });
+
+    setGeneratingAssetId((current) => (current === assetId ? null : current));
+    if (result.success) {
+      toast.success('3D asset generated. It is now in the 3D Assets section.');
+    } else if (result.error) {
+      toast.error(`Generation failed: ${result.error}`);
+    }
+  };
+
+  /**
+   * Generate every approved asset that is not already running.
+   *
+   * Started without awaiting each other, so they run in parallel. Capped so a
+   * chapter-wide approval does not open dozens of provider jobs at once.
+   */
+  const handleGenerateAllApproved = async () => {
+    if (!chapterId || !topicId || !user?.uid) return;
+    const pending = assets.filter(
+      (a) =>
+        a.approval_status &&
+        a.prompt &&
+        a.status !== 'ready' &&
+        !studioGenerationJobManager.isMeshyRunning(chapterId, topicId, a.id)
+    );
+    if (pending.length === 0) {
+      toast.info('Nothing approved is waiting to generate.');
+      return;
+    }
+
+    const MAX_CONCURRENT = 3;
+    toast.info(`Starting ${pending.length} generation${pending.length === 1 ? '' : 's'}…`);
+    const queue = [...pending];
+    const runners = Array.from({ length: Math.min(MAX_CONCURRENT, queue.length) }, async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        await handleGenerate3DAsset(next.id, next);
+      }
+    });
+    await Promise.all(runners);
+  };
+
+  /**
+   * Find assets that will never finish on their own.
+   *
+   * Two kinds: stranded records left on "generating" with no live job (the
+   * signature of the unmount bug this release fixes, so existing data needs
+   * clearing up), and assets marked ready with no model to show for it.
+   */
+  const handleScanBrokenAssets = () => {
+    if (!chapterId || !topicId) return;
+    const STUCK_AFTER_MS = 15 * 60 * 1000;
+    const now = Date.now();
+
+    const broken = assets.filter((asset) => {
+      const live = studioGenerationJobManager.isMeshyRunning(chapterId, topicId, asset.id);
+      if (live) return false;
+      if (asset.status === 'generating') {
+        const updated = (asset as { updated_at?: { toMillis?: () => number } }).updated_at;
+        const updatedMs = typeof updated?.toMillis === 'function' ? updated.toMillis() : 0;
+        // No timestamp at all is itself a sign of a stranded record.
+        return !updatedMs || now - updatedMs > STUCK_AFTER_MS;
+      }
+      return asset.status === 'ready' && !asset.meshy_asset_id;
+    });
+
+    setBrokenAssetIds(broken.map((a) => a.id));
+    toast[broken.length ? 'warning' : 'success'](
+      broken.length
+        ? `${broken.length} asset${broken.length === 1 ? '' : 's'} need attention. Retry is available on each.`
+        : 'No stuck or broken assets found.'
+    );
+  };
+
+  /** Save an edited prompt or name before the asset is generated. */
+  const handleSaveAssetEdits = async (assetId: string) => {
+    const draft = assetDraft;
+    if (!draft || !draft.prompt.trim()) {
+      toast.error('A prompt is required.');
+      return;
+    }
     try {
-      // Update status to generating
-      const assetRef = doc(db, 'avatar_to_3d_assets', assetId);
-      await updateDoc(assetRef, {
-        status: 'generating',
-        updated_at: serverTimestamp(),
-      });
-
-      // Generate 3D asset using the same service as Text-to-3D
-      let generatedMeshyAssetId: string | undefined;
-      const result = await textTo3dGenerationService.generateFromApprovedAsset(
-        {
-          textTo3dAssetId: assetId,
-          prompt: asset.prompt,
-          chapterId,
-          topicId,
-          userId: user.uid,
-          artStyle: 'realistic',
-          aiModel: 'meshy-6',
-          collectionName: 'avatar_to_3d_assets' // Use avatar_to_3d_assets collection
-        },
-        (progress) => {
-          setGenerationProgress(prev => ({
-            ...prev,
-            [assetId]: progress
-          }));
-
-          // Update asset status in Firestore
-          const updateData: any = {
-            status: progress.stage === 'completed' ? 'ready' : 
-                    progress.stage === 'failed' ? 'failed' : 'generating',
-            generation_progress: progress.progress,
-            generation_message: progress.message,
-            updated_at: serverTimestamp(),
-          };
-          
-          // Only include error if it exists (not undefined)
-          if (progress.error !== undefined) {
-            updateData.generation_error = progress.error;
-          }
-          
-          updateDoc(assetRef, updateData).catch(err => console.error('Error updating generation progress:', err));
-        }
+      await avatarTo3dService.updateAsset(assetId, { prompt: draft.prompt.trim() });
+      setAssets((prev) =>
+        prev.map((a) => (a.id === assetId ? { ...a, prompt: draft.prompt.trim() } : a))
       );
-
-      // Store the meshy asset ID if generation was successful
-      if (result.success && result.meshyAssetId) {
-        generatedMeshyAssetId = result.meshyAssetId;
-        
-        // Update Firestore with the meshy asset ID
-        await updateDoc(assetRef, {
-          meshy_asset_id: result.meshyAssetId,
-          status: 'ready',
-          updated_at: serverTimestamp(),
-        }).catch(err => console.error('Error updating meshy asset ID:', err));
-      }
-
-      if (result.success && result.meshyAssetId) {
-        // Update local state
-        setAssets(prev =>
-          prev.map(a =>
-            a.id === assetId
-              ? { 
-                  ...a, 
-                  status: 'ready',
-                  meshy_asset_id: result.meshyAssetId!,
-                  generation_progress: 100,
-                  generation_message: 'Asset generated and ready!'
-                }
-              : a
-          )
-        );
-
-        if (selectedAsset?.id === assetId) {
-          setSelectedAsset(prev => prev ? {
-            ...prev,
-            status: 'ready',
-            meshy_asset_id: result.meshyAssetId!,
-            generation_progress: 100,
-            generation_message: 'Asset generated and ready!'
-          } : null);
-        }
-
-        toast.success('3D asset generated successfully! It is now available in the 3D Assets section.');
-      } else {
-        throw new Error(result.error || 'Generation failed');
-      }
+      setEditingAssetId(null);
+      setAssetDraft(null);
+      toast.success('Asset updated. Generation will use the new prompt.');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error generating 3D asset:', error);
-
-      // Update status to failed
-      const assetRef = doc(db, 'avatar_to_3d_assets', assetId);
-      await updateDoc(assetRef, {
-        status: 'failed',
-        generation_error: errorMessage,
-        updated_at: serverTimestamp(),
-      }).catch(err => console.error('Error updating failed status:', err));
-
-      // Update local state
-      setAssets(prev =>
-        prev.map(a =>
-          a.id === assetId
-            ? { 
-                ...a, 
-                status: 'failed',
-                generation_error: errorMessage
-              }
-            : a
-        )
-      );
-
-      if (selectedAsset?.id === assetId) {
-        setSelectedAsset(prev => prev ? {
-          ...prev,
-          status: 'failed',
-          generation_error: errorMessage
-        } : null);
-      }
-
-      toast.error(`Failed to generate 3D asset: ${errorMessage}`);
-    } finally {
-      setGeneratingAssetId(null);
+      console.error('Failed to save asset edits:', error);
+      toast.error('Could not save the changes.');
     }
   };
 
@@ -588,6 +618,24 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
             <option value="approved">Approved</option>
             <option value="pending">Pending Approval</option>
           </select>
+
+          <button
+            type="button"
+            onClick={handleGenerateAllApproved}
+            className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20"
+            title="Start every approved asset that is not already generating. They run in parallel."
+          >
+            Generate all approved
+          </button>
+
+          <button
+            type="button"
+            onClick={handleScanBrokenAssets}
+            className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm font-medium text-amber-200 transition hover:bg-amber-500/20"
+            title="Find assets stuck on generating, or marked ready with no model"
+          >
+            Scan for stuck assets
+          </button>
         </div>
       </div>
 
@@ -1054,8 +1102,66 @@ export const AvatarTo3dTab = ({ chapterId, topicId, language = 'en', bundle }: A
                 {/* Asset Details Grid */}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                    <p className="text-xs text-slate-500 mb-1">Detected Prompt</p>
-                    <p className="text-sm text-white font-medium">{selectedAsset.prompt}</p>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-xs text-slate-500">Detected Prompt</p>
+                      {canEdit && selectedAsset.status !== 'ready' && editingAssetId !== selectedAsset.id && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingAssetId(selectedAsset.id);
+                            setAssetDraft({ prompt: selectedAsset.prompt || '' });
+                          }}
+                          className="text-xs font-medium text-cyan-300 transition hover:text-cyan-200"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+
+                    {editingAssetId === selectedAsset.id && assetDraft ? (
+                      <div className="flex flex-col gap-2">
+                        {/* The detector's wording is a starting point. An admin who knows
+                            the lesson can usually describe the object better, and that has
+                            to happen before generation rather than after. */}
+                        <textarea
+                          value={assetDraft.prompt}
+                          onChange={(e) =>
+                            setAssetDraft((d) => (d ? { ...d, prompt: e.target.value } : d))
+                          }
+                          rows={3}
+                          placeholder="Describe the object to generate"
+                          className="rounded border border-slate-600/60 bg-slate-800/60 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveAssetEdits(selectedAsset.id)}
+                            className="rounded bg-cyan-500/20 px-3 py-1 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/30"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingAssetId(null);
+                              setAssetDraft(null);
+                            }}
+                            className="rounded px-3 py-1 text-xs text-slate-400 transition hover:text-slate-200"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-white font-medium">{selectedAsset.prompt}</p>
+                    )}
+
+                    {brokenAssetIds.includes(selectedAsset.id) && (
+                      <p className="mt-2 text-xs text-amber-300">
+                        Flagged by the scan: this asset is not generating and has no model.
+                        Approve it again to retry.
+                      </p>
+                    )}
                   </div>
                   <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-700/50">
                     <p className="text-xs text-slate-500 mb-1">Confidence</p>

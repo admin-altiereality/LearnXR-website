@@ -83,6 +83,15 @@ interface ClassSessionContextValue {
 
   // Shared
   isWaitingForApproval: boolean;
+  /**
+   * True only when this student may actually be in the class right now.
+   *
+   * A removed student who asks to rejoin keeps `joinedSession` (so they can see
+   * the waiting screen and be approved), which meant every consumer that looked
+   * only at `joinedSession.launched_lesson` — ClassLaunchRouter above all — let
+   * them straight back into the lesson with no approval. Gate on this instead.
+   */
+  isAdmitted: boolean;
   sessionLoading: boolean;
   sessionError: string | null;
   clearSessionError: () => void;
@@ -570,6 +579,16 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.uid, profile?.role]);
 
+  // Removed and still on the removal list means not admitted, whether or not a
+  // rejoin request is pending.
+  const isAdmitted = Boolean(
+    joinedSessionId &&
+      joinedSession &&
+      joinedSession.status !== 'ended' &&
+      !(user?.uid && joinedSession.removed_student_uids?.includes(user.uid)) &&
+      !isWaitingForApproval
+  );
+
   const value: ClassSessionContextValue = {
     activeSessionId,
     activeSession,
@@ -593,6 +612,7 @@ export function ClassSessionProvider({ children }: { children: ReactNode }) {
     leaveSessionAsStudent,
     reportSignal,
     isWaitingForApproval,
+    isAdmitted,
     sessionLoading,
     sessionError,
     clearSessionError,

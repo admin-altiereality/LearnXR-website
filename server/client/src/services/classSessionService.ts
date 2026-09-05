@@ -782,6 +782,15 @@ export async function setTeacherPlayback(
     await updateDoc(sessionRef, {
       teacher_playback: { ...playback, at_ms: Date.now() },
       teacher_controlled_phase: playback.phase,
+      // Starting the class makes the student panel visible again.
+      //
+      // The comment on setSessionControl has always said the panel "follows
+      // Start class", but nothing implemented it: student_ui_visible was only
+      // ever written by the teacher's manual toggle. Once a teacher had used
+      // that toggle, the flag stayed false for the rest of the session and
+      // students never saw the lesson panel again — including the quiz. The
+      // teacher can still hide it deliberately after pressing Play.
+      ...(playback.state === 'playing' ? { student_ui_visible: true } : {}),
       updated_at: serverTimestamp(),
     });
     return true;

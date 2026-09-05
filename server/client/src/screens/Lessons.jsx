@@ -51,6 +51,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
+import { DEFAULT_PLAYER, openLessonInPlayer, playerLabel, resolvePlayerRoute } from '../lib/classroom/resolvePlayerRoute';
 import {
     getChapterNameByLanguage,
     getLearningObjectiveByLanguage,
@@ -153,26 +154,29 @@ const LessonCard = memo(({ lessonItem, completedLessons, onOpenModal, getThumbna
           <div className="absolute inset-0 bg-primary/10 pointer-events-none" />
         )}
 
-        {/* Launched-to-class marker: distinguishes lessons the teacher has pushed
-            to a class from ones they have only previewed. */}
-        {launchRecord && (
-          <button
-            type="button"
-            title="View launched lesson specs"
-            onClick={(e) => { e.stopPropagation(); onOpenSpecs?.(launchRecord); }}
-            className={`absolute left-2 top-2 z-[5] inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold shadow-lg backdrop-blur transition hover:brightness-110 ${
-              launchRecord.isLive
-                ? 'border-emerald-300/50 bg-emerald-500/85 text-white'
-                : 'border-primary/40 bg-primary/85 text-primary-foreground'
-            }`}
-          >
-            {launchRecord.isLive ? '● LIVE NOW' : 'LAUNCHED'}
-          </button>
-        )}
         
         {/* Badges: solid white text on dark pill — curriculum, class, chapter */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-2 left-2 flex flex-wrap gap-1.5">
+          <div className="absolute top-2 left-2 right-2 flex flex-wrap items-center gap-1.5 pr-16">
+            {/* Launched-to-class marker: distinguishes lessons the teacher has
+                pushed to a class from ones they have only previewed. It sits in
+                this row rather than absolutely at top-left, where it used to
+                cover the class pill. The row is pointer-events-none, so the
+                button re-enables them for itself. */}
+            {launchRecord && (
+              <button
+                type="button"
+                title="View launched lesson specs"
+                onClick={(e) => { e.stopPropagation(); onOpenSpecs?.(launchRecord); }}
+                className={`pointer-events-auto inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold shadow-lg backdrop-blur transition hover:brightness-110 ${
+                  launchRecord.isLive
+                    ? 'border-emerald-300/50 bg-emerald-500/85 text-white'
+                    : 'border-primary/40 bg-primary/85 text-primary-foreground'
+                }`}
+              >
+                {launchRecord.isLive ? '● LIVE NOW' : 'LAUNCHED'}
+              </button>
+            )}
             <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-black/80 border border-white/20">
               <span className="text-[10px] font-bold text-white antialiased">
                 {chapterInfo.curriculum || '—'}
@@ -387,7 +391,7 @@ const LessonListItem = memo(({ lessonItem, completedLessons, onOpenModal, select
         </button>
       )}
       <div 
-        className={`flex items-center gap-4 p-4 transition-colors ${launchRecord ? 'border-l-2 border-l-primary' : ''} ${isLockedForGuest ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
+        className={`flex items-center gap-4 p-4 transition-colors ${launchRecord ? 'border-l-2 border-l-primary pr-32' : ''} ${isLockedForGuest ? 'pointer-events-none' : 'cursor-pointer hover:bg-muted/50'}`}
         onClick={() => !isLockedForGuest && onOpenModal(chapter, topic)}
       >
         <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-primary/10 border border-border">
@@ -491,6 +495,8 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
+  // Which player the class opens this lesson in. Travels on launched_lesson.
+  const [launchPlayer, setLaunchPlayer] = useState(DEFAULT_PLAYER);
   
   // Expanded topics state
   const [expandedChapters, setExpandedChapters] = useState(new Set());
@@ -1682,18 +1688,25 @@ const Lessons = ({ setBackgroundSkybox }) => {
         contextStartLesson(cleanChapter, cleanTopic);
       }
       
-      // Close modal and navigate. Students in a live class must use the krpano
-      // player — it is the only one that honours the teacher's lockstep controls.
+      // Close modal and navigate.
+      //
+      // This is where teacher and students used to diverge: a host has no
+      // joinedSessionId, so this branch always sent them to /xrlessonplayer
+      // regardless of what the class was actually launched with. Resolve from
+      // whichever session applies to this viewer instead.
       closeLessonModal();
-      setTimeout(() => {
-        navigate(joinedSessionId ? '/vrlessonplayer-krpano' : '/xrlessonplayer');
-      }, 100);
+      const launchedForViewer =
+        joinedSession?.launched_lesson ?? activeSession?.launched_lesson ?? null;
+      openLessonInPlayer(navigate, {
+        launched: launchedForViewer ?? (joinedSessionId || activeSessionId ? null : 'xr_v3'),
+        delayMs: 100,
+      });
       
     } catch (err) {
       console.error('Failed to prepare VR lesson:', err);
       setDataError('Failed to prepare VR lesson');
     }
-  }, [lessonData, navigate, closeLessonModal, validateVRLessonData, contextStartLesson]);
+  }, [lessonData, navigate, closeLessonModal, validateVRLessonData, contextStartLesson, joinedSession, activeSession, joinedSessionId, activeSessionId]);
 
   
   // Check if launch is safe - requires countdown finished AND data ready
@@ -1754,6 +1767,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       class_name: String(lessonData.chapter.class_name ?? ''),
       subject: String(lessonData.chapter.subject ?? ''),
       lang: lessonData.language || selectedLanguage,
+      player: launchPlayer,
     };
     if (isPartner) {
       try {
@@ -1767,12 +1781,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
           chapterId: payload.chapter_id,
           topicId: payload.topic_id,
           title: lessonData.topic.topic_name || lessonData.chapter.chapter_name || '',
+          player: launchPlayer,
         });
         sessionStorage.setItem('learnxr_class_session_id', partnerSession.id);
         contextStartLesson(lessonData.chapter, lessonData.topic);
         toast.success('Demo lesson launched to your class.');
         closeLessonModal();
-        navigate('/vrlessonplayer-krpano');
+        navigate(resolvePlayerRoute(launchPlayer));
       } catch (error) {
         toast.error(error?.message || 'Could not launch the demo lesson.');
       }
@@ -1812,7 +1827,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     } else {
       toast.error('Failed to launch lesson to class');
     }
-  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate, contextStartLesson]);
+  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, launchPlayer, closeLessonModal, navigate, contextStartLesson]);
 
   const canLaunchInClass = (
     (isTeacher && teacherClasses.length > 0 && (activeSessionId || classIdForLaunch)) ||
@@ -2003,6 +2018,23 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     <p className="text-xs text-muted-foreground">
                       {isPartner ? 'Send this approved demo lesson to your active partner session' : 'Send this lesson to your class (starts a session if needed)'}
                     </p>
+                    {/* The whole class follows this, so it is chosen once here. */}
+                    <div className="mt-2 inline-flex rounded-lg border border-border p-0.5">
+                      {['krpano', 'xr_v3'].map((choice) => (
+                        <button
+                          key={choice}
+                          type="button"
+                          onClick={() => setLaunchPlayer(choice)}
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition ${
+                            launchPlayer === choice
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {playerLabel(choice)}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <Button

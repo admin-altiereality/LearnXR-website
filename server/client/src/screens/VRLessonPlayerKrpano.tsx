@@ -31,6 +31,7 @@ import { normalizeAssetHotspot, revealAssetHotspot } from '../lib/krpano/normali
 import { ASSET_ANGULAR_SIZE_DEG, angularSizeForCount } from '../lib/krpano/assetLayout';
 import { applyTeacherViewToImmersiveKrpano, applyTeacherViewToKrpano, readKrpanoLookat } from '../lib/krpano/applyTeacherView';
 import { useAuth } from '../contexts/AuthContext';
+import { useEnforcedPlayerRoute } from '../hooks/useEnforcedPlayerRoute';
 import { useLesson, LessonPhase } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
 import { reportSessionProgress, updateTeacherView, reportStudentView, launchLesson as launchLessonToSession, reportAttendance } from '../services/classSessionService';
@@ -44,6 +45,10 @@ import { usePlayerViewport } from '../hooks/usePlayerViewport';
 import { useMarkerDrawing, screenToSphere, LASER_TTL_MS, type MarkerMode } from '../hooks/useMarkerDrawing';
 import { extractMcqOptions, resolveCorrectAnswerIndex } from '../lib/mcq/answerIndex';
 import { installViewChangeBus, onViewChange as onKrpanoViewChange } from '../lib/krpano/viewChangeBus';
+// The immersive panel is drawn by a shared renderer so this player and
+// XRLessonPlayerV3 show the same UI; immersive_ui.xml calls it through window.
+import { EMPTY_LESSON_UI_STATE, installLessonPanelRenderer } from '../lib/lessonUi';
+import type { LessonUiState } from '../lib/lessonUi';
 import { resetUserControl, reconcileUserControl } from '../lib/krpano/userControl';
 import {
   MAX_INK_STROKES,
@@ -198,28 +203,11 @@ interface ChatMessage {
   timestamp: Date;
 }
 
-interface KrpanoUiStatePayload {
-  phase: string;
-  script: string;
-  ttsStatus: string;
-  question: string;
-  options: string[];
-  showQuiz: boolean;
-  showResult: boolean;
-  scoreLabel: string;
-  selectedAnswer: number;
-  waitingForUser: boolean;
-  isPlayingAudio: boolean;
-  /** Separable meshes in the scene; the in-VR model buttons hide below 2. */
-  modelPartCount?: number;
-  currentMcqIndex: number;
-  totalMcqs: number;
-  correctAnswer: number;
-  explanation: string;
-  controlStudentsEnabled?: boolean;
-  isStudent?: boolean;
-  isHost?: boolean;
-}
+/**
+ * The panel state this player pushes into the immersive UI. Now just the shared
+ * shape, so XRLessonPlayerV3 renders from exactly the same contract.
+ */
+type KrpanoUiStatePayload = LessonUiState;
 
 interface SkyboxData {
   id: string;
@@ -950,6 +938,10 @@ const VRLessonPlayerInner = () => {
   const forceStudentsToLesson = classSession?.forceStudentsToLesson;
   const progressList = classSession?.progressList ?? [];
 
+  // If the class was launched into the other player, move there rather than
+  // splitting the class across two.
+  useEnforcedPlayerRoute('krpano');
+
   // Extract from context with safety - use stable defaults
   const activeLesson = lessonContext?.activeLesson ?? null;
   const lessonPhase = lessonContext?.lessonPhase ?? 'idle';
@@ -1341,25 +1333,9 @@ const VRLessonPlayerInner = () => {
   const showMcqResultRef = useRef(false);
   const pendingQuizReportRef = useRef<{ score: number; total: number; answers: SessionQuizAnswer[] } | null>(null);
   const immersiveUiActionRef = useRef<(action: string) => void>(() => {});
-  const immersiveUiStateRef = useRef<KrpanoUiStatePayload>({
-    phase: 'intro',
-    script: '',
-    ttsStatus: 'idle',
-    question: '',
-    options: [],
-    showQuiz: false,
-    showResult: false,
-    scoreLabel: '',
-    selectedAnswer: -1,
-    waitingForUser: false,
-    isPlayingAudio: false,
-    modelPartCount: 0,
-    currentMcqIndex: 0,
-    totalMcqs: 0,
-    correctAnswer: -1,
-    explanation: '',
-    isHost: false,
-  });
+  // Spread the shared blank state so a new field added to LessonUiState cannot
+  // leave this initialiser silently incomplete.
+  const immersiveUiStateRef = useRef<KrpanoUiStatePayload>({ ...EMPTY_LESSON_UI_STATE });
   const classControlRef = useRef<{
     isHost: boolean;
     controlEnabled: boolean;
@@ -1796,6 +1772,8 @@ const VRLessonPlayerInner = () => {
     }
 
     let cancelled = false;
+    // immersive_ui.xml draws through this; without it the panel stays blank.
+    const uninstallLessonPanelRenderer = installLessonPanelRenderer();
     const immersiveUiBridge = (action: string) => immersiveUiActionRef.current(action);
     const hotspotBridge = (name: string) => hotspotClickRef.current?.(name);
     const licensedModelBridge = (assetId: string) => licensedModelActionRef.current?.(String(assetId || ''));
@@ -2219,6 +2197,7 @@ const VRLessonPlayerInner = () => {
       (window as unknown as { __krpanoNativeVrUiControllerButton?: unknown }).__krpanoNativeVrUiControllerButton = undefined;
       (window as unknown as { native_vr_lesson_ui_click?: unknown }).native_vr_lesson_ui_click = undefined;
       (window as unknown as { native_vr_lesson_ui_hover?: unknown }).native_vr_lesson_ui_hover = undefined;
+      uninstallLessonPanelRenderer();
       removeKrpano(KRPANO_CONTAINER_ID);
     };
   }, [skyboxData?.imageUrl, skyboxData?.file_url, krpanoContainerMounted, assetDiscoveryComplete, assetUrl, meshyAssets, extraLessonData, effectiveLesson]);
@@ -2588,6 +2567,20 @@ const VRLessonPlayerInner = () => {
     };
     return () => { delete w.__onAnnotationWriteDenied; };
   }, [isClassHost]);
+
+  /**
+   * Removed mid-lesson: leave immediately, whether or not a rejoin request is
+   * pending. Without this a removed student who asked to rejoin stayed in the
+   * lesson while they waited.
+   */
+  useEffect(() => {
+    if (!isStudentInSession) return;
+    const admitted = classSession?.isAdmitted ?? false;
+    if (isStudentRemoved || !admitted) {
+      toast.info('Your teacher removed you from this class.');
+      navigate('/dashboard/student', { replace: true });
+    }
+  }, [isStudentInSession, isStudentRemoved, classSession?.isAdmitted, navigate]);
 
   const blockStudentPhaseControl = useCallback((actionLabel: string): boolean => {
     if (!isStudentInSession || !controlStudentsEnabled) return false;
@@ -3200,6 +3193,9 @@ const VRLessonPlayerInner = () => {
             topicId: target.topicId,
             title: target.label,
             lessonType: launched.lesson_type === 'user_generated' ? 'user_generated' : 'curriculum',
+            // This route rebuilds launched_lesson field by field, so the class's
+            // player has to be restated or advancing a stop would reset it.
+            player: launched.player,
           });
         } catch (err) {
           console.warn('[StreetViewTour] Partner broadcast failed, falling back to session write:', err);

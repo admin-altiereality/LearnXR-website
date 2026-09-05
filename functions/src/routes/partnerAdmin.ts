@@ -1021,6 +1021,11 @@ router.post(
           ? 'vr360_video'
           : 'curriculum';
     const vr360TourId = String(req.body?.vr360TourId || '').trim();
+    // Which player the class opens the lesson in. This route builds
+    // launched_lesson field by field, so an unknown field would be dropped and
+    // the class would silently fall back to krpano.
+    const rawPlayer = String(req.body?.player || '').trim();
+    const player = rawPlayer === 'xr_v3' ? 'xr_v3' : 'krpano';
     if (!chapterId || !topicId) {
       res.status(400).json({ success: false, message: 'chapterId and topicId are required' });
       return;
@@ -1084,6 +1089,7 @@ router.post(
           scene_id: sceneId || null,
           title: title || null,
           lesson_type: lessonType,
+          player,
         };
         if (lessonType === 'vr360_video') {
           // topic_id is usually "tour-<id>"; prefer explicit body field when present

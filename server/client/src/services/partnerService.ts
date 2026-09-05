@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from '../utils/apiConfig';
+import type { LessonPlayerChoice } from '../types/lms';
 import { auth } from '../config/firebase';
 import type { Partner, PartnerEvent } from '../types/partner';
 
@@ -271,6 +272,8 @@ export async function launchPartnerDemoLesson(
     title?: string;
     lessonType?: 'curriculum' | 'user_generated' | 'vr360_video';
     vr360TourId?: string;
+    /** Which player the class opens the lesson in; defaults to krpano server-side. */
+    player?: LessonPlayerChoice;
   },
 ): Promise<{
   success: boolean;
