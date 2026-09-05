@@ -51,7 +51,7 @@ import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useLesson } from '../contexts/LessonContext';
 import { useClassSession } from '../contexts/ClassSessionContext';
-import { DEFAULT_PLAYER, openLessonInPlayer, playerLabel, resolvePlayerRoute } from '../lib/classroom/resolvePlayerRoute';
+import { DEFAULT_PLAYER, openLessonInPlayer, resolvePlayerRoute } from '../lib/classroom/resolvePlayerRoute';
 import {
     getChapterNameByLanguage,
     getLearningObjectiveByLanguage,
@@ -496,7 +496,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
   const [selectedSubject, setSelectedSubject] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   // Which player the class opens this lesson in. Travels on launched_lesson.
-  const [launchPlayer, setLaunchPlayer] = useState(DEFAULT_PLAYER);
   
   // Expanded topics state
   const [expandedChapters, setExpandedChapters] = useState(new Set());
@@ -1374,16 +1373,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
     }
   }, [sessionJoinError, clearSessionError]);
 
-  // Navigate to VR lesson player with lesson state; preparation screen (10s countdown) is shown there
-  const handleLessonClick = useCallback((chapter, topicInput) => {
-    navigate('/vrlessonplayer', {
-      state: {
-        chapter: { ...chapter, id: chapter.id },
-        topic: topicInput,
-        selectedLanguage,
-      },
-    });
-  }, [navigate, selectedLanguage]);
 
   // Comprehensive validation function
   const validateLessonData = useCallback((data) => {
@@ -1767,7 +1756,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
       class_name: String(lessonData.chapter.class_name ?? ''),
       subject: String(lessonData.chapter.subject ?? ''),
       lang: lessonData.language || selectedLanguage,
-      player: launchPlayer,
+      player: DEFAULT_PLAYER,
     };
     if (isPartner) {
       try {
@@ -1781,13 +1770,13 @@ const Lessons = ({ setBackgroundSkybox }) => {
           chapterId: payload.chapter_id,
           topicId: payload.topic_id,
           title: lessonData.topic.topic_name || lessonData.chapter.chapter_name || '',
-          player: launchPlayer,
+          player: DEFAULT_PLAYER,
         });
         sessionStorage.setItem('learnxr_class_session_id', partnerSession.id);
         contextStartLesson(lessonData.chapter, lessonData.topic);
         toast.success('Demo lesson launched to your class.');
         closeLessonModal();
-        navigate(resolvePlayerRoute(launchPlayer));
+        navigate(resolvePlayerRoute(DEFAULT_PLAYER));
       } catch (error) {
         toast.error(error?.message || 'Could not launch the demo lesson.');
       }
@@ -1827,7 +1816,7 @@ const Lessons = ({ setBackgroundSkybox }) => {
     } else {
       toast.error('Failed to launch lesson to class');
     }
-  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, launchPlayer, closeLessonModal, navigate, contextStartLesson]);
+  }, [isTeacher, isPartner, activeSessionId, activeSession, leaveSessionAsTeacher, startSession, launchLessonToClass, lessonData, classIdForLaunch, selectedLanguage, closeLessonModal, navigate, contextStartLesson]);
 
   const canLaunchInClass = (
     (isTeacher && teacherClasses.length > 0 && (activeSessionId || classIdForLaunch)) ||
@@ -2018,23 +2007,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     <p className="text-xs text-muted-foreground">
                       {isPartner ? 'Send this approved demo lesson to your active partner session' : 'Send this lesson to your class (starts a session if needed)'}
                     </p>
-                    {/* The whole class follows this, so it is chosen once here. */}
-                    <div className="mt-2 inline-flex rounded-lg border border-border p-0.5">
-                      {['krpano', 'xr_v3'].map((choice) => (
-                        <button
-                          key={choice}
-                          type="button"
-                          onClick={() => setLaunchPlayer(choice)}
-                          className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition ${
-                            launchPlayer === choice
-                              ? 'bg-primary text-primary-foreground'
-                              : 'text-muted-foreground hover:bg-muted'
-                          }`}
-                        >
-                          {playerLabel(choice)}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
                 <Button

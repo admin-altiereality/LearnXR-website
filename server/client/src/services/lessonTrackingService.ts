@@ -23,7 +23,19 @@ export async function trackLessonLaunch(
   curriculum: string,
   className: string,
   subject: string,
-  platform?: 'web' | 'mobile_vr' | 'vr'
+  platform?: 'web' | 'mobile_vr' | 'vr',
+  /**
+   * Class this launch belongs to. Pass the live session's class_id when the
+   * lesson was taught in a class.
+   *
+   * Without it this fell back to the student's FIRST enrolment, while
+   * saveQuizScore has always taken the class actually taught in. The dashboards
+   * filter both collections on class_id, so for a student in more than one class
+   * the launch and the score landed in different buckets and the figures
+   * disagreed. Optional, and the old fallback remains, so existing callers are
+   * unaffected.
+   */
+  classId?: string | null
 ): Promise<string | null> {
   if (!profile) return null;
   if (profile.role !== 'student') return null; // Only students get launch records; teachers/admins skip silently
@@ -42,7 +54,7 @@ export async function trackLessonLaunch(
     const launch: Omit<LessonLaunch, 'id'> & { platform?: string } = {
       student_id: profile.uid,
       school_id: profile.school_id,
-      class_id: profile.class_ids?.[0] || null,
+      class_id: classId ?? profile.class_ids?.[0] ?? null,
       chapter_id: chapterId,
       topic_id: topicId,
       curriculum,

@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { openLessonInPlayer } from '../../lib/classroom/resolvePlayerRoute';
 import { toast } from 'react-toastify';
 import {
   ArrowLeft,
@@ -559,7 +560,9 @@ const LessonEditRequests = () => {
           })
         );
         toast.success('Opening lesson preview. You can approve or reject after viewing.');
-        navigate('/vrlessonplayer');
+        // Preview in the default player, like every other launch surface, rather
+        // than pinning admins to the legacy one.
+        openLessonInPlayer(navigate);
       } catch (error) {
         console.error('Preview launch error:', error);
         toast.error('Failed to open lesson preview. The chapter or draft may be missing.');

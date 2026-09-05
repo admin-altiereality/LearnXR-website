@@ -40,7 +40,11 @@ import { type ReportSessionQuizPayload } from '../services/classSessionService';
 // Scores have to land in student_scores as well as on the class session: the
 // session progress doc is live teaching data and is thrown away with the class,
 // while student_scores is the durable record the dashboards and reports read.
-import { saveQuizScore } from '../services/lessonTrackingService';
+import {
+  saveQuizScore,
+  trackLessonLaunch,
+  updateLessonLaunch,
+} from '../services/lessonTrackingService';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 
 // Live-class support. The classroom logic is shared with the krpano player so the
@@ -315,6 +319,14 @@ const XRLessonPlayerV3: React.FC = () => {
   const lessonPanelUvRef = useRef<(u: number, v: number) => boolean>(() => false);
   /** When the learner actually began, for the score's time-taken field. */
   const lessonStartTimeRef = useRef<number | null>(null);
+  /**
+   * The lesson_launches record for this sitting.
+   *
+   * All three dashboards count launches from that collection, and this player
+   * never wrote one — only krpano did. With this player as the default, every
+   * "lessons launched" and "completed" figure was under-reporting.
+   */
+  const launchIdRef = useRef<string | null>(null);
 
   /** Teacher marker: the 3D ink layer, plus the stroke being drawn right now. */
   const inkLayerRef = useRef<InkLayer | null>(null);
@@ -3571,6 +3583,26 @@ const XRLessonPlayerV3: React.FC = () => {
   
   const handleLessonStart = useCallback(() => {
     if (lessonStartTimeRef.current === null) lessonStartTimeRef.current = Date.now();
+    // Students only — trackLessonLaunch returns null for teachers and guests,
+    // so a teacher previewing a lesson still creates no record.
+    if (!launchIdRef.current) {
+      const chapter = (lessonData as any)?.chapter;
+      const topic = (lessonData as any)?.topic;
+      if (chapter?.chapter_id && topic?.topic_id) {
+        void trackLessonLaunch(
+          profile,
+          chapter.chapter_id,
+          topic.topic_id,
+          chapter.curriculum || 'CBSE',
+          String(chapter.class_name ?? ''),
+          chapter.subject || '',
+          'web',
+          classroomRef.current.classId
+        ).then((id) => {
+          if (id) launchIdRef.current = id;
+        });
+      }
+    }
     console.log('[LESSON START] ========================================');
     console.log('[LESSON START] User pressed START button');
     console.log('[LESSON START] Current state before start:', {
@@ -3884,6 +3916,19 @@ const XRLessonPlayerV3: React.FC = () => {
     redrawLessonPanel();
   }, [lessonUiState, redrawLessonPanel]);
 
+  // Close the launch record once, when the lesson reaches its end.
+  const launchClosedRef = useRef(false);
+  useEffect(() => {
+    if (lessonPhase !== 'completed' || launchClosedRef.current) return;
+    const id = launchIdRef.current;
+    if (!id) return;
+    launchClosedRef.current = true;
+    const durationSeconds = lessonStartTimeRef.current
+      ? Math.round((Date.now() - lessonStartTimeRef.current) / 1000)
+      : undefined;
+    void updateLessonLaunch(id, 'completed', durationSeconds);
+  }, [lessonPhase]);
+
   /**
    * Panel visibility, matching krpano.
    *
@@ -3959,7 +4004,7 @@ const XRLessonPlayerV3: React.FC = () => {
           answers,
           attemptNumber,
           durationSeconds,
-          undefined,
+          launchIdRef.current ?? undefined,
           topic?.learning_objective,
           'web',
           // Attribute to the class the lesson was actually taught in, not the

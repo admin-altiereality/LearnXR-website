@@ -3420,7 +3420,9 @@ const VRLessonPlayerInner = () => {
         effectiveLesson.chapter.curriculum || 'CBSE',
         effectiveLesson.chapter.class_name?.toString() || '',
         effectiveLesson.chapter.subject || '',
-        'web'
+        'web',
+        // Same class the score is attributed to, so the two dashboard queries agree.
+        joinedSession?.class_id ?? activeSession?.class_id ?? null
       );
       if (launchId) {
         setCurrentLaunchId(launchId);
