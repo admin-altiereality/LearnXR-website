@@ -25,6 +25,12 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { DRACO_DECODER_PATH } from '../lib/three/dracoDecoder';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
+// Hands come from the bundled three, not a CDN: a second Three.js instance would
+// not recognise objects made by this one. VRButton already asks for
+// 'hand-tracking' as an optional feature, so nothing else has to change to get
+// hands, and controller-only headsets are unaffected.
+import { OculusHandModel } from 'three/examples/jsm/webxr/OculusHandModel.js';
+import { createHandGestureTracker, type HandGestureTracker } from '../lib/three/handGestures';
 import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
 import { VRLessonExperience } from '../utils/webxr/vrLessonExperience';
 import { StableLayoutSystem } from '../utils/webxr/stableLayoutSystem';
@@ -283,6 +289,23 @@ const XRLessonPlayerV3: React.FC = () => {
   const raycasterRef = useRef<THREE.Raycaster | null>(null);
   const controllerModelFactoryRef = useRef<XRControllerModelFactory | null>(null);
   const reticleRef = useRef<THREE.Mesh | null>(null);
+  /**
+   * Tracked hands, when the headset reports them.
+   *
+   * `grabProxy` is an empty Object3D parked at the pinch point each frame. The
+   * layout system's startGrab/updateGrab measure from whatever object they are
+   * given, so handing them the proxy makes an object follow the FINGERS rather
+   * than the wrist — without touching the asset system itself.
+   */
+  const handsRef = useRef<
+    Array<{
+      hand: THREE.Group;
+      tracker: HandGestureTracker;
+      ray: THREE.Line;
+      grabProxy: THREE.Object3D;
+      grabbing: boolean;
+    }>
+  >([]);
   const hoveredObjectRef = useRef<THREE.Object3D | null>(null);
   const lastGrabTimeRef = useRef<Map<string, number>>(new Map());
   const controllersSetupRef = useRef<Set<number>>(new Set());
@@ -1508,6 +1531,41 @@ const XRLessonPlayerV3: React.FC = () => {
     const controllerModelFactory = new XRControllerModelFactory();
     controllerModelFactoryRef.current = controllerModelFactory;
     
+    /*
+      Hands.
+
+      Set up unconditionally: getHand() returns a Group that simply never reports
+      joints on a headset without hand tracking, so there is nothing to detect and
+      nothing to switch off. Controllers keep working alongside, which is what a
+      classroom of mixed hardware needs.
+    */
+    handsRef.current = [0, 1].map((index) => {
+      const hand = rendererRef.current!.xr.getHand(index) as THREE.Group;
+      hand.add(new OculusHandModel(hand));
+      scene.add(hand);
+
+      // The aiming ray, so a student sitting at the back can see what they are
+      // pointing at. Hidden until the finger is actually extended.
+      const ray = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, 0, -1),
+        ]),
+        new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.6 })
+      );
+      ray.name = 'handRay';
+      ray.visible = false;
+      // Added to the scene rather than the hand: it is aimed along the finger,
+      // which is not the hand's own forward axis.
+      scene.add(ray);
+
+      const grabProxy = new THREE.Object3D();
+      grabProxy.name = `handGrabProxy${index}`;
+      scene.add(grabProxy);
+
+      return { hand, tracker: createHandGestureTracker(), ray, grabProxy, grabbing: false };
+    });
+
     // Create reticle for raycast visualization
     const reticleGeometry = new THREE.RingGeometry(0.02, 0.04, 32);
     const reticleMaterial = new THREE.MeshBasicMaterial({ 
@@ -2009,6 +2067,7 @@ const XRLessonPlayerV3: React.FC = () => {
           animationMixersRef.current.forEach((mixer) => mixer.update(delta));
           lookControlsRef.current?.update();
           inkLayerRef.current?.update();
+          updateHands();
 
           // Update billboards to face camera
           if (lessonPanelRef.current && cameraRef.current) {
@@ -3383,6 +3442,113 @@ const XRLessonPlayerV3: React.FC = () => {
     // are the only lesson UI and render the same flat as they do in a headset.
     immersiveUiDeviceCapable: true,
   });
+
+  /**
+   * Per-frame hand handling: point to reach the panel, pinch to act.
+   *
+   * Two interactions, chosen by where the hand is aimed:
+   *
+   *   - POINTING at the lesson panel casts a ray from the fingertip and pinching
+   *     presses whatever is under it. This is what lets a student sitting at the
+   *     back attempt the quiz without walking up to the panel — the reason the
+   *     ray exists at all.
+   *   - Otherwise a pinch near a 3D asset grabs it, driving the SAME layout
+   *     system the controllers use. Hands are another input source, not a
+   *     parallel implementation, so asset behaviour is untouched.
+   */
+  const updateHands = useCallback(() => {
+    const renderer = rendererRef.current;
+    const camera = cameraRef.current;
+    const raycaster = raycasterRef.current;
+    if (!renderer?.xr?.isPresenting || !camera || !raycaster) return;
+
+    const panelMesh = lessonPanelRef.current?.mesh;
+
+    for (const slot of handsRef.current) {
+      const state = slot.tracker.update(slot.hand as never);
+
+      if (!state.tracked) {
+        // Hand lost. Hide its ray and drop anything it was holding, rather than
+        // leaving an asset stuck to a hand that is no longer there.
+        slot.ray.visible = false;
+        if (slot.grabbing) {
+          stableLayoutRef.current?.releaseGrab();
+          slot.grabbing = false;
+        }
+        continue;
+      }
+
+      // The proxy follows the fingers, so a held object tracks the pinch rather
+      // than the wrist.
+      if (state.pinchPoint) slot.grabProxy.position.copy(state.pinchPoint);
+
+      // --- Pointing at the panel ---------------------------------------
+      let aimingAtPanel = false;
+      if (state.pointing && state.point && panelMesh && panelMesh.visible) {
+        raycaster.set(state.point.origin, state.point.direction);
+        const hit = raycaster.intersectObject(panelMesh, false)[0];
+        if (hit?.uv) {
+          aimingAtPanel = true;
+          slot.ray.visible = true;
+          slot.ray.position.copy(state.point.origin);
+          // Orient the line down the finger and stop it at the panel, so the ray
+          // reads as touching the target rather than passing through it.
+          slot.ray.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 0, -1),
+            state.point.direction
+          );
+          slot.ray.scale.setScalar(hit.distance);
+
+          if (state.justPinched) {
+            lessonPanelUvRef.current(hit.uv.x, hit.uv.y);
+          }
+        }
+      }
+
+      if (!aimingAtPanel) {
+        // Show a short ray whenever the finger is extended, so the student can
+        // see where they are aiming before they find the panel.
+        slot.ray.visible = state.pointing;
+        if (state.pointing && state.point) {
+          slot.ray.position.copy(state.point.origin);
+          slot.ray.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 0, -1),
+            state.point.direction
+          );
+          slot.ray.scale.setScalar(1.5);
+        }
+      }
+
+      // --- Pinch to grab an asset --------------------------------------
+      // Only when not aiming at the panel: a pinch meant for a quiz option must
+      // not also snatch whatever happens to be near the hand.
+      if (!aimingAtPanel && state.justPinched && state.pinchPoint && stableLayoutRef.current) {
+        const meshes = stableLayoutRef.current.getAllInteractableMeshes?.() ?? [];
+        let nearest: THREE.Object3D | null = null;
+        // Roughly a hand's reach around the pinch, so grabbing feels like
+        // touching rather than pointing.
+        let nearestDistance = 0.25;
+        const worldPosition = new THREE.Vector3();
+        for (const mesh of meshes) {
+          mesh.getWorldPosition(worldPosition);
+          const distance = worldPosition.distanceTo(state.pinchPoint);
+          if (distance < nearestDistance) {
+            nearest = mesh;
+            nearestDistance = distance;
+          }
+        }
+        if (nearest && stableLayoutRef.current.startGrab(nearest, slot.grabProxy as THREE.Group)) {
+          slot.grabbing = true;
+        }
+      }
+
+      if (state.justReleased && slot.grabbing) {
+        // Left exactly where it is — updateGrab already moved it here.
+        stableLayoutRef.current?.releaseGrab();
+        slot.grabbing = false;
+      }
+    }
+  }, []);
 
   /**
    * End any immersive session, then navigate.
