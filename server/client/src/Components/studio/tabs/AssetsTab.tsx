@@ -19,6 +19,7 @@
 
 import { useState, useEffect, useRef, Suspense, lazy, useMemo } from 'react';
 import { toast } from 'react-toastify';
+import { linkAssetToTopic } from '../../../lib/firestore/updateHelpers';
 import type { LanguageCode } from '../../../types/curriculum';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useLessonDraftStore } from '../../../stores/lessonDraftStore';
@@ -312,6 +313,22 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
         if (result.success && result.asset) {
           newAssets.push(result.asset);
           uploadedCount++;
+
+          /*
+            Link the asset to the topic.
+
+            Uploading creates the document in meshy_assets, but getLessonBundle
+            only fetches assets whose ids are listed on the topic — so without
+            this the model existed in Firestore and was invisible in every
+            player. Done here rather than on Save Draft so the asset is usable
+            immediately and cannot be stranded by an abandoned draft.
+          */
+          if (result.assetId) {
+            const linked = await linkAssetToTopic(chapterId, topicId, result.assetId);
+            if (!linked) {
+              toast.warning(`${file.name} uploaded but could not be linked to this topic.`);
+            }
+          }
 
           // Optimistically add to list
           setAssets(prev => [...prev, result.asset!]);

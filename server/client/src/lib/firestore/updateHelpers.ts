@@ -279,6 +279,58 @@ export interface UpdateSceneOptions {
   language?: 'en' | 'hi'; // Language for saving avatar scripts in new format
 }
 
+/**
+ * Attach a 3D asset to a topic so the lesson bundle will fetch it.
+ *
+ * Assets are looked up by id from `topic.sharedAssets.meshy_asset_ids` (with the
+ * legacy `topic.meshy_asset_ids` as a fallback). Creating the asset document is
+ * therefore not enough on its own — an unlinked asset is invisible to every
+ * player, which is exactly what happened to manually uploaded models.
+ *
+ * Written to BOTH fields: the shared one is what the bundle prefers, the legacy
+ * one keeps older readers working.
+ */
+export async function linkAssetToTopic(
+  chapterId: string,
+  topicId: string,
+  assetId: string
+): Promise<boolean> {
+  if (!chapterId || !topicId || !assetId) return false;
+  try {
+    const chapterRef = doc(db, COLLECTION_NAME, chapterId);
+    const chapterSnap = await getDoc(chapterRef);
+    if (!chapterSnap.exists()) return false;
+
+    const chapter = chapterSnap.data() as CurriculumChapter;
+    const topics = [...(chapter.topics || [])];
+    const index = topics.findIndex((t) => t.topic_id === topicId);
+    if (index === -1) return false;
+
+    const topic: any = topics[index];
+    const shared = topic.sharedAssets || {};
+    const sharedIds: string[] = Array.isArray(shared.meshy_asset_ids) ? shared.meshy_asset_ids : [];
+    const legacyIds: string[] = Array.isArray(topic.meshy_asset_ids) ? topic.meshy_asset_ids : [];
+
+    // Already linked — nothing to do, and re-writing would churn the document.
+    if (sharedIds.includes(assetId) && legacyIds.includes(assetId)) return true;
+
+    topics[index] = {
+      ...topic,
+      sharedAssets: {
+        ...shared,
+        meshy_asset_ids: sharedIds.includes(assetId) ? sharedIds : [...sharedIds, assetId],
+      },
+      meshy_asset_ids: legacyIds.includes(assetId) ? legacyIds : [...legacyIds, assetId],
+    };
+
+    await updateDoc(chapterRef, { topics, updatedAt: serverTimestamp() });
+    return true;
+  } catch (err) {
+    console.error('[linkAssetToTopic] Failed to link asset to topic:', err);
+    return false;
+  }
+}
+
 export const updateScene = async (options: UpdateSceneOptions): Promise<void> => {
   const {
     chapterId,

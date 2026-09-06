@@ -394,7 +394,11 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
 
   // Model controls sit beside the marker: both are "act on what the class is looking at".
   // Shown only to a host, only while teaching, and only when there is actually a model.
-  const showModel = isHost && stage === 'teaching' && modelPartCount > 0;
+  // Available for the whole lesson, not only while teaching. A teacher explains
+  // a model during the quiz and the review just as much as during the lesson
+  // body, and having the controls vanish mid-explanation is worse than a
+  // slightly busier bar.
+  const showModel = isHost && modelPartCount > 0;
   const model = (
     <ModelToolbar
       compact={compact}

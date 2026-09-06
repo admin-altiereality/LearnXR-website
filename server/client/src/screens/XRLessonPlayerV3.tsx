@@ -941,94 +941,98 @@ const XRLessonPlayerV3: React.FC = () => {
   useEffect(() => {
     const fetchMeshyAssets = async () => {
       if (!lessonData) return;
-      
-      // Priority 1: Check if 3D assets are already in lessonData (from bundle)
-      if ((lessonData as any).assets3d && Array.isArray((lessonData as any).assets3d) && (lessonData as any).assets3d.length > 0) {
-        const bundleAssets = (lessonData as any).assets3d;
-        addDebug(`Using ${bundleAssets.length} 3D assets from bundle`);
-        
-        // Convert bundle assets to MeshyAsset format (prefer tokenized render URLs when present)
-        const convertedAssets: MeshyAsset[] = bundleAssets.map((asset: any) => ({
-          id: asset.id || '',
-          glbUrl: asset.animated_render_url || asset.animated_glb_url || asset.render_url || asset.model_urls?.glb || asset.glb_url || asset.stored_glb_url || '',
-          name: asset.name || asset.prompt || 'Asset',
-          thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
-        })).filter((asset: MeshyAsset) => asset.glbUrl); // Only include assets with URLs
-        
-        setMeshyAssets(convertedAssets);
-        addDebug(`✅ Loaded ${convertedAssets.length} 3D assets from bundle`);
-        return;
-      }
-      
-      // Priority 2: Check topic asset_urls from lessonData
-      if (lessonData.topic?.asset_urls && Array.isArray(lessonData.topic.asset_urls) && lessonData.topic.asset_urls.length > 0) {
-        const assetUrls = lessonData.topic.asset_urls;
-        addDebug(`Using ${assetUrls.length} asset URLs from topic`);
-        
-        const convertedAssets: MeshyAsset[] = assetUrls.map((url: string, index: number) => ({
-          id: `asset_${index}`,
-          glbUrl: url,
-          name: `Asset ${index + 1}`,
-        }));
-        
-        setMeshyAssets(convertedAssets);
-        addDebug(`✅ Loaded ${convertedAssets.length} 3D assets from topic URLs`);
-        return;
-      }
-      
-      // Priority 3: Check image3dasset
-      if ((lessonData as any).image3dasset) {
-        const img3d = (lessonData as any).image3dasset;
-        const glbUrl = img3d.imagemodel_glb || img3d.imageasset_url;
-        
-        if (glbUrl) {
-          const convertedAssets: MeshyAsset[] = [{
-            id: img3d.imageasset_id || 'image3d_asset',
-            glbUrl: glbUrl,
-            name: 'Image 3D Asset',
-          }];
-          
-          setMeshyAssets(convertedAssets);
-          addDebug(`✅ Loaded image3dasset: ${glbUrl.substring(0, 60)}`);
-          return;
+
+      /*
+        Every source is merged, not just the first that yields anything.
+
+        This used to return after whichever source matched first, so a lesson
+        with one bundled asset would never look at topic.asset_urls or the
+        Firestore ids — and any model listed only there was silently absent from
+        the scene. Merging and de-duplicating means an asset shows up if ANY
+        source knows about it.
+      */
+      const byUrl = new Map<string, MeshyAsset>();
+      const add = (asset: MeshyAsset) => {
+        if (!asset.glbUrl || byUrl.has(asset.glbUrl)) return;
+        byUrl.set(asset.glbUrl, asset);
+      };
+
+      // Source 1: assets carried on the lesson bundle.
+      const bundleAssets = (lessonData as any).assets3d;
+      if (Array.isArray(bundleAssets)) {
+        for (const asset of bundleAssets) {
+          add({
+            id: asset.id || '',
+            glbUrl:
+              asset.animated_render_url ||
+              asset.animated_glb_url ||
+              asset.render_url ||
+              asset.model_urls?.glb ||
+              asset.glb_url ||
+              asset.stored_glb_url ||
+              '',
+            name: asset.name || asset.prompt || 'Asset',
+            thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
+          });
         }
       }
-      
-      // Priority 4: Fallback to Firestore fetch using IDs
-      const meshyIds = lessonData.topic?.meshy_asset_ids || lessonData.chapter?.meshy_asset_ids || [];
-      if (meshyIds.length === 0) {
-        addDebug('No Meshy asset IDs found');
-        return;
+
+      // Source 2: raw URLs on the topic.
+      const assetUrls = lessonData.topic?.asset_urls;
+      if (Array.isArray(assetUrls)) {
+        assetUrls.forEach((url: string, index: number) => {
+          add({ id: `asset_url_${index}`, glbUrl: url, name: `Asset ${index + 1}` });
+        });
       }
-      
-      addDebug(`Fetching ${meshyIds.length} 3D assets from Firestore...`);
-      const assetResults: MeshyAsset[] = [];
-      
-      for (const assetId of meshyIds) {
-        try {
-          const assetDoc = await getDoc(doc(db, 'meshy_assets', assetId));
-          if (assetDoc.exists()) {
+
+      // Source 3: an image-to-3D conversion attached to the lesson.
+      const img3d = (lessonData as any).image3dasset;
+      if (img3d) {
+        add({
+          id: img3d.imageasset_id || 'image3d_asset',
+          glbUrl: img3d.imagemodel_glb || img3d.imageasset_url || '',
+          name: 'Image 3D Asset',
+        });
+      }
+
+      // Source 4: ids on the topic or chapter, resolved from Firestore. This is
+      // where a manually uploaded model arrives once it is linked to the topic.
+      const meshyIds: string[] = [
+        ...(lessonData.topic?.meshy_asset_ids || []),
+        ...(lessonData.chapter?.meshy_asset_ids || []),
+      ];
+      const unique = Array.from(new Set(meshyIds.filter(Boolean)));
+      if (unique.length > 0) {
+        addDebug(`Resolving ${unique.length} 3D asset id(s) from Firestore...`);
+        for (const assetId of unique) {
+          try {
+            const assetDoc = await getDoc(doc(db, 'meshy_assets', assetId));
+            if (!assetDoc.exists()) continue;
             const data = assetDoc.data();
-            const glbUrl = data.animated_render_url || data.animated_glb_url || data.render_url || data.model_urls?.glb || data.stored_glb_url || data.glb_url;
-            if (glbUrl) {
-              assetResults.push({
-                id: assetId,
-                glbUrl: glbUrl,
-                name: data.name || data.prompt || 'Asset',
-                thumbnailUrl: data.thumbnail_url || data.thumbnailUrl,
-              });
-              addDebug(`3D Asset found: ${data.name || assetId}`);
-            }
+            add({
+              id: assetId,
+              glbUrl:
+                data.animated_render_url ||
+                data.animated_glb_url ||
+                data.render_url ||
+                data.model_urls?.glb ||
+                data.stored_glb_url ||
+                data.glb_url ||
+                '',
+              name: data.name || data.prompt || 'Asset',
+              thumbnailUrl: data.thumbnail_url || data.thumbnailUrl,
+            });
+          } catch (err) {
+            addDebug(`3D Asset error for ${assetId}: ${err}`);
           }
-        } catch (err) {
-          addDebug(`3D Asset error for ${assetId}: ${err}`);
         }
       }
-      
-      setMeshyAssets(assetResults);
-      addDebug(`✅ Found ${assetResults.length} 3D assets from Firestore`);
+
+      const merged = Array.from(byUrl.values());
+      setMeshyAssets(merged);
+      addDebug(`Loaded ${merged.length} 3D asset(s) from all sources`);
     };
-    
+
     fetchMeshyAssets();
   }, [lessonData, addDebug]);
   
@@ -3860,13 +3864,6 @@ const XRLessonPlayerV3: React.FC = () => {
   });
 
   /**
-   * Model tool handlers.
-   *
-   * Each applies locally and publishes to the class, so students see the same
-   * state. Isolate needs a selected part to isolate TO, which comes from a
-   * pick — that is the same pick the label-the-part question reads.
-   */
-  /**
    * Identity of the scene these model controls act on.
    *
    * Published alongside the state so a student who has moved on to a different
@@ -3911,6 +3908,13 @@ const XRLessonPlayerV3: React.FC = () => {
     [modelSceneKey]
   );
 
+  /**
+   * Model tool handlers.
+   *
+   * Each applies locally and publishes to the class, so students see the same
+   * state. Isolate needs a selected part to isolate TO, which comes from a
+   * pick — that is the same pick the label-the-part question reads.
+   */
   const applyModelExplode = useCallback(
     (t: number) => {
       setModelExplode(t);
