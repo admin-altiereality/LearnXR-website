@@ -172,14 +172,24 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// Desk height and reach chosen so the shapes land where a seated adult's hands
-// naturally rest — a demo you have to lean for tells you nothing about the feel.
-const DESK_HEIGHT = 0.75;
+/*
+  One alignment grid for the whole scene.
+
+  Every position below derives from these four numbers rather than being placed
+  by eye, so the desk, the shapes and the panel share a centre line and a common
+  depth. Reach and height are chosen for a SEATED adult: a demo you have to lean
+  or stand for tells you nothing about how the interaction actually feels.
+*/
+const DESK_HEIGHT = 0.75;   // standard desk, metres
+const DESK_DEPTH = -0.45;   // arm's length in front of the viewer
+const DESK_WIDTH = 1.2;
+const SHAPE_LIFT = 0.09;    // clears the desk surface for every shape equally
+
 const desk = new THREE.Mesh(
-  new THREE.BoxGeometry(1.2, 0.04, 0.6),
+  new THREE.BoxGeometry(DESK_WIDTH, 0.04, 0.6),
   new THREE.MeshStandardMaterial({ color: 0x24425c, roughness: 0.6, metalness: 0.1 })
 );
-desk.position.set(0, DESK_HEIGHT, -0.45);
+desk.position.set(0, DESK_HEIGHT, DESK_DEPTH);
 desk.castShadow = true;
 desk.receiveShadow = true;
 scene.add(desk);
@@ -187,12 +197,22 @@ scene.add(desk);
 /** Everything a hand is allowed to pick up. */
 const grabbables = [];
 
-function addShape(geometry, color, x) {
+/**
+ * Place a shape in slot `index` of `count`, evenly spaced across the desk.
+ *
+ * Computing the spacing rather than hard-coding four x values means the row
+ * stays centred and evenly divided whatever is added or removed.
+ */
+function addShape(geometry, color, index, count) {
+  const usable = DESK_WIDTH - 0.24;                    // margin at each end
+  const step = usable / (count - 1);
+  const x = -usable / 2 + index * step;
+
   const mesh = new THREE.Mesh(
     geometry,
     new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.15 })
   );
-  mesh.position.set(x, DESK_HEIGHT + 0.09, -0.45);
+  mesh.position.set(x, DESK_HEIGHT + SHAPE_LIFT, DESK_DEPTH);
   mesh.castShadow = true;
   // Kept so a grabbed shape can be restored to its resting tint on release.
   mesh.userData.baseColor = new THREE.Color(color);
@@ -201,10 +221,15 @@ function addShape(geometry, color, x) {
   return mesh;
 }
 
-addShape(new THREE.BoxGeometry(0.11, 0.11, 0.11), 0x22d3ee, -0.32);
-addShape(new THREE.IcosahedronGeometry(0.075, 0), 0xf59e0b, -0.08);
-addShape(new THREE.TorusKnotGeometry(0.05, 0.018, 72, 12), 0xa855f7, 0.16);
-addShape(new THREE.CylinderGeometry(0.05, 0.05, 0.13, 24), 0x34d399, 0.38);
+// Sized to a common visual weight so the row reads as a set rather than as
+// four unrelated objects that happen to share a table.
+const SHAPES = [
+  [new THREE.BoxGeometry(0.1, 0.1, 0.1), 0x22d3ee],
+  [new THREE.IcosahedronGeometry(0.068, 0), 0xf59e0b],
+  [new THREE.TorusKnotGeometry(0.045, 0.016, 72, 12), 0xa855f7],
+  [new THREE.CylinderGeometry(0.048, 0.048, 0.12, 24), 0x34d399],
+];
+SHAPES.forEach(([geometry, color], index) => addShape(geometry, color, index, SHAPES.length));
 
 // In-headset readout. The DOM HUD is invisible in a session, so the numbers you
 // need while immersed have to be geometry.
@@ -217,7 +242,10 @@ const panel = new THREE.Mesh(
   new THREE.PlaneGeometry(0.5, 0.1875),
   new THREE.MeshBasicMaterial({ map: panelTexture, transparent: true })
 );
-panel.position.set(0, DESK_HEIGHT + 0.42, -0.72);
+// Squared to the desk: same centre line, set back from the front edge, and
+// tilted to face a seated viewer rather than standing vertical.
+panel.position.set(0, DESK_HEIGHT + 0.44, DESK_DEPTH - 0.28);
+panel.rotation.x = -0.18;
 scene.add(panel);
 
 function drawPanel(left, right) {

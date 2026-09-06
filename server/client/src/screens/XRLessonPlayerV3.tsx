@@ -30,6 +30,10 @@ import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerM
 // 'hand-tracking' as an optional feature, so nothing else has to change to get
 // hands, and controller-only headsets are unaffected.
 import { OculusHandModel } from 'three/examples/jsm/webxr/OculusHandModel.js';
+// three's own hand pointer: the tapered ray and cursor Quest users know from
+// system UI, with pinch-to-select built in. Replaces a hand-rolled line, and is
+// the reason there is now exactly one pointer per hand.
+import { OculusHandPointerModel } from 'three/examples/jsm/webxr/OculusHandPointerModel.js';
 import { createHandGestureTracker, type HandGestureTracker } from '../lib/three/handGestures';
 import { ProfessionalLayoutSystem, PlacedAsset } from '../utils/webxr/professionalLayoutSystem';
 import { VRLessonExperience } from '../utils/webxr/vrLessonExperience';
@@ -80,6 +84,13 @@ import {
 // In a headset the device owns the camera pose, so a teacher's Direct has to
 // move the reference space instead of the camera.
 import { faceXrViewerTowards, resetXrReorientation } from '../lib/three/xrReorient';
+// Teleport rather than smooth steering: the comfort-safe default, with a
+// vignette across the cut. Also moves the reference space rather than the scene
+// graph, so asset placement cannot be disturbed.
+import { createTeleport, resetTeleport, type TeleportController } from '../lib/three/teleport';
+// Explode / isolate / section, lifted out of the krpano plugin so both players
+// share one implementation. This is also what makes "label the part" possible.
+import { createModelTools, type ClipAxis, type ModelTools } from '../lib/three/modelTools';
 import { cameraRotationToHV } from '../lib/classroom/viewSync';
 import { createNarrationController, type NarrationController } from '../lib/lesson/narration';
 // The teacher marker draws real geometry rather than an SVG overlay, so a
@@ -258,6 +269,10 @@ const XRLessonPlayerV3: React.FC = () => {
   const assetsGroupRef = useRef<THREE.Group | null>(null);
   const primaryAssetRef = useRef<THREE.Group | null>(null);
   const groundPlaneRef = useRef<THREE.Mesh | null>(null);
+  const teleportRef = useRef<TeleportController | null>(null);
+  const modelToolsRef = useRef<ModelTools | null>(null);
+  /** True while the thumbstick is pushed forward, so release can commit the aim. */
+  const teleportArmedRef = useRef(false);
   
   // Professional Layout System - handles zones, collision, and placement
   const professionalLayoutRef = useRef<ProfessionalLayoutSystem | null>(null);
@@ -301,7 +316,9 @@ const XRLessonPlayerV3: React.FC = () => {
     Array<{
       hand: THREE.Group;
       tracker: HandGestureTracker;
-      ray: THREE.Line;
+      pointer: OculusHandPointerModel;
+      /** The controller's own ray, hidden whenever this hand is tracked. */
+      controllerRay: THREE.Object3D | null;
       grabProxy: THREE.Object3D;
       grabbing: boolean;
     }>
@@ -437,6 +454,18 @@ const XRLessonPlayerV3: React.FC = () => {
    * their own lesson interrupted, and they can see the prompt land for the room.
    */
   const [isPresentingXR, setIsPresentingXR] = useState(false);
+  /**
+   * Model manipulation state.
+   *
+   * The bottom bar has always had these controls; it hid them because this
+   * player reported no separable parts. They mirror TeacherContentState, so a
+   * teacher's manipulation reaches students with no new session fields.
+   */
+  const [modelPartCount, setModelPartCount] = useState(0);
+  const [modelExplode, setModelExplode] = useState(0);
+  const [modelIsolated, setModelIsolated] = useState(false);
+  const [modelSelectedPartName, setModelSelectedPartName] = useState<string | null>(null);
+  const [modelClip, setModelClip] = useState<{ axis: ClipAxis; offset: number } | null>(null);
   const [markerActive, setMarkerActive] = useState(false);
   const [markerColor, setMarkerColor] = useState<string>(MARKER_COLORS[0]);
   const [endSessionConfirming, setEndSessionConfirming] = useState(false);
@@ -1167,6 +1196,7 @@ const XRLessonPlayerV3: React.FC = () => {
             console.log(`${DEBUG_CATEGORIES.XR} VR session started`);
             setIsPresentingXR(true);
             resetXrReorientation();
+            resetTeleport();
             // Cut the render budget for the headset. Without this a lesson with
             // more than one 3D asset drops frames badly: the shadow pass is
             // re-rendered every frame at 2048 across two eyes, and its cost
@@ -1311,6 +1341,7 @@ const XRLessonPlayerV3: React.FC = () => {
             console.log(`${DEBUG_CATEGORIES.XR} VR session ended`);
             setIsPresentingXR(false);
             resetXrReorientation();
+            resetTeleport();
             // Back to full fidelity on the flat screen.
             if (rendererRef.current && sceneRef.current) {
               applyRenderBudget(rendererRef.current, sceneRef.current, FLAT_BUDGET);
@@ -1442,6 +1473,18 @@ const XRLessonPlayerV3: React.FC = () => {
     
     // Store ground reference for asset positioning
     groundPlaneRef.current = groundPlane;
+
+    /*
+      Locomotion. Landing is restricted to the ground plane and blocked near any
+      interactable, so a student cannot teleport inside a model they are meant to
+      be looking at.
+    */
+    teleportRef.current?.dispose();
+    teleportRef.current = createTeleport({
+      scene,
+      floors: [groundPlane],
+      obstacles: () => stableLayoutRef.current?.getAllInteractableMeshes?.() ?? [],
+    });
     
     // Also add a subtle grid helper for development (semi-transparent)
     // This helps visualize the ground plane during testing
@@ -1544,26 +1587,30 @@ const XRLessonPlayerV3: React.FC = () => {
       hand.add(new OculusHandModel(hand));
       scene.add(hand);
 
-      // The aiming ray, so a student sitting at the back can see what they are
-      // pointing at. Hidden until the finger is actually extended.
-      const ray = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(0, 0, -1),
-        ]),
-        new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.6 })
-      );
-      ray.name = 'handRay';
-      ray.visible = false;
-      // Added to the scene rather than the hand: it is aimed along the finger,
-      // which is not the hand's own forward axis.
-      scene.add(ray);
+      /*
+        The pointer.
+
+        getHand(index) and getController(index) address the SAME input slot, so
+        the controller's ray line kept drawing while a hand ray drew as well —
+        two pointers per hand. There is one now: this model while the hand is
+        tracked, the controller's own line otherwise.
+      */
+      const controller = rendererRef.current!.xr.getController(index) as THREE.Group;
+      const pointer = new OculusHandPointerModel(hand, controller);
+      hand.add(pointer);
 
       const grabProxy = new THREE.Object3D();
       grabProxy.name = `handGrabProxy${index}`;
       scene.add(grabProxy);
 
-      return { hand, tracker: createHandGestureTracker(), ray, grabProxy, grabbing: false };
+      return {
+        hand,
+        tracker: createHandGestureTracker(),
+        pointer,
+        controllerRay: null,
+        grabProxy,
+        grabbing: false,
+      };
     });
 
     // Create reticle for raycast visualization
@@ -2068,6 +2115,14 @@ const XRLessonPlayerV3: React.FC = () => {
           lookControlsRef.current?.update();
           inkLayerRef.current?.update();
           updateHands();
+          if (teleportRef.current && rendererRef.current && cameraRef.current) {
+            // The XR camera when presenting, the flat one otherwise, so the
+            // vignette is centred on whichever eye rig is actually rendering.
+            const viewer = rendererRef.current.xr.isPresenting
+              ? rendererRef.current.xr.getCamera()
+              : cameraRef.current;
+            teleportRef.current.update(delta, viewer);
+          }
 
           // Update billboards to face camera
           if (lessonPanelRef.current && cameraRef.current) {
@@ -2214,6 +2269,33 @@ const XRLessonPlayerV3: React.FC = () => {
               }
             }
             
+            /*
+              Teleport aiming.
+
+              Only when nothing is grabbed: the thumbstick already rotates and
+              scales a held model below, and stealing it mid-grab would make both
+              behaviours unpredictable. Push forward to aim, release to travel.
+            */
+            const holdingSomething = stableLayoutRef.current?.isGrabbing() ?? false;
+            const teleport = teleportRef.current;
+            if (teleport && !holdingSomething) {
+              const pushedForward = thumbstickY < -0.7;
+              if (pushedForward && !teleportArmedRef.current) {
+                teleportArmedRef.current = true;
+                const aimSource = controller1Ref.current ?? controller2Ref.current;
+                if (aimSource) teleport.beginAim(aimSource);
+              } else if (!pushedForward && teleportArmedRef.current) {
+                teleportArmedRef.current = false;
+                if (rendererRef.current) teleport.commit(rendererRef.current);
+              }
+              if (teleport.isAiming()) teleport.updateAim();
+            } else if (teleport?.isAiming()) {
+              // Grabbed something mid-aim: abandon it rather than teleporting
+              // while holding an object.
+              teleport.cancel();
+              teleportArmedRef.current = false;
+            }
+
             // ═══════════════════════════════════════════════════════════════
             // CRASH-SAFE GRAB UPDATE - Use Stable Layout System
             // NO TRAVERSAL - uses cached interactables only
@@ -2833,6 +2915,13 @@ const XRLessonPlayerV3: React.FC = () => {
           // The immersive budget stops redrawing the shadow map every frame, so a
           // newly placed asset needs one explicit refresh to cast at all.
           requestShadowRefresh(rendererRef.current);
+
+          // Re-cache the model's parts. Done here rather than on a timer because
+          // this is the moment the geometry is known to be in the scene.
+          if (!modelToolsRef.current) modelToolsRef.current = createModelTools();
+          const roots = Array.from(assetRefs.current.values());
+          modelToolsRef.current.collect(roots);
+          setModelPartCount(modelToolsRef.current.partCount());
           
           console.log(`[XRLessonPlayerV3] ✅ Asset ${newCount}/${meshyAssets.length} added to assetsGroup:`, {
             name: asset.name || asset.id,
@@ -3467,55 +3556,48 @@ const XRLessonPlayerV3: React.FC = () => {
     for (const slot of handsRef.current) {
       const state = slot.tracker.update(slot.hand as never);
 
+      // Resolve the controller's ray lazily: it is created when the controller
+      // connects, which may be after the hands were set up.
+      if (!slot.controllerRay) {
+        const controller = renderer.xr.getController(handsRef.current.indexOf(slot));
+        slot.controllerRay = controller?.getObjectByName('ray') ?? null;
+      }
+      // Exactly one pointer. A tracked hand owns the slot; otherwise the
+      // controller does.
+      if (slot.controllerRay) slot.controllerRay.visible = !state.tracked;
+      slot.pointer.visible = state.tracked;
+
       if (!state.tracked) {
-        // Hand lost. Hide its ray and drop anything it was holding, rather than
-        // leaving an asset stuck to a hand that is no longer there.
-        slot.ray.visible = false;
         if (slot.grabbing) {
+          // Hand lost. Drop what it held rather than leaving an asset stuck to
+          // a hand the runtime can no longer see.
           stableLayoutRef.current?.releaseGrab();
           slot.grabbing = false;
         }
         continue;
       }
 
-      // The proxy follows the fingers, so a held object tracks the pinch rather
-      // than the wrist.
+      // The proxy carries BOTH the pinch position and the hand's orientation.
+      // updateGrab reads position and quaternion from whatever it was given, so
+      // supplying a real rotation here is what makes a held object turn with the
+      // wrist — previously this was an empty Object3D and objects only slid.
       if (state.pinchPoint) slot.grabProxy.position.copy(state.pinchPoint);
+      if (state.orientation) slot.grabProxy.quaternion.copy(state.orientation);
+      slot.grabProxy.updateMatrixWorld();
 
       // --- Pointing at the panel ---------------------------------------
+      // The pointer model raycasts from its own tip, so the panel can be reached
+      // from across the room — the reason a student at the back can answer.
       let aimingAtPanel = false;
-      if (state.pointing && state.point && panelMesh && panelMesh.visible) {
-        raycaster.set(state.point.origin, state.point.direction);
-        const hit = raycaster.intersectObject(panelMesh, false)[0];
+      if (panelMesh && panelMesh.visible) {
+        const hit = slot.pointer.intersectObject(panelMesh, false)?.[0];
         if (hit?.uv) {
           aimingAtPanel = true;
-          slot.ray.visible = true;
-          slot.ray.position.copy(state.point.origin);
-          // Orient the line down the finger and stop it at the panel, so the ray
-          // reads as touching the target rather than passing through it.
-          slot.ray.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 0, -1),
-            state.point.direction
-          );
-          slot.ray.scale.setScalar(hit.distance);
-
+          // Park the cursor on the panel so the aim point is visible.
+          slot.pointer.setCursor(hit.distance);
           if (state.justPinched) {
             lessonPanelUvRef.current(hit.uv.x, hit.uv.y);
           }
-        }
-      }
-
-      if (!aimingAtPanel) {
-        // Show a short ray whenever the finger is extended, so the student can
-        // see where they are aiming before they find the panel.
-        slot.ray.visible = state.pointing;
-        if (state.pointing && state.point) {
-          slot.ray.position.copy(state.point.origin);
-          slot.ray.quaternion.setFromUnitVectors(
-            new THREE.Vector3(0, 0, -1),
-            state.point.direction
-          );
-          slot.ray.scale.setScalar(1.5);
         }
       }
 
@@ -3626,6 +3708,39 @@ const XRLessonPlayerV3: React.FC = () => {
     isImmersive: isPresentingXR,
     enabled: !classroom.isClassHost,
   });
+
+  /**
+   * Model tool handlers.
+   *
+   * Each applies locally and publishes to the class, so students see the same
+   * state. Isolate needs a selected part to isolate TO, which comes from a
+   * pick — that is the same pick the label-the-part question reads.
+   */
+  const applyModelExplode = useCallback((t: number) => {
+    setModelExplode(t);
+    modelToolsRef.current?.explode(t);
+  }, []);
+
+  const applyModelIsolate = useCallback(() => {
+    setModelIsolated((wasIsolated) => {
+      const next = !wasIsolated;
+      modelToolsRef.current?.isolate(modelSelectedPartName, next);
+      return next;
+    });
+  }, [modelSelectedPartName]);
+
+  const applyModelClip = useCallback((clip: { axis: ClipAxis; offset: number } | null) => {
+    setModelClip(clip);
+    modelToolsRef.current?.clip(clip?.axis ?? null, clip?.offset ?? 0, rendererRef.current);
+  }, []);
+
+  const applyModelReset = useCallback(() => {
+    setModelExplode(0);
+    setModelIsolated(false);
+    setModelClip(null);
+    setModelSelectedPartName(null);
+    modelToolsRef.current?.reset(rendererRef.current);
+  }, []);
 
   const annotationSessionId = classroom.hostSessionId;
 
@@ -4740,6 +4855,15 @@ const XRLessonPlayerV3: React.FC = () => {
               liveCount={classroom.rosterCounts.joined}
               onOpenRoster={() => setHostDrawer((d) => (d === 'roster' ? null : 'roster'))}
               raisedHands={classroom.raisedHandCount}
+              modelPartCount={modelPartCount}
+              modelExplode={modelExplode}
+              onModelExplodeChange={applyModelExplode}
+              modelIsolated={modelIsolated}
+              modelSelectedPartName={modelSelectedPartName}
+              onToggleModelIsolate={applyModelIsolate}
+              modelClip={modelClip}
+              onModelClipChange={applyModelClip}
+              onModelReset={applyModelReset}
               markerActive={markerActive}
               markerColor={markerColor}
               onToggleMarker={() => setMarkerActive((v) => !v)}

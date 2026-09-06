@@ -49,6 +49,40 @@ type XRHandLike = THREE.Group & {
   joints?: Record<string, THREE.Object3D & { jointRadius?: number }>;
 };
 
+/**
+ * Hand orientation as a quaternion, built from a three-joint basis.
+ *
+ * The wrist joint carries its own rotation, but reading it directly makes a held
+ * object jitter — a single joint is the noisiest thing the runtime reports.
+ * Spanning wrist, index knuckle and pinky knuckle averages that out and gives a
+ * frame that means something physically: forward along the hand, right across
+ * the knuckles, up out of the back of the hand.
+ *
+ * This is what gives a grabbed object true yaw, pitch and roll. Without it the
+ * layout system's updateGrab reads an identity rotation and objects translate
+ * without ever turning.
+ */
+export function readOrientation(hand: XRHandLike): THREE.Quaternion | null {
+  const wrist = joint(hand, 'wrist');
+  const indexKnuckle = joint(hand, 'index-finger-metacarpal');
+  const pinkyKnuckle = joint(hand, 'pinky-finger-metacarpal');
+  if (!wrist || !indexKnuckle || !pinkyKnuckle) return null;
+
+  const forward = new THREE.Vector3().subVectors(indexKnuckle.position, wrist.position);
+  const across = new THREE.Vector3().subVectors(indexKnuckle.position, pinkyKnuckle.position);
+  // Degenerate when joints briefly coincide during tracking loss; a zero-length
+  // basis produces NaNs that propagate into the grabbed object's transform.
+  if (forward.lengthSq() < 1e-8 || across.lengthSq() < 1e-8) return null;
+
+  forward.normalize();
+  const up = new THREE.Vector3().crossVectors(across, forward).normalize();
+  const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+
+  // Columns are the basis vectors; -forward because three's convention faces -Z.
+  const basis = new THREE.Matrix4().makeBasis(right, up, forward.clone().negate());
+  return new THREE.Quaternion().setFromRotationMatrix(basis);
+}
+
 export interface HandGestureState {
   /** False when the runtime is not reporting this hand at all. */
   tracked: boolean;
@@ -66,6 +100,8 @@ export interface HandGestureState {
   point: { origin: THREE.Vector3; direction: THREE.Vector3; extension: number } | null;
   /** True when the finger is extended enough for the ray to be meant. */
   pointing: boolean;
+  /** Hand orientation, for rotating a held object with the wrist. */
+  orientation: THREE.Quaternion | null;
 }
 
 function clamp01(value: number): number {
@@ -167,6 +203,7 @@ export function createHandGestureTracker(): HandGestureTracker {
       const pinch = readPinch(hand);
       const grab = readGrab(hand);
       const point = readPoint(hand);
+      const orientation = readOrientation(hand);
 
       const wasPinching = pinching;
       const wasGrabbing = grabbing;
@@ -198,6 +235,7 @@ export function createHandGestureTracker(): HandGestureTracker {
         justLetGo: !grabbing && wasGrabbing,
         point,
         pointing: Boolean(point && point.extension > POINT_EXTENSION_MIN),
+        orientation,
       };
     },
 
