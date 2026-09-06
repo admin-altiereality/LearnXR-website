@@ -149,6 +149,8 @@ const TeacherDashboard = () => {
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [launches, setLaunches] = useState<LessonLaunch[]>([]);
   const [loading, setLoading] = useState(true);
+  /** Why a read failed, so an empty page can say so rather than imply no data. */
+  const [dataError, setDataError] = useState<string | null>(null);
   const [sharingClassId, setSharingClassId] = useState<string | null>(null);
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   const [schoolCode, setSchoolCode] = useState<string | null>(null);
@@ -328,71 +330,108 @@ const TeacherDashboard = () => {
     const classIds = allClasses.map(c => c.id);
     const schoolIdForQuery = profile.school_id || allClasses[0]?.school_id;
 
+    /*
+      Firestore caps `in` and `array-contains-any` at 30 values.
+
+      A teacher with more classes than that got a rejected query — and since one
+      rejection empties `scores`, every section on this page went blank at once,
+      which looks exactly like a school where nobody has taken a quiz. Chunked
+      into batches of 30 and merged, so the number of classes a teacher has stops
+      being a cliff.
+    */
+    const CHUNK = 30;
+    const idChunks: string[][] = [];
+    for (let i = 0; i < classIds.length; i += CHUNK) {
+      idChunks.push(classIds.slice(i, i + CHUNK));
+    }
+
     if (!schoolIdForQuery) {
       setLoading(false);
       return;
     }
 
-    // Fetch students
-    const studentsQuery = query(
-      collection(db, 'users'),
-      where('role', '==', 'student'),
-      where('school_id', '==', schoolIdForQuery),
-      where('class_ids', 'array-contains-any', classIds)
+    /**
+     * Subscribe one query per chunk and merge the results by document id.
+     *
+     * Each chunk arrives on its own schedule, so the merged view is rebuilt from
+     * the per-chunk snapshots rather than appended to — appending would double
+     * every row the moment one chunk updated.
+     */
+    const subscribeChunked = <T,>(
+      build: (ids: string[]) => any,
+      apply: (rows: T[]) => void,
+      label: string
+    ): (() => void)[] => {
+      const perChunk = new Map<number, Map<string, T>>();
+      const publish = () => {
+        const merged = new Map<string, T>();
+        for (const rows of perChunk.values()) {
+          for (const [id, row] of rows) merged.set(id, row);
+        }
+        apply(Array.from(merged.values()));
+      };
+
+      return idChunks.map((ids, index) =>
+        onSnapshot(
+          build(ids),
+          (snapshot: any) => {
+            const rows = new Map<string, T>();
+            snapshot.docs.forEach((d: any) => rows.set(d.id, { id: d.id, ...d.data() } as T));
+            perChunk.set(index, rows);
+            publish();
+            setDataError(null);
+          },
+          (error: any) => {
+            console.error(`TeacherDashboard: ${label} query failed`, error);
+            setDataError(`${label} could not be read: ${error.message}`);
+            setLoading(false);
+          }
+        )
+      );
+    };
+
+    const unsubscribeStudents = subscribeChunked<any>(
+      (ids) =>
+        query(
+          collection(db, 'users'),
+          where('role', '==', 'student'),
+          where('school_id', '==', schoolIdForQuery),
+          where('class_ids', 'array-contains-any', ids)
+        ),
+      // Students are keyed by uid elsewhere on this page, not by doc id.
+      (rows) => setStudents(rows.map((r: any) => ({ ...r, uid: r.id }))),
+      'Students'
     );
 
-    const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
-      const studentsData = snapshot.docs.map(doc => ({
-        uid: doc.id,
-        ...doc.data(),
-      }));
-      setStudents(studentsData);
-    }, (error) => {
-      console.error('TeacherDashboard: Error fetching students', error);
-    });
-
-    // Fetch scores
-    const scoresQuery = query(
-      collection(db, 'student_scores'),
-      where('school_id', '==', schoolIdForQuery),
-      where('class_id', 'in', classIds),
-      orderBy('completed_at', 'desc')
+    const unsubscribeScores = subscribeChunked<StudentScore>(
+      (ids) =>
+        query(
+          collection(db, 'student_scores'),
+          where('school_id', '==', schoolIdForQuery),
+          where('class_id', 'in', ids),
+          orderBy('completed_at', 'desc')
+        ),
+      (rows) => setScores(rows),
+      'Student scores'
     );
 
-    const unsubscribeScores = onSnapshot(scoresQuery, (snapshot) => {
-      const scoresData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as StudentScore[];
-      setScores(scoresData);
-    }, (error) => {
-      console.error('TeacherDashboard: Error fetching scores', error);
-    });
-
-    // Fetch launches
-    const launchesQuery = query(
-      collection(db, 'lesson_launches'),
-      where('school_id', '==', schoolIdForQuery),
-      where('class_id', 'in', classIds),
-      orderBy('launched_at', 'desc')
+    const unsubscribeLaunches = subscribeChunked<LessonLaunch>(
+      (ids) =>
+        query(
+          collection(db, 'lesson_launches'),
+          where('school_id', '==', schoolIdForQuery),
+          where('class_id', 'in', ids),
+          orderBy('launched_at', 'desc')
+        ),
+      (rows) => {
+        setLaunches(rows);
+        setLoading(false);
+      },
+      'Lesson launches'
     );
-
-    const unsubscribeLaunches = onSnapshot(launchesQuery, (snapshot) => {
-      const launchesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as LessonLaunch[];
-      setLaunches(launchesData);
-      setLoading(false);
-    }, (error) => {
-      console.error('TeacherDashboard: Error fetching launches', error);
-      setLoading(false);
-    });
 
     return () => {
-      unsubscribeStudents();
-      unsubscribeScores();
-      unsubscribeLaunches();
+      [...unsubscribeStudents, ...unsubscribeScores, ...unsubscribeLaunches].forEach((off) => off());
     };
   }, [user?.uid, profile, allClasses]);
 
@@ -1934,7 +1973,21 @@ const TeacherDashboard = () => {
         {/* Recent Student Activity */}
         <div>
           <h2 className="text-xl font-semibold text-foreground mb-4">Recent Student Activity</h2>
-          {scores.length === 0 ? (
+          {/*
+            An empty page and a failed read are not the same thing, and used to
+            look identical. Saying which is the difference between "nobody has
+            taken a quiz" and "the query was rejected and the marks are sitting
+            there unseen".
+          */}
+          {dataError ? (
+            <Card className="border-destructive/40 bg-destructive/5">
+              <CardContent className="p-8 text-center">
+                <FaChartLine className="text-4xl text-destructive mx-auto mb-4" />
+                <p className="font-semibold text-foreground">Results could not be loaded</p>
+                <p className="mt-1 text-sm text-muted-foreground">{dataError}</p>
+              </CardContent>
+            </Card>
+          ) : scores.length === 0 ? (
             <Card className="border-border bg-card">
               <CardContent className="p-8 text-center">
                 <FaChartLine className="text-4xl text-muted-foreground mx-auto mb-4" />

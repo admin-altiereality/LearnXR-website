@@ -21,7 +21,7 @@
  * of an asset, so it should be the one that survives a collision.
  */
 
-import { pickPlayerGlbUrl } from './assetUrls';
+import { isRetiredMeshyAsset, pickPlayerGlbUrl } from './assetUrls';
 
 export interface LessonAsset {
   id: string;
@@ -70,6 +70,27 @@ export function unresolvedAssetIds(lessonData: any): string[] {
   return Array.from(new Set(linked)).filter((id) => !alreadyBundled.has(id));
 }
 
+/**
+ * Whether this asset should be shown at all.
+ *
+ * A regenerated model keeps its original alongside the replacement: the asset
+ * document is retired rather than deleted so old lessons and reports still
+ * resolve the id, and nothing ever removes that id from the topic —
+ * `arrayRemove` is not used for meshy assets anywhere in the codebase.
+ *
+ * getLessonBundle has always excluded retired assets, so the replacement comes
+ * through the bundle and the original does not. This merge used to fetch the
+ * original straight from Firestore precisely BECAUSE the bundle had rejected it,
+ * and put it in the scene beside its replacement — the same model, visibly
+ * twice, under two different ids pointing at two genuinely different files,
+ * which is why de-duplicating on id and on URL both failed to catch it.
+ *
+ * One rule, applied by every reader.
+ */
+export function isShowableAsset(asset: any): boolean {
+  return !isRetiredMeshyAsset(asset) && Boolean(pickPlayerGlbUrl(asset));
+}
+
 /** Everything the lesson knows about, each model exactly once. */
 export function mergeLessonAssets(input: MergeInput): LessonAsset[] {
   const byId = new Map<string, LessonAsset>();
@@ -86,6 +107,7 @@ export function mergeLessonAssets(input: MergeInput): LessonAsset[] {
 
   // Source 1: the lesson bundle. Most normalised, so it wins any collision.
   for (const asset of input.bundleAssets ?? []) {
+    if (!isShowableAsset(asset)) continue;
     add({
       id: String(asset?.id || ''),
       glbUrl: pickPlayerGlbUrl(asset),
@@ -121,9 +143,12 @@ export function mergeLessonAssets(input: MergeInput): LessonAsset[] {
   }
 
   // Source 4: documents resolved from the topic's ids. Put through the same
-  // picker as the bundle — reading the raw fields in a different order is what
-  // produced a second URL for an asset already in the list.
+  // picker AND the same retired filter as the bundle — reading the raw fields in
+  // a different order is what produced a second URL for an asset already in the
+  // list, and skipping the retired check is what put a replaced model in the
+  // scene beside the one that replaced it.
   for (const doc of input.resolvedDocs ?? []) {
+    if (!isShowableAsset(doc.data)) continue;
     add({
       id: String(doc.id),
       glbUrl: pickPlayerGlbUrl(doc.data),

@@ -106,6 +106,10 @@ import {
 } from 'lucide-react';
 import { Progress } from '../Components/ui/progress';
 import { Button } from '../Components/ui/button';
+// One definition, shared with getLessonBundle and the Three.js player. There
+// were three hand-written copies of this rule, and the one that was missed is
+// how a replaced model ended up in the scene beside its replacement.
+import { isRetiredMeshyAsset } from '../lib/lesson/assetUrls';
 
 // ============================================================================
 // Error Boundary Component
@@ -318,14 +322,6 @@ const isRenderAssetUrl = (url: string): boolean =>
 
 const isLegacyMeshyCdnUrl = (url: string): boolean =>
   /\/\/(?:assets|storage)\.meshy\.ai\//i.test(url) || /\/\/api\.meshy\.ai\//i.test(url);
-
-const isRetiredMeshyAsset = (asset: any): boolean =>
-  Boolean(
-    asset?.active === false ||
-    asset?.status === 'replaced' ||
-    asset?.replaced_by_meshy_asset_id ||
-    (asset?.asset_repair_status === 'regenerated' && asset?.replaced_by_meshy_asset_id)
-  );
 
 const isSafeLessonGlbUrl = (url: string): boolean =>
   Boolean(url && isGlbOrGltfUrl(url) && !isLegacyMeshyCdnUrl(url));

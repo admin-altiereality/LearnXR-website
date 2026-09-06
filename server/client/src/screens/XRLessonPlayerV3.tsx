@@ -52,6 +52,7 @@ import { type ReportSessionQuizPayload } from '../services/classSessionService';
 // while student_scores is the durable record the dashboards and reports read.
 import {
   saveQuizScore,
+  lastQuizScoreRefusal,
   trackLessonLaunch,
   updateLessonLaunch,
 } from '../services/lessonTrackingService';
@@ -5172,7 +5173,26 @@ const XRLessonPlayerV3: React.FC = () => {
           classroomRef.current.classId,
           attempted
         );
-        if (scoreId) addDebug(`Quiz score saved: ${correct}/${total}`);
+        if (scoreId) {
+          addDebug(`Quiz score saved: ${correct}/${total} (class ${classroomRef.current.classId ?? 'none'})`);
+        } else {
+          /*
+            A result that was not recorded must not look like one that was.
+
+            saveQuizScore declines for four reasons — no profile, not a student,
+            no school_id, or a guest account — and used to return a bare null
+            that every caller ignored. The marks then failed to reach any
+            dashboard with nothing anywhere to explain it.
+          */
+          const reason = lastQuizScoreRefusal ?? 'unknown reason';
+          console.warn('[XRLessonPlayerV3] Quiz score NOT saved:', reason);
+          addDebug(`⚠️ Quiz score NOT saved: ${reason}`);
+          // Only tell a student their own work went missing. A teacher
+          // previewing a lesson is not scored by design and needs no warning.
+          if (profile?.role === 'student') {
+            toast.error('Your result could not be saved. Please tell your teacher.');
+          }
+        }
       } catch (error) {
         console.error('[XRLessonPlayerV3] Failed to save quiz score:', error);
       }

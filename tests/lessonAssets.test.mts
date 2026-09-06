@@ -176,3 +176,74 @@ test('an image-to-3D conversion is included alongside the rest', () => {
     'the image conversion is a model like any other'
   );
 });
+
+// ---------------------------------------------------------------------------
+// Retired assets.
+//
+// A regenerated model keeps its original: the document is retired rather than
+// deleted so old lessons and reports still resolve the id, and nothing ever
+// removes that id from the topic. getLessonBundle excludes retired assets, so
+// the replacement arrives through the bundle and the original does not — which
+// is exactly why the merge then fetched the original straight from Firestore and
+// put it in the scene beside its replacement. Two different ids, two genuinely
+// different files, so neither the id nor the URL guard could catch it.
+// ---------------------------------------------------------------------------
+
+/** The original, after being regenerated: still linked, no longer showable. */
+function retiredDoc(id: string, replacementId: string) {
+  const doc = rawDoc(id);
+  (doc.data as any).replaced_by_meshy_asset_id = replacementId;
+  (doc.data as any).asset_repair_status = 'regenerated';
+  return doc;
+}
+
+test('a replaced model does not appear beside its replacement', () => {
+  const merged = mergeLessonAssets({
+    bundleAssets: [bundled('heart_v2')],
+    resolvedDocs: [retiredDoc('heart_v1', 'heart_v2')],
+  });
+
+  assert.equal(merged.length, 1, 'one model, not the old one and the new one');
+  assert.equal(merged[0].id, 'heart_v2', 'and it is the replacement');
+});
+
+test('every way of retiring an asset is honoured', () => {
+  for (const retire of [
+    { replaced_by_meshy_asset_id: 'other' },
+    { active: false },
+    { status: 'replaced' },
+    { asset_repair_status: 'regenerated', replaced_by_meshy_asset_id: 'other' },
+  ]) {
+    const doc = rawDoc('old');
+    Object.assign(doc.data as any, retire);
+    const merged = mergeLessonAssets({ resolvedDocs: [doc] });
+    assert.equal(
+      merged.length,
+      0,
+      `an asset marked ${JSON.stringify(retire)} must not reach the scene`
+    );
+  }
+});
+
+test('a retired asset in the bundle is refused there too', () => {
+  // The bundle already filters, but the player must not depend on that: one rule
+  // applied by every reader is what stops the two drifting apart again.
+  const stale = bundled('old');
+  (stale as any).active = false;
+  assert.equal(mergeLessonAssets({ bundleAssets: [stale] }).length, 0);
+});
+
+test('a lesson whose only asset was replaced shows nothing, not the old model', () => {
+  const merged = mergeLessonAssets({
+    resolvedDocs: [retiredDoc('only_v1', 'only_v2')],
+  });
+  assert.equal(merged.length, 0, 'an empty dock beats a model the studio retired');
+});
+
+test('retiring one asset does not hide the others', () => {
+  const merged = mergeLessonAssets({
+    bundleAssets: [bundled('heart'), bundled('lungs', 'Lungs')],
+    resolvedDocs: [retiredDoc('heart_v0', 'heart')],
+  });
+  assert.deepEqual(merged.map((a) => a.id).sort(), ['heart', 'lungs']);
+});

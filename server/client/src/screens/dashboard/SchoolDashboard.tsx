@@ -44,6 +44,9 @@ import {
   FaFileAlt,
 } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+// Shared with the teacher and principal dashboards so one class cannot show
+// three different averages depending on who is looking.
+import { PerformanceSections } from '../../Components/dashboard/PerformanceSections';
 
 interface CurriculumCompletion {
   curriculum: string;
@@ -97,6 +100,15 @@ const SchoolDashboard = () => {
   const [launches, setLaunches] = useState<LessonLaunch[]>([]);
   const [chapters, setChapters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  /*
+    Why a read failed, when one does.
+
+    The error handlers here logged to the console and stopped. Both of these
+    queries needed a composite index that did not exist — an equality filter with
+    an orderBy on another field always does — so the page rendered zeros
+    indefinitely and looked exactly like a school where nobody had taken a quiz.
+  */
+  const [dataError, setDataError] = useState<string | null>(null);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [selectedCurriculumFilter, setSelectedCurriculumFilter] = useState<string>('all');
   const [schoolCode, setSchoolCode] = useState<string | null>(null);
@@ -377,7 +389,9 @@ const SchoolDashboard = () => {
         schoolId,
       });
       setScores(scoresData);
+      setDataError(null);
     }, (error) => {
+      setDataError(`Student scores could not be read: ${error.message}`);
       console.error('❌ SchoolDashboard: Error fetching scores', {
         error,
         schoolId,
@@ -404,6 +418,7 @@ const SchoolDashboard = () => {
       });
       setLaunches(launchesData);
     }, (error) => {
+      setDataError(`Lesson launches could not be read: ${error.message}`);
       console.error('❌ SchoolDashboard: Error fetching launches', {
         error,
         schoolId,
@@ -991,6 +1006,19 @@ const SchoolDashboard = () => {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Performance — the same sections the teacher and principal see. */}
+        <div className="mb-8">
+          <PerformanceSections
+            classes={classes}
+            students={students}
+            scores={scores}
+            launches={launches}
+            loadError={dataError}
+            loading={loading}
+            scopeLabel="this school"
+          />
         </div>
 
         {/* Recent Quiz Scores */}

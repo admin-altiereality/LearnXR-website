@@ -16,6 +16,10 @@ import { learnXRFontStyle, TrademarkSymbol } from '../../Components/LearnXRTypog
 import { Card, CardContent } from '../../Components/ui/card';
 import { Button } from '../../Components/ui/button';
 import { Badge } from '../../Components/ui/badge';
+// The same panels the teacher sees, over every class in the school. Shared so a
+// principal and their teachers cannot be shown two different averages for one
+// class.
+import { PerformanceSections } from '../../Components/dashboard/PerformanceSections';
 
 const PrincipalDashboard = () => {
   const { user, profile } = useAuth();
@@ -25,6 +29,18 @@ const PrincipalDashboard = () => {
   const [pendingTeachers, setPendingTeachers] = useState<any[]>([]);
   const [scores, setScores] = useState<StudentScore[]>([]);
   const [launches, setLaunches] = useState<LessonLaunch[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
+  /*
+    Why a query failed, when one does.
+
+    These subscriptions had no error callback at all, and both of them needed a
+    composite index that did not exist — an equality filter with an orderBy on
+    another field always does. Firestore rejected them outright and the rejection
+    was swallowed, so this page showed zeros indefinitely with nothing anywhere
+    to say the read had failed. An error must never render as an absence of
+    results.
+  */
+  const [dataError, setDataError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalTeachers: 0,
@@ -147,7 +163,22 @@ const PrincipalDashboard = () => {
         ...doc.data(),
       })) as StudentScore[];
       setScores(scoresData);
+      setDataError(null);
       updateStats(teachers, students, scoresData, launches);
+    }, (error) => {
+      console.error('PrincipalDashboard: student_scores query failed', error);
+      setDataError(`Student scores could not be read: ${error.message}`);
+      setLoading(false);
+    });
+
+    // Classes in the school, so per-class figures can be computed the same way
+    // the teacher's dashboard computes them.
+    const classesQuery = query(collection(db, 'classes'), where('school_id', '==', schoolId));
+    const unsubscribeClasses = onSnapshot(classesQuery, (snapshot) => {
+      setClasses(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error('PrincipalDashboard: classes query failed', error);
+      setDataError(`Classes could not be read: ${error.message}`);
     });
 
     // Get all lesson launches in school
@@ -165,6 +196,10 @@ const PrincipalDashboard = () => {
       setLaunches(launchesData);
       updateStats(teachers, students, scores, launchesData);
       setLoading(false);
+    }, (error) => {
+      console.error('PrincipalDashboard: lesson_launches query failed', error);
+      setDataError(`Lesson launches could not be read: ${error.message}`);
+      setLoading(false);
     });
 
     return () => {
@@ -172,6 +207,7 @@ const PrincipalDashboard = () => {
       unsubscribeStudents();
       unsubscribeScores();
       unsubscribeLaunches();
+      unsubscribeClasses();
     };
   }, [user?.uid, profile]);
 
@@ -522,6 +558,17 @@ const PrincipalDashboard = () => {
             </div>
           )}
         </div>
+
+        {/* Performance — the same sections a teacher sees, school-wide. */}
+        <PerformanceSections
+          classes={classes}
+          students={students}
+          scores={scores}
+          launches={launches}
+          loadError={dataError}
+          loading={loading}
+          scopeLabel="this school"
+        />
 
         {/* Recent School Activity */}
         <div>

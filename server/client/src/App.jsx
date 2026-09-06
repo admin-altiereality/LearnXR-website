@@ -75,6 +75,7 @@ import UserGeneratedLessons from './screens/admin/UserGeneratedLessons';
 import ProductionLogs from './screens/admin/ProductionLogs';
 import SchoolApprovals from './screens/admin/SchoolApprovals';
 import SchoolManagement from './screens/admin/SchoolManagement';
+import SchoolPerformance from './screens/admin/SchoolPerformance';
 import PartnerRegistrations from './screens/admin/PartnerRegistrations';
 import PartnerOversight from './screens/admin/PartnerOversight';
 import TeacherApprovals from './screens/admin/TeacherApprovals';
@@ -565,6 +566,17 @@ function App() {
                           <SuperAdminGuard>
                             <Approvals />
                           </SuperAdminGuard>
+                        </ProtectedRoute>
+                      } />
+
+                      {/* The same performance panels teachers and principals
+                          see, for any school. Same aggregation, so an admin
+                          checking a principal's figures sees the same numbers. */}
+                      <Route path="/admin/school-performance" element={
+                        <ProtectedRoute>
+                          <RoleGuard allowedRoles={['admin', 'superadmin']}>
+                            <SchoolPerformance />
+                          </RoleGuard>
                         </ProtectedRoute>
                       } />
 

@@ -106,6 +106,15 @@ export async function updateLessonLaunch(
 }
 
 /**
+ * Why the last saveQuizScore call declined to write, or null if it wrote.
+ *
+ * Read immediately after an awaited call. A module-level value is enough
+ * because a student finishes one quiz at a time, and it keeps the function's
+ * return type — which four other players depend on — unchanged.
+ */
+export let lastQuizScoreRefusal: string | null = null;
+
+/**
  * Save quiz score to student_scores collection
  * Also updates the corresponding lesson_launch if launchId is provided
  */
@@ -138,15 +147,38 @@ export async function saveQuizScore(
    */
   questionsAttempted?: number
 ): Promise<string | null> {
-  if (!profile) return null;
-  if (profile.role !== 'student') return null;
+  /*
+    Every refusal below is now named.
+
+    These four returned a bare `null`, and the players logged nothing on `null`,
+    so a quiz that was never recorded looked exactly like one that was. Marks
+    then failed to appear on any dashboard with nothing anywhere to say why.
+    `lastQuizScoreRefusal` lets a caller tell the student, or the developer,
+    which of the four it was.
+  */
+  if (!profile) {
+    lastQuizScoreRefusal = 'no profile loaded';
+    console.warn('[saveQuizScore] refused:', lastQuizScoreRefusal);
+    return null;
+  }
+  if (profile.role !== 'student') {
+    // Correct, and worth saying out loud: a teacher testing their own lesson
+    // produces no score, which is easily mistaken for the feature being broken.
+    lastQuizScoreRefusal = `role is "${profile.role}", not student — only students are scored`;
+    console.info('[saveQuizScore] refused:', lastQuizScoreRefusal);
+    return null;
+  }
   if (!profile.school_id) {
-    console.warn('Cannot save quiz score: student profile missing school_id');
+    lastQuizScoreRefusal = 'student profile has no school_id';
+    console.warn('[saveQuizScore] refused:', lastQuizScoreRefusal);
     return null;
   }
   if (!canGuestWrite(profile)) {
-    return null; // Guest: read-only
+    lastQuizScoreRefusal = 'guest accounts are read-only';
+    console.warn('[saveQuizScore] refused:', lastQuizScoreRefusal);
+    return null;
   }
+  lastQuizScoreRefusal = null;
 
   try {
     const scoreId = `${profile.uid}_${chapterId}_${topicId}_${attemptNumber}`;
@@ -176,7 +208,21 @@ export async function saveQuizScore(
     };
 
     await setDoc(scoreRef, scoreData, { merge: true });
-    console.log('✅ Quiz score saved:', scoreId);
+    // The class attribution decides whether this score is ever visible: every
+    // dashboard section filters on class_id, so one attributed to the wrong
+    // class is invisible in all of them at once.
+    console.log('✅ Quiz score saved:', scoreId, {
+      class_id: scoreData.class_id,
+      class_id_source: classId ? 'live session' : 'profile fallback',
+      school_id: scoreData.school_id,
+    });
+    if (!scoreData.class_id) {
+      lastQuizScoreRefusal = null;
+      console.warn(
+        '[saveQuizScore] saved with NO class_id — this score will not appear on any ' +
+          'class dashboard. The lesson was taught in a session carrying no class.'
+      );
+    }
 
     // Update lesson launch if provided. An attempt the class moved on from is
     // abandoned, not completed — the student never reached the end.
@@ -189,6 +235,7 @@ export async function saveQuizScore(
 
     return scoreId;
   } catch (error) {
+    lastQuizScoreRefusal = `write failed: ${(error as any)?.message || error}`;
     console.error('Error saving quiz score:', error);
     return null;
   }
