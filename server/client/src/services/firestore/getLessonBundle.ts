@@ -34,6 +34,9 @@ import {
   getChapterSnapshot,
 } from '../lessonVersionService';
 import type { LessonDraftSnapshot } from '../../types/lessonVersion';
+// Shared with the player, which resolves the same assets a second way. Two
+// copies of this precedence disagreed, and the same model arrived twice.
+import { isRenderAssetUrl, isRetiredMeshyAsset, pickPlayerGlbUrl } from '../../lib/lesson/assetUrls';
 
 // Collection names
 const COLLECTION_CURRICULUM_CHAPTERS = 'curriculum_chapters';
@@ -219,31 +222,6 @@ function buildTourStopTopics(lessonId: string, fallbackName: string, stops: any[
     isTourStopIndex: index,
     tourStopCount: stops.length,
   }));
-}
-
-function isRetiredMeshyAsset(asset: any): boolean {
-  return Boolean(
-    asset?.active === false ||
-    asset?.status === 'replaced' ||
-    asset?.replaced_by_meshy_asset_id ||
-    (asset?.asset_repair_status === 'regenerated' && asset?.replaced_by_meshy_asset_id)
-  );
-}
-
-function isRenderAssetUrl(url: string): boolean {
-  return typeof url === 'string' && url.includes('/render-asset/') && /\.glb(?:\?|$|\/?$)/i.test(url);
-}
-
-function pickPlayerGlbUrl(asset: any): string {
-  const candidates = [
-    asset?.animated_render_url,
-    asset?.render_url,
-    asset?.model_urls?.glb,
-    asset?.glb_url,
-    asset?.file_url,
-  ];
-  const url = candidates.find((candidate) => isRenderAssetUrl(String(candidate || '')));
-  return url ? String(url) : '';
 }
 
 /**

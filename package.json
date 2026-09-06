@@ -13,7 +13,7 @@
     "deploy:preview:manav": "firebase use learnxr-evoneuralai && firebase hosting:channel:deploy manav",
     "deploy:preview:lexrn1": "bash firebase-build.sh deploy preview",
     "deploy:production:lexrn1": "bash firebase-build.sh deploy live",
-    "test": "node --test tests/firebaseHostingCache.test.mjs && tsx --test tests/krpanoAssetScale.test.mts tests/sceneAssetPlacement.test.mts tests/modelTools.test.mts",
+    "test": "node --test tests/firebaseHostingCache.test.mjs && tsx --test tests/krpanoAssetScale.test.mts tests/sceneAssetPlacement.test.mts tests/modelTools.test.mts tests/lessonAssets.test.mts",
     "test:rules": "firebase emulators:exec --only firestore \"node --test tests/firestoreRules.test.mjs\""
   },
   "dependencies": {

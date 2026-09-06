@@ -100,6 +100,11 @@ import {
 // seated student and a standing teacher each get a layout that fits them.
 import { layoutForViewer, DEFAULT_EYE_HEIGHT, type ViewerLayout } from '../lib/three/ergonomics';
 import { groundedOffset } from '../lib/three/groundedOffset';
+import {
+  mergeLessonAssets,
+  unresolvedAssetIds,
+  type ResolvedAssetDoc,
+} from '../lib/lesson/mergeLessonAssets';
 import { cameraRotationToHV } from '../lib/classroom/viewSync';
 import { createNarrationController, type NarrationController } from '../lib/lesson/narration';
 // The teacher marker draws real geometry rather than an SVG overlay, so a
@@ -975,92 +980,38 @@ const XRLessonPlayerV3: React.FC = () => {
       if (!lessonData) return;
 
       /*
-        Every source is merged, not just the first that yields anything.
+        Every source the lesson describes its models in, merged into one list
+        with each model appearing exactly once.
 
-        This used to return after whichever source matched first, so a lesson
-        with one bundled asset would never look at topic.asset_urls or the
-        Firestore ids — and any model listed only there was silently absent from
-        the scene. Merging and de-duplicating means an asset shows up if ANY
-        source knows about it.
+        Identity is the asset id, not the URL. The bundle and the topic's ids
+        point at the SAME Firestore documents, and the bundle has normalised
+        their URLs while a raw re-read has not — de-duplicating on the URL let
+        one asset through twice, which is why the same model appeared several
+        times in the scene with only one of them answering the teacher's
+        controls. See mergeLessonAssets for the full reasoning.
       */
-      const byUrl = new Map<string, MeshyAsset>();
-      const add = (asset: MeshyAsset) => {
-        if (!asset.glbUrl || byUrl.has(asset.glbUrl)) return;
-        byUrl.set(asset.glbUrl, asset);
-      };
-
-      // Source 1: assets carried on the lesson bundle.
-      const bundleAssets = (lessonData as any).assets3d;
-      if (Array.isArray(bundleAssets)) {
-        for (const asset of bundleAssets) {
-          add({
-            id: asset.id || '',
-            glbUrl:
-              asset.animated_render_url ||
-              asset.animated_glb_url ||
-              asset.render_url ||
-              asset.model_urls?.glb ||
-              asset.glb_url ||
-              asset.stored_glb_url ||
-              '',
-            name: asset.name || asset.prompt || 'Asset',
-            thumbnailUrl: asset.thumbnail_url || asset.thumbnailUrl || '',
-          });
-        }
-      }
-
-      // Source 2: raw URLs on the topic.
-      const assetUrls = lessonData.topic?.asset_urls;
-      if (Array.isArray(assetUrls)) {
-        assetUrls.forEach((url: string, index: number) => {
-          add({ id: `asset_url_${index}`, glbUrl: url, name: `Asset ${index + 1}` });
-        });
-      }
-
-      // Source 3: an image-to-3D conversion attached to the lesson.
-      const img3d = (lessonData as any).image3dasset;
-      if (img3d) {
-        add({
-          id: img3d.imageasset_id || 'image3d_asset',
-          glbUrl: img3d.imagemodel_glb || img3d.imageasset_url || '',
-          name: 'Image 3D Asset',
-        });
-      }
-
-      // Source 4: ids on the topic or chapter, resolved from Firestore. This is
-      // where a manually uploaded model arrives once it is linked to the topic.
-      const meshyIds: string[] = [
-        ...(lessonData.topic?.meshy_asset_ids || []),
-        ...(lessonData.chapter?.meshy_asset_ids || []),
-      ];
-      const unique = Array.from(new Set(meshyIds.filter(Boolean)));
-      if (unique.length > 0) {
-        addDebug(`Resolving ${unique.length} 3D asset id(s) from Firestore...`);
-        for (const assetId of unique) {
+      const pending = unresolvedAssetIds(lessonData);
+      const resolvedDocs: ResolvedAssetDoc[] = [];
+      if (pending.length > 0) {
+        addDebug(`Resolving ${pending.length} 3D asset id(s) from Firestore...`);
+        for (const assetId of pending) {
           try {
             const assetDoc = await getDoc(doc(db, 'meshy_assets', assetId));
-            if (!assetDoc.exists()) continue;
-            const data = assetDoc.data();
-            add({
-              id: assetId,
-              glbUrl:
-                data.animated_render_url ||
-                data.animated_glb_url ||
-                data.render_url ||
-                data.model_urls?.glb ||
-                data.stored_glb_url ||
-                data.glb_url ||
-                '',
-              name: data.name || data.prompt || 'Asset',
-              thumbnailUrl: data.thumbnail_url || data.thumbnailUrl,
-            });
+            if (assetDoc.exists()) resolvedDocs.push({ id: assetId, data: assetDoc.data() });
           } catch (err) {
             addDebug(`3D Asset error for ${assetId}: ${err}`);
           }
         }
       }
 
-      const merged = Array.from(byUrl.values());
+      const merged = mergeLessonAssets({
+        bundleAssets: (lessonData as any).assets3d,
+        assetUrls: lessonData.topic?.asset_urls,
+        assetIds: (lessonData.topic as any)?.asset_ids,
+        image3d: (lessonData as any).image3dasset,
+        resolvedDocs,
+      });
+
       setMeshyAssets(merged);
       addDebug(`Loaded ${merged.length} 3D asset(s) from all sources`);
     };
@@ -2804,9 +2755,28 @@ const XRLessonPlayerV3: React.FC = () => {
       
       // Reset loaded count
       setAssetsLoaded(0);
+      // Fresh groups are about to be built, so the id -> group map starts empty.
+      // Stated here rather than relying on the effect cleanup, because the
+      // duplicate guard below is only meaningful if this holds.
+      assetRefs.current.clear();
       
       for (let i = 0; i < meshyAssets.length; i++) {
         const asset = meshyAssets[i];
+
+        /*
+          One group per asset id, always.
+
+          assetRefs is keyed by id, so a second group for the same id overwrites
+          the first here and becomes invisible to the model tools — on screen,
+          but deaf to Explode, Isolate and Section. mergeLessonAssets should
+          never hand us a duplicate; this makes sure that a bug upstream costs
+          us a missing copy rather than an uncontrollable one.
+        */
+        if (assetRefs.current.has(asset.id)) {
+          console.warn(`[XRLessonPlayerV3] Skipping duplicate asset id: ${asset.id}`);
+          addDebug(`⚠️ Skipped duplicate asset id: ${asset.id}`);
+          continue;
+        }
         
         try {
           console.log(`[XRLessonPlayerV3] Loading asset ${i + 1}/${meshyAssets.length}:`, {
