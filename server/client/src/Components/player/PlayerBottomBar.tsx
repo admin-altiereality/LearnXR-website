@@ -62,6 +62,12 @@ interface PlayerBottomBarProps {
    * topics.
    */
   nextTopicName?: string | null;
+  /**
+   * True when the chapter has more than one topic. Distinguishes "there is no
+   * next topic because this is the last one" from "there is no sequence here at
+   * all" — the first deserves a disabled control, the second nothing.
+   */
+  chapterHasSequence?: boolean;
   /** How many students have finished the quiz, out of how many are in the class. */
   quizProgress?: { done: number; total: number };
   onAdvanceTopic?: () => void;
@@ -90,7 +96,7 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
     classStarted = false, studentUiVisible = true, onToggleStudentUi,
     markerActive = false, markerColor = '#ffdd33',
     onToggleMarker, onMarkerColorChange,
-    nextTopicName = null, quizProgress, onAdvanceTopic,
+    nextTopicName = null, chapterHasSequence = false, quizProgress, onAdvanceTopic,
     modelPartCount = 0, modelExplode = 0, onModelExplodeChange,
     modelAssets = [], modelSelectedAssetKey = null, onModelSelectAsset,
     modelIsolated = false, modelSelectedPartName = null, onToggleModelIsolate,
@@ -462,17 +468,30 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
         them. Students still answering are carried forward with their answers
         kept, so advancing early costs nobody their work.
       */}
-      {isHost && nextTopicName && (
+      {isHost && chapterHasSequence && (
         <>
           <div className="mx-1 hidden h-6 w-px shrink-0 bg-white/10 sm:block" />
           <button
             type="button"
             onClick={() => onAdvanceTopic?.()}
-            title={`Move the class on to "${nextTopicName}" without leaving immersive mode`}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300/50 bg-emerald-400/20 px-2.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/30"
+            disabled={!nextTopicName}
+            title={
+              nextTopicName
+                ? `Move the class on to "${nextTopicName}" without leaving immersive mode`
+                : 'This is the last topic in the chapter'
+            }
+            className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+              nextTopicName
+                ? 'border-emerald-300/50 bg-emerald-400/20 text-emerald-50 hover:bg-emerald-400/30'
+                : 'border-white/12 bg-white/[0.06] text-white/70'
+            }`}
           >
             <SkipForward className="h-3.5 w-3.5 shrink-0" />
-            {!compact && <span className="max-w-[8rem] truncate">Next: {nextTopicName}</span>}
+            {!compact && (
+              <span className="max-w-[8rem] truncate">
+                {nextTopicName ? `Next: ${nextTopicName}` : 'Last topic'}
+              </span>
+            )}
             {quizProgress && quizProgress.total > 0 && (
               <span
                 className={`rounded px-1 tabular-nums ${

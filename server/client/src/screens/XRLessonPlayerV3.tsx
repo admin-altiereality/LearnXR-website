@@ -128,6 +128,7 @@ import type {
   AnnotationModelMark,
   AnnotationPoint,
   AnnotationStroke,
+  LaunchedLesson,
   SessionLessonPhase,
   TeacherAnnotations,
   TeacherContentState,
@@ -4381,27 +4382,40 @@ const XRLessonPlayerV3: React.FC = () => {
   useEffect(() => {
     if (!classroom.isClassHost || !chapterIdForSequence) {
       setChapterTopics([]);
+      // Absence of the control is a decision, so record which one it was.
+      addDebug(
+        !classroom.isClassHost
+          ? 'Not hosting a live class — no next-topic control'
+          : 'Lesson has no chapter id — no next-topic control'
+      );
       return;
     }
     let cancelled = false;
     (async () => {
       try {
         const chapter = await fetchChapterById(chapterIdForSequence, lessonLanguage as any);
-        if (cancelled || !chapter) return;
-        setChapterTopics(
-          (chapter.topics ?? []).map((t: any) => ({
+        if (cancelled) return;
+        if (!chapter) {
+          addDebug(`No chapter found for ${chapterIdForSequence}; cannot offer the next topic`);
+          return;
+        }
+        const topics = (chapter.topics ?? [])
+          .map((t: any) => ({
             id: String(t.topicId ?? t.topic_id ?? ''),
             name: String(t.topicName ?? t.topic_name ?? 'Untitled topic'),
-          })).filter((t) => t.id)
-        );
+          }))
+          .filter((t) => t.id);
+        setChapterTopics(topics);
+        addDebug(`Chapter running order: ${topics.length} topic(s)`);
       } catch (err) {
         console.error('[XRLessonPlayerV3] Could not read the chapter running order:', err);
+        addDebug(`Could not read the chapter running order: ${err}`);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [classroom.isClassHost, chapterIdForSequence, lessonLanguage]);
+  }, [classroom.isClassHost, chapterIdForSequence, lessonLanguage, addDebug]);
 
   /**
    * How the class is doing on the current quiz.
@@ -4439,20 +4453,27 @@ const XRLessonPlayerV3: React.FC = () => {
     if (!sessionId || !nextTopic || !chapter?.chapter_id || !user?.uid) return false;
 
     addDebug(`Launching the next topic: ${nextTopic.name}`);
-    return launchLesson(sessionId, user.uid, {
+    // Exactly the fields LaunchedLesson defines. Extras were being sent behind an
+    // `as any`, which is the sort of thing that passes a build and then fails a
+    // Firestore rule in front of a class.
+    const payload: LaunchedLesson = {
       chapter_id: String(chapter.chapter_id),
       topic_id: nextTopic.id,
-      topic_name: nextTopic.name,
-      chapter_name: chapter.chapter_name ?? '',
       curriculum: chapter.curriculum ?? '',
       class_name: String(chapter.class_name ?? ''),
       subject: chapter.subject ?? '',
       lesson_type: 'curriculum',
       lang: lessonLanguage,
+      title: nextTopic.name,
       // Keep the class in the player it is already sitting in.
       player: 'xr_v3',
-      launched_at: new Date().toISOString(),
-    } as any);
+    };
+    const ok = await launchLesson(sessionId, user.uid, payload);
+    if (!ok) {
+      addDebug('The next topic could not be launched.');
+      toast.error('Could not launch the next topic.');
+    }
+    return ok;
   }, [classroom.hostSessionId, lessonData, nextTopic, user?.uid, lessonLanguage, addDebug]);
 
   const annotationSessionId = classroom.hostSessionId;
@@ -5671,6 +5692,7 @@ const XRLessonPlayerV3: React.FC = () => {
               onOpenRoster={() => setHostDrawer((d) => (d === 'roster' ? null : 'roster'))}
               raisedHands={classroom.raisedHandCount}
               nextTopicName={nextTopic?.name ?? null}
+              chapterHasSequence={chapterTopics.length > 1}
               quizProgress={quizProgress}
               onAdvanceTopic={() => void advanceToNextTopic()}
               modelPartCount={modelPartCount}
