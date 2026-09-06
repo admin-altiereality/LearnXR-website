@@ -244,8 +244,27 @@ export const ClassLaunchRouter = () => {
             cleanTopic as unknown as LessonTopic
           );
         }
+        /*
+          Navigate only if the student is not already in the player.
+
+          A chapter is several topics, and every launch used to navigate.
+          Navigating to the route you are already on still remounts the player,
+          which disposes the renderer and ends the WebXR session — so a class
+          working through a chapter was thrown out of their headsets between
+          every topic.
+
+          The lesson data is in sessionStorage either way; a running player
+          watches `launched_lesson.launch_id` and swaps its content in place. The
+          navigation is only needed to GET to the player, so it happens only when
+          the student is somewhere else.
+        */
+        const route = resolvePlayerRoute(launched);
+        if (window.location.pathname === route) {
+          // Already there. The player takes it from here.
+          return;
+        }
         // Small delay so third-party iframes (Firebase Auth) settle first.
-        setTimeout(() => navigate(resolvePlayerRoute(launched)), 200);
+        setTimeout(() => navigate(route), 200);
       } catch (err) {
         console.error('ClassLaunchRouter: failed to open launched lesson:', err);
         inFlightRef.current = null;

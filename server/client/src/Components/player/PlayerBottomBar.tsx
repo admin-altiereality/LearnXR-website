@@ -10,9 +10,7 @@
  */
 
 import { useState } from 'react';
-import {
-  Play, Pause, RotateCcw, ChevronRight, Radio, Zap, Users, Target, MoreHorizontal, Eye, EyeOff,
-} from 'lucide-react';
+import { Play, Pause, RotateCcw, ChevronRight, Radio, Zap, Users, Target, MoreHorizontal, Eye, EyeOff, SkipForward } from 'lucide-react';
 import { MarkerToolbar } from './MarkerToolbar';
 import { ModelToolbar, type ClipAxis, type ToolbarAsset } from './ModelToolbar';
 
@@ -58,6 +56,15 @@ interface PlayerBottomBarProps {
   onMarkerColorChange?: (c: string) => void;
 
   // 3D model (host). Absent/0 partCount hides the toolbar entirely.
+  /**
+   * The next topic in the chapter, when there is one. Present only for a host.
+   * Advancing keeps the class in immersive mode — nobody re-enters VR between
+   * topics.
+   */
+  nextTopicName?: string | null;
+  /** How many students have finished the quiz, out of how many are in the class. */
+  quizProgress?: { done: number; total: number };
+  onAdvanceTopic?: () => void;
   modelPartCount?: number;
   /** The scene's 3D assets, so the teacher can pick which one to manipulate. */
   modelAssets?: ToolbarAsset[];
@@ -83,6 +90,7 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
     classStarted = false, studentUiVisible = true, onToggleStudentUi,
     markerActive = false, markerColor = '#ffdd33',
     onToggleMarker, onMarkerColorChange,
+    nextTopicName = null, quizProgress, onAdvanceTopic,
     modelPartCount = 0, modelExplode = 0, onModelExplodeChange,
     modelAssets = [], modelSelectedAssetKey = null, onModelSelectAsset,
     modelIsolated = false, modelSelectedPartName = null, onToggleModelIsolate,
@@ -442,6 +450,42 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
           <div className="hidden items-center overflow-x-auto [scrollbar-width:none] sm:flex [&::-webkit-scrollbar]:hidden">
             {model}
           </div>
+        </>
+      )}
+
+      {/*
+        Move the class on to the next topic.
+
+        Never disabled by the count. The teacher can see who has finished and
+        decides when to move — a class waits for a slow reader or leaves a
+        distracted one behind, and that is a judgement no rule should make for
+        them. Students still answering are carried forward with their answers
+        kept, so advancing early costs nobody their work.
+      */}
+      {isHost && nextTopicName && (
+        <>
+          <div className="mx-1 hidden h-6 w-px shrink-0 bg-white/10 sm:block" />
+          <button
+            type="button"
+            onClick={() => onAdvanceTopic?.()}
+            title={`Move the class on to "${nextTopicName}" without leaving immersive mode`}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300/50 bg-emerald-400/20 px-2.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-400/30"
+          >
+            <SkipForward className="h-3.5 w-3.5 shrink-0" />
+            {!compact && <span className="max-w-[8rem] truncate">Next: {nextTopicName}</span>}
+            {quizProgress && quizProgress.total > 0 && (
+              <span
+                className={`rounded px-1 tabular-nums ${
+                  quizProgress.done >= quizProgress.total
+                    ? 'bg-emerald-300/30'
+                    : 'bg-white/15 text-white/80'
+                }`}
+                title={`${quizProgress.done} of ${quizProgress.total} students have finished the quiz`}
+              >
+                {quizProgress.done}/{quizProgress.total}
+              </span>
+            )}
+          </button>
         </>
       )}
 

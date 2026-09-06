@@ -129,7 +129,14 @@ export async function saveQuizScore(
    * more than one class, and a mismatched class_id also breaks the teacher's read
    * (firestore.rules requires the teacher to manage resource.data.class_id).
    */
-  classId?: string | null
+  classId?: string | null,
+  /**
+   * How many questions the student answered, when that is fewer than were
+   * asked. Passed only when a teacher advances the class mid-quiz: the answers
+   * given are kept, and the record says plainly that the rest were never seen.
+   * Omit for a quiz worked through to the end.
+   */
+  questionsAttempted?: number
 ): Promise<string | null> {
   if (!profile) return null;
   if (profile.role !== 'student') return null;
@@ -161,14 +168,23 @@ export async function saveQuizScore(
       time_taken_seconds: timeTakenSeconds,
       ...(topicObjective != null && topicObjective !== '' ? { topic_objective: topicObjective } : {}),
       ...(platform ? { platform } : {}),
+      // A cut-short attempt is recorded as such. Without this a student who
+      // answered four of ten correctly before the class moved on is
+      // indistinguishable in every report from one who got four out of ten.
+      questions_attempted: questionsAttempted ?? score.total,
+      completed: questionsAttempted === undefined || questionsAttempted >= score.total,
     };
 
     await setDoc(scoreRef, scoreData, { merge: true });
     console.log('✅ Quiz score saved:', scoreId);
 
-    // Update lesson launch if provided
+    // Update lesson launch if provided. An attempt the class moved on from is
+    // abandoned, not completed — the student never reached the end.
     if (launchId) {
-      await updateLessonLaunch(launchId, 'completed');
+      await updateLessonLaunch(
+        launchId,
+        scoreData.completed ? 'completed' : 'abandoned'
+      );
     }
 
     return scoreId;

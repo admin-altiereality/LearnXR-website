@@ -320,6 +320,25 @@ export function LiveClassHostOverlay({
                             {student.signal === 'help' ? ' · needs help' : ''}
                             {student.signal === 'too_fast' ? ' · too fast' : ''}
                           </p>
+                          {/*
+                            The quiz result, shown as soon as there is one.
+
+                            This is what the teacher reads before moving the
+                            class on: advancing carries unfinished students
+                            forward with the answers they have given, so knowing
+                            who is still working is the difference between a
+                            considered decision and an accidental one.
+                          */}
+                          {typeof student.quiz_total === 'number' && student.quiz_total > 0 && (
+                            <p
+                              className={`text-[10px] font-semibold tabular-nums ${
+                                student.phase === 'completed' ? 'text-emerald-300/85' : 'text-amber-300/85'
+                              }`}
+                            >
+                              Quiz {student.quiz_score ?? 0}/{student.quiz_total}
+                              {student.phase === 'completed' ? '' : ' · still answering'}
+                            </p>
+                          )}
                         </button>
                         <button
                           type="button"

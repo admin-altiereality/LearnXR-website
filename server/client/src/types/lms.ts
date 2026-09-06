@@ -99,6 +99,18 @@ export interface StudentScore {
   time_taken_seconds?: number;
   /** Learning objective text for this topic (optional, for evaluation) */
   topic_objective?: string;
+  /**
+   * How many questions the student actually answered.
+   *
+   * Equal to `score.total` for a quiz worked through to the end. Lower when the
+   * teacher advanced the class while the student was still answering — their
+   * work is kept rather than discarded, but 4 correct out of 10 ANSWERED is not
+   * the same result as 4 out of 10 asked, and a report that cannot tell them
+   * apart understates the student.
+   */
+  questions_attempted?: number;
+  /** False when the attempt was cut short by the class moving on. */
+  completed?: boolean;
 }
 
 /**

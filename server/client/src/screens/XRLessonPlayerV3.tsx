@@ -100,6 +100,11 @@ import {
 // seated student and a standing teacher each get a layout that fits them.
 import { layoutForViewer, DEFAULT_EYE_HEIGHT, type ViewerLayout } from '../lib/three/ergonomics';
 import { groundedOffset } from '../lib/three/groundedOffset';
+// Releasing one topic's content so the next can replace it without the renderer,
+// and therefore without the XR session, being torn down.
+import { disposeLessonContent } from '../lib/lesson/lessonSwap';
+import { fetchChapterById } from '../lib/firebase/queries/curriculumChapters';
+import { launchLesson } from '../services/classSessionService';
 import {
   mergeLessonAssets,
   unresolvedAssetIds,
@@ -1066,14 +1071,10 @@ const XRLessonPlayerV3: React.FC = () => {
   
   useEffect(() => {
     try {
-      addDebug(`Scene init check: container=${!!containerRef.current}, skyboxUrl=${!!skyboxUrl}, vrSupport=${isVRSupported}`);
+      addDebug(`Scene init check: container=${!!containerRef.current}, vrSupport=${isVRSupported}`);
       
       if (!containerRef.current) {
         addDebug('Waiting for container ref...');
-        return;
-      }
-      if (!skyboxUrl) {
-        addDebug('Waiting for skybox URL...');
         return;
       }
       if (isVRSupported === null) {
@@ -2100,136 +2101,6 @@ const XRLessonPlayerV3: React.FC = () => {
     controller1.addEventListener('selectend', () => handleControllerRelease(controller1));
     controller2.addEventListener('selectend', () => handleControllerRelease(controller2));
     
-    // Load skybox inline (to avoid useCallback dependency issues)
-    const imageFallback = fallbackImageUrl || lessonData?.topic?.skybox_url || null;
-    
-    (async () => {
-      try {
-        const urlStr = String(skyboxUrl || '');
-        const fallbackStr = imageFallback ? String(imageFallback) : null;
-        
-        console.log('[XRLessonPlayerV3] Loading skybox:', urlStr.substring(0, 60));
-        setLoadingMessage('Loading 360° environment...');
-        
-        // Setup loaders
-        const gltfLoader = new GLTFLoader();
-        const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
-        gltfLoader.setDRACOLoader(dracoLoader);
-        
-        // Helper to load as equirectangular image
-        const loadAsImage = async (imageUrl: string): Promise<void> => {
-          console.log('[XRLessonPlayerV3] Loading as image:', imageUrl.substring(0, 60));
-          const textureLoader = new THREE.TextureLoader();
-          
-          // Add crossOrigin for external images
-          textureLoader.crossOrigin = 'anonymous';
-          
-          const texture = await new Promise<THREE.Texture>((resolve, reject) => {
-            textureLoader.load(
-              imageUrl, 
-              (tex) => {
-                console.log('[XRLessonPlayerV3] Texture loaded:', tex.image?.width, 'x', tex.image?.height);
-                resolve(tex);
-              }, 
-              undefined, 
-              (err) => {
-                console.error('[XRLessonPlayerV3] Texture load error:', err);
-                reject(err);
-              }
-            );
-          });
-          
-          // Configure texture for equirectangular mapping
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          
-          // Create a large sphere (500 units radius) - camera is at center
-          // Use FrontSide since we're INSIDE the sphere looking OUT
-          // Flip UV coordinates by scaling geometry negatively on X
-          const geometry = new THREE.SphereGeometry(500, 64, 32);
-          geometry.scale(-1, 1, 1); // Flip to see texture from inside
-          
-          const material = new THREE.MeshBasicMaterial({
-            map: texture,
-            side: THREE.FrontSide, // We flipped geometry, so use FrontSide
-          });
-          
-          const skyboxMesh = new THREE.Mesh(geometry, material);
-          skyboxMesh.name = 'skybox';
-          skyboxMesh.position.set(0, 0, 0); // Center at origin
-          if (sceneRef.current) {
-            sceneRef.current.add(skyboxMesh);
-            console.log('[XRLessonPlayerV3] ✅ Image skybox added, children:', sceneRef.current.children.length);
-            setLoadingState('ready');
-          }
-        };
-        
-        // Check if URL looks like GLB
-        const urlLower = urlStr.toLowerCase();
-        const looksLikeGLB = urlLower.includes('.glb') || urlLower.includes('.gltf');
-        
-        if (looksLikeGLB) {
-          try {
-            console.log('[XRLessonPlayerV3] Attempting GLB load...');
-            const gltf = await new Promise<any>((resolve, reject) => {
-              gltfLoader.load(urlStr, resolve, (p) => {
-                const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
-                setLoadingMessage(`Loading skybox: ${pct}%`);
-              }, reject);
-            });
-            
-            console.log('[XRLessonPlayerV3] GLB loaded, processing...');
-            
-            const box = new THREE.Box3().setFromObject(gltf.scene);
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = maxDim > 0 ? 200 / maxDim : 1;
-            
-            gltf.scene.scale.setScalar(scale);
-            gltf.scene.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
-            
-            gltf.scene.traverse((child: any) => {
-              if (child instanceof THREE.Mesh && child.material) {
-                const mats = Array.isArray(child.material) ? child.material : [child.material];
-                mats.forEach((mat: any) => {
-                  const tex = mat.map;
-                  if (tex) {
-                    child.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false });
-                    tex.colorSpace = THREE.SRGBColorSpace;
-                  } else {
-                    mat.side = THREE.BackSide;
-                    mat.depthWrite = false;
-                  }
-                });
-              }
-            });
-            
-            gltf.scene.name = 'skybox';
-            gltf.scene.renderOrder = -1000;
-            if (sceneRef.current) {
-              sceneRef.current.add(gltf.scene);
-              console.log('[XRLessonPlayerV3] ✅ GLB skybox added');
-              setLoadingState('ready');
-            }
-            
-          } catch (glbErr: any) {
-            console.warn('[XRLessonPlayerV3] GLB failed:', glbErr?.message);
-            const imageToLoad = fallbackStr || urlStr;
-            await loadAsImage(imageToLoad);
-          }
-        } else {
-          await loadAsImage(urlStr);
-        }
-        
-      } catch (err: any) {
-        console.error('[XRLessonPlayerV3] Skybox load error:', err);
-        setErrorMessage(`Failed to load skybox: ${err?.message || 'Unknown error'}`);
-        setLoadingState('error');
-      }
-    })();
     
     // Drag-to-look. Without this the camera is immovable on a flat screen, and
     // view sync has nothing to read from or write to.
@@ -2584,7 +2455,179 @@ const XRLessonPlayerV3: React.FC = () => {
       setLoadingState('error');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skyboxUrl, isVRSupported, fallbackImageUrl, addDebug]);
+  // Content is loaded by its own effects, so nothing here depends on which
+  // lesson is running: the renderer, camera, lights, controllers and hands are
+  // built once and live for as long as the player is mounted.
+  }, [isVRSupported, addDebug]);
+
+  // ============================================================================
+  // Skybox
+  //
+  // Deliberately NOT part of scene setup.
+  //
+  // The scene effect creates the WebGLRenderer, and it used to carry `skyboxUrl`
+  // in its dependency array — so changing the environment disposed the renderer
+  // and rebuilt it. That ends any running WebXR session, which means the one
+  // thing that should be able to change mid-lesson was also the thing that threw
+  // every student out of their headset. Separated so the environment can be
+  // swapped while the session, the camera rig and the hands all keep running.
+  // ============================================================================
+
+  useEffect(() => {
+    if (!isSceneReady || !sceneRef.current || !skyboxUrl) return;
+
+    // Out with the old, explicitly. A skybox is a 500-unit sphere carrying a
+    // full-resolution equirectangular texture; leaving the previous one to the
+    // garbage collector is how a headset runs out of memory partway through a
+    // chapter.
+    const previous = sceneRef.current.getObjectByName('skybox');
+    if (previous) {
+      sceneRef.current.remove(previous);
+      previous.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.geometry?.dispose();
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        for (const material of materials) {
+          if (!material) continue;
+          (material as any).map?.dispose?.();
+          material.dispose();
+        }
+      });
+    }
+
+    // Load skybox inline (to avoid useCallback dependency issues)
+    const imageFallback = fallbackImageUrl || lessonData?.topic?.skybox_url || null;
+    
+    (async () => {
+      try {
+        const urlStr = String(skyboxUrl || '');
+        const fallbackStr = imageFallback ? String(imageFallback) : null;
+        
+        console.log('[XRLessonPlayerV3] Loading skybox:', urlStr.substring(0, 60));
+        setLoadingMessage('Loading 360° environment...');
+        
+        // Setup loaders
+        const gltfLoader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
+        gltfLoader.setDRACOLoader(dracoLoader);
+        
+        // Helper to load as equirectangular image
+        const loadAsImage = async (imageUrl: string): Promise<void> => {
+          console.log('[XRLessonPlayerV3] Loading as image:', imageUrl.substring(0, 60));
+          const textureLoader = new THREE.TextureLoader();
+          
+          // Add crossOrigin for external images
+          textureLoader.crossOrigin = 'anonymous';
+          
+          const texture = await new Promise<THREE.Texture>((resolve, reject) => {
+            textureLoader.load(
+              imageUrl, 
+              (tex) => {
+                console.log('[XRLessonPlayerV3] Texture loaded:', tex.image?.width, 'x', tex.image?.height);
+                resolve(tex);
+              }, 
+              undefined, 
+              (err) => {
+                console.error('[XRLessonPlayerV3] Texture load error:', err);
+                reject(err);
+              }
+            );
+          });
+          
+          // Configure texture for equirectangular mapping
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          
+          // Create a large sphere (500 units radius) - camera is at center
+          // Use FrontSide since we're INSIDE the sphere looking OUT
+          // Flip UV coordinates by scaling geometry negatively on X
+          const geometry = new THREE.SphereGeometry(500, 64, 32);
+          geometry.scale(-1, 1, 1); // Flip to see texture from inside
+          
+          const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.FrontSide, // We flipped geometry, so use FrontSide
+          });
+          
+          const skyboxMesh = new THREE.Mesh(geometry, material);
+          skyboxMesh.name = 'skybox';
+          skyboxMesh.position.set(0, 0, 0); // Center at origin
+          if (sceneRef.current) {
+            sceneRef.current.add(skyboxMesh);
+            console.log('[XRLessonPlayerV3] ✅ Image skybox added, children:', sceneRef.current.children.length);
+            setLoadingState('ready');
+          }
+        };
+        
+        // Check if URL looks like GLB
+        const urlLower = urlStr.toLowerCase();
+        const looksLikeGLB = urlLower.includes('.glb') || urlLower.includes('.gltf');
+        
+        if (looksLikeGLB) {
+          try {
+            console.log('[XRLessonPlayerV3] Attempting GLB load...');
+            const gltf = await new Promise<any>((resolve, reject) => {
+              gltfLoader.load(urlStr, resolve, (p) => {
+                const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
+                setLoadingMessage(`Loading skybox: ${pct}%`);
+              }, reject);
+            });
+            
+            console.log('[XRLessonPlayerV3] GLB loaded, processing...');
+            
+            const box = new THREE.Box3().setFromObject(gltf.scene);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scale = maxDim > 0 ? 200 / maxDim : 1;
+            
+            gltf.scene.scale.setScalar(scale);
+            gltf.scene.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+            
+            gltf.scene.traverse((child: any) => {
+              if (child instanceof THREE.Mesh && child.material) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach((mat: any) => {
+                  const tex = mat.map;
+                  if (tex) {
+                    child.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, depthWrite: false });
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                  } else {
+                    mat.side = THREE.BackSide;
+                    mat.depthWrite = false;
+                  }
+                });
+              }
+            });
+            
+            gltf.scene.name = 'skybox';
+            gltf.scene.renderOrder = -1000;
+            if (sceneRef.current) {
+              sceneRef.current.add(gltf.scene);
+              console.log('[XRLessonPlayerV3] ✅ GLB skybox added');
+              setLoadingState('ready');
+            }
+            
+          } catch (glbErr: any) {
+            console.warn('[XRLessonPlayerV3] GLB failed:', glbErr?.message);
+            const imageToLoad = fallbackStr || urlStr;
+            await loadAsImage(imageToLoad);
+          }
+        } else {
+          await loadAsImage(urlStr);
+        }
+        
+      } catch (err: any) {
+        console.error('[XRLessonPlayerV3] Skybox load error:', err);
+        setErrorMessage(`Failed to load skybox: ${err?.message || 'Unknown error'}`);
+        setLoadingState('error');
+      }
+    })();
+  }, [skyboxUrl, fallbackImageUrl, isSceneReady, lessonData?.topic?.skybox_url, addDebug]);
+
   
   // ============================================================================
   // Load 3D Assets into Scene
@@ -4218,6 +4261,200 @@ const XRLessonPlayerV3: React.FC = () => {
     setModelSelectedPartName(teacherModelState.selected_part_name ?? null);
   }, [classroom.isClassHost, teacherModelState, modelSceneKey]);
 
+  /*
+    Swapping topics without leaving immersive mode.
+
+    A chapter is several topics, and launching one used to navigate — which
+    remounts the player, disposes the renderer and ends the WebXR session. The
+    class left the headset between every topic.
+
+    `launch_id` already changes on every launch and is already what
+    ClassLaunchRouter dedupes on, so it doubles as the swap signal with no new
+    session field. The first value is recorded rather than acted on: that is the
+    lesson already loaded, and swapping to it would reload the topic the student
+    is in the middle of.
+  */
+  const launchedLesson =
+    (classroom.isClassHost ? classroom.activeSession : classroom.joinedSession)?.launched_lesson ??
+    null;
+  const launchSignal = launchedLesson?.launch_id ?? null;
+  const appliedLaunchRef = useRef<string | null>(null);
+  const swappingRef = useRef(false);
+
+  useEffect(() => {
+    if (!launchSignal) return;
+    if (appliedLaunchRef.current === null) {
+      // First sighting: this is the lesson already on screen.
+      appliedLaunchRef.current = launchSignal;
+      return;
+    }
+    if (appliedLaunchRef.current === launchSignal || swappingRef.current) return;
+    appliedLaunchRef.current = launchSignal;
+    swappingRef.current = true;
+
+    (async () => {
+      try {
+        addDebug(`Swapping to a new topic (launch ${launchSignal})...`);
+
+        // The finished topic's result goes to the dashboards BEFORE its state is
+        // cleared. A student mid-quiz is pulled forward with the class, so their
+        // partial answers are submitted here rather than lost — see
+        // submitOutgoingTopic for how an unfinished attempt is marked.
+        await submitOutgoingTopicRef.current();
+
+        const released = disposeLessonContent({
+          scene: sceneRef.current,
+          assetsGroup: assetsGroupRef.current,
+          assetRefs: assetRefs.current,
+          mixers: animationMixersRef.current,
+          modelTools: modelToolsRef.current,
+          inkLayer: inkLayerRef.current,
+          narration: narrationRef.current,
+        });
+        modelToolsRef.current = null;
+        addDebug(`Released ${released} asset group(s) from the previous topic`);
+
+        // Back to the state a freshly opened lesson starts in. Anything left
+        // behind here shows up as the previous topic bleeding into the next one.
+        setMeshyAssets([]);
+        setModelAssets([]);
+        setModelSelectedAssetKey(null);
+        setModelSelectedPartId(null);
+        setModelSelectedPartName(null);
+        setModelPartCount(0);
+        setModelExplode(0);
+        setModelIsolated(false);
+        setModelClip(null);
+        setAssetsLoaded(0);
+        setMcqData([]);
+        setTtsData([]);
+        setCurrentMcqIndex(0);
+        setCurrentTtsIndex(0);
+        setSelectedMcqOption(null);
+        setMcqAnswered(false);
+        setMcqScore(0);
+        mcqAnswerHistoryRef.current = [];
+        setLessonPhase('idle');
+        setLessonStarted(false);
+        setSkyboxUrl(null);
+        setLoadingState('loading');
+        setLoadingMessage('Loading the next topic...');
+
+        // A new sitting: a new lesson_launches record and a new clock.
+        launchIdRef.current = null;
+        lessonStartTimeRef.current = null;
+
+        // ClassLaunchRouter has already written the new bundle here. Re-reading
+        // is what makes the existing skybox / asset / MCQ effects run again.
+        const stored = sessionStorage.getItem('activeLesson');
+        if (!stored) {
+          addDebug('No lesson data for the new topic');
+          setErrorMessage('The next topic could not be loaded.');
+          setLoadingState('error');
+          return;
+        }
+        setLessonData(JSON.parse(stored));
+        // Assets are gated on this flag; the previous topic left it set.
+        assetLoadingAttemptedRef.current = false;
+      } catch (err: any) {
+        console.error('[XRLessonPlayerV3] Topic swap failed:', err);
+        addDebug(`Topic swap failed: ${err?.message || err}`);
+      } finally {
+        swappingRef.current = false;
+      }
+    })();
+  }, [launchSignal, addDebug]);
+
+  /*
+    Teaching a chapter, not a topic.
+
+    The lesson payload in sessionStorage carries the one topic being taught, so
+    the chapter's running order has to be read separately. Host only: a student
+    has no use for it and no reason to spend the read.
+  */
+  const [chapterTopics, setChapterTopics] = useState<Array<{ id: string; name: string }>>([]);
+  const chapterIdForSequence = (lessonData as any)?.chapter?.chapter_id ?? '';
+  /** Language the lesson is being taught in; the next topic inherits it. */
+  const lessonLanguage: string =
+    (lessonData as any)?.topic?.language || (lessonData as any)?.language || 'en';
+
+  useEffect(() => {
+    if (!classroom.isClassHost || !chapterIdForSequence) {
+      setChapterTopics([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const chapter = await fetchChapterById(chapterIdForSequence, lessonLanguage as any);
+        if (cancelled || !chapter) return;
+        setChapterTopics(
+          (chapter.topics ?? []).map((t: any) => ({
+            id: String(t.topicId ?? t.topic_id ?? ''),
+            name: String(t.topicName ?? t.topic_name ?? 'Untitled topic'),
+          })).filter((t) => t.id)
+        );
+      } catch (err) {
+        console.error('[XRLessonPlayerV3] Could not read the chapter running order:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classroom.isClassHost, chapterIdForSequence, lessonLanguage]);
+
+  /**
+   * How the class is doing on the current quiz.
+   *
+   * The teacher decides when to move on, so this is information rather than a
+   * gate: it says who is finished, and the teacher waits or advances as they see
+   * fit. `phase === 'completed'` is the reliable signal — a quiz_total can be
+   * present from a partial hand-in.
+   */
+  const quizProgress = useMemo(() => {
+    const students = classroom.progressList.filter((p) => p?.student_uid && !p.removed);
+    const done = students.filter((p) => p.phase === 'completed').length;
+    return { done, total: students.length };
+  }, [classroom.progressList]);
+
+  /** The topic after the one being taught, or null at the end of the chapter. */
+  const nextTopic = useMemo(() => {
+    const currentId = String((lessonData as any)?.topic?.topic_id ?? '');
+    if (!currentId || chapterTopics.length === 0) return null;
+    const index = chapterTopics.findIndex((t) => t.id === currentId);
+    if (index === -1 || index + 1 >= chapterTopics.length) return null;
+    return chapterTopics[index + 1];
+  }, [chapterTopics, lessonData]);
+
+  /**
+   * Move the class on to the next topic.
+   *
+   * Writes a new `launched_lesson`, which every player in the class — including
+   * this one — is watching. Nobody navigates and nobody leaves the headset; each
+   * player swaps its own content in place.
+   */
+  const advanceToNextTopic = useCallback(async () => {
+    const sessionId = classroom.hostSessionId;
+    const chapter = (lessonData as any)?.chapter;
+    if (!sessionId || !nextTopic || !chapter?.chapter_id || !user?.uid) return false;
+
+    addDebug(`Launching the next topic: ${nextTopic.name}`);
+    return launchLesson(sessionId, user.uid, {
+      chapter_id: String(chapter.chapter_id),
+      topic_id: nextTopic.id,
+      topic_name: nextTopic.name,
+      chapter_name: chapter.chapter_name ?? '',
+      curriculum: chapter.curriculum ?? '',
+      class_name: String(chapter.class_name ?? ''),
+      subject: chapter.subject ?? '',
+      lesson_type: 'curriculum',
+      lang: lessonLanguage,
+      // Keep the class in the player it is already sitting in.
+      player: 'xr_v3',
+      launched_at: new Date().toISOString(),
+    } as any);
+  }, [classroom.hostSessionId, lessonData, nextTopic, user?.uid, lessonLanguage, addDebug]);
+
   const annotationSessionId = classroom.hostSessionId;
 
   const publishStroke = useCallback(
@@ -4814,7 +5051,13 @@ const XRLessonPlayerV3: React.FC = () => {
    * this brings V3 level with it.
    */
   const persistQuizScore = useCallback(
-    async (correct: number, total: number, answers: Record<string, number>) => {
+    async (
+      correct: number,
+      total: number,
+      answers: Record<string, number>,
+      /** Fewer than `total` when the class moved on before the student finished. */
+      attempted?: number
+    ) => {
       if (!user || !profile || total <= 0) return;
       const chapter = (lessonData as any)?.chapter;
       const topic = (lessonData as any)?.topic;
@@ -4862,7 +5105,8 @@ const XRLessonPlayerV3: React.FC = () => {
           'web',
           // Attribute to the class the lesson was actually taught in, not the
           // student's first enrolment.
-          classroomRef.current.classId
+          classroomRef.current.classId,
+          attempted
         );
         if (scoreId) addDebug(`Quiz score saved: ${correct}/${total}`);
       } catch (error) {
@@ -4871,6 +5115,49 @@ const XRLessonPlayerV3: React.FC = () => {
     },
     [user, profile, lessonData, addDebug]
   );
+
+  /**
+   * Hand in whatever the student has done on the topic that is ending.
+   *
+   * Called just before a swap, and the reason a student is never punished for
+   * the class moving on: a finished quiz has already been recorded and is left
+   * alone, an untouched one has nothing to record, and a half-answered one is
+   * submitted with the answers actually given and marked as cut short.
+   */
+  const submitOutgoingTopic = useCallback(async () => {
+    // Already handed in by handleMCQNext when the last question was answered.
+    if (lessonPhase === 'completed') return;
+
+    const history = mcqAnswerHistoryRef.current;
+    const total = mcqData.length;
+    if (history.length === 0 || total === 0) return;
+
+    const correct = history.filter((a) => a.correct).length;
+    const answersByQuestion: Record<string, number> = {};
+    history.forEach((a) => {
+      const id = mcqData[a.questionIndex]?.id ?? String(a.questionIndex);
+      answersByQuestion[id] = a.selectedOptionIndex;
+    });
+
+    // The live class report as well, so the teacher's roster reflects it.
+    pendingQuizReportRef.current = {
+      score: correct,
+      total,
+      answers: history.map((a) => ({
+        question_index: a.questionIndex,
+        correct: a.correct,
+        selected_option_index: a.selectedOptionIndex,
+      })),
+    };
+
+    addDebug(`Handing in a partial attempt: ${correct}/${history.length} of ${total} answered`);
+    await persistQuizScore(correct, total, answersByQuestion, history.length);
+  }, [lessonPhase, mcqData, persistQuizScore, addDebug]);
+
+  const submitOutgoingTopicRef = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    submitOutgoingTopicRef.current = submitOutgoingTopic;
+  }, [submitOutgoingTopic]);
 
   const handleMCQOptionSelect = useCallback((optionIndex: number) => {
     if (mcqAnswered || lessonPhase !== 'quiz' || currentMcqIndex >= mcqData.length) {
@@ -5383,6 +5670,9 @@ const XRLessonPlayerV3: React.FC = () => {
               liveCount={classroom.rosterCounts.joined}
               onOpenRoster={() => setHostDrawer((d) => (d === 'roster' ? null : 'roster'))}
               raisedHands={classroom.raisedHandCount}
+              nextTopicName={nextTopic?.name ?? null}
+              quizProgress={quizProgress}
+              onAdvanceTopic={() => void advanceToNextTopic()}
               modelPartCount={modelPartCount}
               modelAssets={modelAssets}
               modelSelectedAssetKey={modelSelectedAssetKey}
