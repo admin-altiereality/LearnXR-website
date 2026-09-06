@@ -13,6 +13,14 @@ import type { UserProfile } from '../utils/rbac';
 import { toast } from 'react-toastify';
 
 /**
+ * Largest roster a class may have.
+ *
+ * Exported so the UI can show progress against the same number rather than
+ * hard-coding its own and drifting from what the service actually enforces.
+ */
+export const MAX_CLASS_SIZE = 30;
+
+/**
  * Create a new class
  * Access: Teacher (their school), School Administrator (their school), Principal (their school), Admin/Superadmin (all)
  */
@@ -154,6 +162,18 @@ export async function assignStudentToClass(
     const studentDoc = await getDoc(doc(db, 'users', studentId));
     if (!studentDoc.exists()) {
       toast.error('Student not found');
+      return false;
+    }
+
+    // Roster cap. Enforced here rather than at the UI because every assignment
+    // path — single from Class Management, bulk from Teacher Approvals — comes
+    // through this function, and a session can only ever hold enrolled students,
+    // so capping the class caps the class in the headset too.
+    const currentStudentIds: string[] = Array.isArray(classData.student_ids)
+      ? classData.student_ids
+      : [];
+    if (!currentStudentIds.includes(studentId) && currentStudentIds.length >= MAX_CLASS_SIZE) {
+      toast.error(`This class is full (${MAX_CLASS_SIZE} students maximum).`);
       return false;
     }
 

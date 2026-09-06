@@ -121,11 +121,15 @@ export const PlayerTopBar = ({
           className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-teal-400/30 bg-teal-400/10 px-2 py-1.5 text-xs font-semibold text-teal-100"
         >
           <Users className="h-3.5 w-3.5" />
+          {/* One ratio with a stated meaning, rather than three bare numbers
+              ("0/0/15") that a teacher had to decode mid-lesson. The joined but
+              not-yet-arrived figure lives in the tooltip and the roster drawer,
+              which is where it can actually be acted on. */}
           <span className="tabular-nums">
             {liveCount}
-            <span className="text-teal-100/50">/{joinedCount}</span>
-            {classCount != null && <span className="text-teal-100/35">/{classCount}</span>}
+            {classCount != null && <span className="text-teal-100/60"> of {classCount}</span>}
           </span>
+          {!compact && <span className="font-medium text-teal-100/70">in lesson</span>}
         </span>
       )}
 

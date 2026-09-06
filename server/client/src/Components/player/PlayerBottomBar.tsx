@@ -177,6 +177,27 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
         ),
       };
     }
+    // Taking control and starting the class are ONE intent, so they are one
+    // button. setSessionControl deliberately holds the class at idle, which
+    // meant the teacher pressed Control and then Play for a single decision,
+    // with the two sitting side by side as if they were alternatives.
+    if (!controlStudentsEnabled) {
+      return {
+        key: 'control',
+        node: (
+          <button
+            type="button"
+            onClick={() => onToggleControl?.(true)}
+            title="Take control — students are held until you start the class"
+            className="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border border-violet-300/60 bg-violet-500/30 px-4 text-sm font-bold text-violet-50 shadow-lg ring-2 ring-violet-300/25 transition hover:bg-violet-500/40"
+          >
+            <Radio className="h-4 w-4" />
+            <span>Take control</span>
+          </button>
+        ),
+      };
+    }
+
     const label = playing ? 'Pause' : playbackState === 'paused' ? 'Resume' : 'Start class';
     const recommend = !classStarted;
     return {
@@ -242,21 +263,18 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
         {!compact && <span>Replay</span>}
       </button>
     ),
-    control: (
+    // Taking control is the primary button above; this is only ever the release,
+    // and it names the consequence rather than the mechanism.
+    release: (
       <button
-        key="control"
+        key="release"
         type="button"
-        onClick={() => onToggleControl?.(!controlStudentsEnabled)}
-        aria-pressed={controlStudentsEnabled}
-        title={controlStudentsEnabled ? 'Lockstep is on — students follow you' : 'Take control of the class'}
-        className={`${btn} ${
-          controlStudentsEnabled
-            ? 'border-rose-400/45 bg-rose-500/20 text-rose-100'
-            : 'border-violet-400/40 bg-violet-500/20 text-violet-50 hover:bg-violet-500/30'
-        }`}
+        onClick={() => onToggleControl?.(false)}
+        title="Release the class — students move at their own pace again"
+        className={`${btn} border-rose-400/45 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30`}
       >
-        <Radio className={`h-3.5 w-3.5 shrink-0 ${controlStudentsEnabled ? 'animate-pulse' : ''}`} />
-        {!compact && <span>{controlStudentsEnabled ? 'Control: ON' : 'Control'}</span>}
+        <Radio className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+        {!compact && <span>Let students explore</span>}
       </button>
     ),
     // Paired with the marker: after drawing on something, the next press is almost always
@@ -336,15 +354,28 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
    *   review:    the roster IS the outcome.
    */
   const SURFACED: Record<typeof stage, string[]> = {
-    gathering: ['control', 'roster'],
+    // Before the class starts there is no student panel to toggle and nobody to
+    // point anywhere, so studentUi and direct are not offered yet — they appear
+    // in `teaching` below, once they can actually do something.
+    gathering: ['roster'],
     teaching: ['next', 'phases', 'replay', 'direct', 'studentUi', 'roster'],
     quiz: ['roster', 'replay', 'direct', 'phases'],
     review: ['roster', 'replay', 'phases'],
   };
 
   const surfacedKeys = SURFACED[stage].filter((k) => k !== cta.key);
+  /**
+   * A control appears only once its precondition holds. Releasing control needs
+   * control; the student panel and Direct view need a class that has started.
+   * Offering them earlier gave a teacher buttons that silently did nothing.
+   */
+  const isAvailable = (key: string): boolean => {
+    if (key === 'release') return controlStudentsEnabled;
+    if (key === 'studentUi' || key === 'direct') return classStarted;
+    return true;
+  };
   const overflowKeys = Object.keys(controls).filter(
-    (k) => !surfacedKeys.includes(k) && k !== cta.key
+    (k) => !surfacedKeys.includes(k) && k !== cta.key && isAvailable(k)
   );
 
   // The marker travels with the teaching tools, and is hidden while gathering — there is
@@ -403,7 +434,7 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
         <>
           <div className="mx-1 h-6 w-px shrink-0 bg-white/10" />
           <div className="flex flex-1 items-center justify-end gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {surfacedKeys.map((k) => controls[k])}
+            {surfacedKeys.filter(isAvailable).map((k) => controls[k])}
           </div>
         </>
       )}

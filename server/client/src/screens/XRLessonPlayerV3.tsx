@@ -1127,7 +1127,11 @@ const XRLessonPlayerV3: React.FC = () => {
         try {
           const vrButton = VRButton.createButton(rendererRef.current);
           vrButton.style.position = 'absolute';
-          vrButton.style.bottom = '20px';
+          // Clear of the bottom bar. three.js defaults to bottom:20px, which is
+          // inside the --hud-bottom band, so ENTER VR landed on top of the
+          // teacher's controls. Reading the same variable the chrome publishes
+          // means the two cannot collide again whatever the bar's height.
+          vrButton.style.bottom = 'calc(var(--hud-bottom, 4rem) + 1rem)';
           vrButton.style.left = '50%';
           vrButton.style.transform = 'translateX(-50%)';
           vrButton.style.zIndex = '100';
@@ -3381,6 +3385,27 @@ const XRLessonPlayerV3: React.FC = () => {
   });
 
   /**
+   * End any immersive session, then navigate.
+   *
+   * Awaiting session.end() matters: navigating first unmounts the renderer and
+   * leaves the headset presenting a scene that no longer has anything driving
+   * it. Falls through to the navigation whatever happens, so a runtime that
+   * refuses to end still gets the student out.
+   */
+  const leaveImmersiveThenNavigate = useCallback(
+    async (to: string) => {
+      try {
+        const session = rendererRef.current?.xr?.getSession?.();
+        if (session) await session.end();
+      } catch (err) {
+        console.warn('[XRLessonPlayerV3] Could not end the XR session cleanly:', err);
+      }
+      navigate(to, { replace: true });
+    },
+    [navigate]
+  );
+
+  /**
    * Removed mid-lesson: leave immediately.
    *
    * The dashboard route in ClassSessionContext handles the plain removal case,
@@ -3391,9 +3416,28 @@ const XRLessonPlayerV3: React.FC = () => {
     if (!classroom.isStudentInSession) return;
     if (classroom.isStudentRemoved || !classroom.isAdmitted) {
       toast.info('Your teacher removed you from this class.');
-      navigate('/dashboard/student', { replace: true });
+      void leaveImmersiveThenNavigate('/dashboard/student');
     }
-  }, [classroom.isStudentInSession, classroom.isStudentRemoved, classroom.isAdmitted, navigate]);
+    // leaveImmersiveThenNavigate is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classroom.isStudentInSession, classroom.isStudentRemoved, classroom.isAdmitted]);
+
+  /**
+   * The teacher ended the class: get the student out of the headset.
+   *
+   * ClassSessionContext already routes them to the dashboard when the session
+   * status turns 'ended', but nothing ended the WebXR session — so a student
+   * wearing a headset stayed in a scene that was no longer live while the page
+   * changed underneath them. Leaving XR first is what they actually experience
+   * as the class finishing.
+   */
+  useEffect(() => {
+    if (!classroom.isStudentInSession) return;
+    if (classroom.joinedSession?.status !== 'ended') return;
+    toast.info('Your teacher ended the class.');
+    void leaveImmersiveThenNavigate('/dashboard/student');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classroom.isStudentInSession, classroom.joinedSession?.status]);
 
   // ============================================================================
   // Teacher marker

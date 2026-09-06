@@ -15,6 +15,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { collection, query, where, getDocs, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import {
+  MAX_CLASS_SIZE,
   createClass,
   assignStudentToClass,
   removeStudentFromClass,
@@ -521,7 +522,12 @@ const ClassManagement = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <FaUsers className="text-primary" />
-                          <span className="text-foreground text-sm font-medium">Students ({classStudents.length})</span>
+                          <span className="text-foreground text-sm font-medium">
+                            Students ({classStudents.length}/{MAX_CLASS_SIZE})
+                            {classStudents.length >= MAX_CLASS_SIZE && (
+                              <span className="ml-2 text-xs font-normal text-amber-500">Class full</span>
+                            )}
+                          </span>
                         </div>
                         <div className="space-y-1">
                           {classStudents.length === 0 ? (
