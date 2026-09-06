@@ -287,6 +287,26 @@ export class SceneLayoutSystem {
   }
 
   /**
+   * Raise or lower the dock to suit the viewer.
+   *
+   * The configured 0.9m is a standing worktop. A student taking the lesson
+   * seated at a classroom desk has their eye line ~40cm lower, and a dock left
+   * at standing height puts the model at their chin. Callers derive the height
+   * from the measured eye height rather than guessing at a posture.
+   *
+   * Only stores the value — the caller re-creates the dock and re-places the
+   * assets, since moving the surface without moving what stands on it would
+   * leave every model hanging in the air.
+   */
+  public setDockHeight(height: number): void {
+    if (!Number.isFinite(height)) return;
+    this.config.assetDock.height = height;
+    // Panels ride above the dock; keeping their gap fixed means one measurement
+    // moves the whole workspace together.
+    this.config.introDock.height = height + 0.3;
+  }
+
+  /**
    * Create asset dock in scene
    */
   public createAssetDock(scene: THREE.Scene, camera: THREE.Camera, groundY: number = 0): THREE.Mesh {

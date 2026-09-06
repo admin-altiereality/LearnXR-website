@@ -193,6 +193,18 @@ export interface TeacherContentState {
   scene_key?: string;
   licensed_content_id: string;
   revision?: string;
+  /**
+   * Which asset the model controls act on, when the lesson has more than one.
+   * Null means all of them. Carried separately from the part because a teacher
+   * selects an asset first and a part within it second, and explode/section act
+   * on the asset with no part chosen at all.
+   */
+  selected_asset_key?: string | null;
+  /**
+   * Id of the picked sub-mesh, as `${assetKey}#${index}`. Addressed by index
+   * rather than by name because mesh names are routinely blank or repeated
+   * across assets, and isolating by name picks the wrong piece.
+   */
   selected_part_id?: string | null;
   /** Node name of the picked sub-mesh, shown as the label when a part is isolated. */
   selected_part_name?: string | null;

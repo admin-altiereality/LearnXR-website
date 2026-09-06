@@ -90,7 +90,15 @@ import { faceXrViewerTowards, resetXrReorientation } from '../lib/three/xrReorie
 import { createTeleport, resetTeleport, type TeleportController } from '../lib/three/teleport';
 // Explode / isolate / section, lifted out of the krpano plugin so both players
 // share one implementation. This is also what makes "label the part" possible.
-import { createModelTools, type ClipAxis, type ModelTools } from '../lib/three/modelTools';
+import {
+  createModelTools,
+  type ClipAxis,
+  type ModelSummary,
+  type ModelTools,
+} from '../lib/three/modelTools';
+// Desk and panel heights derived from the viewer's own eye height, so a
+// seated student and a standing teacher each get a layout that fits them.
+import { layoutForViewer, DEFAULT_EYE_HEIGHT, type ViewerLayout } from '../lib/three/ergonomics';
 import { groundedOffset } from '../lib/three/groundedOffset';
 import { cameraRotationToHV } from '../lib/classroom/viewSync';
 import { createNarrationController, type NarrationController } from '../lib/lesson/narration';
@@ -279,6 +287,24 @@ const XRLessonPlayerV3: React.FC = () => {
   const groundPlaneRef = useRef<THREE.Mesh | null>(null);
   const teleportRef = useRef<TeleportController | null>(null);
   const modelToolsRef = useRef<ModelTools | null>(null);
+  /*
+    Set up long before the callback it points at exists.
+
+    The canvas pointer handlers are installed inside the scene-setup effect,
+    which runs above the model handlers in this file. Capturing the callback
+    directly there would freeze the first version of it, closed over an empty
+    asset list — the same stale-closure trap that once made the quiz
+    unanswerable. The ref is re-pointed on every render instead.
+  */
+  const selectPickedPartRef = useRef<(key: string, partId: string, name: string) => void>(
+    () => {}
+  );
+  /** Read by the animation loop, which must not close over React state. */
+  const modelExplodeRef = useRef(0);
+  /* Called from the XR session handlers, which are installed before these
+     callbacks exist — same reason as selectPickedPartRef above. */
+  const applyViewerErgonomicsRef = useRef<() => void>(() => {});
+  const restoreDeskHeightRef = useRef<() => void>(() => {});
   /** True while the thumbstick is pushed forward, so release can commit the aim. */
   const teleportArmedRef = useRef(false);
   
@@ -484,6 +510,11 @@ const XRLessonPlayerV3: React.FC = () => {
   const [modelPartCount, setModelPartCount] = useState(0);
   const [modelExplode, setModelExplode] = useState(0);
   const [modelIsolated, setModelIsolated] = useState(false);
+  /** Every asset in the scene, so the teacher can choose which one to work on. */
+  const [modelAssets, setModelAssets] = useState<ModelSummary[]>([]);
+  const [modelSelectedAssetKey, setModelSelectedAssetKey] = useState<string | null>(null);
+  /** Addressed by id, not name: mesh names are often blank or repeated. */
+  const [modelSelectedPartId, setModelSelectedPartId] = useState<string | null>(null);
   const [modelSelectedPartName, setModelSelectedPartName] = useState<string | null>(null);
   const [modelClip, setModelClip] = useState<{ axis: ClipAxis; offset: number } | null>(null);
   const [markerActive, setMarkerActive] = useState(false);
@@ -1298,6 +1329,22 @@ const XRLessonPlayerV3: React.FC = () => {
                 addDebug(`Ground Level: ${GROUND_LEVEL}m`);
                 addDebug(`Table Height: ${TABLE_HEIGHT}m`);
                 addDebug(`Target Asset Y: ${(GROUND_LEVEL + TABLE_HEIGHT).toFixed(2)}m`);
+
+                // ═══════════════════════════════════════════════════════════
+                // FIT THE ROOM TO THE VIEWER
+                //
+                // Everything below the headset was laid out from standing-adult
+                // constants: a dock 0.9m up and a panel at 1.6m. Students take
+                // these lessons SITTING at classroom desks, where the eye line
+                // is nearer 1.2m — so the model sat at chest height and the
+                // lesson panel floated above the top of their view.
+                //
+                // WebXR's local-floor reference space puts Y=0 on the real
+                // floor, so the headset's height IS the viewer's eye height.
+                // Measured here, once the head pose has settled, rather than
+                // assuming a posture or asking the student to pick one.
+                // ═══════════════════════════════════════════════════════════
+                applyViewerErgonomicsRef.current();
                 
                 // ═══════════════════════════════════════════════════════════════════
                 // STABLE LAYOUT ON VR SESSION START
@@ -1370,6 +1417,10 @@ const XRLessonPlayerV3: React.FC = () => {
             if (rendererRef.current && sceneRef.current) {
               applyRenderBudget(rendererRef.current, sceneRef.current, FLAT_BUDGET);
             }
+            // Hand the flat view back its standing-height layout: the dock was
+            // lowered to suit whoever was wearing the headset, and leaving it
+            // there would shrink the desktop scene for the next person.
+            restoreDeskHeightRef.current();
             setLoadingState('ready');
             
           });
@@ -1527,7 +1578,9 @@ const XRLessonPlayerV3: React.FC = () => {
             addModelMarkRef.current(model, picked.mesh, raycaster);
             return;
           }
-          setModelSelectedPartName(picked.name || null);
+          // Clicking a part targets its asset too, so the very next Explode or
+          // Section acts on the model the teacher just pointed at.
+          selectPickedPartRef.current(picked.key, picked.partId, picked.name);
         };
 
         (rendererRef as any)._assetPointerDown = handleAssetPointerDown;
@@ -1996,7 +2049,17 @@ const XRLessonPlayerV3: React.FC = () => {
               return;
             }
             lastGrabTimeRef.current.set(objId, now);
-            
+
+            // Whatever the teacher reaches for becomes the target of the model
+            // controls, so Explode, Isolate and Section act on the model just
+            // pointed at rather than on whichever asset happened to load first.
+            // Students run this too, but publishing is host-only, so it only
+            // ever changes their own local target.
+            const pickedPart = modelToolsRef.current?.pick(raycaster);
+            if (pickedPart) {
+              selectPickedPartRef.current(pickedPart.key, pickedPart.partId, pickedPart.name);
+            }
+
             // Priority 1: Stable Layout System (crash-safe)
             if (stableLayoutRef.current) {
               const grabbed = stableLayoutRef.current.startGrab(rootModel, controller);
@@ -2250,6 +2313,9 @@ const XRLessonPlayerV3: React.FC = () => {
           animationMixersRef.current.forEach((mixer) => mixer.update(delta));
           lookControlsRef.current?.update();
           inkLayerRef.current?.update();
+          // Keeps an active cross-section on the model when the model is moved.
+          // Returns immediately when nothing is being sectioned.
+          modelToolsRef.current?.update();
           updateHands();
           if (teleportRef.current && rendererRef.current && cameraRef.current) {
             // The XR camera when presenting, the flat one otherwise, so the
@@ -2270,29 +2336,46 @@ const XRLessonPlayerV3: React.FC = () => {
             const isGrabbing = stableLayoutRef.current.isGrabbing();
             const dockSurfaceY = sceneLayoutRef.current.getAssetDockSurfaceY(GROUND_LEVEL);
             
+            /*
+              Settle assets onto the dock surface.
+
+              Measured from the bottom of the bounding box, the same rule
+              placeAssetOnDock uses. It used to target `dockSurfaceY + height/2`,
+              which assumes the group's origin sits at the centre of the
+              geometry — so for a model authored off its own origin this ran
+              every frame and dragged it straight back off the dock, undoing the
+              placement.
+
+              Skipped entirely while a model is exploded: the parts have moved,
+              so the box no longer describes the model, and settling on it would
+              shove the whole asset upward as the teacher pulls it apart.
+            */
+            const exploded = modelExplodeRef.current > 0;
             assetsGroupRef.current.children.forEach((asset) => {
               const obj = asset as THREE.Object3D;
               
               // Check if this specific asset is being grabbed
               const isThisAssetGrabbed = obj.userData.isGrabbed || isGrabbing;
               
-              // Only apply gravity if asset rests on dock and is not being grabbed
-              if (obj.userData.restsOnDock && !isThisAssetGrabbed && obj.userData.dockSurfaceY !== undefined) {
-                const box = new THREE.Box3().setFromObject(obj);
-                const size = box.getSize(new THREE.Vector3());
-                const currentY = obj.position.y;
-                const targetY = obj.userData.dockSurfaceY + size.y / 2;
-                
-                // If asset is above dock, apply gentle gravity
-                if (currentY > targetY + 0.01) {
-                  const gravity = 0.015; // Gentle downward force
-                  obj.position.y = Math.max(targetY, currentY - gravity);
-                  obj.updateMatrixWorld(true);
-                } else if (currentY < targetY - 0.01) {
-                  // If below dock, snap to surface
-                  obj.position.y = targetY;
-                  obj.updateMatrixWorld(true);
-                }
+              if (
+                exploded ||
+                !obj.userData.restsOnDock ||
+                isThisAssetGrabbed ||
+                obj.userData.dockSurfaceY === undefined
+              ) {
+                return;
+              }
+
+              const box = new THREE.Box3().setFromObject(obj);
+              const drop = box.min.y - obj.userData.dockSurfaceY;
+              if (drop > 0.01) {
+                // Floating: fall, but never past the surface.
+                obj.position.y -= Math.min(0.015, drop);
+                obj.updateMatrixWorld(true);
+              } else if (drop < -0.01) {
+                // Sunk through the surface: put it back on top.
+                obj.position.y -= drop;
+                obj.updateMatrixWorld(true);
               }
             });
           }
@@ -3071,6 +3154,18 @@ const XRLessonPlayerV3: React.FC = () => {
           if (!modelToolsRef.current) modelToolsRef.current = createModelTools();
           const roots = Array.from(assetRefs.current.values());
           modelToolsRef.current.collect(roots);
+          // Label each asset with the name the lesson gave it. The scene-graph
+          // key is `assetGroup_<id>`, which is meaningless in a picker a teacher
+          // has to choose from mid-lesson.
+          setModelAssets(
+            modelToolsRef.current.list().map((entry) => ({
+              ...entry,
+              name:
+                meshyAssets.find((candidate) => `assetGroup_${candidate.id}` === entry.key)?.name ||
+                entry.name,
+            }))
+          );
+          setModelSelectedAssetKey(modelToolsRef.current.selectedKey());
           setModelPartCount(modelToolsRef.current.partCount());
 
           // Keyed the same way addModelMark writes asset_id, so a published mark
@@ -3853,6 +3948,12 @@ const XRLessonPlayerV3: React.FC = () => {
   // writes compared with publishing during the drag.
   // ============================================================================
 
+  // One place that keeps the loop's copy of the explode amount honest, whether
+  // it changed from the toolbar, from a reset, or from the teacher's broadcast.
+  useEffect(() => {
+    modelExplodeRef.current = modelExplode;
+  }, [modelExplode]);
+
   useEffect(() => {
     markerActiveRef.current = markerActive;
     markerColorRef.current = markerColor;
@@ -3920,23 +4021,91 @@ const XRLessonPlayerV3: React.FC = () => {
   const applyModelExplode = useCallback(
     (t: number) => {
       setModelExplode(t);
+      modelExplodeRef.current = t;
       modelToolsRef.current?.explode(t);
       publishModelPatch({ exploded: t });
     },
     [publishModelPatch]
   );
 
+  /**
+   * Choose which asset the controls act on.
+   *
+   * Explode and section then affect that asset alone, which is the whole point
+   * once a lesson holds several: pulling every model in the room apart to show
+   * one of them is noise. The part count follows the target, so Explode is
+   * correctly offered or disabled for the asset actually selected rather than
+   * for the sum of everything in the scene.
+   */
+  const applyModelSelectAsset = useCallback(
+    (key: string | null) => {
+      const tools = modelToolsRef.current;
+      if (!tools) return;
+      tools.select(key);
+      const resolved = tools.selectedKey();
+      setModelSelectedAssetKey(resolved);
+      setModelPartCount(tools.partCount());
+      // A part of the old asset is not a part of the new one.
+      setModelSelectedPartId(null);
+      setModelSelectedPartName(null);
+      if (modelIsolated) {
+        tools.isolate(null, false);
+        setModelIsolated(false);
+      }
+      publishModelPatch(
+        {
+          selected_asset_key: resolved,
+          selected_part_id: null,
+          selected_part_name: null,
+          isolated: false,
+        },
+        true
+      );
+    },
+    [modelIsolated, publishModelPatch]
+  );
+
+  /** A part picked in the scene: target its asset, and remember the part. */
+  const selectPickedPart = useCallback(
+    (key: string, partId: string, name: string) => {
+      const tools = modelToolsRef.current;
+      if (!tools) return;
+      tools.select(key);
+      const resolved = tools.selectedKey();
+      setModelSelectedAssetKey(resolved);
+      setModelPartCount(tools.partCount());
+      setModelSelectedPartId(partId);
+      setModelSelectedPartName(name || null);
+      // Already isolating? Follow the new pick rather than leaving the class
+      // staring at the part the teacher has just moved on from.
+      if (modelIsolated) tools.isolate(partId, true);
+      publishModelPatch(
+        { selected_asset_key: resolved, selected_part_id: partId, selected_part_name: name || null },
+        true
+      );
+    },
+    [modelIsolated, publishModelPatch]
+  );
+
+  useEffect(() => {
+    selectPickedPartRef.current = selectPickedPart;
+  }, [selectPickedPart]);
+
   const applyModelIsolate = useCallback(() => {
     setModelIsolated((wasIsolated) => {
       const next = !wasIsolated;
-      modelToolsRef.current?.isolate(modelSelectedPartName, next);
+      modelToolsRef.current?.isolate(modelSelectedPartId, next);
       publishModelPatch(
-        { isolated: next, selected_part_name: modelSelectedPartName ?? null },
+        {
+          isolated: next,
+          selected_part_id: modelSelectedPartId ?? null,
+          selected_part_name: modelSelectedPartName ?? null,
+        },
         true
       );
       return next;
     });
-  }, [modelSelectedPartName, publishModelPatch]);
+  }, [modelSelectedPartId, modelSelectedPartName, publishModelPatch]);
 
   const applyModelClip = useCallback(
     (clip: { axis: ClipAxis; offset: number } | null) => {
@@ -3947,14 +4116,90 @@ const XRLessonPlayerV3: React.FC = () => {
     [publishModelPatch]
   );
 
+  /**
+   * The flat view's long-standing heights.
+   *
+   * On a screen there is no ergonomics to solve — no neck, no reach, just
+   * framing — so the desktop layout is pinned to exactly the numbers it has
+   * always used rather than derived. Only the headset gets a fitted room.
+   */
+  const DESKTOP_LAYOUT: ViewerLayout = {
+    eyeHeight: DEFAULT_EYE_HEIGHT,
+    dockHeight: 0.9,
+    panelHeight: 1.6,
+  };
+
+  /**
+   * Put the desk, the assets on it and the lesson panel at the given heights.
+   *
+   * Re-places the assets rather than only moving the dock: raising a surface
+   * out from under what is standing on it would leave every model hanging in
+   * mid-air, which is the same class of bug as placing them there in the first
+   * place.
+   */
+  const applyWorkspaceLayout = useCallback(
+    (view: ViewerLayout) => {
+      const scene = sceneRef.current;
+      const camera = cameraRef.current;
+      if (!scene || !camera) return;
+
+      // The panel keeps its distance and bearing; only its height changes, so a
+      // teacher who has positioned the class does not find it moved sideways.
+      const panel = lessonPanelRef.current?.mesh;
+      if (panel) {
+        panel.position.y = view.panelHeight;
+        panel.lookAt(camera.position);
+      }
+
+      const layout = sceneLayoutRef.current;
+      if (!layout) return;
+      layout.setDockHeight(view.dockHeight);
+      layout.createAssetDock(scene, camera, GROUND_LEVEL);
+
+      const assets = (assetsGroupRef.current?.children ?? []) as THREE.Object3D[];
+      // Never yank a model out of somebody's hand mid-lesson.
+      if (assets.length === 0 || stableLayoutRef.current?.isGrabbing()) return;
+
+      const placements = layout.calculatePlacements(assets.length, camera, GROUND_LEVEL);
+      assets.forEach((asset, index) => {
+        const placement = placements[index];
+        if (!placement) return;
+        layout.placeAssetOnDock(asset, placement, camera, GROUND_LEVEL, assets.length);
+        asset.userData.dockSurfaceY = placement.dockSurfaceY;
+      });
+
+      // A cut follows the model it was made on, so re-derive it where the model
+      // has just been moved to.
+      modelToolsRef.current?.update();
+      requestShadowRefresh(rendererRef.current);
+      addDebug(
+        `Workspace fitted: eye ${view.eyeHeight.toFixed(2)}m, dock ${view.dockHeight.toFixed(2)}m`
+      );
+    },
+    [addDebug]
+  );
+
+  useEffect(() => {
+    applyViewerErgonomicsRef.current = () =>
+      applyWorkspaceLayout(layoutForViewer(cameraRef.current, GROUND_LEVEL));
+    restoreDeskHeightRef.current = () => applyWorkspaceLayout(DESKTOP_LAYOUT);
+  }, [applyWorkspaceLayout]);
+
   const applyModelReset = useCallback(() => {
     setModelExplode(0);
     setModelIsolated(false);
     setModelClip(null);
+    setModelSelectedPartId(null);
     setModelSelectedPartName(null);
     modelToolsRef.current?.reset(rendererRef.current);
     publishModelPatch(
-      { exploded: 0, isolated: false, clip: null, selected_part_name: null },
+      {
+        exploded: 0,
+        isolated: false,
+        clip: null,
+        selected_part_id: null,
+        selected_part_name: null,
+      },
       true
     );
   }, [publishModelPatch]);
@@ -3983,8 +4228,11 @@ const XRLessonPlayerV3: React.FC = () => {
         : teacherModelState.exploded
           ? 1
           : 0;
+    // The target first: explode and section act on the selected asset, so
+    // applying them before the selection would work on the wrong model.
+    tools.select(teacherModelState.selected_asset_key ?? null);
     tools.explode(exploded);
-    tools.isolate(teacherModelState.selected_part_name ?? null, teacherModelState.isolated === true);
+    tools.isolate(teacherModelState.selected_part_id ?? null, teacherModelState.isolated === true);
     tools.clip(
       teacherModelState.clip?.axis ?? null,
       teacherModelState.clip?.offset ?? 0,
@@ -3994,6 +4242,9 @@ const XRLessonPlayerV3: React.FC = () => {
     setModelExplode(exploded);
     setModelIsolated(teacherModelState.isolated === true);
     setModelClip(teacherModelState.clip ?? null);
+    setModelSelectedAssetKey(tools.selectedKey());
+    setModelPartCount(tools.partCount());
+    setModelSelectedPartId(teacherModelState.selected_part_id ?? null);
     setModelSelectedPartName(teacherModelState.selected_part_name ?? null);
   }, [classroom.isClassHost, teacherModelState, modelSceneKey]);
 
@@ -5163,6 +5414,9 @@ const XRLessonPlayerV3: React.FC = () => {
               onOpenRoster={() => setHostDrawer((d) => (d === 'roster' ? null : 'roster'))}
               raisedHands={classroom.raisedHandCount}
               modelPartCount={modelPartCount}
+              modelAssets={modelAssets}
+              modelSelectedAssetKey={modelSelectedAssetKey}
+              onModelSelectAsset={applyModelSelectAsset}
               modelExplode={modelExplode}
               onModelExplodeChange={applyModelExplode}
               modelIsolated={modelIsolated}

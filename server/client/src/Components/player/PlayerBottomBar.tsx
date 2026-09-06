@@ -14,7 +14,7 @@ import {
   Play, Pause, RotateCcw, ChevronRight, Radio, Zap, Users, Target, MoreHorizontal, Eye, EyeOff,
 } from 'lucide-react';
 import { MarkerToolbar } from './MarkerToolbar';
-import { ModelToolbar, type ClipAxis } from './ModelToolbar';
+import { ModelToolbar, type ClipAxis, type ToolbarAsset } from './ModelToolbar';
 
 const PHASES: Array<{ phase: string; label: string }> = [
   { phase: 'intro', label: 'Intro' },
@@ -59,6 +59,10 @@ interface PlayerBottomBarProps {
 
   // 3D model (host). Absent/0 partCount hides the toolbar entirely.
   modelPartCount?: number;
+  /** The scene's 3D assets, so the teacher can pick which one to manipulate. */
+  modelAssets?: ToolbarAsset[];
+  modelSelectedAssetKey?: string | null;
+  onModelSelectAsset?: (key: string | null) => void;
   modelExplode?: number;
   onModelExplodeChange?: (t: number) => void;
   modelIsolated?: boolean;
@@ -80,6 +84,7 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
     markerActive = false, markerColor = '#ffdd33',
     onToggleMarker, onMarkerColorChange,
     modelPartCount = 0, modelExplode = 0, onModelExplodeChange,
+    modelAssets = [], modelSelectedAssetKey = null, onModelSelectAsset,
     modelIsolated = false, modelSelectedPartName = null, onToggleModelIsolate,
     modelClip = null, onModelClipChange, onModelReset,
   } = props;
@@ -398,10 +403,16 @@ export const PlayerBottomBar = (props: PlayerBottomBarProps) => {
   // a model during the quiz and the review just as much as during the lesson
   // body, and having the controls vanish mid-explanation is worse than a
   // slightly busier bar.
-  const showModel = isHost && modelPartCount > 0;
+  // Shown whenever the scene holds a model at all. Gating on the TARGET's part
+  // count would make the whole toolbar disappear the moment a teacher selected a
+  // single-piece asset, taking the picker with it and leaving no way back.
+  const showModel = isHost && (modelPartCount > 0 || modelAssets.length > 0);
   const model = (
     <ModelToolbar
       compact={compact}
+      assets={modelAssets}
+      selectedAssetKey={modelSelectedAssetKey}
+      onSelectAsset={(key) => onModelSelectAsset?.(key)}
       partCount={modelPartCount}
       explode={modelExplode}
       onExplodeChange={(t) => onModelExplodeChange?.(t)}

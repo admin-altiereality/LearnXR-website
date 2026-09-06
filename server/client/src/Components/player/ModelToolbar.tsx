@@ -16,9 +16,20 @@ import { Layers, Scissors, Focus, RotateCcw } from 'lucide-react';
 
 export type ClipAxis = 'x' | 'y' | 'z';
 
+export interface ToolbarAsset {
+  key: string;
+  name: string;
+  partCount: number;
+}
+
 interface ModelToolbarProps {
   compact?: boolean;
-  /** Total separable meshes across the scene's assets; < 2 means nothing to explode. */
+  /** Every 3D asset in the scene, so the teacher can choose which to work on. */
+  assets?: ToolbarAsset[];
+  /** The asset the controls act on; null means all of them. */
+  selectedAssetKey?: string | null;
+  onSelectAsset?: (key: string | null) => void;
+  /** Separable meshes in the CURRENT target; < 2 means nothing to explode. */
   partCount: number;
   explode: number;
   onExplodeChange: (t: number) => void;
@@ -38,6 +49,9 @@ const on = 'border-cyan-300/50 bg-cyan-400/20 text-cyan-50';
 
 export const ModelToolbar = ({
   compact = false,
+  assets = [],
+  selectedAssetKey = null,
+  onSelectAsset,
   partCount,
   explode,
   onExplodeChange,
@@ -49,14 +63,39 @@ export const ModelToolbar = ({
   onReset,
 }: ModelToolbarProps) => {
   const canExplode = partCount >= 2;
+  // A picker only earns its space once there is a choice to make.
+  const showPicker = assets.length > 1;
 
   return (
     <div className="flex items-center gap-1.5">
+      {/* Which asset the controls act on */}
+      {showPicker && (
+        <select
+          value={selectedAssetKey ?? ''}
+          onChange={(e) => onSelectAsset?.(e.target.value || null)}
+          aria-label="Asset to control"
+          title="Choose which 3D model Explode, Isolate and Section act on"
+          className="h-9 max-w-[9rem] truncate rounded-lg border border-white/12 bg-white/[0.06] px-2 text-xs font-semibold text-white/75 outline-none transition hover:bg-white/10 focus:border-cyan-300/50"
+        >
+          <option value="">All models</option>
+          {assets.map((asset) => (
+            <option key={asset.key} value={asset.key}>
+              {asset.name}
+              {asset.partCount > 1 ? ` (${asset.partCount} parts)` : ''}
+            </option>
+          ))}
+        </select>
+      )}
+
       {/* Explode */}
       <div className="flex items-center gap-1.5">
         <span
           className={`${btn} ${explode > 0 ? on : quiet} pointer-events-none`}
-          title={canExplode ? 'Pull the model apart' : 'This model is a single piece — nothing to take apart'}
+          title={
+            canExplode
+              ? 'Pull the selected model apart'
+              : 'This model is a single piece — nothing to take apart'
+          }
         >
           <Layers className="h-3.5 w-3.5 shrink-0" />
           {!compact && <span>Explode</span>}
