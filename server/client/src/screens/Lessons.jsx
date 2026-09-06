@@ -2009,26 +2009,6 @@ const Lessons = ({ setBackgroundSkybox }) => {
                     </p>
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant={canLaunchInClass ? 'default' : 'secondary'}
-                  onClick={handleLaunchInClass}
-                  disabled={!canLaunchInClass}
-                  title={!canLaunchLesson ? 'Wait for lesson to load' : isPartner ? 'Start a demo session from the Partner Dashboard first' : teacherClasses.length === 0 ? 'Add a class to launch lessons' : ''}
-                  className="w-full sm:w-auto"
-                >
-                  {sessionJoinLoading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Launching…
-                    </>
-                  ) : (
-                    <>
-                      <Users className="w-3.5 h-3.5" />
-                      Launch in Class
-                    </>
-                  )}
-                </Button>
               </div>
             )}
 
@@ -2056,7 +2036,40 @@ const Lessons = ({ setBackgroundSkybox }) => {
               >
                 Cancel
               </Button>
+              {/* Launch in Class is the primary decision for a teacher: it is
+                  what the lesson is FOR. The solo launch stays available beside
+                  it, named for what it actually does, and takes the lead again
+                  for anyone with no class to launch to. */}
+              {(isTeacher || isPartner) && (
+                <Button
+                  className="sm:flex-1 h-11 gap-2 font-semibold"
+                  onClick={handleLaunchInClass}
+                  disabled={!canLaunchInClass}
+                  title={
+                    !canLaunchLesson
+                      ? 'Wait for the lesson to load'
+                      : isPartner
+                        ? 'Start a demo session from the Partner Dashboard first'
+                        : teacherClasses.length === 0
+                          ? 'Add a class to launch lessons'
+                          : 'Send this lesson to your class'
+                  }
+                >
+                  {sessionJoinLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Launching…
+                    </>
+                  ) : (
+                    <>
+                      <Users className="w-4 h-4" />
+                      Launch in Class
+                    </>
+                  )}
+                </Button>
+              )}
               <Button
+                variant={isTeacher || isPartner ? 'secondary' : 'default'}
                 className="sm:flex-1 h-11 gap-2 font-semibold"
                 onClick={() => launchLesson()}
                 disabled={!canLaunchLesson}
@@ -2079,7 +2092,11 @@ const Lessons = ({ setBackgroundSkybox }) => {
                 ) : canLaunchLesson ? (
                   <>
                     <Play className="w-4 h-4" />
-                    {isCompleted ? 'Replay' : 'Launch lesson'}
+                    {isCompleted
+                      ? 'Replay'
+                      : isTeacher || isPartner
+                        ? 'Preview on my own'
+                        : 'Launch lesson'}
                   </>
                 ) : dataReady && !canLaunchLesson ? (
                   <>
