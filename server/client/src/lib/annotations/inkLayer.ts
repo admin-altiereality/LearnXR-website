@@ -29,6 +29,11 @@ export interface InkLayer {
   setAnnotations(annotations: TeacherAnnotations | null | undefined): void;
   /** The teacher's own in-progress stroke, drawn before it is published. */
   setLocalStroke(stroke: AnnotationStroke | null): void;
+  /**
+   * Supply the models marks can be attached to, keyed by the id they were
+   * published against. Marks for a model that is not present are skipped.
+   */
+  setMarkTargets(targets: Map<string, THREE.Object3D>): void;
   /** Re-evaluate laser fade. Call once per frame; cheap when nothing is fading. */
   update(): void;
   /** Screen point (NDC) -> sphere coordinates, for drawing with a mouse. */
@@ -76,6 +81,7 @@ export function createInkLayer(options: {
   const raycaster = new THREE.Raycaster();
   let annotations: TeacherAnnotations | null = null;
   let localStroke: AnnotationStroke | null = null;
+  let markTargets = new Map<string, THREE.Object3D>();
   let disposed = false;
   /** Meshes for laser strokes, kept so `update` can fade them without a rebuild. */
   const fading: Array<{ mesh: THREE.Mesh; stroke: AnnotationStroke }> = [];
@@ -127,6 +133,49 @@ export function createInkLayer(options: {
     });
   };
 
+  /**
+   * Marks are parented to the MODEL, not the scene.
+   *
+   * Their coordinates are in the model's local space, so parenting makes them
+   * follow it when it is moved, rotated or exploded. A world-space mark would
+   * slide off the part it was pointing at the moment the teacher touched the
+   * model — which is exactly what the marks are for.
+   */
+  const rebuildMarks = () => {
+    // Clear marks from every known target, not just the ones with marks now,
+    // so a cleared annotation actually removes them.
+    for (const target of markTargets.values()) {
+      for (let i = target.children.length - 1; i >= 0; i -= 1) {
+        const child = target.children[i];
+        if (child.name !== 'teacherModelMark') continue;
+        target.remove(child);
+        (child as THREE.Mesh).geometry?.dispose();
+        ((child as THREE.Mesh).material as THREE.Material)?.dispose();
+      }
+    }
+
+    const marks = annotations?.model_marks ?? [];
+    for (const mark of marks) {
+      const target = markTargets.get(mark.asset_id);
+      if (!target) continue;
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.02, 12, 8),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(mark.color),
+          depthTest: false,
+          transparent: true,
+        })
+      );
+      sphere.name = 'teacherModelMark';
+      sphere.renderOrder = 12;
+      sphere.position.set(mark.x, mark.y, mark.z);
+      // Decoration, never a hit target — a mark must not swallow a click meant
+      // for the part underneath it.
+      sphere.raycast = () => {};
+      target.add(sphere);
+    }
+  };
+
   const rebuild = () => {
     if (disposed) return;
     clearGroup();
@@ -137,6 +186,7 @@ export function createInkLayer(options: {
     const laser = annotations?.laser;
     if (laser?.points?.length && !isStrokeExpired(laser, now)) buildStroke(laser);
     if (localStroke?.points?.length) buildStroke(localStroke);
+    rebuildMarks();
   };
 
   return {
@@ -148,6 +198,11 @@ export function createInkLayer(options: {
     setLocalStroke(stroke) {
       localStroke = stroke;
       rebuild();
+    },
+
+    setMarkTargets(targets) {
+      markTargets = targets;
+      rebuildMarks();
     },
 
     update() {

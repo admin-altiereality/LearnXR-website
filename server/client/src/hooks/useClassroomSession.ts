@@ -38,6 +38,7 @@ import {
 } from '../lib/classroom/viewSync';
 import type {
   ClassSession,
+  TeacherContentState,
   SessionLessonPhase,
   SessionStudentProgress,
   TeacherPlayback,
@@ -125,6 +126,15 @@ export interface UseClassroomSessionResult {
   blockStudentPhaseControl: (actionLabel: string) => boolean;
   /** Marks the student as actively looking, suspending follow briefly. */
   markStudentLooking: () => void;
+  /**
+   * Publish 3D model state (explode, isolate, section, selection) to the class.
+   *
+   * Merges into whatever the session already holds and stamps a fresh sync_id,
+   * so changing one control does not clear the others.
+   */
+  publishModelState: (patch: Partial<TeacherContentState>, sceneKey: string) => void;
+  /** The model state this viewer should be showing, or null. */
+  teacherContentState: TeacherContentState | null;
 }
 
 /** Stable empty list so `progressList` does not change identity every render. */
@@ -169,6 +179,7 @@ export function useClassroomSession<P extends SessionLessonPhase = SessionLesson
   const bindActiveSession = classSession?.bindActiveSession;
   const broadcastTeacherPhase = classSession?.broadcastTeacherPhase;
   const setSessionControl = classSession?.setSessionControl;
+  const updateTeacherContentState = classSession?.updateTeacherContentState;
   const setStudentUiVisible = classSession?.setStudentUiVisible;
   const setTeacherPlayback = classSession?.setTeacherPlayback;
   const publishLobbyRoster = classSession?.publishLobbyRoster;
@@ -704,6 +715,32 @@ export function useClassroomSession<P extends SessionLessonPhase = SessionLesson
     [setSessionControl, directClassToCurrentView]
   );
 
+  /**
+   * Model state, published by the host and read by everyone.
+   *
+   * A host reads back their own write, so the two cannot diverge if a write is
+   * rejected; a student reads the session they joined.
+   */
+  const teacherContentState = sessionForControl?.teacher_content_state ?? null;
+
+  const publishModelState = useCallback(
+    (patch: Partial<TeacherContentState>, sceneKey: string) => {
+      if (!isClassHost || !updateTeacherContentState || !sceneKey) return;
+      const previous = sessionForControl?.teacher_content_state ?? null;
+      // Only build on the previous state when it belongs to the SAME scene, or a
+      // lesson change would inherit the last model's explode and section values.
+      const base = previous?.scene_key === sceneKey ? previous : null;
+      void updateTeacherContentState({
+        ...(base ?? {}),
+        scene_key: sceneKey,
+        licensed_content_id: base?.licensed_content_id ?? sceneKey,
+        ...patch,
+        sync_id: Date.now(),
+      } as TeacherContentState);
+    },
+    [isClassHost, updateTeacherContentState, sessionForControl?.teacher_content_state]
+  );
+
   const toggleStudentUi = useCallback(
     async (visible: boolean) => {
       await setStudentUiVisible?.(visible);
@@ -763,5 +800,7 @@ export function useClassroomSession<P extends SessionLessonPhase = SessionLesson
     endSession,
     blockStudentPhaseControl,
     markStudentLooking,
+    publishModelState,
+    teacherContentState,
   };
 }

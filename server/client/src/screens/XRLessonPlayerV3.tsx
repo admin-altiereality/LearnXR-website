@@ -105,7 +105,14 @@ import {
 } from '../lib/annotations/sphereGeometry';
 import { MARKER_COLORS } from '../Components/player/MarkerToolbar';
 import { appendStroke, publishAnnotations } from '../services/classSessionService';
-import type { AnnotationPoint, AnnotationStroke, SessionLessonPhase } from '../types/lms';
+import type {
+  AnnotationModelMark,
+  AnnotationPoint,
+  AnnotationStroke,
+  SessionLessonPhase,
+  TeacherAnnotations,
+  TeacherContentState,
+} from '../types/lms';
 import { LiveClassHostOverlay } from '../Components/classSession/LiveClassHostOverlay';
 import { PlayerChrome } from '../Components/player/PlayerChrome';
 import { PlayerTopBar } from '../Components/player/PlayerTopBar';
@@ -373,6 +380,14 @@ const XRLessonPlayerV3: React.FC = () => {
   const activeStrokeRef = useRef<AnnotationStroke | null>(null);
   const markerActiveRef = useRef(false);
   const markerColorRef = useRef<string>(MARKER_COLORS[0]);
+  /**
+   * Places a mark on a 3D model. Reached through a ref because the desktop
+   * pointer handler is created in the scene-init effect, long before this
+   * exists — the same stale-closure trap the panel handler fell into.
+   */
+  const addModelMarkRef = useRef<
+    (model: THREE.Object3D, mesh: THREE.Mesh, raycaster: THREE.Raycaster) => void
+  >(() => {});
   const lastProgressPercentRef = useRef<number>(-1);
   
   // WebXR Systems refs
@@ -434,12 +449,16 @@ const XRLessonPlayerV3: React.FC = () => {
     directClassToCurrentView: () => Promise<boolean>;
     /** Class the lesson is being taught in, for score attribution. */
     classId: string | null;
+    isClassHost: boolean;
+    publishModelState: (patch: Partial<TeacherContentState>, sceneKey: string) => void;
   }>({
     blockStudentPhaseControl: () => false,
     markStudentLooking: () => {},
     showImmersiveUiForThisViewer: true,
     directClassToCurrentView: async () => false,
     classId: null,
+    isClassHost: false,
+    publishModelState: () => {},
   });
   /**
    * Gates the phase autoplay effect. Under lockstep the teacher owns playback, so
@@ -1402,6 +1421,118 @@ const XRLessonPlayerV3: React.FC = () => {
 
         // pointerup, not pointerdown: a click is only a click once we know the
         // gesture did not turn into a drag.
+        /*
+          Asset interaction on a flat screen.
+
+          Everything above this point only raycast the lesson panel, so on a
+          desktop or a phone the 3D assets could not be touched at all — a
+          teacher preparing a lesson, or driving one from a laptop, had no way to
+          move a model or pick a part. Controllers and hands had this; a mouse
+          did not.
+
+          Drag moves the asset across a plane facing the camera; a click without
+          a drag selects the part under the cursor, which is what Isolate acts on
+          and what a model mark attaches to.
+        */
+        let assetDrag: {
+          model: THREE.Object3D;
+          plane: THREE.Plane;
+          offset: THREE.Vector3;
+          moved: boolean;
+        } | null = null;
+
+        const pointerToNdc = (event: PointerEvent) => {
+          const rect = canvas.getBoundingClientRect();
+          return new THREE.Vector2(
+            ((event.clientX - rect.left) / rect.width) * 2 - 1,
+            -((event.clientY - rect.top) / rect.height) * 2 + 1
+          );
+        };
+
+        const handleAssetPointerDown = (event: PointerEvent) => {
+          if (event.button !== 0) return;
+          if (rendererRef.current?.xr?.isPresenting) return;
+          const camera = cameraRef.current;
+          const raycaster = raycasterRef.current;
+          if (!camera || !raycaster) return;
+
+          raycaster.setFromCamera(pointerToNdc(event), camera);
+
+          // The panel wins: a click on a quiz option must not drag a model that
+          // happens to sit behind it.
+          const panelMesh = lessonPanelRef.current?.mesh;
+          if (panelMesh?.visible && raycaster.intersectObject(panelMesh, false).length > 0) return;
+
+          const meshes = stableLayoutRef.current?.getAllInteractableMeshes?.() ?? [];
+          const hit = raycaster.intersectObjects(meshes, false)[0];
+          if (!hit) return;
+
+          const model = stableLayoutRef.current?.findRootModel?.(hit.object) ?? hit.object;
+          // Drag across a plane through the object that faces the camera, so the
+          // model tracks the cursor at its own depth rather than sliding away.
+          const normal = camera.getWorldDirection(new THREE.Vector3()).negate();
+          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hit.point);
+          assetDrag = {
+            model,
+            plane,
+            offset: model.position.clone().sub(hit.point),
+            moved: false,
+          };
+          // Suppress look-controls so dragging a model does not also swing the view.
+          lookControlsRef.current?.setEnabled(false);
+          canvas.setPointerCapture(event.pointerId);
+        };
+
+        const handleAssetPointerMove = (event: PointerEvent) => {
+          if (!assetDrag) return;
+          const camera = cameraRef.current;
+          const raycaster = raycasterRef.current;
+          if (!camera || !raycaster) return;
+
+          raycaster.setFromCamera(pointerToNdc(event), camera);
+          const point = new THREE.Vector3();
+          if (!raycaster.ray.intersectPlane(assetDrag.plane, point)) return;
+          assetDrag.moved = true;
+          assetDrag.model.position.copy(point).add(assetDrag.offset);
+        };
+
+        const handleAssetPointerUp = (event: PointerEvent) => {
+          if (!assetDrag) return;
+          const { moved } = assetDrag;
+          const model = assetDrag.model;
+          assetDrag = null;
+          try {
+            canvas.releasePointerCapture(event.pointerId);
+          } catch {
+            /* capture is best-effort */
+          }
+          lookControlsRef.current?.setEnabled(!markerActiveRef.current);
+
+          if (moved) return;
+
+          // A click, not a drag: select the part, or mark it while the marker is on.
+          const camera = cameraRef.current;
+          const raycaster = raycasterRef.current;
+          if (!camera || !raycaster) return;
+          raycaster.setFromCamera(pointerToNdc(event), camera);
+          const picked = modelToolsRef.current?.pick(raycaster);
+          if (!picked) return;
+
+          if (markerActiveRef.current && classroomRef.current.isClassHost) {
+            addModelMarkRef.current(model, picked.mesh, raycaster);
+            return;
+          }
+          setModelSelectedPartName(picked.name || null);
+        };
+
+        (rendererRef as any)._assetPointerDown = handleAssetPointerDown;
+        (rendererRef as any)._assetPointerMove = handleAssetPointerMove;
+        (rendererRef as any)._assetPointerUp = handleAssetPointerUp;
+        canvas.addEventListener('pointerdown', handleAssetPointerDown);
+        canvas.addEventListener('pointermove', handleAssetPointerMove);
+        canvas.addEventListener('pointerup', handleAssetPointerUp);
+        canvas.addEventListener('pointercancel', handleAssetPointerUp);
+
         (rendererRef as any)._panelPointerUp = handlePointerUp;
         canvas.addEventListener('pointerup', handlePointerUp);
       } catch (err: any) {
@@ -2361,11 +2492,24 @@ const XRLessonPlayerV3: React.FC = () => {
           window.removeEventListener('resize', handleResize);
           // Remove desktop pointer handler if we attached one
           try {
+            const canvasEl = rendererRef.current?.domElement;
             const panelHandler = (rendererRef as any)?._panelPointerUp;
             if (panelHandler) {
-              rendererRef.current?.domElement?.removeEventListener('pointerup', panelHandler);
+              canvasEl?.removeEventListener('pointerup', panelHandler);
               (rendererRef as any)._panelPointerUp = null;
             }
+            const assetDown = (rendererRef as any)?._assetPointerDown;
+            const assetMove = (rendererRef as any)?._assetPointerMove;
+            const assetUp = (rendererRef as any)?._assetPointerUp;
+            if (assetDown) canvasEl?.removeEventListener('pointerdown', assetDown);
+            if (assetMove) canvasEl?.removeEventListener('pointermove', assetMove);
+            if (assetUp) {
+              canvasEl?.removeEventListener('pointerup', assetUp);
+              canvasEl?.removeEventListener('pointercancel', assetUp);
+            }
+            (rendererRef as any)._assetPointerDown = null;
+            (rendererRef as any)._assetPointerMove = null;
+            (rendererRef as any)._assetPointerUp = null;
           } catch (e) {
             // ignore
           }
@@ -2922,6 +3066,12 @@ const XRLessonPlayerV3: React.FC = () => {
           const roots = Array.from(assetRefs.current.values());
           modelToolsRef.current.collect(roots);
           setModelPartCount(modelToolsRef.current.partCount());
+
+          // Keyed the same way addModelMark writes asset_id, so a published mark
+          // finds its way back onto the model it was placed on.
+          const markTargets = new Map<string, THREE.Object3D>();
+          for (const root of roots) markTargets.set(String(root.name || root.uuid), root);
+          inkLayerRef.current?.setMarkTargets(markTargets);
           
           console.log(`[XRLessonPlayerV3] ✅ Asset ${newCount}/${meshyAssets.length} added to assetsGroup:`, {
             name: asset.name || asset.id,
@@ -3716,23 +3866,80 @@ const XRLessonPlayerV3: React.FC = () => {
    * state. Isolate needs a selected part to isolate TO, which comes from a
    * pick — that is the same pick the label-the-part question reads.
    */
-  const applyModelExplode = useCallback((t: number) => {
-    setModelExplode(t);
-    modelToolsRef.current?.explode(t);
-  }, []);
+  /**
+   * Identity of the scene these model controls act on.
+   *
+   * Published alongside the state so a student who has moved on to a different
+   * lesson ignores a stale explode value rather than applying it to the wrong
+   * model.
+   */
+  const modelSceneKey = useMemo(() => {
+    const chapter = (lessonData as any)?.chapter?.chapter_id ?? '';
+    const topic = (lessonData as any)?.topic?.topic_id ?? '';
+    return chapter && topic ? `${chapter}:${topic}` : '';
+  }, [lessonData]);
+
+  /**
+   * Publishing is throttled.
+   *
+   * The explode slider fires continuously while dragged; writing every frame
+   * would put a document write per frame in front of the whole class. 200ms is
+   * imperceptible in motion and turns a drag into a handful of writes.
+   */
+  const modelPublishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modelPendingRef = useRef<Partial<TeacherContentState> | null>(null);
+  const publishModelPatch = useCallback(
+    (patch: Partial<TeacherContentState>, immediate = false) => {
+      if (!classroomRef.current.isClassHost || !modelSceneKey) return;
+      modelPendingRef.current = { ...(modelPendingRef.current ?? {}), ...patch };
+
+      const flush = () => {
+        modelPublishTimerRef.current = null;
+        const pending = modelPendingRef.current;
+        modelPendingRef.current = null;
+        if (pending) classroomRef.current.publishModelState(pending, modelSceneKey);
+      };
+
+      if (immediate) {
+        if (modelPublishTimerRef.current) clearTimeout(modelPublishTimerRef.current);
+        flush();
+        return;
+      }
+      if (modelPublishTimerRef.current) return;
+      modelPublishTimerRef.current = setTimeout(flush, 200);
+    },
+    [modelSceneKey]
+  );
+
+  const applyModelExplode = useCallback(
+    (t: number) => {
+      setModelExplode(t);
+      modelToolsRef.current?.explode(t);
+      publishModelPatch({ exploded: t });
+    },
+    [publishModelPatch]
+  );
 
   const applyModelIsolate = useCallback(() => {
     setModelIsolated((wasIsolated) => {
       const next = !wasIsolated;
       modelToolsRef.current?.isolate(modelSelectedPartName, next);
+      publishModelPatch(
+        { isolated: next, selected_part_name: modelSelectedPartName ?? null },
+        true
+      );
       return next;
     });
-  }, [modelSelectedPartName]);
+  }, [modelSelectedPartName, publishModelPatch]);
 
-  const applyModelClip = useCallback((clip: { axis: ClipAxis; offset: number } | null) => {
-    setModelClip(clip);
-    modelToolsRef.current?.clip(clip?.axis ?? null, clip?.offset ?? 0, rendererRef.current);
-  }, []);
+  const applyModelClip = useCallback(
+    (clip: { axis: ClipAxis; offset: number } | null) => {
+      setModelClip(clip);
+      modelToolsRef.current?.clip(clip?.axis ?? null, clip?.offset ?? 0, rendererRef.current);
+      publishModelPatch({ clip });
+    },
+    [publishModelPatch]
+  );
 
   const applyModelReset = useCallback(() => {
     setModelExplode(0);
@@ -3740,7 +3947,49 @@ const XRLessonPlayerV3: React.FC = () => {
     setModelClip(null);
     setModelSelectedPartName(null);
     modelToolsRef.current?.reset(rendererRef.current);
-  }, []);
+    publishModelPatch(
+      { exploded: 0, isolated: false, clip: null, selected_part_name: null },
+      true
+    );
+  }, [publishModelPatch]);
+
+  /**
+   * Follow the teacher's model state.
+   *
+   * Applied by everyone who is not the host, so an explode, isolate or section
+   * the teacher performs happens on every student's copy of the model. Gated on
+   * the scene key: a student on a different lesson must not inherit it.
+   */
+  const teacherModelState = classroom.teacherContentState;
+  const appliedModelSyncRef = useRef<number>(0);
+  useEffect(() => {
+    if (classroom.isClassHost || !teacherModelState || !modelToolsRef.current) return;
+    if (teacherModelState.scene_key && teacherModelState.scene_key !== modelSceneKey) return;
+    // sync_id changes on every publish, including one that re-sends the same
+    // values, so a student who joined late still catches up.
+    if (teacherModelState.sync_id === appliedModelSyncRef.current) return;
+    appliedModelSyncRef.current = teacherModelState.sync_id;
+
+    const tools = modelToolsRef.current;
+    const exploded =
+      typeof teacherModelState.exploded === 'number'
+        ? teacherModelState.exploded
+        : teacherModelState.exploded
+          ? 1
+          : 0;
+    tools.explode(exploded);
+    tools.isolate(teacherModelState.selected_part_name ?? null, teacherModelState.isolated === true);
+    tools.clip(
+      teacherModelState.clip?.axis ?? null,
+      teacherModelState.clip?.offset ?? 0,
+      rendererRef.current
+    );
+    // Mirror into local state so the student's own UI reflects reality.
+    setModelExplode(exploded);
+    setModelIsolated(teacherModelState.isolated === true);
+    setModelClip(teacherModelState.clip ?? null);
+    setModelSelectedPartName(teacherModelState.selected_part_name ?? null);
+  }, [classroom.isClassHost, teacherModelState, modelSceneKey]);
 
   const annotationSessionId = classroom.hostSessionId;
 
@@ -3756,6 +4005,56 @@ const XRLessonPlayerV3: React.FC = () => {
     },
     [annotationSessionId, classroom.isClassHost, classroom.activeSession?.teacher_annotations]
   );
+
+  /**
+   * Mark a point on a 3D model.
+   *
+   * Stored in the MODEL's local space, not the world's, so the mark stays on the
+   * part it was placed on when the model is moved, rotated or exploded. That is
+   * the whole reason model marks exist separately from the sphere-anchored ink:
+   * ink is painted on the sky, and would slide off a model the moment it moved.
+   */
+  const addModelMark = useCallback(
+    (model: THREE.Object3D, mesh: THREE.Mesh, raycaster: THREE.Raycaster) => {
+      if (!annotationSessionId || !classroom.isClassHost) return;
+      const hit = raycaster.intersectObject(mesh, false)[0];
+      if (!hit) return;
+
+      const local = model.worldToLocal(hit.point.clone());
+      const current = (classroom.activeSession?.teacher_annotations ?? null) as TeacherAnnotations | null;
+      const mark: AnnotationModelMark = {
+        id: `m_${Date.now()}_${Math.round(performance.now() % 1000)}`,
+        asset_id: String(model.name || model.uuid),
+        x: local.x,
+        y: local.y,
+        z: local.z,
+        color: markerColorRef.current,
+        created_ms: annotationNow(),
+        ttl_ms: STROKE_TTL_MS,
+      };
+
+      void publishAnnotations(annotationSessionId, {
+        strokes: current?.strokes ?? [],
+        laser: current?.laser ?? null,
+        // Capped for the same reason strokes are: an unbounded array in a
+        // document every student reads gets expensive quickly.
+        model_marks: [...(current?.model_marks ?? []), mark].slice(-MAX_INK_STROKES),
+        sync_id: Date.now(),
+        cleared_at: current?.cleared_at ?? 0,
+      });
+
+      // The tap also selects the part it landed on, which is what Isolate acts on.
+      if (mesh.name) {
+        setModelSelectedPartName(mesh.name);
+        publishModelPatch({ selected_part_name: mesh.name }, true);
+      }
+    },
+    [annotationSessionId, classroom.isClassHost, classroom.activeSession?.teacher_annotations, publishModelPatch]
+  );
+
+  useEffect(() => {
+    addModelMarkRef.current = addModelMark;
+  }, [addModelMark]);
 
   // Pointer drawing. Bound to the canvas so it never competes with the bars.
   useEffect(() => {
@@ -3856,6 +4155,8 @@ const XRLessonPlayerV3: React.FC = () => {
     showImmersiveUiForThisViewer: classroom.showImmersiveUiForThisViewer,
     directClassToCurrentView: classroom.directClassToCurrentView,
     classId: classroom.joinedSession?.class_id ?? classroom.activeSession?.class_id ?? null,
+    isClassHost: classroom.isClassHost,
+    publishModelState: classroom.publishModelState,
   };
 
   // ============================================================================
