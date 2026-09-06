@@ -20,7 +20,6 @@ import { useLesson } from '../../contexts/LessonContext';
 import { buildCreateSceneActiveLesson } from '../../utils/buildCreateSceneActiveLesson';
 import { getVr360TourById, VR360_TOUR_CHAPTER_ID } from '../../config/vr360Tours';
 import { resolvePlayerRoute } from '../../lib/classroom/resolvePlayerRoute';
-import type { LanguageCode } from '../../types/curriculum';
 import type { LessonChapter, LessonTopic } from '../../contexts/LessonContext';
 
 const LICENSED_TYPES = ['licensed_3d', 'licensed_embed', 'licensed_link'];
@@ -125,113 +124,22 @@ export const ClassLaunchRouter = () => {
     // Curriculum / user-generated lessons: fetch the bundle, then open the
     // player the teacher chose at launch.
     inFlightRef.current = key;
-    const effectiveLang = (launched.lang ?? 'en') as LanguageCode;
     let cancelled = false;
 
     (async () => {
       try {
-        const { getLessonBundle } = await import('../../services/firestore/getLessonBundle');
-        const bundle = await getLessonBundle({
-          chapterId: launched.chapter_id,
-          lang: effectiveLang,
-          topicId: launched.topic_id,
-          source: lessonType === 'user_generated' ? 'user_generated' : 'curriculum',
-        });
+        // Shared with the player, which builds the same payload for itself when
+        // a topic changes mid-class. Two copies of this transformation were how
+        // a teacher ended up reloading the topic they had just left.
+        const { buildActiveLesson } = await import('../../lib/lesson/buildActiveLesson');
+        const fullLessonData = await buildActiveLesson(launched);
         if (cancelled) return;
-
-        const fullData = bundle.chapter;
-        const topic =
-          fullData.topics?.find((t: { topic_id?: string }) => t.topic_id === launched.topic_id) ||
-          fullData.topics?.[0];
-        if (!topic) {
+        if (!fullLessonData) {
           inFlightRef.current = null;
           return;
         }
-
-        const scripts = bundle.avatarScripts || { intro: '', explanation: '', outro: '' };
-        const assetUrls = [...(topic.asset_urls || [])];
-        const assetIds = [...(topic.asset_ids || [])];
-        const safeAssets3d = Array.isArray(bundle.assets3d) ? bundle.assets3d : [];
-        safeAssets3d.forEach((asset) => {
-          const glb =
-            asset?.animated_render_url ||
-            asset?.animated_glb_url ||
-            asset?.render_url ||
-            asset?.model_urls?.glb ||
-            asset?.glb_url;
-          if (glb && !assetUrls.includes(glb)) {
-            assetUrls.push(glb);
-            assetIds.push(asset.id || `asset_${assetUrls.length}`);
-          }
-        });
-
-        const safeMcqs = Array.isArray(bundle.mcqs) ? bundle.mcqs : [];
-        const mcqs = safeMcqs.map((m, i) => ({
-          id: m.id || `mcq_${i}`,
-          question: m.question || m.question_text || '',
-          options: Array.isArray(m.options) ? m.options : [],
-          correct_option_index: m.correct_option_index ?? 0,
-          explanation: m.explanation || '',
-        }));
-
-        const safeTts = Array.isArray(bundle.tts) ? bundle.tts : [];
-        const ttsAudio = safeTts
-          .map((tts) => ({
-            id: tts.id || '',
-            script_type: tts.script_type || tts.section || 'full',
-            audio_url: tts.audio_url || tts.audioUrl || tts.url || '',
-            language: tts.language || tts.lang || effectiveLang,
-          }))
-          .filter((tts) => (tts.language || 'en').toLowerCase() === effectiveLang.toLowerCase());
-
-        const skyboxUrl =
-          bundle.skybox?.imageUrl || bundle.skybox?.file_url || topic.skybox_url || '';
-        const skyboxGlb =
-          bundle.skybox?.stored_glb_url || bundle.skybox?.glb_url || topic.skybox_glb_url || '';
-
-        const cleanChapter = {
-          chapter_id: String(launched.chapter_id),
-          chapter_name: fullData.chapter_name || 'Untitled Chapter',
-          chapter_number: Number(fullData.chapter_number) || 1,
-          curriculum: String(launched.curriculum || fullData.curriculum || ''),
-          class_name: String((launched.class_name || fullData.class_name) ?? ''),
-          subject: String((launched.subject || fullData.subject) ?? ''),
-        };
-        const cleanTopic = {
-          topic_id: String(topic.topic_id ?? launched.topic_id),
-          topic_name: topic.topic_name || 'Untitled Topic',
-          topic_priority: Number(topic.topic_priority) || 1,
-          learning_objective: topic.learning_objective || '',
-          skybox_id: bundle.skybox?.id ?? topic.skybox_id ?? null,
-          skybox_remix_id: topic.skybox_remix_id ?? null,
-          skybox_url: skyboxUrl,
-          skybox_glb_url: skyboxGlb,
-          avatar_intro: scripts.intro || '',
-          avatar_explanation: scripts.explanation || '',
-          avatar_outro: scripts.outro || '',
-          asset_urls: assetUrls,
-          asset_ids: assetIds,
-          mcq_ids: topic.mcq_ids || [],
-          mcqs,
-          tts_ids: topic.tts_ids || [],
-          tts_audio_url: topic.tts_audio_url || '',
-          ttsAudio,
-          language: effectiveLang,
-        };
-        const fullLessonData = {
-          chapter: cleanChapter,
-          topic: cleanTopic,
-          image3dasset: fullData.image3dasset ?? null,
-          meshy_asset_ids: fullData.meshy_asset_ids ?? [],
-          assets3d: safeAssets3d,
-          startedAt: new Date().toISOString(),
-          _meta: {
-            assets3d: safeAssets3d,
-            meshy_asset_ids: fullData.meshy_asset_ids || [],
-          },
-          language: effectiveLang,
-          ttsAudio,
-        };
+        const cleanChapter = fullLessonData.chapter;
+        const cleanTopic = fullLessonData.topic;
 
         writeHandled(key);
         sessionStorage.setItem('activeLesson', JSON.stringify(fullLessonData));

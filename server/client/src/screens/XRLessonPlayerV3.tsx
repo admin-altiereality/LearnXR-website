@@ -99,10 +99,25 @@ import {
 // Desk and panel heights derived from the viewer's own eye height, so a
 // seated student and a standing teacher each get a layout that fits them.
 import { layoutForViewer, DEFAULT_EYE_HEIGHT, type ViewerLayout } from '../lib/three/ergonomics';
+// One anchor for the dock, the models and the panel, so they finally agree with
+// each other about which way the viewer is facing.
+import {
+  captureAnchor,
+  workspaceFrame,
+  PANEL_ASPECT,
+  type WorkspaceAnchor,
+} from '../lib/three/workspace';
+
+/** Panel width before the workspace frame has had a chance to size it. */
+const PANEL_START_WIDTH = 1.6;
 import { groundedOffset } from '../lib/three/groundedOffset';
 // Releasing one topic's content so the next can replace it without the renderer,
 // and therefore without the XR session, being torn down.
-import { disposeLessonContent } from '../lib/lesson/lessonSwap';
+import { disposeLessonContent, disposeObject3D } from '../lib/lesson/lessonSwap';
+import { attachAssetsGroup, discardAssetsGroup } from '../lib/three/attachAssetsGroup';
+// The same builder ClassLaunchRouter uses, so a teacher advancing their class is
+// served exactly like a student rather than not at all.
+import { buildActiveLesson } from '../lib/lesson/buildActiveLesson';
 import { fetchChapterById } from '../lib/firebase/queries/curriculumChapters';
 import { launchLesson } from '../services/classSessionService';
 import {
@@ -315,6 +330,11 @@ const XRLessonPlayerV3: React.FC = () => {
   /* Called from the XR session handlers, which are installed before these
      callbacks exist — same reason as selectPickedPartRef above. */
   const applyViewerErgonomicsRef = useRef<() => void>(() => {});
+  /** Where the workspace was built. Recaptured on recentre, never per frame. */
+  const workspaceAnchorRef = useRef<WorkspaceAnchor | null>(null);
+  /* Called from the asset loader, which sits above the layout callbacks in this
+     file — the same forward-reference the other refs here solve. */
+  const applyWorkspaceLayoutRef = useRef<() => void>(() => {});
   const restoreDeskHeightRef = useRef<() => void>(() => {});
   /** True while the thumbstick is pushed forward, so release can commit the aim. */
   const teleportArmedRef = useRef(false);
@@ -2149,9 +2169,22 @@ const XRLessonPlayerV3: React.FC = () => {
             teleportRef.current.update(delta, viewer);
           }
 
-          // Update billboards to face camera
+          /*
+            Turn the panel to face the viewer — about the vertical axis only.
+
+            A full lookAt tips the panel toward the head, so glancing down at the
+            models left it pitched back and harder to read, and in a headset the
+            tilt changes continuously as you move. Turning in place is what a
+            board on a stand does, and it is what the eye expects.
+          */
           if (lessonPanelRef.current && cameraRef.current) {
-            lessonPanelRef.current.mesh.lookAt(cameraRef.current.position);
+            const panelMesh = lessonPanelRef.current.mesh;
+            const toViewer = cameraRef.current.getWorldPosition(new THREE.Vector3());
+            panelMesh.rotation.set(
+              0,
+              Math.atan2(toViewer.x - panelMesh.position.x, toViewer.z - panelMesh.position.z),
+              0
+            );
           }
           
           // Gravity simulation: Make assets rest on dock when not grabbed
@@ -2570,7 +2603,7 @@ const XRLessonPlayerV3: React.FC = () => {
         if (looksLikeGLB) {
           try {
             console.log('[XRLessonPlayerV3] Attempting GLB load...');
-            const gltf = await new Promise<any>((resolve, reject) => {
+            const gltf: any = await new Promise<any>((resolve, reject) => {
               gltfLoader.load(urlStr, resolve, (p) => {
                 const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
                 setLoadingMessage(`Loading skybox: ${pct}%`);
@@ -2634,14 +2667,25 @@ const XRLessonPlayerV3: React.FC = () => {
   // Load 3D Assets into Scene
   // ============================================================================
   
-  // Track if asset loading has been attempted to prevent duplicate logs
-  const assetLoadingAttemptedRef = useRef<boolean>(false);
-  
+  /*
+    Which asset load is the current one.
+
+    Bumped whenever the effect re-runs, and checked by the running load at every
+    point it could have been superseded. Without it a load that started before a
+    re-run still added its models to the scene when it finally finished, on top
+    of the ones that replaced them — the same asset visibly in the room twice,
+    with only one of the two copies answering the controls.
+
+    The same generation-token shape as lib/lesson/narration.ts, which solved the
+    identical problem for audio.
+  */
+  const assetLoadGenerationRef = useRef(0);
+
   useEffect(() => {
-    // Reset attempt flag when assets change
-    if (meshyAssets.length > 0) {
-      assetLoadingAttemptedRef.current = false;
-    }
+    const generation = assetLoadGenerationRef.current + 1;
+    assetLoadGenerationRef.current = generation;
+    /** False once a newer load has started; nothing stale may touch the scene. */
+    const isCurrent = () => assetLoadGenerationRef.current === generation;
     
     // Log whenever this effect runs
     console.log('[XRLessonPlayerV3] ========== ASSET LOADING EFFECT TRIGGERED ==========');
@@ -2649,7 +2693,7 @@ const XRLessonPlayerV3: React.FC = () => {
       meshyAssetsLength: meshyAssets.length,
       loadingState,
       hasScene: !!sceneRef.current,
-      alreadyAttempted: assetLoadingAttemptedRef.current,
+      generation,
       meshyAssets: meshyAssets.map(a => ({ 
         id: a.id, 
         name: a.name, 
@@ -2661,7 +2705,7 @@ const XRLessonPlayerV3: React.FC = () => {
     // Always log to debug panel
     addDebug(`========== ASSET LOADING EFFECT ==========`);
     addDebug(`Assets: ${meshyAssets.length} | State: ${loadingState} | Scene: ${!!sceneRef.current}`);
-    addDebug(`Already attempted: ${assetLoadingAttemptedRef.current}`);
+    addDebug(`Load generation: ${generation}`);
     
     try {
       // Allow asset loading when scene is ready OR when in VR
@@ -2683,13 +2727,6 @@ const XRLessonPlayerV3: React.FC = () => {
         return;
       }
       
-      // Mark as attempted to prevent duplicate logs
-      if (assetLoadingAttemptedRef.current) {
-        console.log('[XRLessonPlayerV3] Asset loading already attempted, skipping duplicate');
-        addDebug(`⚠️ Asset loading already attempted, skipping duplicate`);
-        return;
-      }
-      assetLoadingAttemptedRef.current = true;
       
       console.log('[XRLessonPlayerV3] ✅ Asset loading conditions met!');
       addDebug(`✅ Asset loading conditions met: scene ready, ${meshyAssets.length} asset(s), state=${loadingState}`);
@@ -2805,6 +2842,13 @@ const XRLessonPlayerV3: React.FC = () => {
       assetRefs.current.clear();
       
       for (let i = 0; i < meshyAssets.length; i++) {
+        // A newer load has taken over. Stop here rather than spend the network
+        // on models that will be thrown away.
+        if (!isCurrent()) {
+          addDebug(`Load ${generation} superseded; abandoning the rest`);
+          discardAssetsGroup(assetsGroup);
+          return;
+        }
         const asset = meshyAssets[i];
 
         /*
@@ -2915,6 +2959,15 @@ const XRLessonPlayerV3: React.FC = () => {
           
           console.log(`[XRLessonPlayerV3] ✅ GLTF loaded for asset ${i + 1}, processing...`);
           addDebug(`✅ GLTF loaded successfully`);
+          if (!isCurrent()) {
+            // Downloaded into a load that no longer counts. The GLB is real and
+            // holds GPU memory, so release it rather than letting it fall out of
+            // scope unreferenced.
+            disposeObject3D(gltf.scene);
+            discardAssetsGroup(assetsGroup);
+            return;
+          }
+
           addDebug(`Processing geometry and materials...`);
           
           // ═══════════════════════════════════════════════════════════════════════
@@ -3208,9 +3261,22 @@ const XRLessonPlayerV3: React.FC = () => {
       }
       
       // Add assets group to scene
+      if (!isCurrent()) {
+        // The whole point: a superseded load must never reach the scene. This is
+        // where the second copy of every model used to arrive.
+        addDebug(`Load ${generation} finished after being superseded; discarded`);
+        discardAssetsGroup(assetsGroup);
+        return;
+      }
       if (sceneRef.current) {
         console.log(`[XRLessonPlayerV3] Adding assetsGroup to scene (${assetsGroup.children.length} children)`);
-        sceneRef.current.add(assetsGroup);
+        const displaced = attachAssetsGroup(sceneRef.current, assetsGroup);
+        if (displaced > 0) {
+          // Belt and braces. If this ever fires, two loads reached the scene and
+          // the generation check above did not catch it — worth knowing.
+          console.warn(`[XRLessonPlayerV3] Displaced ${displaced} stale assets group(s)`);
+          addDebug(`⚠️ Displaced ${displaced} stale assets group(s)`);
+        }
         
         // Verify it's in the scene
         const foundGroup = sceneRef.current.getObjectByName('assetsGroup');
@@ -3321,114 +3387,26 @@ const XRLessonPlayerV3: React.FC = () => {
             sceneLayoutRef.current.setStrategy(placementStrategy);
           }
           
-          // Create asset dock in scene
-          if (sceneRef.current && cameraRef.current) {
-            sceneLayoutRef.current.createAssetDock(sceneRef.current, cameraRef.current, GROUND_LEVEL);
-            addDebug(`✅ Asset dock created at hands distance`);
-          }
-          
-          // Create ground plane
+          // Ground plane belongs to the room and is built once here.
           if (sceneRef.current) {
             sceneLayoutRef.current.createGroundPlane(sceneRef.current, GROUND_LEVEL);
             addDebug(`✅ Ground plane created`);
           }
-          
-          // Calculate dynamic N placements for N assets
-          // CRITICAL: N assets MUST produce N placements
-          const placements = sceneLayoutRef.current.calculatePlacements(
-            assetCount,
-            cameraRef.current,
-            GROUND_LEVEL
-          );
-          
-          // Store placements for reference
-          assetPlacementsRef.current = placements;
-          
-          // ═══════════════════════════════════════════════════════════════
-          // CRITICAL VERIFICATION: N assets = N placements
-          // ═══════════════════════════════════════════════════════════════
-          console.log(`[SCENE_LAYOUT] ═══════════════════════════════════════`);
-          console.log(`[SCENE_LAYOUT] ASSET COUNT VERIFICATION:`);
-          console.log(`[SCENE_LAYOUT]   Total assets loaded: ${assetCount}`);
-          console.log(`[SCENE_LAYOUT]   Placements generated: ${placements.length}`);
-          console.log(`[SCENE_LAYOUT]   Match: ${assetCount === placements.length ? '✅ YES' : '❌ NO - BUG!'}`);
-          
-          if (assetCount !== placements.length) {
-            console.error(`[SCENE_LAYOUT] ❌ CRITICAL BUG: Asset count (${assetCount}) != Placement count (${placements.length})`);
-            addDebug(`❌ BUG: ${assetCount} assets but only ${placements.length} placements!`);
-          }
-          
-          // Log each asset and its corresponding placement
-          console.log(`[SCENE_LAYOUT] Asset → Placement mapping:`);
-          foundGroup.children.forEach((asset, idx) => {
-            const placement = placements[idx];
-            console.log(`[SCENE_LAYOUT]   [${idx}] "${asset.name}" → Slot ${placement?.slotIndex ?? 'NONE'} at (${placement?.position.x.toFixed(2) ?? 'N/A'}, ${placement?.position.y.toFixed(2) ?? 'N/A'}, ${placement?.position.z.toFixed(2) ?? 'N/A'})`);
-          });
-          
-          addDebug(`═══ SCENE LAYOUT SYSTEM ═══`);
-          addDebug(`Strategy: ${placementStrategy}`);
-          addDebug(`Assets: ${assetCount} | Placements: ${placements.length} ${assetCount === placements.length ? '✅' : '❌'}`);
-          addDebug(`Dock surface Y: ${placements[0]?.dockSurfaceY.toFixed(2)}m`);
-          
-          // Place each asset with fit-to-dock scaling
-          // CRITICAL: Pass total asset count for proper per-asset scaling
-          const modelsToPlace = foundGroup.children as THREE.Object3D[];
-          const totalAssets = modelsToPlace.length;
-          
-          console.log(`[SCENE_LAYOUT] Placing ${totalAssets} assets with ${placements.length} placements`);
-          
-          modelsToPlace.forEach((assetGroup, index) => {
-            if (index < placements.length) {
-              const placement = placements[index];
-              
-              console.log(`[SCENE_LAYOUT] Placing asset ${index + 1}/${totalAssets} (slot ${placement.slotIndex}):`, {
-                assetName: assetGroup.name,
-                assetUUID: assetGroup.uuid.substring(0, 8),
-                targetPosition: `(${placement.position.x.toFixed(2)}, ${placement.position.y.toFixed(2)}, ${placement.position.z.toFixed(2)})`,
-                strategy: placement.strategy,
-                strategyScale: placement.scale,
-              });
-              
-              // Place asset with fit-to-dock scaling, passing total count for proper sizing
-              sceneLayoutRef.current!.placeAssetOnDock(
-                assetGroup,
-                placement,
-                cameraRef.current!,
-                GROUND_LEVEL,
-                totalAssets // Pass total count for collision-aware scaling
-              );
-              
-              // Store placement reference
-              assetGroup.userData.placementIndex = index;
-              assetGroup.userData.slotIndex = placement.slotIndex;
-              assetGroup.userData.placementPosition = new THREE.Vector3().copy(placement.position);
-              assetGroup.userData.placementRotation = new THREE.Euler().copy(placement.rotation);
-              assetGroup.userData.dockSurfaceY = placement.dockSurfaceY;
-              
-              // Store original position for reset
-              assetGroup.userData.originalPosition = new THREE.Vector3().copy(assetGroup.position);
-              assetGroup.userData.originalRotation = new THREE.Euler().copy(assetGroup.rotation);
-              
-              // Verify placement
-              const pos = assetGroup.position;
-              const heightOnDock = pos.y - placement.dockSurfaceY;
-              console.log(`[SCENE_LAYOUT] Asset ${index + 1} placed: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-              addDebug(`[DOCK] Asset ${index + 1} (slot ${placement.slotIndex}): (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-              
-              // Ensure asset is resting on dock
-              if (Math.abs(heightOnDock) > 0.1) {
-                console.warn(`[SCENE_LAYOUT] ⚠️ Asset ${index + 1} height ${heightOnDock.toFixed(2)}m - adjusting to dock surface`);
-                const box = new THREE.Box3().setFromObject(assetGroup);
-                const size = box.getSize(new THREE.Vector3());
-                assetGroup.position.y = placement.dockSurfaceY + size.y / 2;
-                assetGroup.updateMatrixWorld(true);
-              }
-            } else {
-              console.warn(`[SCENE_LAYOUT] ⚠️ No placement for asset ${index + 1} (${assetCount} assets, ${placements.length} placements)`);
-              addDebug(`⚠️ Asset ${index + 1}: No placement available`);
-            }
-          });
-          
+
+          /*
+            Dock and model placement now come from the one workspace frame.
+
+            What stood here computed its own anchor from the camera at this
+            moment, while the lesson panel's layout engine computed a different
+            one from a different moment — which is why the dock and the panel
+            could face different ways and the room never looked arranged. It also
+            carried a "nudge it back onto the dock" fallback that set
+            `position.y = dockSurfaceY + height / 2`, the origin-is-the-centre
+            assumption fixed everywhere else, which quietly undid the correct
+            placement for any model authored off its own origin.
+          */
+          applyWorkspaceLayoutRef.current();
+
           console.log(`[SCENE_LAYOUT] ═══════════════════════════════════════`);
           
           // CRITICAL: Show VR button only after all calculations are complete
@@ -3555,7 +3533,11 @@ const XRLessonPlayerV3: React.FC = () => {
       console.error('[XRLessonPlayerV3] Asset loading error:', assetErr);
       addDebug(`❌ Asset loading error: ${assetErr?.message || assetErr}`);
     }
-  }, [meshyAssets, loadingState, addDebug, isSceneReady]);
+  // `loadingState` is deliberately absent. It changes to 'in-vr' when a session
+  // starts, and having it here meant entering VR reloaded every model — the race
+  // that put a second copy of each one in the scene.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meshyAssets, addDebug, isSceneReady]);
   
   // Force asset loading when meshyAssets becomes available (separate trigger)
   useEffect(() => {
@@ -4152,32 +4134,61 @@ const XRLessonPlayerV3: React.FC = () => {
    * place.
    */
   const applyWorkspaceLayout = useCallback(
-    (view: ViewerLayout) => {
+    (view: ViewerLayout, recapture = false) => {
       const scene = sceneRef.current;
       const camera = cameraRef.current;
       if (!scene || !camera) return;
 
-      // The panel keeps its distance and bearing; only its height changes, so a
-      // teacher who has positioned the class does not find it moved sideways.
+      /*
+        One anchor, and everything derived from it.
+
+        Recaptured only when asked: on entering a headset, where the viewer's
+        real eye height first becomes known, and on an explicit recentre. A
+        workspace that re-derived itself from the live camera would drift every
+        time somebody looked away, which is what the three separate layout
+        systems were each doing on their own schedule.
+      */
+      if (recapture || !workspaceAnchorRef.current) {
+        workspaceAnchorRef.current = captureAnchor(camera, GROUND_LEVEL);
+      }
+      const anchor = { ...workspaceAnchorRef.current!, eyeHeight: view.eyeHeight };
+      workspaceAnchorRef.current = anchor;
+
+      const assets = (assetsGroupRef.current?.children ?? []) as THREE.Object3D[];
+      const frame = workspaceFrame(anchor, assets.length);
+
+      // The panel: same anchor, deliberate bearing, sized by the angle it
+      // subtends rather than a fixed width that happened to span 62 degrees.
       const panel = lessonPanelRef.current?.mesh;
       if (panel) {
-        panel.position.y = view.panelHeight;
-        panel.lookAt(camera.position);
+        panel.position.copy(frame.panel.position);
+        panel.rotation.set(0, frame.panel.yaw, 0);
+        const geometry = panel.geometry as THREE.PlaneGeometry;
+        const current = geometry?.parameters;
+        if (
+          !current ||
+          Math.abs(current.width - frame.panel.width) > 1e-3 ||
+          Math.abs(current.height - frame.panel.height) > 1e-3
+        ) {
+          geometry?.dispose();
+          panel.geometry = new THREE.PlaneGeometry(frame.panel.width, frame.panel.height);
+        }
       }
 
       const layout = sceneLayoutRef.current;
       if (!layout) return;
-      layout.setDockHeight(view.dockHeight);
-      layout.createAssetDock(scene, camera, GROUND_LEVEL);
+      layout.createAssetDockFromFrame(scene, frame);
 
-      const assets = (assetsGroupRef.current?.children ?? []) as THREE.Object3D[];
       // Never yank a model out of somebody's hand mid-lesson.
       if (assets.length === 0 || stableLayoutRef.current?.isGrabbing()) return;
 
-      const placements = layout.calculatePlacements(assets.length, camera, GROUND_LEVEL);
+      const placements = layout.placementsFromFrame(frame);
+      assetPlacementsRef.current = placements;
       assets.forEach((asset, index) => {
         const placement = placements[index];
         if (!placement) return;
+        // placeAssetOnDock measures the model's real bounding box, which is the
+        // part that already works; it only needed telling where to put it.
         layout.placeAssetOnDock(asset, placement, camera, GROUND_LEVEL, assets.length);
         asset.userData.dockSurfaceY = placement.dockSurfaceY;
       });
@@ -4187,16 +4198,23 @@ const XRLessonPlayerV3: React.FC = () => {
       modelToolsRef.current?.update();
       requestShadowRefresh(rendererRef.current);
       addDebug(
-        `Workspace fitted: eye ${view.eyeHeight.toFixed(2)}m, dock ${view.dockHeight.toFixed(2)}m`
+        `Workspace: eye ${frame.anchor.eyeHeight.toFixed(2)}m, desk ${frame.deskY.toFixed(2)}m, ` +
+          `${frame.slots.length} slot(s), panel ${frame.panel.width.toFixed(2)}m`
       );
     },
     [addDebug]
   );
 
   useEffect(() => {
+    // The desktop layout, used when assets finish loading before any headset
+    // session exists. Recaptures, because that is the first moment there is a
+    // scene to anchor to.
+    applyWorkspaceLayoutRef.current = () => applyWorkspaceLayout(DESKTOP_LAYOUT, true);
     applyViewerErgonomicsRef.current = () =>
-      applyWorkspaceLayout(layoutForViewer(cameraRef.current, GROUND_LEVEL));
-    restoreDeskHeightRef.current = () => applyWorkspaceLayout(DESKTOP_LAYOUT);
+      // Recapture: entering a headset is the first moment the viewer's real eye
+      // height and facing are known, and it is where they are actually sitting.
+      applyWorkspaceLayout(layoutForViewer(cameraRef.current, GROUND_LEVEL), true);
+    restoreDeskHeightRef.current = () => applyWorkspaceLayout(DESKTOP_LAYOUT, true);
   }, [applyWorkspaceLayout]);
 
   const applyModelReset = useCallback(() => {
@@ -4297,6 +4315,27 @@ const XRLessonPlayerV3: React.FC = () => {
       try {
         addDebug(`Swapping to a new topic (launch ${launchSignal})...`);
 
+        /*
+          Build the new lesson BEFORE tearing the old one down.
+
+          This used to read sessionStorage, which two different subscribers were
+          racing to write: the player reacted to the session snapshot
+          synchronously while ClassLaunchRouter only wrote after fetching a
+          bundle, so the player reliably read the topic it was leaving. And the
+          router serves students only, so a teacher was never written to at all
+          and simply reloaded the topic they had just finished.
+
+          Fetching here removes both problems, and doing it first means a lesson
+          that fails to load leaves the current one standing rather than an empty
+          room.
+        */
+        const nextLesson = await buildActiveLesson(launchedLesson!);
+        if (!nextLesson) {
+          addDebug('The next topic could not be loaded; staying on the current one.');
+          toast.error('The next topic could not be loaded.');
+          return;
+        }
+
         // The finished topic's result goes to the dashboards BEFORE its state is
         // cleared. A student mid-quiz is pulled forward with the class, so their
         // partial answers are submitted here rather than lost — see
@@ -4345,18 +4384,15 @@ const XRLessonPlayerV3: React.FC = () => {
         launchIdRef.current = null;
         lessonStartTimeRef.current = null;
 
-        // ClassLaunchRouter has already written the new bundle here. Re-reading
-        // is what makes the existing skybox / asset / MCQ effects run again.
-        const stored = sessionStorage.getItem('activeLesson');
-        if (!stored) {
-          addDebug('No lesson data for the new topic');
-          setErrorMessage('The next topic could not be loaded.');
-          setLoadingState('error');
-          return;
+        // Kept in sessionStorage so a reload mid-lesson recovers the topic the
+        // class is actually on, but nothing here depends on reading it back.
+        try {
+          sessionStorage.setItem('activeLesson', JSON.stringify(nextLesson));
+        } catch {
+          /* a full quota must not stop the lesson */
         }
-        setLessonData(JSON.parse(stored));
-        // Assets are gated on this flag; the previous topic left it set.
-        assetLoadingAttemptedRef.current = false;
+        setLessonData(nextLesson as any);
+        addDebug(`Now teaching: ${nextLesson.topic.topic_name}`);
       } catch (err: any) {
         console.error('[XRLessonPlayerV3] Topic swap failed:', err);
         addDebug(`Topic swap failed: ${err?.message || err}`);
@@ -4364,7 +4400,7 @@ const XRLessonPlayerV3: React.FC = () => {
         swappingRef.current = false;
       }
     })();
-  }, [launchSignal, addDebug]);
+  }, [launchSignal, launchedLesson, addDebug]);
 
   /*
     Teaching a chapter, not a topic.
@@ -4908,9 +4944,12 @@ const XRLessonPlayerV3: React.FC = () => {
       /* anisotropy is a nicety */
     }
 
-    // 16:10, matching the canvas, so nothing is stretched.
+    // A starting size only. applyWorkspaceLayout resizes it from the angle it
+    // should subtend at its distance — a fixed 2.4m panel spans 62 degrees two
+    // metres away, wider than can be read without scanning across it. The 16:10
+    // ratio matches the canvas either way, so nothing is ever stretched.
     const mesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.4, 1.5),
+      new THREE.PlaneGeometry(PANEL_START_WIDTH, PANEL_START_WIDTH * PANEL_ASPECT),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide })
     );
     mesh.name = 'lessonPanel';
@@ -4918,16 +4957,20 @@ const XRLessonPlayerV3: React.FC = () => {
     mesh.userData.layer = 'ui';
     mesh.userData.panelType = 'lesson';
 
-    if (layoutEngineRef.current?.isReady()) {
-      const pos = layoutEngineRef.current.positionUIPanel();
-      mesh.position.set(pos.x, pos.y, pos.z);
-    } else {
-      // Slightly left of centre at eye level, as the script panel used to sit.
-      const angle = -Math.PI / 9;
-      const distance = 2.2;
-      mesh.position.set(Math.sin(angle) * distance, 1.6, -Math.cos(angle) * distance);
-    }
-    mesh.lookAt(camera.position);
+    /*
+      Placed from the one workspace frame, not from a second layout engine.
+
+      LayoutEngine computed its own anchor at its own moment, and the dock's
+      system computed another at a different one — so the panel and the models
+      could sit on different bearings and the room never read as arranged. The
+      panel still sits to the left, as it always has; the difference is that the
+      offset is now measured from the same forward the dock uses.
+    */
+    const panelAnchor = workspaceAnchorRef.current ?? captureAnchor(camera, GROUND_LEVEL);
+    workspaceAnchorRef.current = panelAnchor;
+    const panelFrame = workspaceFrame(panelAnchor, assetsGroupRef.current?.children.length ?? 0);
+    mesh.position.copy(panelFrame.panel.position);
+    mesh.rotation.set(0, panelFrame.panel.yaw, 0);
     scene.add(mesh);
 
     lessonPanelRef.current = { mesh, canvas, ctx, texture, bornAt: performance.now() };

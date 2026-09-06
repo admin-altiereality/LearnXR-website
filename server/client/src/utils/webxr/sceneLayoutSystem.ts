@@ -16,6 +16,7 @@
  */
 
 import * as THREE from 'three';
+import type { WorkspaceFrame } from '../../lib/three/workspace';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -284,6 +285,74 @@ export class SceneLayoutSystem {
     asset.rotation.copy(originalRotation);
 
     return scale;
+  }
+
+  /**
+   * Build the dock where the workspace frame says it goes.
+   *
+   * The frame-taking variants exist because this class used to compute its own
+   * anchor from the camera at the moment it happened to run, as did the lesson
+   * panel's layout engine, from a different camera pose. That is why the dock
+   * and the panel could end up facing different directions: not a bug in either
+   * one, but two answers to the same question. The frame is the single answer.
+   */
+  public createAssetDockFromFrame(scene: THREE.Scene, frame: WorkspaceFrame): THREE.Mesh {
+    const existing = scene.getObjectByName('assetDock');
+    if (existing) scene.remove(existing);
+
+    const geometry = new THREE.BoxGeometry(frame.dock.width, 0.05, frame.dock.depth);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x1e3a5f,
+      transparent: true,
+      opacity: 0.7,
+      emissive: 0x0a1929,
+      emissiveIntensity: 0.3,
+      roughness: 0.2,
+      metalness: 0.3,
+    });
+
+    const dock = new THREE.Mesh(geometry, material);
+    dock.name = 'assetDock';
+    dock.userData.layer = 'asset-dock';
+    dock.position.copy(frame.dock.center);
+    dock.rotation.y = frame.dock.yaw;
+
+    const edges = new THREE.EdgesGeometry(geometry);
+    const edgeMaterial = new THREE.LineBasicMaterial({
+      color: 0x00d4ff,
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.8,
+    });
+    dock.add(new THREE.LineSegments(edges, edgeMaterial));
+
+    scene.add(dock);
+    this.assetDockMesh = dock;
+    // Keep the configured height in step, so anything still reading it agrees
+    // with where the dock actually is.
+    this.config.assetDock.height = frame.deskY - frame.anchor.groundY;
+    this.config.assetDock.width = frame.dock.width;
+    this.config.assetDock.depth = frame.dock.depth;
+    return dock;
+  }
+
+  /**
+   * One placement per model slot in the frame.
+   *
+   * Deliberately the same AssetPlacement shape `calculatePlacements` returns, so
+   * `placeAssetOnDock` — which measures the model's real bounding box and is the
+   * part that works — needs no change at all.
+   */
+  public placementsFromFrame(frame: WorkspaceFrame): AssetPlacement[] {
+    return frame.slots.map((slot, index) => ({
+      position: slot.position.clone(),
+      rotation: new THREE.Euler(0, slot.yaw, 0),
+      scale: 1,
+      strategy: this.strategy,
+      dockSurfaceY: frame.deskY,
+      slotIndex: index,
+      boundingRadius: this.config.assetDock.maxAssetSize * 0.5,
+    }));
   }
 
   /**
