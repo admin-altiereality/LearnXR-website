@@ -91,6 +91,7 @@ import { createTeleport, resetTeleport, type TeleportController } from '../lib/t
 // Explode / isolate / section, lifted out of the krpano plugin so both players
 // share one implementation. This is also what makes "label the part" possible.
 import { createModelTools, type ClipAxis, type ModelTools } from '../lib/three/modelTools';
+import { groundedOffset } from '../lib/three/groundedOffset';
 import { cameraRotationToHV } from '../lib/classroom/viewSync';
 import { createNarrationController, type NarrationController } from '../lib/lesson/narration';
 // The teacher marker draws real geometry rather than an SVG overlay, so a
@@ -2890,9 +2891,10 @@ const XRLessonPlayerV3: React.FC = () => {
           // This makes subsequent positioning predictable
           // ═══════════════════════════════════════════════════════════════════════
           
-          // Center horizontally (X, Z) but place BOTTOM at Y=0
-          const yOffsetForBottomAtZero = -modelBottom; // This moves bottom to Y=0
-          gltf.scene.position.set(-center.x, yOffsetForBottomAtZero, -center.z);
+          // Center horizontally (X, Z) but place BOTTOM at Y=0. See
+          // groundedOffset for why the offset has to be scaled — getting this
+          // wrong is what left uploaded models floating above the dock.
+          gltf.scene.position.copy(groundedOffset(box, scale));
           gltf.scene.scale.setScalar(scale);
           gltf.scene.name = `asset_${asset.id}`;
           

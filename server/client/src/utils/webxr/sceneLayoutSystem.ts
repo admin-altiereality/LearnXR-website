@@ -737,22 +737,37 @@ export class SceneLayoutSystem {
     asset.scale.set(1, 1, 1);
     asset.scale.multiplyScalar(finalScale);
 
-    // Get bounding box after scaling
+    // Rotation before measuring, not after. The box has to be taken in the
+    // orientation the asset is actually shown in -- rotating afterwards, about
+    // an origin the geometry is not centred on, swings the model back off its
+    // slot.
+    asset.rotation.copy(placement.rotation);
+
+    // Get bounding box after scaling and rotation
     asset.updateMatrixWorld(true);
     const boxAfterScale = new THREE.Box3().setFromObject(asset);
     const sizeAfterScale = boxAfterScale.getSize(new THREE.Vector3());
     const centerAfterScale = boxAfterScale.getCenter(new THREE.Vector3());
 
-    // Calculate position: placement position + offset to center asset
-    const localCenterOffset = centerAfterScale.clone().multiplyScalar(-1);
-    const bottomOffset = sizeAfterScale.y / 2;
+    /*
+      Move the asset by the difference between where its geometry actually is
+      and where the slot wants it, rather than assuming the group's origin sits
+      at the centre of the model.
 
-    asset.position.copy(placement.position);
-    asset.position.add(localCenterOffset);
-    asset.position.y = placement.dockSurfaceY + bottomOffset;
+      That assumption holds only for a model authored centred on its own origin.
+      Anything else -- most CAD exports, and most hand-uploaded GLBs -- was
+      positioned by its origin while the geometry hung somewhere else entirely,
+      so the model missed the dock by however far its origin is from its centre.
+      Deriving the offset from the measured box makes the placement correct for
+      any model however it was authored, and puts the bottom ON the dock rather
+      than half a model-height above it.
 
-    // Set rotation
-    asset.rotation.copy(placement.rotation);
+      assetsGroup carries no rotation or scale, so a world-space delta is also
+      the correct delta for the parent-space `position` this writes to.
+    */
+    asset.position.x += placement.position.x - centerAfterScale.x;
+    asset.position.z += placement.position.z - centerAfterScale.z;
+    asset.position.y += placement.dockSurfaceY - boxAfterScale.min.y;
 
     // Mark asset metadata
     asset.userData.restsOnDock = true;
