@@ -46,6 +46,22 @@ const ClassSessionResults = () => {
   const [progress, setProgress] = useState<SessionStudentProgress[]>([]);
   const [className, setClassName] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  /*
+    True once the first snapshot has landed.
+
+    The page used to render a full-screen spinner whenever `loading` was true,
+    and every re-subscribe set it true again — so a write to the user document
+    replaced a correct, populated dashboard with a spinner. After the first load
+    there is always something worth showing, and live updates land in place.
+  */
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Latches on the first completed load and never unlatches, so a later refresh
+  // can never put the page back behind a spinner.
+  useEffect(() => {
+    if (!loading) setHasLoaded(true);
+  }, [loading]);
+
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -161,7 +177,9 @@ const ClassSessionResults = () => {
   const backTo =
     profile?.role === 'partner' ? '/dashboard/partner' : '/dashboard/teacher';
 
-  if (loading) {
+  // Only before anything has ever been shown. A refresh over existing
+  // content must not blank the page.
+  if (loading && !hasLoaded) {
     return (
       <div className="min-h-screen bg-background pt-24 pb-12">
         <div className="mx-auto max-w-4xl px-4">

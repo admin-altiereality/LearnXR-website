@@ -236,6 +236,16 @@ export interface GetChaptersOptions {
 
 export interface GetChaptersResult {
   chapters: Chapter[];
+  /**
+   * The full chapter documents, keyed by id.
+   *
+   * This query already reads every document and then keeps only the handful of
+   * fields `Chapter` declares. Callers that need more — the content library
+   * checks which languages a chapter has content for — were re-fetching each
+   * document one at a time, a full extra read per row on every filter change
+   * and every debounced keystroke, for data that was in hand all along.
+   */
+  raw: Map<string, CurriculumChapter>;
   lastDoc: DocumentSnapshot | null;
   hasMore: boolean;
 }
@@ -261,9 +271,12 @@ export const getChapters = async (
     const q = query(chaptersRef, ...constraints);
     const snapshot = await getDocs(q);
     
-    // Map to Chapter interface
+    // Map to Chapter interface, keeping the documents themselves for callers
+    // that need more than the summary fields.
+    const raw = new Map<string, CurriculumChapter>();
     let chapters: Chapter[] = snapshot.docs.map((docSnapshot) => {
       const data = docSnapshot.data() as CurriculumChapter;
+      raw.set(docSnapshot.id, data);
       return {
         id: docSnapshot.id,
         chapter_number: data.chapter_number,
@@ -296,6 +309,7 @@ export const getChapters = async (
     
     return {
       chapters,
+      raw,
       lastDoc: snapshot.docs[snapshot.docs.length - 1] || null,
       hasMore,
     };
@@ -303,6 +317,7 @@ export const getChapters = async (
     console.error('Error fetching chapters:', error);
     return {
       chapters: [],
+      raw: new Map(),
       lastDoc: null,
       hasMore: false,
     };

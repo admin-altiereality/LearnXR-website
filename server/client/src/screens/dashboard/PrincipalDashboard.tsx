@@ -5,7 +5,7 @@
  * activity metrics for their school only. Cannot see other schools' data.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { collection, query, where, orderBy, getDocs, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -41,18 +41,32 @@ const PrincipalDashboard = () => {
     results.
   */
   const [dataError, setDataError] = useState<string | null>(null);
+  /*
+    The profile fields this screen depends on.
+
+    Depending on the whole `profile` object re-subscribed every query here
+    whenever anything touched the user document, because Firestore rebuilds that
+    object on each snapshot.
+  */
+  const profileRole = profile?.role;
+  const managedSchoolId = profile?.managed_school_id;
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    totalTeachers: 0,
-    approvedTeachers: 0,
-    pendingTeachersCount: 0,
-    totalStudents: 0,
-    approvedStudents: 0,
-    pendingStudentsCount: 0,
-    averageSchoolScore: 0,
-    totalLessonLaunches: 0,
-    completedLessons: 0,
-  });
+  /*
+    True once the first snapshot has landed.
+
+    The page used to render a full-screen spinner whenever `loading` was true,
+    and every re-subscribe set it true again — so a write to the user document
+    replaced a correct, populated dashboard with a spinner. After the first load
+    there is always something worth showing, and live updates land in place.
+  */
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Latches on the first completed load and never unlatches, so a later refresh
+  // can never put the page back behind a spinner.
+  useEffect(() => {
+    if (!loading) setHasLoaded(true);
+  }, [loading]);
+
 
   // Fetch pending students for approval count
   useEffect(() => {
@@ -112,7 +126,7 @@ const PrincipalDashboard = () => {
       unsubscribePendingStudents();
       unsubscribePendingTeachers();
     };
-  }, [user?.uid, profile]);
+  }, [user?.uid, profileRole, managedSchoolId]);
 
   useEffect(() => {
     if (!user?.uid || !profile || profile.role !== 'principal' || !profile.managed_school_id) return;
@@ -164,7 +178,6 @@ const PrincipalDashboard = () => {
       })) as StudentScore[];
       setScores(scoresData);
       setDataError(null);
-      updateStats(teachers, students, scoresData, launches);
     }, (error) => {
       console.error('PrincipalDashboard: student_scores query failed', error);
       setDataError(`Student scores could not be read: ${error.message}`);
@@ -194,7 +207,6 @@ const PrincipalDashboard = () => {
         ...doc.data(),
       })) as LessonLaunch[];
       setLaunches(launchesData);
-      updateStats(teachers, students, scores, launchesData);
       setLoading(false);
     }, (error) => {
       console.error('PrincipalDashboard: lesson_launches query failed', error);
@@ -209,40 +221,40 @@ const PrincipalDashboard = () => {
       unsubscribeLaunches();
       unsubscribeClasses();
     };
-  }, [user?.uid, profile]);
+  }, [user?.uid, profileRole, managedSchoolId]);
 
-  const updateStats = (
-    teachersData: any[],
-    studentsData: any[],
-    scoresData: StudentScore[],
-    launchesData: LessonLaunch[]
-  ) => {
-    const totalTeachers = teachersData.length;
-    const approvedTeachers = teachersData.filter(t => t.approvalStatus === 'approved').length;
-    const pendingTeachersCount = teachersData.filter(t => t.approvalStatus === 'pending').length;
-    const totalStudents = studentsData.length;
-    const approvedStudents = studentsData.filter(s => s.approvalStatus === 'approved').length;
-    const pendingStudentsCount = studentsData.filter(s => s.approvalStatus === 'pending').length;
-    const averageSchoolScore = scoresData.length > 0
-      ? scoresData.reduce((sum, s) => sum + (s.score?.percentage || 0), 0) / scoresData.length
-      : 0;
-    const totalLessonLaunches = launchesData.length;
-    const completedLessons = launchesData.filter(l => l.completion_status === 'completed').length;
+  /*
+    Derived, not assigned.
 
-    setStats({
-      totalTeachers,
-      approvedTeachers,
-      pendingTeachersCount,
-      totalStudents,
-      approvedStudents,
-      pendingStudentsCount,
+    These figures were computed inside the snapshot handlers and passed the other
+    three arrays from the render closure — which were whatever had arrived when
+    the effect subscribed, usually empty. So the tiles were built from stale
+    inputs and visibly bounced as each snapshot landed with a different stale
+    combination, and could disagree with the sections below them that read the
+    same data directly. State derived with useMemo cannot be stale.
+  */
+  const stats = useMemo(() => {
+    const averageSchoolScore =
+      scores.length > 0
+        ? scores.reduce((sum, s) => sum + (s.score?.percentage || 0), 0) / scores.length
+        : 0;
+
+    return {
+      totalTeachers: teachers.length,
+      approvedTeachers: teachers.filter((t) => t.approvalStatus === 'approved').length,
+      pendingTeachersCount: teachers.filter((t) => t.approvalStatus === 'pending').length,
+      totalStudents: students.length,
+      approvedStudents: students.filter((s) => s.approvalStatus === 'approved').length,
+      pendingStudentsCount: students.filter((s) => s.approvalStatus === 'pending').length,
       averageSchoolScore: Math.round(averageSchoolScore),
-      totalLessonLaunches,
-      completedLessons,
-    });
-  };
+      totalLessonLaunches: launches.length,
+      completedLessons: launches.filter((l) => l.completion_status === 'completed').length,
+    };
+  }, [teachers, students, scores, launches]);
 
-  if (loading) {
+  // Only before anything has ever been shown. A refresh over existing
+  // content must not blank the page.
+  if (loading && !hasLoaded) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">

@@ -11,10 +11,13 @@ import {
     signOut
 } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
-import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-toastify';
 import { auth, db } from '../config/firebase';
 import { getApiBaseUrl } from '../utils/apiConfig';
+// Keeps the profile object stable across snapshots that changed nothing, which
+// is what stopped every dashboard re-subscribing on any write to the user doc.
+import { sameProfile } from '../lib/auth/sameProfile';
 import { createDefaultSubscription } from '../services/subscriptionService';
 import {
     ApprovalStatus,
@@ -292,7 +295,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       userDocRef,
       (snapshot) => {
         if (snapshot.exists()) {
-          setProfile(mapUserProfile(uid, snapshot.data(), authFallback));
+          /*
+            Keep the previous object when nothing actually changed.
+
+            Every snapshot used to produce a new profile identity, and a dozen
+            effects across the dashboards depend on `profile` — so any write to
+            the user document, including fields no screen displays, tore down
+            and re-subscribed every dashboard query and put a full-page spinner
+            over a page whose data was already correct.
+          */
+          const nextProfile = mapUserProfile(uid, snapshot.data(), authFallback);
+          setProfile((current) => (sameProfile(current, nextProfile) ? current : nextProfile));
           if (!settled) void syncRoleClaimsForCurrentUser();
         } else {
           // New user — the profile is created during signup.
@@ -593,14 +606,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const modalContextValue: ModalContextType = {
-    activeModal,
-    openModal: (modalType) => setActiveModal(modalType),
-    closeModal: () => setActiveModal(null)
-  };
-
-  return (
-    <AuthContext.Provider value={{
+  /*
+    Memoised so a render of this provider does not re-render every consumer of
+    useAuth. An inline object literal here changed identity on every render,
+    which put avoidable work through every screen in the app on any auth state
+    change at all.
+  */
+  const authValue = useMemo(
+    () => ({
       user,
       profile,
       selectedRole,
@@ -614,8 +627,33 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       updateProfile,
       refreshProfile,
       loading,
-      profileLoading
-    }}>
+      profileLoading,
+    }),
+    [
+      user,
+      profile,
+      selectedRole,
+      signup,
+      login,
+      loginWithGoogle,
+      loginAsGuestStudent,
+      logout,
+      resetPassword,
+      updateProfile,
+      refreshProfile,
+      loading,
+      profileLoading,
+    ]
+  );
+
+  const modalContextValue: ModalContextType = {
+    activeModal,
+    openModal: (modalType) => setActiveModal(modalType),
+    closeModal: () => setActiveModal(null)
+  };
+
+  return (
+    <AuthContext.Provider value={authValue}>
       <ModalContext.Provider value={modalContextValue}>
         {!loading && children}
       </ModalContext.Provider>

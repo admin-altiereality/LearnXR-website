@@ -80,6 +80,22 @@ const PartnerDashboard = () => {
     sessionLoading,
   } = useClassSession();
   const [loading, setLoading] = useState(true);
+  /*
+    True once the first snapshot has landed.
+
+    The page used to render a full-screen spinner whenever `loading` was true,
+    and every re-subscribe set it true again — so a write to the user document
+    replaced a correct, populated dashboard with a spinner. After the first load
+    there is always something worth showing, and live updates land in place.
+  */
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Latches on the first completed load and never unlatches, so a later refresh
+  // can never put the page back behind a spinner.
+  useEffect(() => {
+    if (!loading) setHasLoaded(true);
+  }, [loading]);
+
   const [partner, setPartner] = useState<Partner | null>(null);
   const [trialActive, setTrialActive] = useState(true);
   const [trialBlockReason, setTrialBlockReason] = useState<string | null>(null);
@@ -475,7 +491,9 @@ const PartnerDashboard = () => {
     }
   };
 
-  if (loading) {
+  // Only before anything has ever been shown. A refresh over existing
+  // content must not blank the page.
+  if (loading && !hasLoaded) {
     return (
       <div className="flex h-full items-center justify-center p-8">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

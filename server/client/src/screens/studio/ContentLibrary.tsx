@@ -1,6 +1,5 @@
 'use client';
 
-import { doc, getDoc } from 'firebase/firestore';
 import {
     BookOpen,
     Filter,
@@ -28,7 +27,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '../../Components/ui/select';
-import { db } from '../../config/firebase';
 import { chapterHasContentForLanguage } from '../../lib/firebase/utils/languageAvailability';
 import {
     getChapters,
@@ -66,7 +64,6 @@ const ContentLibrary = () => {
   });
   
   // Data state
-  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [rawChapters, setRawChapters] = useState<Array<{ id: string; data: CurriculumChapter }>>([]);
   const [loading, setLoading] = useState(false);
   const [loadingFilters, setLoadingFilters] = useState(true);
@@ -143,12 +140,17 @@ const ContentLibrary = () => {
   
   // Load chapters when all filters are set
   const loadChapters = useCallback(async (reset = true) => {
-    if (!filters.curriculum || !filters.classId || !filters.subject) {
-      setChapters([]);
-      setRawChapters([]);
-      return;
-    }
-    
+    /*
+      Mid-cascade, hold what is on screen.
+
+      Choosing a curriculum sets the class, which sets the subject, each through
+      its own effect — so this runs two or three times before the filters are
+      complete. Clearing the list on the incomplete passes made it flash empty
+      and then repopulate on every filter change. The results are about to be
+      replaced either way; showing nothing in the meantime helps nobody.
+    */
+    if (!filters.curriculum || !filters.classId || !filters.subject) return;
+
     setLoading(true);
     try {
       const result: GetChaptersResult = await getChapters({
@@ -159,38 +161,26 @@ const ContentLibrary = () => {
         lastDoc: reset ? undefined : (lastDoc as any),
       });
       
-      // Fetch raw chapter data for language checking
-      const chaptersWithRawData = await Promise.all(
-        result.chapters.map(async (chapter) => {
-          try {
-            const chapterRef = doc(db, 'curriculum_chapters', chapter.id);
-            const chapterSnap = await getDoc(chapterRef);
-            if (chapterSnap.exists()) {
-              return {
-                ...chapter,
-                _rawData: chapterSnap.data() as CurriculumChapter,
-              };
-            }
-            return chapter;
-          } catch (err) {
-            console.warn(`Failed to fetch raw data for chapter ${chapter.id}:`, err);
-            return chapter;
-          }
-        })
-      );
-      
-      // Filter by language availability
-      const filteredChapters = chaptersWithRawData.filter(ch => {
-        if (!ch._rawData) return true; // Include if we couldn't fetch raw data
-        return chapterHasContentForLanguage(ch._rawData, selectedLanguage);
-      });
-      
+      /*
+        No second read per chapter.
+
+        getChapters already reads every document and keeps only the summary
+        fields; asking for each one again was a full extra read per row on every
+        filter change and every debounced keystroke, for data it had in hand.
+
+        The list is also no longer filtered by language here. That filtering used
+        to write `chapters` from `chapters`, so a chapter hidden by one language
+        was gone from the array the next switch would have to find it in — it
+        could never come back. The visible list is derived below instead.
+      */
+      const nextRaw = result.chapters
+        .map((chapter) => ({ id: chapter.id, data: result.raw.get(chapter.id)! }))
+        .filter((entry) => entry.data);
+
       if (reset) {
-        setChapters(filteredChapters);
-        setRawChapters(chaptersWithRawData.map(ch => ({ id: ch.id, data: ch._rawData! })).filter(ch => ch.data));
+        setRawChapters(nextRaw);
       } else {
-        setChapters((prev) => [...prev, ...filteredChapters]);
-        setRawChapters((prev) => [...prev, ...chaptersWithRawData.map(ch => ({ id: ch.id, data: ch._rawData! })).filter(ch => ch.data)]);
+        setRawChapters((prev) => [...prev, ...nextRaw]);
       }
       setLastDoc(result.lastDoc);
       setHasMore(result.hasMore);
@@ -200,22 +190,11 @@ const ContentLibrary = () => {
     } finally {
       setLoading(false);
     }
-  }, [filters, lastDoc, selectedLanguage]);
-  
-  // Re-filter chapters when language changes
-  useEffect(() => {
-    if (rawChapters.length === 0) return;
-    
-    const filtered = rawChapters
-      .filter(ch => chapterHasContentForLanguage(ch.data, selectedLanguage))
-      .map(ch => {
-        const chapter = chapters.find(c => c.id === ch.id);
-        return chapter || null;
-      })
-      .filter(Boolean) as Chapter[];
-    
-    setChapters(filtered);
-  }, [selectedLanguage, rawChapters]);
+    // `selectedLanguage` is deliberately absent: language is a display filter,
+    // applied to what has been fetched, and re-fetching on a language switch was
+    // work for a result that would have been identical.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, lastDoc]);
   
   useEffect(() => {
     loadChapters(true);
@@ -480,7 +459,7 @@ const ContentLibrary = () => {
             </div>
           </div>
 
-          {loading && chapters.length === 0 && (
+          {loading && tableChapters.length === 0 && (
             <Card className="border border-border">
               <CardContent className="flex flex-col items-center justify-center py-16">
                 <PrismFluxLoader
@@ -493,7 +472,7 @@ const ContentLibrary = () => {
             </Card>
           )}
 
-          {!loading && chapters.length === 0 && filters.subject && (
+          {!loading && tableChapters.length === 0 && filters.subject && (
             <Card className="border border-border">
               <CardContent className="flex flex-col items-center justify-center py-16">
                 <div className="p-4 rounded-xl bg-muted/50 mb-4">

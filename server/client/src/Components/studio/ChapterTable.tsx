@@ -37,7 +37,6 @@ import {
 import { isAdminOnly, isSuperadmin } from '../../utils/rbac';
 import { toast } from 'react-hot-toast';
 import { Button } from '../ui/button';
-import { PrismFluxLoader } from '../ui/prism-flux-loader';
 
 /**
  * Fields of the chapter document this table reads that the `Chapter` type does
@@ -704,20 +703,21 @@ export const ChapterTable = ({
       </div>
       
       {/* Loading overlay - clear layer, no overlap with content */}
+      {/*
+        A quiet line, not a curtain.
+
+        This was a full overlay shown whenever `loading` was true and there were
+        rows, so pressing Load more greyed out and blocked everything already
+        read while the next page arrived. Appending should append; the only
+        honest signal is that more is on the way.
+      */}
       {loading && chapters.length > 0 && (
         <div
-          className="absolute inset-0 z-20 flex items-center justify-center rounded-b-xl bg-background/85 backdrop-blur-sm border-t border-border pointer-events-auto"
+          className="flex items-center justify-center gap-2 border-t border-border py-3 text-xs text-muted-foreground"
           aria-live="polite"
-          aria-busy="true"
         >
-          <div className="flex flex-col items-center gap-4 p-6 rounded-xl bg-card border border-border shadow-lg">
-            <PrismFluxLoader
-              size={40}
-              speed={5}
-              textSize={13}
-              statuses={['Refreshing…', 'Loading…', 'Syncing…']}
-            />
-          </div>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading more chapters…
         </div>
       )}
 

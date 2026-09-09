@@ -151,6 +151,65 @@ const TeacherDashboard = () => {
   const [loading, setLoading] = useState(true);
   /** Why a read failed, so an empty page can say so rather than imply no data. */
   const [dataError, setDataError] = useState<string | null>(null);
+  /*
+    True once the first snapshot has landed.
+
+    The page used to render a full-screen spinner whenever `loading` was true,
+    and every re-subscribe set it true again — so a write to the user document
+    replaced a correct, populated dashboard with a spinner. After the first load
+    there is always something worth showing, and live updates land in place.
+  */
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  // Latches on the first completed load and never unlatches, so a later refresh
+  // can never put the page back behind a spinner.
+  useEffect(() => {
+    if (!loading) setHasLoaded(true);
+  }, [loading]);
+
+
+  /*
+    The profile fields this screen actually depends on.
+
+    Effects used to depend on the whole `profile` object, which Firestore rebuilt
+    on every snapshot of the user document — so anything touching that document,
+    including fields nothing here displays, tore down and re-subscribed every
+    query on the page.
+  */
+  const profileRole = profile?.role;
+  const profileSchoolId = profile?.school_id;
+  const profileManagedSchoolId = profile?.managed_school_id;
+  /**
+   * A school id discovered from the teacher's classes, to be written once.
+   *
+   * Kept as state so the write happens in its own effect rather than inside the
+   * class subscription: that handler writes to users/{uid}, which is the
+   * document the profile subscription watches, so doing it there re-ran the
+   * effect that performed it.
+   */
+  const [schoolIdToBackfill, setSchoolIdToBackfill] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!schoolIdToBackfill || !user?.uid || profileSchoolId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), {
+          school_id: schoolIdToBackfill,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error('TeacherDashboard: Error auto-assigning school_id', error);
+      } finally {
+        // Once only: the profile snapshot will bring the new value back, and
+        // re-running from that would be the loop this moved out of.
+        if (!cancelled) setSchoolIdToBackfill(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolIdToBackfill, user?.uid, profileSchoolId]);
   const [sharingClassId, setSharingClassId] = useState<string | null>(null);
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   const [schoolCode, setSchoolCode] = useState<string | null>(null);
@@ -207,7 +266,7 @@ const TeacherDashboard = () => {
     });
 
     return () => unsubscribeTeachers();
-  }, [user?.uid, profile]);
+  }, [user?.uid, profileRole, profileSchoolId, profileManagedSchoolId]);
 
   // Fetch school code for display
   useEffect(() => {
@@ -242,7 +301,7 @@ const TeacherDashboard = () => {
     });
 
     return () => unsubscribePending();
-  }, [user?.uid, profile]);
+  }, [user?.uid, profileRole, profileSchoolId, profileManagedSchoolId]);
 
   // Fetch managed classes (where teacher is in teacher_ids)
   useEffect(() => {
@@ -275,19 +334,12 @@ const TeacherDashboard = () => {
 
       setManagedClasses(classesData);
 
-      // Auto-assign school_id if missing
-      if (classesData.length > 0 && !profile.school_id && user?.uid) {
-        const firstClass = classesData[0];
-        if (firstClass.school_id) {
-          try {
-            await updateDoc(doc(db, 'users', user.uid), {
-              school_id: firstClass.school_id,
-              updatedAt: new Date().toISOString(),
-            });
-          } catch (error: any) {
-            console.error('TeacherDashboard: Error auto-assigning school_id', error);
-          }
-        }
+      // The school_id back-fill is deliberately NOT done here. Writing to
+      // users/{uid} from inside a snapshot handler feeds the very subscription
+      // the profile comes from, which re-ran this effect and re-mounted the
+      // page. It runs once, outside the subscription, in the effect below.
+      if (classesData.length > 0 && !profileSchoolId) {
+        setSchoolIdToBackfill(classesData[0]?.school_id ?? null);
       }
     }, (error) => {
       console.error('Error fetching managed classes:', error);
@@ -295,7 +347,7 @@ const TeacherDashboard = () => {
     });
 
     return () => unsubscribeClasses();
-  }, [user?.uid, profile]);
+  }, [user?.uid, profileRole, profileSchoolId, profileManagedSchoolId]);
 
   // Fetch shared classes (where teacher is in shared_with_teachers)
   useEffect(() => {
@@ -318,7 +370,7 @@ const TeacherDashboard = () => {
     });
 
     return () => unsubscribeShared();
-  }, [user?.uid, profile]);
+  }, [user?.uid, profileRole, profileSchoolId, profileManagedSchoolId]);
 
   // Fetch students, scores, and launches for all classes
   useEffect(() => {
@@ -972,7 +1024,9 @@ const TeacherDashboard = () => {
 
   const chartColors = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
 
-  if (loading) {
+  // Only before anything has ever been shown. A refresh over existing
+  // content must not blank the page.
+  if (loading && !hasLoaded) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
