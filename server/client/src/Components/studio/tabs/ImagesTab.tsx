@@ -23,6 +23,8 @@ import { useAuth } from '../../../contexts/AuthContext';
 import { canEditLesson, canDeleteAsset } from '../../../utils/rbac';
 import { classifyError } from '../../../utils/errorHandler';
 import { useLessonDraftStore } from '../../../stores/lessonDraftStore';
+// Firestore Timestamps become an Invalid Date through `new Date()`.
+import { formatAssetDate } from '../../../utils/relativeTime';
 import {
   Image,
   Loader2,
@@ -775,7 +777,7 @@ export const ImagesTab = ({ chapterId, topicId, bundle }: ImagesTabProps) => {
                     <div>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Created</p>
                       <p className="text-xs text-foreground">
-                        {new Date(selectedImage.created_at).toLocaleDateString()}
+                        {formatAssetDate(selectedImage.created_at)}
                       </p>
                     </div>
                   )}

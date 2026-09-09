@@ -17,7 +17,7 @@
  * This component now fetches from the meshy_assets collection instead of legacy locations.
  */
 
-import { useState, useEffect, useRef, Suspense, lazy, useMemo } from 'react';
+import { useState, useEffect, useRef, Suspense, lazy, useMemo, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { linkAssetToTopic } from '../../../lib/firestore/updateHelpers';
 import type { LanguageCode } from '../../../types/curriculum';
@@ -38,6 +38,8 @@ import { ProgressIndicator } from '../../ProgressIndicator';
 import { validateFile } from '../../../services/assets/validators';
 import { classifyError, logError } from '../../../utils/errorHandler';
 import type { MeshyAssetExtended } from '../../../types/assets';
+// Handles Firestore Timestamps, which `new Date()` turns into an Invalid Date.
+import { formatAssetDate } from '../../../utils/relativeTime';
 import {
   Box,
   ExternalLink,
@@ -91,6 +93,38 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /*
+    Thumbnails whose image failed to load.
+
+    A broken <img> renders its alt text at the element's full size, so an asset
+    whose thumbnail had died showed a wall of prompt text where the picture
+    should be — the single biggest reason this panel looked broken. Tracked by
+    id so a failure is remembered while the list is browsed.
+  */
+  const [brokenThumbnails, setBrokenThumbnails] = useState<Set<string>>(new Set());
+  const markThumbnailBroken = useCallback((id: string) => {
+    setBrokenThumbnails((current) => {
+      if (current.has(id)) return current;
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Escape leaves fullscreen, and the page behind must not scroll under it.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFullscreen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [isFullscreen]);
   
   // Upload state
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -691,10 +725,12 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                   >
                     {/* Thumbnail */}
                     <div className="aspect-square bg-muted rounded-lg mb-2 flex items-center justify-center overflow-hidden relative">
-                      {asset.thumbnail_url ? (
+                      {asset.thumbnail_url && !brokenThumbnails.has(asset.id) ? (
                         <img
                           src={asset.thumbnail_url}
-                          alt={asset.name}
+                          alt=""
+                          loading="lazy"
+                          onError={() => markThumbnailBroken(asset.id)}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -795,8 +831,14 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                   >
                     {/* Thumbnail */}
                     <div className="w-14 h-14 bg-muted rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
-                      {asset.thumbnail_url ? (
-                        <img src={asset.thumbnail_url} alt={asset.name} className="w-full h-full object-cover" />
+                      {asset.thumbnail_url && !brokenThumbnails.has(asset.id) ? (
+                        <img
+                          src={asset.thumbnail_url}
+                          alt=""
+                          loading="lazy"
+                          onError={() => markThumbnailBroken(asset.id)}
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         <Box className="w-7 h-7 text-muted-foreground" />
                       )}
@@ -878,9 +920,23 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
 
           {/* Asset Viewer / Details - Right */}
           {selectedAsset && (
-            <div className={`flex-1 flex flex-col ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
-              {/* Viewer */}
-              <div className="flex-1 relative bg-muted">
+            <div
+              className={
+                isFullscreen
+                  ? // Opaque and above everything. It used to be `fixed inset-0 z-50`
+                    // with no background of its own, so the page showed straight
+                    // through the semi-transparent details panel — the sidebar and
+                    // the asset list were visible underneath, on top of each other.
+                    'fixed inset-0 z-[100] flex flex-col bg-background'
+                  : 'flex-1 flex flex-col min-h-0'
+              }
+            >
+              {/* Viewer
+                  min-h matters: this is `flex-1` inside a column whose height is
+                  not otherwise constrained, so it collapsed to nothing and its
+                  `absolute inset-0` children rendered on top of the details panel
+                  below — which is why the title and the badges overlapped. */}
+              <div className="relative flex-1 min-h-[320px] bg-muted">
                 {showViewer && selectedAsset.glb_url ? (
                   <Suspense fallback={
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -949,10 +1005,15 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
-                      {selectedAsset.thumbnail_url ? (
+                      {selectedAsset.thumbnail_url && !brokenThumbnails.has(selectedAsset.id) ? (
+                        /* Many older thumbnails 404 along with their models, and a
+                           failed image renders its alt text at the element's full
+                           size — the wall of prompt text that made this look broken.
+                           Empty alt plus an onError fallback instead. */
                         <img
                           src={selectedAsset.thumbnail_url}
-                          alt={selectedAsset.name}
+                          alt=""
+                          onError={() => markThumbnailBroken(selectedAsset.id)}
                           className="w-48 h-48 object-cover rounded-2xl mx-auto mb-6 border border-border shadow-2xl"
                         />
                       ) : (
@@ -960,7 +1021,9 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                           <Box className="w-16 h-16 text-muted-foreground" />
                         </div>
                       )}
-                      <p className="text-lg text-foreground font-medium mb-6">{selectedAsset.name}</p>
+                      {/* The name is already the heading of the details panel
+                          immediately below; printing it here too stacked two
+                          copies of a long prompt on top of each other. */}
                       {selectedAsset.glb_url && (
                         <button
                           onClick={() => setShowViewer(true)}
@@ -1107,11 +1170,14 @@ export const AssetsTab = ({ chapterId, topicId, bundle, language = 'en' }: Asset
                       <p className="text-xs text-foreground font-mono truncate">{selectedAsset.meshy_id}</p>
                     </div>
                   )}
-                  {selectedAsset.created_at && (
+                  {/* Rendered whether or not a date parses: the row keeps the
+                      three-column grid intact, and says "—" rather than
+                      "Invalid Date". */}
+                  {(
                     <div>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Created</p>
                       <p className="text-xs text-foreground">
-                        {new Date(selectedAsset.created_at).toLocaleDateString()}
+                        {formatAssetDate(selectedAsset.created_at)}
                       </p>
                     </div>
                   )}

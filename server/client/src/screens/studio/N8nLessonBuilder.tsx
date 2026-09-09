@@ -22,6 +22,8 @@ import { Select } from '../../n8n-ui/components/ui/select';
 import { Label } from '../../n8n-ui/components/ui/label';
 import { JsonView } from '../../n8n-ui/components/JsonView';
 import { useProductionLogger } from '../../hooks/useProductionLogger';
+// Firestore Timestamps become an Invalid Date through `new Date()`.
+import { formatAssetDate } from '../../utils/relativeTime';
 
 type StepState = 'pending' | 'running' | 'done' | 'error';
 type NodeLogStatus = 'pending' | 'running' | 'done' | 'error';
@@ -755,7 +757,7 @@ const N8nLessonBuilder: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-slate-400">
-                          Added {new Date(job.createdAt).toLocaleString()}
+                          Added {formatAssetDate(job.createdAt)}
                           {job.startedAt ? ` • Started ${new Date(job.startedAt).toLocaleString()}` : ''}
                           {job.finishedAt ? ` • Finished ${new Date(job.finishedAt).toLocaleString()}` : ''}
                         </p>
