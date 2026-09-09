@@ -1,5 +1,5 @@
 import { Chapter } from '../../types/curriculum';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ExternalLink,
   Hash,
@@ -27,10 +27,29 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { updateTopicApproval, updateTopicDemoFlag } from '../../lib/firestore/updateHelpers';
 import { approveChapter, unapproveChapter } from '../../lib/firebase/queries/curriculumChapters';
+// The same judgement the players make about whether an asset will load, so the
+// badge and the scene cannot disagree.
+import {
+  assetBadgeState,
+  fetchAssetHealth,
+  type AssetHealthMap,
+} from '../../lib/studio/assetHealth';
 import { isAdminOnly, isSuperadmin } from '../../utils/rbac';
 import { toast } from 'react-hot-toast';
 import { Button } from '../ui/button';
 import { PrismFluxLoader } from '../ui/prism-flux-loader';
+
+/**
+ * Fields of the chapter document this table reads that the `Chapter` type does
+ * not declare. The surrounding code reads them untyped; naming them here keeps
+ * the new asset-health path honest without touching the shared type, which many
+ * other screens depend on.
+ */
+type ChapterAssetFields = {
+  meshy_asset_ids?: string[];
+  topics?: Array<{ meshy_asset_ids?: string[] }>;
+  image3dasset?: { imageasset_url?: string };
+};
 
 interface ChapterTableProps {
   chapters: Chapter[];
@@ -299,7 +318,65 @@ export const ChapterTable = ({
   
   const groups = groupedChapters();
 
-  const tableGrid = 'grid grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_220px] gap-2 md:gap-4 px-4 sm:px-6 w-full min-w-[900px]';
+  /*
+    Which linked 3D assets can actually be loaded.
+
+    The badge used to light for the mere existence of an asset id, which said
+    nothing about whether the asset still resolved — and since Meshy's newer
+    release most of the older ones answer 502. A chapter of dead models looked
+    fully populated, with no way to see what needed regenerating.
+
+    One batched read per 30 assets across the chapters on screen, and the list is
+    paginated, so this is bounded. The classification is structural — the shape
+    of the URL — not a request to it.
+  */
+  const [assetHealth, setAssetHealth] = useState<AssetHealthMap>(new Map());
+
+  const linkedAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const raw of chapters) {
+      const chapter = raw as typeof raw & ChapterAssetFields;
+      for (const id of chapter.meshy_asset_ids || []) if (id) ids.add(String(id));
+      for (const topic of chapter.topics || []) {
+        for (const id of topic.meshy_asset_ids || []) if (id) ids.add(String(id));
+      }
+    }
+    return Array.from(ids).sort();
+  }, [chapters]);
+
+  // Keyed on the ids themselves: re-fetching because the array identity changed
+  // would re-read on every render of the same content.
+  const assetIdKey = linkedAssetIds.join(',');
+
+  useEffect(() => {
+    if (!assetIdKey) {
+      setAssetHealth(new Map());
+      return;
+    }
+    let cancelled = false;
+    void fetchAssetHealth(assetIdKey.split(',')).then((health) => {
+      if (!cancelled) setAssetHealth(health);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetIdKey]);
+
+  /*
+    The actions column has to fit what it actually holds.
+
+    It was 220px, and a topic row puts four buttons in it — Unapprove, Mark demo,
+    Open Lesson, Edit — which need roughly twice that with their gaps. The flex
+    container was held to 220px and its children overflowed leftward, landing on
+    top of the date and version columns. Chapter rows carry fewer buttons, which
+    is why only topic rows looked broken.
+
+    Widened to fit, with the row minimum raised to match, so the surrounding
+    overflow-x-auto scrolls the table rather than letting one column sit on
+    another.
+  */
+  const tableGrid =
+    'grid grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_minmax(460px,auto)] gap-2 md:gap-4 px-4 sm:px-6 w-full min-w-[1180px]';
 
   return (
     <div className="bg-card rounded-xl border border-border relative overflow-hidden flex flex-col">
@@ -485,7 +562,44 @@ export const ChapterTable = ({
                         </div>
                         <div className="flex items-center gap-1">
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${contentStatus.hasMCQs ? 'text-primary bg-primary/10 border border-primary/20' : 'text-muted-foreground bg-muted border border-border'}`} title="MCQ">MCQ</span>
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${contentStatus.has3DAssets ? 'text-primary bg-primary/10 border border-primary/20' : 'text-muted-foreground bg-muted border border-border'}`} title="3D">3D</span>
+                          {(() => {
+                            /*
+                              Three states, because "no models" and "models that
+                              all died" are different problems and only one of
+                              them needs someone to act. They used to look
+                              identical, both simply lit, which is how a chapter
+                              of unloadable assets passed for finished content.
+                            */
+                            const state = assetBadgeState(
+                              (topic as { meshy_asset_ids?: string[] }).meshy_asset_ids || [],
+                              assetHealth,
+                              // Inline image-to-3D models live on the chapter, not
+                              // the topic, and have no asset document to classify;
+                              // their presence is all there is to go on.
+                              (chapter as typeof chapter & ChapterAssetFields).image3dasset
+                                ?.imageasset_url
+                            );
+                            const style =
+                              state === 'ok'
+                                ? 'text-primary bg-primary/10 border border-primary/20'
+                                : state === 'broken'
+                                  ? 'text-amber-600 bg-amber-500/10 border border-amber-500/30 dark:text-amber-400'
+                                  : 'text-muted-foreground bg-muted border border-border';
+                            const title =
+                              state === 'ok'
+                                ? '3D models ready'
+                                : state === 'broken'
+                                  ? '3D models are linked but none of them can be loaded — this topic needs regenerating'
+                                  : 'No 3D models';
+                            return (
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${style}`}
+                                title={title}
+                              >
+                                3D
+                              </span>
+                            );
+                          })()}
                           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${contentStatus.hasImages ? 'text-primary bg-primary/10 border border-primary/20' : 'text-muted-foreground bg-muted border border-border'}`} title="IMG">IMG</span>
                         </div>
                         <div className="flex items-center">
@@ -515,7 +629,7 @@ export const ChapterTable = ({
                                       type="button"
                                       size="sm"
                                       variant={isApprovedInner ? 'destructive' : 'default'}
-                                      className="gap-1.5 text-xs h-8"
+                                      className="gap-1.5 text-xs h-8 shrink-0 whitespace-nowrap"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleApprovalToggle(chapter.id, topic.topic_id, isApprovedInner);
@@ -534,7 +648,7 @@ export const ChapterTable = ({
                                           type="button"
                                           size="sm"
                                           variant={isDemo ? 'default' : 'outline'}
-                                          className="gap-1.5 text-xs h-8"
+                                          className="gap-1.5 text-xs h-8 shrink-0 whitespace-nowrap"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             handleDemoToggle(chapter.id, topic.topic_id, isDemo);
@@ -554,7 +668,7 @@ export const ChapterTable = ({
                           <Button
                             type="button"
                             size="sm"
-                            className="gap-2 h-9"
+                            className="gap-2 h-9 shrink-0 whitespace-nowrap"
                             onClick={(e) => {
                               e.stopPropagation();
                               onOpenChapter(chapter);
@@ -567,7 +681,7 @@ export const ChapterTable = ({
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="gap-1.5 h-9 text-muted-foreground"
+                            className="gap-1.5 h-9 text-muted-foreground shrink-0 whitespace-nowrap"
                             onClick={(e) => {
                               e.stopPropagation();
                               onOpenChapter(chapter);

@@ -10,15 +10,7 @@
  * - Any component that needs complete lesson data
  */
 
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  where,
-  documentId,
-} from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import type { LanguageCode } from '../../types/curriculum';
 import { cacheManager, CacheManager, LESSON_BUNDLE_CACHE_TTL_MS } from '../../utils/cacheManager';
@@ -37,6 +29,9 @@ import type { LessonDraftSnapshot } from '../../types/lessonVersion';
 // Shared with the player, which resolves the same assets a second way. Two
 // copies of this precedence disagreed, and the same model arrived twice.
 import { isRenderAssetUrl, isRetiredMeshyAsset, pickPlayerGlbUrl } from '../../lib/lesson/assetUrls';
+// Shared with the studio's asset-health check, which needs the same batched
+// read. Two copies of a batching-and-fallback routine drift apart under load.
+import { fetchDocsByIds as fetchDocsByIdsShared } from '../../lib/firestore/fetchDocsByIds';
 
 // Collection names
 const COLLECTION_CURRICULUM_CHAPTERS = 'curriculum_chapters';
@@ -177,14 +172,6 @@ async function attachLicensedContent(
 /**
  * Chunk array for Firestore 'in' queries (max 30 items)
  */
-function chunkArray<T>(array: T[], size: number = 30): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < array.length; i += size) {
-    chunks.push(array.slice(i, i + size));
-  }
-  return chunks;
-}
-
 /**
  * Wraps each Street View Tour stop as a synthetic curriculum-shaped topic (topic_id
  * `${lessonId}__stop_${stop.id}`) so the rest of this pipeline (and VRLessonPlayerKrpano)
@@ -447,61 +434,6 @@ function extractLinkedIds(chapterData: any, lang: LanguageCode, topicId?: string
   };
 }
 
-/**
- * Fetch documents by IDs with chunking (Firestore 'in' query limit is 30)
- */
-async function fetchDocsByIds(collectionName: string, ids: string[]): Promise<any[]> {
-  if (ids.length === 0) return [];
-
-  const chunks = chunkArray(ids, 30);
-  const allDocs: any[] = [];
-
-  for (const chunk of chunks) {
-    try {
-      const collectionRef = collection(db, collectionName);
-      const q = query(collectionRef, where(documentId(), 'in', chunk));
-      const snapshot = await getDocs(q);
-      
-      snapshot.docs.forEach(docSnap => {
-        allDocs.push({
-          id: docSnap.id,
-          ...docSnap.data(),
-        });
-      });
-    } catch (error) {
-      console.warn(`[getLessonBundle] Error fetching ${collectionName} chunk:`, error);
-
-      // Fall back to individual reads only when retrying could plausibly succeed.
-      // A rules rejection or a signed-out client fails identically for every document
-      // in the chunk, so the old unconditional loop turned one refused read into
-      // thirty — the read amplification was worst exactly when nothing would load.
-      const code = (error as { code?: string } | null)?.code ?? '';
-      if (code === 'permission-denied' || code === 'unauthenticated') {
-        console.warn(
-          `[getLessonBundle] Skipping per-document retry for ${collectionName}: ${code} applies to the whole chunk.`
-        );
-        continue;
-      }
-
-      for (const id of chunk) {
-        try {
-          const docRef = doc(db, collectionName, id);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            allDocs.push({
-              id: docSnap.id,
-              ...docSnap.data(),
-            });
-          }
-        } catch (err) {
-          console.warn(`[getLessonBundle] Failed to fetch ${collectionName}/${id}:`, err);
-        }
-      }
-    }
-  }
-
-  return allDocs;
-}
 
 /**
  * Filter documents by language
@@ -942,10 +874,10 @@ async function buildLessonBundle(params: GetLessonBundleParams): Promise<LessonB
     // Step 3: Fetch linked documents in parallel
     const [mcqsRaw, ttsRaw, skyboxData, pdfData, meshyAssetsRaw, imagesRaw, textTo3dAssetsRaw] = await Promise.all([
       extractedIds.mcqIds.length > 0
-        ? fetchDocsByIds(COLLECTION_CHAPTER_MCQS, extractedIds.mcqIds)
+        ? fetchDocsByIdsShared(COLLECTION_CHAPTER_MCQS, extractedIds.mcqIds, 'getLessonBundle')
         : Promise.resolve([]),
       extractedIds.ttsIds.length > 0
-        ? fetchDocsByIds(COLLECTION_CHAPTER_TTS, extractedIds.ttsIds)
+        ? fetchDocsByIdsShared(COLLECTION_CHAPTER_TTS, extractedIds.ttsIds, 'getLessonBundle')
         : Promise.resolve([]),
       (() => {
         const skyboxIdRaw = extractedIds.skyboxId;
@@ -1028,7 +960,7 @@ async function buildLessonBundle(params: GetLessonBundleParams): Promise<LessonB
           // after the other, which halves the wall time of this branch.
           const [imagesByIds, imagesByQuery] = await Promise.all([
             extractedIds.imageIds.length > 0
-              ? fetchDocsByIds(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds).then((docs) => {
+              ? fetchDocsByIdsShared(COLLECTION_CHAPTER_IMAGES, extractedIds.imageIds, 'getLessonBundle').then((docs) => {
                   console.log(`[getLessonBundle] Found ${docs.length} images by IDs`);
                   return docs;
                 })
@@ -1102,7 +1034,7 @@ async function buildLessonBundle(params: GetLessonBundleParams): Promise<LessonB
           if (extractedIds.textTo3dAssetIds.length > 0) {
             for (const collectionName of textTo3dCollectionsToTry()) {
               try {
-                textTo3dAssets = await fetchDocsByIds(collectionName, extractedIds.textTo3dAssetIds);
+                textTo3dAssets = await fetchDocsByIdsShared(collectionName, extractedIds.textTo3dAssetIds, 'getLessonBundle');
                 if (textTo3dAssets.length > 0) {
                   resolvedTextTo3dCollection = collectionName;
                   console.log(`[getLessonBundle] Found ${textTo3dAssets.length} text_to_3d_assets by IDs from ${collectionName}`);
@@ -1119,7 +1051,7 @@ async function buildLessonBundle(params: GetLessonBundleParams): Promise<LessonB
             // Try fetching by IDs to see if they're text_to_3d_assets
             for (const collectionName of textTo3dCollectionsToTry()) {
               try {
-                const potentialAssets = await fetchDocsByIds(collectionName, extractedIds.assetIds);
+                const potentialAssets = await fetchDocsByIdsShared(collectionName, extractedIds.assetIds, 'getLessonBundle');
                 // Filter to only include those that have text_to_3d_asset specific fields
                 const textTo3dOnly = potentialAssets.filter((a: any) => 
                   a.prompt || a.model_urls || a.approval_status !== undefined
