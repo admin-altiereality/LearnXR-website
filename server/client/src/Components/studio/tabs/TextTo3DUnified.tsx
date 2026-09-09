@@ -838,7 +838,9 @@ export const TextTo3DUnified = ({
           topicId,
           limit: 100,
           healthCheck: true,
-          sourceCollections: ['text_to_3d_assets', 'avatar_to_3d_assets'],
+          // meshy_assets included: the studio's own generated and uploaded
+          // models live there, and leaving it out made the scan find nothing.
+          sourceCollections: ['text_to_3d_assets', 'avatar_to_3d_assets', 'meshy_assets'],
         },
         settings: regenerationSettings,
       });
@@ -1057,6 +1059,13 @@ export const TextTo3DUnified = ({
               <button
                 onClick={handleStartRegeneration}
                 disabled={regenerationLoading || !regenerationJob?.dry_run || selectedRegenerationCount === 0}
+                title={
+                  !regenerationJob?.dry_run
+                    ? 'Scan for broken assets first'
+                    : selectedRegenerationCount === 0
+                      ? 'The scan found nothing to regenerate in this topic'
+                      : `Regenerate ${selectedRegenerationCount} asset(s)`
+                }
                 className="px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 disabled:opacity-50 text-sm flex items-center gap-2"
               >
                 <Sparkles className="w-4 h-4" />
@@ -1065,6 +1074,11 @@ export const TextTo3DUnified = ({
               <button
                 onClick={handleCancelRegeneration}
                 disabled={regenerationLoading || !regenerationJob?.id || !['queued', 'running'].includes(regenerationJob.status)}
+                title={
+                  regenerationJob?.id && ['queued', 'running'].includes(regenerationJob.status)
+                    ? 'Stop the running regeneration'
+                    : 'Nothing is queued or running'
+                }
                 className="px-3 py-2 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50 text-sm"
               >
                 Cancel pending
@@ -1072,6 +1086,11 @@ export const TextTo3DUnified = ({
               <button
                 onClick={handleRetryFailedRegeneration}
                 disabled={regenerationLoading || !regenerationJob?.id || Number(regenerationCounts.failed || 0) === 0}
+                title={
+                  Number(regenerationCounts.failed || 0) > 0
+                    ? `Retry ${Number(regenerationCounts.failed)} failed asset(s)`
+                    : 'No failed assets to retry'
+                }
                 className="px-3 py-2 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20 hover:bg-blue-500/20 disabled:opacity-50 text-sm"
               >
                 Retry failed
@@ -1084,6 +1103,19 @@ export const TextTo3DUnified = ({
               </button>
             </div>
           </div>
+
+          {/*
+            A scan that found nothing is a result, not a blank. Without saying so
+            the three buttons below simply stayed grey and it looked as though
+            the feature had stopped working.
+          */}
+          {regenerationJob?.dry_run && regenerationItems.length === 0 && !regenerationError && (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+              The scan completed and found no broken prompt-based 3D assets in this topic, so
+              there is nothing to regenerate. Assets uploaded by hand have no prompt to
+              regenerate from and are never included.
+            </div>
+          )}
 
           {regenerationError && (
             <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300 flex items-start gap-2">

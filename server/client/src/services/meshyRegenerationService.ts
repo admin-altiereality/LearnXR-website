@@ -1,6 +1,17 @@
 import { auth } from '../config/firebase';
 
-export type MeshyRegenerationSourceCollection = 'text_to_3d_assets' | 'avatar_to_3d_assets';
+/**
+ * Collections the scan can look in.
+ *
+ * `meshy_assets` was missing here and on the server, so a topic whose models
+ * live there — which is where the studio's own generated and uploaded assets go
+ * — scanned clean every time, and the buttons that act on a scan result stayed
+ * disabled because there was never a result to act on.
+ */
+export type MeshyRegenerationSourceCollection =
+  | 'text_to_3d_assets'
+  | 'avatar_to_3d_assets'
+  | 'meshy_assets';
 
 export type MeshyRegenerationJobStatus =
   | 'dry_run'

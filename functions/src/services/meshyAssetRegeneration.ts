@@ -4,7 +4,17 @@ import * as admin from 'firebase-admin';
 import { initializeAdmin, initializeServices, MESHY_API_KEY } from '../utils/services';
 import { finalizeGeneratedAsset } from './meshyAssetStorage';
 
-type SourceCollection = 'text_to_3d_assets' | 'avatar_to_3d_assets';
+/**
+ * Collections a broken asset can be found in.
+ *
+ * `meshy_assets` was missing, and it is where the studio's own generated and
+ * uploaded models live — so scanning a topic whose assets sit there found
+ * nothing, every time. With no candidates the scan produced an empty job, which
+ * left Start regeneration, Cancel pending and Retry failed permanently disabled
+ * with no explanation: the buttons were correct, there was simply never
+ * anything for them to act on.
+ */
+type SourceCollection = 'text_to_3d_assets' | 'avatar_to_3d_assets' | 'meshy_assets';
 type JobStatus = 'dry_run' | 'queued' | 'running' | 'completed' | 'completed_with_errors' | 'cancelled' | 'failed';
 type ItemStatus =
   | 'scan_result'
@@ -93,7 +103,11 @@ interface RegenerationCandidate {
 
 const JOBS_COLLECTION = 'meshy_asset_regeneration_jobs';
 const MESHY_ASSETS_COLLECTION = 'meshy_assets';
-const SOURCE_COLLECTIONS: SourceCollection[] = ['text_to_3d_assets', 'avatar_to_3d_assets'];
+const SOURCE_COLLECTIONS: SourceCollection[] = [
+  'text_to_3d_assets',
+  'avatar_to_3d_assets',
+  'meshy_assets',
+];
 const MESHY_API_BASE_URL = 'https://api.meshy.ai/openapi/v2';
 const DEFAULT_API_BASE_URL = 'https://us-central1-learnxr-evoneuralai.cloudfunctions.net/api';
 const PROCESSING_STATUSES: ItemStatus[] = ['pending', 'generating_preview', 'refining_texture', 'finalizing'];
@@ -337,10 +351,24 @@ async function buildCandidate(
   const topicId = String(sourceData.topic_id || sourceData.topicId || '').trim();
   if (!chapterId || !topicId) return null;
 
-  const oldMeshyAssetId = String(sourceData.meshy_asset_id || '').trim();
+  /*
+    Where the meshy asset is.
+
+    A text_to_3d or avatar_to_3d document POINTS at one through
+    `meshy_asset_id`. A meshy_assets document IS one — there is nothing to
+    follow, and looking for a pointer it does not have would have reported every
+    such asset as "missing_meshy_asset_id" and offered to regenerate assets that
+    were perfectly healthy.
+  */
+  const isMeshyAssetSource = sourceCollection === MESHY_ASSETS_COLLECTION;
+  const oldMeshyAssetId = isMeshyAssetSource
+    ? sourceDoc.id
+    : String(sourceData.meshy_asset_id || '').trim();
   let meshyData: admin.firestore.DocumentData | undefined;
   let meshyMissing = false;
-  if (oldMeshyAssetId) {
+  if (isMeshyAssetSource) {
+    meshyData = sourceData;
+  } else if (oldMeshyAssetId) {
     const meshySnap = await getDb().collection(MESHY_ASSETS_COLLECTION).doc(oldMeshyAssetId).get();
     if (meshySnap.exists) {
       meshyData = meshySnap.data() || {};
@@ -355,7 +383,9 @@ async function buildCandidate(
   const storagePath = getStoragePath(sourceData, meshyData);
   const renderUrl = getRenderUrl(sourceData, meshyData);
 
-  if (!oldMeshyAssetId) reasons.push('missing_meshy_asset_id');
+  // Only meaningful for a source that points at a meshy asset; one that IS a
+  // meshy asset always has an id, its own.
+  if (!oldMeshyAssetId && !isMeshyAssetSource) reasons.push('missing_meshy_asset_id');
   if (meshyMissing) reasons.push('referenced_meshy_asset_missing');
   if (sourceData.asset_repair_status === 'failed' || meshyData?.asset_repair_status === 'failed') {
     reasons.push('asset_repair_status_failed');
@@ -847,15 +877,28 @@ async function processRegenerationItem(
       }, { merge: true });
     }
 
-    await sourceRef.set(cleanForFirestore({
-      ...staleExternalUrlCleanup(sourceData),
-      regenerated_from_meshy_asset_id: oldMeshyAssetId || undefined,
-      regeneration_job_id: jobRef.id,
-      regenerated_at: serverTimestamp(),
-      asset_repair_status: 'ready',
-      asset_repair_error: admin.firestore.FieldValue.delete(),
-      updated_at: serverTimestamp(),
-    }) as Record<string, unknown>, { merge: true });
+    /*
+      Mark the source as repaired — unless the source IS the asset just retired.
+
+      For a meshy_assets source, sourceRef and the document marked
+      `status: 'replaced'` above are the same document. Writing
+      `asset_repair_status: 'ready'` over it would contradict the retirement
+      that was just recorded, and leave a replaced asset looking healthy to
+      every reader that checks it.
+    */
+    const sourceIsRetiredAsset =
+      sourceCollection === MESHY_ASSETS_COLLECTION && sourceAssetId === oldMeshyAssetId;
+    if (!sourceIsRetiredAsset) {
+      await sourceRef.set(cleanForFirestore({
+        ...staleExternalUrlCleanup(sourceData),
+        regenerated_from_meshy_asset_id: oldMeshyAssetId || undefined,
+        regeneration_job_id: jobRef.id,
+        regenerated_at: serverTimestamp(),
+        asset_repair_status: 'ready',
+        asset_repair_error: admin.firestore.FieldValue.delete(),
+        updated_at: serverTimestamp(),
+      }) as Record<string, unknown>, { merge: true });
+    }
 
     await itemRef.set({
       status: 'replaced',
