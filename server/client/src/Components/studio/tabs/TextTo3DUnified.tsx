@@ -1031,7 +1031,7 @@ export const TextTo3DUnified = ({
       </div>
 
       {isSuperAdmin && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-4">
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-4 min-w-0 overflow-hidden">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -1153,7 +1153,7 @@ export const TextTo3DUnified = ({
                 const key = regenerationItemKey(item);
                 const selected = selectedRegenerationKeys.has(key);
                 return (
-                  <div key={item.id} className="rounded-lg border border-border bg-muted/40 p-3">
+                  <div key={item.id} className="rounded-lg border border-border bg-muted/40 p-3 min-w-0">
                     <div className="flex items-start gap-3">
                       {regenerationJob?.dry_run && (
                         <input
@@ -1172,10 +1172,21 @@ export const TextTo3DUnified = ({
                         />
                       )}
                       <div className="min-w-0 flex-1">
+                        {/*
+                          The prompt gets its own line.
+
+                          It was `truncate` inside a wrapping flex row, and
+                          `truncate` needs a width to truncate against — in a
+                          flex line sized by its own content there is none, so a
+                          long prompt stretched the card, the card stretched the
+                          panel, and the panel pushed Start regeneration, Cancel
+                          pending and Retry failed off the right of the screen.
+                          Clamped to two lines against the row width instead.
+                        */}
+                        <p className="text-sm font-medium text-foreground line-clamp-2 break-words mb-1">
+                          {item.prompt || item.source_asset_id}
+                        </p>
                         <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className="text-sm font-medium text-foreground truncate max-w-full">
-                            {item.prompt || item.source_asset_id}
-                          </span>
                           <span className="px-2 py-0.5 rounded bg-background text-xs text-muted-foreground">
                             {item.status.replace(/_/g, ' ')}
                           </span>
@@ -1183,7 +1194,9 @@ export const TextTo3DUnified = ({
                             <span className="text-xs text-blue-300">{Math.round(item.progress)}%</span>
                           )}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                        {/* break-all: these are unbroken ids, and left to
+                            themselves they widen the panel the same way. */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground [&>div]:break-all">
                           <div>Source: {item.source_collection}</div>
                           <div>Chapter/topic: {item.chapter_id || chapterId} / {item.topic_id || topicId}</div>
                           <div>Current asset: {item.old_meshy_asset_id || 'missing'}</div>

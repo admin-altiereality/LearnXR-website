@@ -362,29 +362,30 @@ export const ChapterTable = ({
   }, [assetIdKey]);
 
   /*
-    The actions column has to fit what it actually holds.
+    One row, two layouts.
 
-    It was 220px, and a topic row puts four buttons in it — Unapprove, Mark demo,
-    Open Lesson, Edit — which need roughly twice that with their gaps. The flex
-    container was held to 220px and its children overflowed leftward, landing on
-    top of the date and version columns. Chapter rows carry fewer buttons, which
-    is why only topic rows looked broken.
+    Below lg the seven columns cannot fit any screen honestly, and forcing them
+    into a 1300px grid meant the whole table scrolled sideways — the actions were
+    off the right edge on every laptop narrower than that. Below lg the cells
+    flow and wrap instead, with the actions pushed to the end of the line; from
+    lg up it is the aligned seven-column table the header describes.
 
-    Widened to fit, with the row minimum raised to match, so the surrounding
-    overflow-x-auto scrolls the table rather than letting one column sit on
-    another.
+    The column widths are what the tracks actually add up to: 56+200+110+140+80+
+    110+460, plus six gaps and the horizontal padding, so the minimum is only
+    applied where the grid is.
   */
+  const gridColumns = 'lg:grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_minmax(420px,auto)]';
   const tableGrid =
-    'grid grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_minmax(460px,auto)] gap-2 md:gap-4 px-4 sm:px-6 w-full min-w-[1300px]';
-  // 1300 is what the tracks actually add up to: 56+200+110+140+80+110+460, plus
-  // six gaps and the horizontal padding. Declaring less than that meant the grid
-  // quietly exceeded its own stated minimum.
+    `flex flex-wrap items-center gap-x-3 gap-y-2 px-4 sm:px-6 w-full ` +
+    `lg:grid ${gridColumns} lg:gap-4 lg:min-w-[1260px]`;
 
   return (
     <div className="bg-card rounded-xl border border-border relative overflow-hidden flex flex-col">
       <div className="w-full overflow-x-auto pb-4">
         {/* Table Header - aligned columns, clear hierarchy */}
-        <header className={`${tableGrid} py-3 bg-muted/50 border-b border-border items-center min-h-[44px]`}>
+        <header
+          className={`hidden lg:grid ${gridColumns} lg:gap-4 px-4 sm:px-6 w-full lg:min-w-[1260px] py-3 bg-muted/50 border-b border-border items-center min-h-[44px]`}
+        >
           <div className="flex items-center justify-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             <Hash className="w-3.5 h-3.5 text-primary shrink-0" />
             <span>#</span>
@@ -454,21 +455,10 @@ export const ChapterTable = ({
                     {group.topics.length} {group.topics.length === 1 ? 'topic' : 'topics'}
                   </span>
                 </div>
+                {/* Content: badges describe a topic, and a chapter covers several. */}
                 <div className="flex items-center" aria-hidden />
-                <div className="flex items-center" aria-hidden />
-                <div className="flex items-center" aria-hidden />
-                {/*
-                  A chapter row has to occupy all seven tracks, or everything
-                  after the first gap lands under the wrong header. With four
-                  cells the actions sat in the CONTENT column — a 140px track in
-                  the middle of the row — instead of under ACTIONS.
-
-                  Content badges stay blank here: they describe a topic, and a
-                  chapter row covers several.
-                */}
-                <div />
                 <div className="flex items-center">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-muted-foreground bg-muted rounded border border-border">
+                  <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-muted-foreground bg-muted rounded border border-border">
                     {group.topics[0]?.chapter.current_version || 'v1'}
                   </span>
                 </div>
@@ -477,7 +467,7 @@ export const ChapterTable = ({
                     {formatDate(group.topics[0]?.chapter.updated_at)}
                   </span>
                 </div>
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-end gap-2 ml-auto lg:ml-0">
                   {canApprove && group.topics.length > 0 && (() => {
                     const firstChapter = group.topics[0].chapter;
                     const isApproved = (firstChapter as any).approved === true;
@@ -634,7 +624,7 @@ export const ChapterTable = ({
                             {formatDate(chapter.updated_at)}
                           </span>
                         </div>
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2 ml-auto lg:ml-0">
                           {(() => {
                             const approvalInner = topic?.approval || {};
                             const isApprovedInner =
