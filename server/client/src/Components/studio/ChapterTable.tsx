@@ -375,7 +375,10 @@ export const ChapterTable = ({
     another.
   */
   const tableGrid =
-    'grid grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_minmax(460px,auto)] gap-2 md:gap-4 px-4 sm:px-6 w-full min-w-[1180px]';
+    'grid grid-cols-[56px_minmax(200px,1fr)_110px_140px_80px_110px_minmax(460px,auto)] gap-2 md:gap-4 px-4 sm:px-6 w-full min-w-[1300px]';
+  // 1300 is what the tracks actually add up to: 56+200+110+140+80+110+460, plus
+  // six gaps and the horizontal padding. Declaring less than that meant the grid
+  // quietly exceeded its own stated minimum.
 
   return (
     <div className="bg-card rounded-xl border border-border relative overflow-hidden flex flex-col">
@@ -454,6 +457,26 @@ export const ChapterTable = ({
                 <div className="flex items-center" aria-hidden />
                 <div className="flex items-center" aria-hidden />
                 <div className="flex items-center" aria-hidden />
+                {/*
+                  A chapter row has to occupy all seven tracks, or everything
+                  after the first gap lands under the wrong header. With four
+                  cells the actions sat in the CONTENT column — a 140px track in
+                  the middle of the row — instead of under ACTIONS.
+
+                  Content badges stay blank here: they describe a topic, and a
+                  chapter row covers several.
+                */}
+                <div />
+                <div className="flex items-center">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-muted-foreground bg-muted rounded border border-border">
+                    {group.topics[0]?.chapter.current_version || 'v1'}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <span className="text-[11px] text-muted-foreground">
+                    {formatDate(group.topics[0]?.chapter.updated_at)}
+                  </span>
+                </div>
                 <div className="flex items-center justify-end gap-2">
                   {canApprove && group.topics.length > 0 && (() => {
                     const firstChapter = group.topics[0].chapter;
@@ -464,7 +487,7 @@ export const ChapterTable = ({
                         type="button"
                         size="sm"
                         variant={isApproved ? 'destructive' : 'default'}
-                        className="gap-1.5 transition-opacity text-xs h-8 sm:opacity-0 sm:group-hover:opacity-100"
+                        className="gap-1.5 text-xs h-8 shrink-0 whitespace-nowrap"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleChapterApprovalToggle(firstChapter.id, isApproved);
@@ -485,7 +508,7 @@ export const ChapterTable = ({
                     <Button
                       type="button"
                       size="sm"
-                      className="gap-1.5 transition-opacity text-xs h-8 sm:opacity-0 sm:group-hover:opacity-100"
+                      className="gap-1.5 text-xs h-8 shrink-0 whitespace-nowrap"
                       onClick={(e) => {
                         e.stopPropagation();
                         const firstTopic = group.topics[0];
