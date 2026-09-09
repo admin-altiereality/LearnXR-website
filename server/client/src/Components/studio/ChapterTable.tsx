@@ -34,6 +34,7 @@ import {
   fetchAssetHealth,
   type AssetHealthMap,
 } from '../../lib/studio/assetHealth';
+import { groupChapters } from '../../lib/studio/groupChapters';
 import { isAdminOnly, isSuperadmin } from '../../utils/rbac';
 import { toast } from 'react-hot-toast';
 import { Button } from '../ui/button';
@@ -118,70 +119,17 @@ export const ChapterTable = ({
     }
   };
   
-  // Group chapters by curriculum/class/subject/chapter_number
-  // Chapters with same curriculum/class/subject/chapter_number are topics of the same chapter
-  const groupedChapters = (): GroupedChapter[] => {
-    const groups = new Map<string, GroupedChapter>();
-    
-    chapters.forEach((chapter) => {
-      const key = `${chapter.curriculum || ''}_${chapter.class || ''}_${chapter.subject || ''}_${chapter.chapter_number || ''}`;
-      
-      if (!groups.has(key)) {
-        groups.set(key, {
-          curriculum: chapter.curriculum || '',
-          class: chapter.class || 0,
-          subject: chapter.subject || '',
-          chapterNumber: chapter.chapter_number || 0,
-          chapterName: chapter.chapter_name || '',
-          topics: [],
-        });
-      }
-      
-      const group = groups.get(key)!;
-      
-      // Extract topics from chapter
-      if (chapter.topics && Array.isArray(chapter.topics)) {
-        chapter.topics.forEach((topic) => {
-          group.topics.push({
-            chapter,
-            topic,
-            topicPriority: topic.topic_priority || 999, // Default to high number if missing
-          });
-        });
-      } else {
-        // If no topics array, treat the chapter itself as a topic
-        group.topics.push({
-          chapter,
-          topic: null,
-          topicPriority: 1,
-        });
-      }
-    });
-    
-    // Sort topics within each group by topicPriority, then by updatedAt
-    const sortedGroups = Array.from(groups.values()).map((group) => ({
-      ...group,
-      topics: group.topics.sort((a, b) => {
-        // Primary sort: topicPriority ascending
-        if (a.topicPriority !== b.topicPriority) {
-          return a.topicPriority - b.topicPriority;
-        }
-        // Secondary sort: updatedAt descending
-        const aDate = a.chapter.updated_at ? new Date(a.chapter.updated_at).getTime() : 0;
-        const bDate = b.chapter.updated_at ? new Date(b.chapter.updated_at).getTime() : 0;
-        return bDate - aDate;
-      }),
-    }));
-    
-    // Sort groups by curriculum, class, subject, chapterNumber
-    return sortedGroups.sort((a, b) => {
-      if (a.curriculum !== b.curriculum) return a.curriculum.localeCompare(b.curriculum);
-      if (a.class !== b.class) return a.class - b.class;
-      if (a.subject !== b.subject) return a.subject.localeCompare(b.subject);
-      return a.chapterNumber - b.chapterNumber;
-    });
-  };
-  
+  /*
+    Grouping lives in lib/studio/groupChapters so it can be tested.
+
+    It concatenated the topic arrays of every document sharing a logical
+    chapter, and a chapter held as more than one document — usually one per
+    language — carries the same topics in each. Every topic was therefore listed
+    once per document, and the count said ten where there were five.
+  */
+  const groupedChapters = (): GroupedChapter[] =>
+    groupChapters(chapters) as unknown as GroupedChapter[];
+
   const toggleGroup = (key: string) => {
     const newExpanded = new Set(expandedGroups);
     if (newExpanded.has(key)) {
